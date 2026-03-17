@@ -7,6 +7,8 @@ import '../../design_system/app_theme.dart';
 import '../chat/chat_models.dart';
 import '../chat/chat_part_view.dart';
 import '../chat/chat_service.dart';
+import '../files/file_browser_service.dart';
+import '../files/file_models.dart';
 import '../projects/project_models.dart';
 import '../tools/todo_models.dart';
 import '../tools/todo_service.dart';
@@ -29,6 +31,7 @@ class OpenCodeShellScreen extends StatefulWidget {
 
 class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
   final ChatService _chatService = ChatService();
+  final FileBrowserService _fileBrowserService = FileBrowserService();
   final TodoService _todoService = TodoService();
   bool _showContextSheet = false;
   bool _loading = true;
@@ -37,6 +40,11 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
   Map<String, SessionStatusSummary> _statuses =
       const <String, SessionStatusSummary>{};
   List<ChatMessage> _messages = const <ChatMessage>[];
+  List<FileNodeSummary> _fileNodes = const <FileNodeSummary>[];
+  List<FileStatusSummary> _fileStatuses = const <FileStatusSummary>[];
+  List<String> _fileSearchResults = const <String>[];
+  FileContentSummary? _filePreview;
+  String? _selectedFilePath;
   List<TodoItem> _todos = const <TodoItem>[];
   String? _selectedSessionId;
 
@@ -58,6 +66,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
   @override
   void dispose() {
     _chatService.dispose();
+    _fileBrowserService.dispose();
     _todoService.dispose();
     super.dispose();
   }
@@ -79,6 +88,11 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         _sessions = bundle.sessions;
         _statuses = bundle.statuses;
         _messages = bundle.messages;
+        _fileNodes = const <FileNodeSummary>[];
+        _fileStatuses = const <FileStatusSummary>[];
+        _fileSearchResults = const <String>[];
+        _filePreview = null;
+        _selectedFilePath = null;
         _todos = const <TodoItem>[];
         _selectedSessionId = bundle.selectedSessionId;
         _loading = false;
@@ -86,6 +100,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       if (bundle.selectedSessionId != null) {
         await _loadTodos(bundle.selectedSessionId!);
       }
+      await _loadFiles();
     } catch (error) {
       if (!mounted) {
         return;
@@ -156,6 +171,52 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     }
   }
 
+  Future<void> _loadFiles({String searchQuery = ''}) async {
+    try {
+      final bundle = await _fileBrowserService.fetchBundle(
+        profile: widget.profile,
+        project: widget.project,
+        searchQuery: searchQuery,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _fileNodes = bundle.nodes;
+        _fileStatuses = bundle.statuses;
+        _fileSearchResults = bundle.searchResults;
+        _filePreview = bundle.preview;
+        _selectedFilePath = bundle.selectedPath;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _fileNodes = const <FileNodeSummary>[];
+        _fileStatuses = const <FileStatusSummary>[];
+        _fileSearchResults = const <String>[];
+        _filePreview = null;
+        _selectedFilePath = null;
+      });
+    }
+  }
+
+  Future<void> _selectFile(String path) async {
+    final preview = await _fileBrowserService.fetchFileContent(
+      profile: widget.profile,
+      project: widget.project,
+      path: path,
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _selectedFilePath = path;
+      _filePreview = preview;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
@@ -167,11 +228,17 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         sessions: _sessions,
         statuses: _statuses,
         messages: _messages,
+        fileNodes: _fileNodes,
+        fileStatuses: _fileStatuses,
+        fileSearchResults: _fileSearchResults,
+        filePreview: _filePreview,
+        selectedFilePath: _selectedFilePath,
         todos: _todos,
         selectedSessionId: _selectedSessionId,
         loading: _loading,
         error: _error,
         onSelectSession: _selectSession,
+        onSelectFile: _selectFile,
       );
     }
     if (width >= 960) {
@@ -182,11 +249,17 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         sessions: _sessions,
         statuses: _statuses,
         messages: _messages,
+        fileNodes: _fileNodes,
+        fileStatuses: _fileStatuses,
+        fileSearchResults: _fileSearchResults,
+        filePreview: _filePreview,
+        selectedFilePath: _selectedFilePath,
         todos: _todos,
         selectedSessionId: _selectedSessionId,
         loading: _loading,
         error: _error,
         onSelectSession: _selectSession,
+        onSelectFile: _selectFile,
       );
     }
     if (width >= 700) {
@@ -197,11 +270,17 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         sessions: _sessions,
         statuses: _statuses,
         messages: _messages,
+        fileNodes: _fileNodes,
+        fileStatuses: _fileStatuses,
+        fileSearchResults: _fileSearchResults,
+        filePreview: _filePreview,
+        selectedFilePath: _selectedFilePath,
         todos: _todos,
         selectedSessionId: _selectedSessionId,
         loading: _loading,
         error: _error,
         onSelectSession: _selectSession,
+        onSelectFile: _selectFile,
         showContextSheet: _showContextSheet,
         onToggleContextSheet: () {
           setState(() {
@@ -217,11 +296,17 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       sessions: _sessions,
       statuses: _statuses,
       messages: _messages,
+      fileNodes: _fileNodes,
+      fileStatuses: _fileStatuses,
+      fileSearchResults: _fileSearchResults,
+      filePreview: _filePreview,
+      selectedFilePath: _selectedFilePath,
       todos: _todos,
       selectedSessionId: _selectedSessionId,
       loading: _loading,
       error: _error,
       onSelectSession: _selectSession,
+      onSelectFile: _selectFile,
       showContextSheet: _showContextSheet,
       onToggleContextSheet: () {
         setState(() {
@@ -240,11 +325,17 @@ class _DesktopShell extends StatelessWidget {
     required this.sessions,
     required this.statuses,
     required this.messages,
+    required this.fileNodes,
+    required this.fileStatuses,
+    required this.fileSearchResults,
+    required this.filePreview,
+    required this.selectedFilePath,
     required this.todos,
     required this.selectedSessionId,
     required this.loading,
     required this.error,
     required this.onSelectSession,
+    required this.onSelectFile,
   });
 
   final ServerProfile profile;
@@ -253,11 +344,17 @@ class _DesktopShell extends StatelessWidget {
   final List<SessionSummary> sessions;
   final Map<String, SessionStatusSummary> statuses;
   final List<ChatMessage> messages;
+  final List<FileNodeSummary> fileNodes;
+  final List<FileStatusSummary> fileStatuses;
+  final List<String> fileSearchResults;
+  final FileContentSummary? filePreview;
+  final String? selectedFilePath;
   final List<TodoItem> todos;
   final String? selectedSessionId;
   final bool loading;
   final String? error;
   final ValueChanged<String> onSelectSession;
+  final ValueChanged<String> onSelectFile;
 
   @override
   Widget build(BuildContext context) {
@@ -287,7 +384,18 @@ class _DesktopShell extends StatelessWidget {
             ),
           ),
           const SizedBox(width: AppSpacing.lg),
-          SizedBox(width: 340, child: _ContextRail(todos: todos)),
+          SizedBox(
+            width: 340,
+            child: _ContextRail(
+              fileNodes: fileNodes,
+              fileStatuses: fileStatuses,
+              fileSearchResults: fileSearchResults,
+              filePreview: filePreview,
+              selectedFilePath: selectedFilePath,
+              onSelectFile: onSelectFile,
+              todos: todos,
+            ),
+          ),
         ],
       ),
     );
@@ -302,11 +410,17 @@ class _TabletLandscapeShell extends StatelessWidget {
     required this.sessions,
     required this.statuses,
     required this.messages,
+    required this.fileNodes,
+    required this.fileStatuses,
+    required this.fileSearchResults,
+    required this.filePreview,
+    required this.selectedFilePath,
     required this.todos,
     required this.selectedSessionId,
     required this.loading,
     required this.error,
     required this.onSelectSession,
+    required this.onSelectFile,
   });
 
   final ServerProfile profile;
@@ -315,11 +429,17 @@ class _TabletLandscapeShell extends StatelessWidget {
   final List<SessionSummary> sessions;
   final Map<String, SessionStatusSummary> statuses;
   final List<ChatMessage> messages;
+  final List<FileNodeSummary> fileNodes;
+  final List<FileStatusSummary> fileStatuses;
+  final List<String> fileSearchResults;
+  final FileContentSummary? filePreview;
+  final String? selectedFilePath;
   final List<TodoItem> todos;
   final String? selectedSessionId;
   final bool loading;
   final String? error;
   final ValueChanged<String> onSelectSession;
+  final ValueChanged<String> onSelectFile;
 
   @override
   Widget build(BuildContext context) {
@@ -350,7 +470,16 @@ class _TabletLandscapeShell extends StatelessWidget {
           const SizedBox(width: AppSpacing.lg),
           SizedBox(
             width: 280,
-            child: _ContextRail(compact: true, todos: todos),
+            child: _ContextRail(
+              compact: true,
+              fileNodes: fileNodes,
+              fileStatuses: fileStatuses,
+              fileSearchResults: fileSearchResults,
+              filePreview: filePreview,
+              selectedFilePath: selectedFilePath,
+              onSelectFile: onSelectFile,
+              todos: todos,
+            ),
           ),
         ],
       ),
@@ -366,11 +495,17 @@ class _TabletPortraitShell extends StatelessWidget {
     required this.sessions,
     required this.statuses,
     required this.messages,
+    required this.fileNodes,
+    required this.fileStatuses,
+    required this.fileSearchResults,
+    required this.filePreview,
+    required this.selectedFilePath,
     required this.todos,
     required this.selectedSessionId,
     required this.loading,
     required this.error,
     required this.onSelectSession,
+    required this.onSelectFile,
     required this.showContextSheet,
     required this.onToggleContextSheet,
   });
@@ -381,11 +516,17 @@ class _TabletPortraitShell extends StatelessWidget {
   final List<SessionSummary> sessions;
   final Map<String, SessionStatusSummary> statuses;
   final List<ChatMessage> messages;
+  final List<FileNodeSummary> fileNodes;
+  final List<FileStatusSummary> fileStatuses;
+  final List<String> fileSearchResults;
+  final FileContentSummary? filePreview;
+  final String? selectedFilePath;
   final List<TodoItem> todos;
   final String? selectedSessionId;
   final bool loading;
   final String? error;
   final ValueChanged<String> onSelectSession;
+  final ValueChanged<String> onSelectFile;
   final bool showContextSheet;
   final VoidCallback onToggleContextSheet;
 
@@ -413,7 +554,15 @@ class _TabletPortraitShell extends StatelessWidget {
             crossFadeState: showContextSheet
                 ? CrossFadeState.showFirst
                 : CrossFadeState.showSecond,
-            firstChild: const _BottomUtilitySheet(),
+            firstChild: _BottomUtilitySheet(
+              fileNodes: fileNodes,
+              fileStatuses: fileStatuses,
+              fileSearchResults: fileSearchResults,
+              filePreview: filePreview,
+              selectedFilePath: selectedFilePath,
+              onSelectFile: onSelectFile,
+              todos: todos,
+            ),
             // kept simple for now: portrait utility content comes from shared context rail
             secondChild: const _UtilityToggleHint(),
           ),
@@ -431,11 +580,17 @@ class _MobileShell extends StatelessWidget {
     required this.sessions,
     required this.statuses,
     required this.messages,
+    required this.fileNodes,
+    required this.fileStatuses,
+    required this.fileSearchResults,
+    required this.filePreview,
+    required this.selectedFilePath,
     required this.todos,
     required this.selectedSessionId,
     required this.loading,
     required this.error,
     required this.onSelectSession,
+    required this.onSelectFile,
     required this.showContextSheet,
     required this.onToggleContextSheet,
   });
@@ -446,11 +601,17 @@ class _MobileShell extends StatelessWidget {
   final List<SessionSummary> sessions;
   final Map<String, SessionStatusSummary> statuses;
   final List<ChatMessage> messages;
+  final List<FileNodeSummary> fileNodes;
+  final List<FileStatusSummary> fileStatuses;
+  final List<String> fileSearchResults;
+  final FileContentSummary? filePreview;
+  final String? selectedFilePath;
   final List<TodoItem> todos;
   final String? selectedSessionId;
   final bool loading;
   final String? error;
   final ValueChanged<String> onSelectSession;
+  final ValueChanged<String> onSelectFile;
   final bool showContextSheet;
   final VoidCallback onToggleContextSheet;
 
@@ -479,7 +640,16 @@ class _MobileShell extends StatelessWidget {
             crossFadeState: showContextSheet
                 ? CrossFadeState.showFirst
                 : CrossFadeState.showSecond,
-            firstChild: const _BottomUtilitySheet(compact: true),
+            firstChild: _BottomUtilitySheet(
+              compact: true,
+              fileNodes: fileNodes,
+              fileStatuses: fileStatuses,
+              fileSearchResults: fileSearchResults,
+              filePreview: filePreview,
+              selectedFilePath: selectedFilePath,
+              onSelectFile: onSelectFile,
+              todos: todos,
+            ),
             secondChild: const _UtilityToggleHint(compact: true),
           ),
         ],
@@ -691,9 +861,24 @@ class _ChatCanvas extends StatelessWidget {
 }
 
 class _ContextRail extends StatelessWidget {
-  const _ContextRail({required this.todos, this.compact = false});
+  const _ContextRail({
+    required this.fileNodes,
+    required this.fileStatuses,
+    required this.fileSearchResults,
+    required this.filePreview,
+    required this.selectedFilePath,
+    required this.onSelectFile,
+    required this.todos,
+    this.compact = false,
+  });
 
   final bool compact;
+  final List<FileNodeSummary> fileNodes;
+  final List<FileStatusSummary> fileStatuses;
+  final List<String> fileSearchResults;
+  final FileContentSummary? filePreview;
+  final String? selectedFilePath;
+  final ValueChanged<String> onSelectFile;
   final List<TodoItem> todos;
 
   @override
@@ -707,9 +892,13 @@ class _ContextRail extends StatelessWidget {
             title: l10n.shellContextTitle,
             child: Column(
               children: <Widget>[
-                _UtilityTile(
-                  title: l10n.shellFilesTitle,
-                  subtitle: l10n.shellFilesSubtitle,
+                _FilePanel(
+                  fileNodes: fileNodes,
+                  fileStatuses: fileStatuses,
+                  fileSearchResults: fileSearchResults,
+                  filePreview: filePreview,
+                  selectedFilePath: selectedFilePath,
+                  onSelectFile: onSelectFile,
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 _UtilityTile(
@@ -740,15 +929,40 @@ class _ContextRail extends StatelessWidget {
 }
 
 class _BottomUtilitySheet extends StatelessWidget {
-  const _BottomUtilitySheet({this.compact = false});
+  const _BottomUtilitySheet({
+    required this.fileNodes,
+    required this.fileStatuses,
+    required this.fileSearchResults,
+    required this.filePreview,
+    required this.selectedFilePath,
+    required this.onSelectFile,
+    required this.todos,
+    this.compact = false,
+  });
 
   final bool compact;
+  final List<FileNodeSummary> fileNodes;
+  final List<FileStatusSummary> fileStatuses;
+  final List<String> fileSearchResults;
+  final FileContentSummary? filePreview;
+  final String? selectedFilePath;
+  final ValueChanged<String> onSelectFile;
+  final List<TodoItem> todos;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       height: compact ? 220 : 260,
-      child: const _ContextRail(compact: true, todos: <TodoItem>[]),
+      child: _ContextRail(
+        compact: true,
+        fileNodes: fileNodes,
+        fileStatuses: fileStatuses,
+        fileSearchResults: fileSearchResults,
+        filePreview: filePreview,
+        selectedFilePath: selectedFilePath,
+        onSelectFile: onSelectFile,
+        todos: todos,
+      ),
     );
   }
 }
@@ -921,6 +1135,68 @@ class _TodoTileList extends StatelessWidget {
           ),
       ],
     );
+  }
+}
+
+class _FilePanel extends StatelessWidget {
+  const _FilePanel({
+    required this.fileNodes,
+    required this.fileStatuses,
+    required this.fileSearchResults,
+    required this.filePreview,
+    required this.selectedFilePath,
+    required this.onSelectFile,
+  });
+
+  final List<FileNodeSummary> fileNodes;
+  final List<FileStatusSummary> fileStatuses;
+  final List<String> fileSearchResults;
+  final FileContentSummary? filePreview;
+  final String? selectedFilePath;
+  final ValueChanged<String> onSelectFile;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final visiblePaths = fileSearchResults.isNotEmpty
+        ? fileSearchResults
+        : fileNodes.map((item) => item.path).take(5).toList(growable: false);
+
+    return Column(
+      children: <Widget>[
+        ListTile(
+          title: Text(l10n.shellFilesTitle),
+          subtitle: Text(l10n.shellFilesSubtitle),
+        ),
+        for (final path in visiblePaths)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+            child: ListTile(
+              selected: path == selectedFilePath,
+              title: Text(path),
+              subtitle: Text(_statusFor(path)),
+              onTap: () => onSelectFile(path),
+            ),
+          ),
+        if (filePreview != null) ...<Widget>[
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            filePreview!.content,
+            maxLines: 6,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ],
+    );
+  }
+
+  String _statusFor(String path) {
+    final matches = fileStatuses.where((item) => item.path == path);
+    if (matches.isEmpty) {
+      return 'tracked';
+    }
+    final match = matches.first;
+    return '${match.status} +${match.added} -${match.removed}';
   }
 }
 
