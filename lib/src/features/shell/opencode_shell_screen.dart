@@ -617,6 +617,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       return _DesktopShell(
         profile: widget.profile,
         project: widget.project,
+        capabilities: widget.capabilities,
         onExit: widget.onExit,
         sessions: _sessions,
         statuses: _statuses,
@@ -665,6 +666,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       return _TabletLandscapeShell(
         profile: widget.profile,
         project: widget.project,
+        capabilities: widget.capabilities,
         onExit: widget.onExit,
         sessions: _sessions,
         statuses: _statuses,
@@ -713,6 +715,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       return _TabletPortraitShell(
         profile: widget.profile,
         project: widget.project,
+        capabilities: widget.capabilities,
         onExit: widget.onExit,
         sessions: _sessions,
         statuses: _statuses,
@@ -766,6 +769,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     return _MobileShell(
       profile: widget.profile,
       project: widget.project,
+      capabilities: widget.capabilities,
       onExit: widget.onExit,
       sessions: _sessions,
       statuses: _statuses,
@@ -822,6 +826,7 @@ class _DesktopShell extends StatelessWidget {
   const _DesktopShell({
     required this.profile,
     required this.project,
+    required this.capabilities,
     required this.onExit,
     required this.sessions,
     required this.statuses,
@@ -868,6 +873,7 @@ class _DesktopShell extends StatelessWidget {
 
   final ServerProfile profile;
   final ProjectTarget project;
+  final CapabilityRegistry capabilities;
   final VoidCallback onExit;
   final List<SessionSummary> sessions;
   final Map<String, SessionStatusSummary> statuses;
@@ -922,6 +928,7 @@ class _DesktopShell extends StatelessWidget {
             child: _LeftRail(
               profile: profile,
               project: project,
+              capabilities: capabilities,
               onExit: onExit,
               sessions: sessions,
               statuses: statuses,
@@ -951,6 +958,7 @@ class _DesktopShell extends StatelessWidget {
             width: 340,
             child: _ContextRail(
               fileNodes: fileNodes,
+              capabilities: capabilities,
               fileStatuses: fileStatuses,
               fileSearchResults: fileSearchResults,
               textMatches: textMatches,
@@ -988,6 +996,7 @@ class _TabletLandscapeShell extends StatelessWidget {
   const _TabletLandscapeShell({
     required this.profile,
     required this.project,
+    required this.capabilities,
     required this.onExit,
     required this.sessions,
     required this.statuses,
@@ -1034,6 +1043,7 @@ class _TabletLandscapeShell extends StatelessWidget {
 
   final ServerProfile profile;
   final ProjectTarget project;
+  final CapabilityRegistry capabilities;
   final VoidCallback onExit;
   final List<SessionSummary> sessions;
   final Map<String, SessionStatusSummary> statuses;
@@ -1088,6 +1098,7 @@ class _TabletLandscapeShell extends StatelessWidget {
             child: _LeftRail(
               profile: profile,
               project: project,
+              capabilities: capabilities,
               onExit: onExit,
               sessions: sessions,
               statuses: statuses,
@@ -1116,6 +1127,7 @@ class _TabletLandscapeShell extends StatelessWidget {
             width: 280,
             child: _ContextRail(
               compact: true,
+              capabilities: capabilities,
               fileNodes: fileNodes,
               fileStatuses: fileStatuses,
               fileSearchResults: fileSearchResults,
@@ -1154,6 +1166,7 @@ class _TabletPortraitShell extends StatelessWidget {
   const _TabletPortraitShell({
     required this.profile,
     required this.project,
+    required this.capabilities,
     required this.onExit,
     required this.sessions,
     required this.statuses,
@@ -1202,6 +1215,7 @@ class _TabletPortraitShell extends StatelessWidget {
 
   final ServerProfile profile;
   final ProjectTarget project;
+  final CapabilityRegistry capabilities;
   final VoidCallback onExit;
   final List<SessionSummary> sessions;
   final Map<String, SessionStatusSummary> statuses;
@@ -1273,6 +1287,7 @@ class _TabletPortraitShell extends StatelessWidget {
                 : CrossFadeState.showSecond,
             firstChild: _BottomUtilitySheet(
               fileNodes: fileNodes,
+              capabilities: capabilities,
               fileStatuses: fileStatuses,
               fileSearchResults: fileSearchResults,
               textMatches: textMatches,
@@ -1312,6 +1327,7 @@ class _MobileShell extends StatelessWidget {
   const _MobileShell({
     required this.profile,
     required this.project,
+    required this.capabilities,
     required this.onExit,
     required this.sessions,
     required this.statuses,
@@ -1360,6 +1376,7 @@ class _MobileShell extends StatelessWidget {
 
   final ServerProfile profile;
   final ProjectTarget project;
+  final CapabilityRegistry capabilities;
   final VoidCallback onExit;
   final List<SessionSummary> sessions;
   final Map<String, SessionStatusSummary> statuses;
@@ -1432,6 +1449,7 @@ class _MobileShell extends StatelessWidget {
                 : CrossFadeState.showSecond,
             firstChild: _BottomUtilitySheet(
               compact: true,
+              capabilities: capabilities,
               fileNodes: fileNodes,
               fileStatuses: fileStatuses,
               fileSearchResults: fileSearchResults,
@@ -1503,6 +1521,7 @@ class _LeftRail extends StatelessWidget {
   const _LeftRail({
     required this.profile,
     required this.project,
+    required this.capabilities,
     required this.onExit,
     required this.sessions,
     required this.statuses,
@@ -1520,6 +1539,7 @@ class _LeftRail extends StatelessWidget {
 
   final ServerProfile profile;
   final ProjectTarget project;
+  final CapabilityRegistry capabilities;
   final VoidCallback onExit;
   final List<SessionSummary> sessions;
   final Map<String, SessionStatusSummary> statuses;
@@ -1612,38 +1632,46 @@ class _LeftRail extends StatelessWidget {
               spacing: AppSpacing.sm,
               runSpacing: AppSpacing.sm,
               children: <Widget>[
-                OutlinedButton(
-                  onPressed: () => onForkSession(selectedSessionId!),
-                  child: const Text('Fork'),
-                ),
-                OutlinedButton(
-                  onPressed: () => onShareSession(selectedSessionId!),
-                  child: const Text('Share'),
-                ),
-                OutlinedButton(
-                  onPressed: () => onUnshareSession(selectedSessionId!),
-                  child: const Text('Unshare'),
-                ),
-                OutlinedButton(
-                  onPressed: () => onAbortSession(selectedSessionId!),
-                  child: const Text('Abort'),
-                ),
-                OutlinedButton(
-                  onPressed: () => onRevertSession(selectedSessionId!),
-                  child: const Text('Revert'),
-                ),
-                OutlinedButton(
-                  onPressed: () => onUnrevertSession(selectedSessionId!),
-                  child: const Text('Unrevert'),
-                ),
-                OutlinedButton(
-                  onPressed: () => onInitSession(selectedSessionId!),
-                  child: const Text('Init'),
-                ),
-                OutlinedButton(
-                  onPressed: () => onSummarizeSession(selectedSessionId!),
-                  child: const Text('Summarize'),
-                ),
+                if (capabilities.canForkSession)
+                  OutlinedButton(
+                    onPressed: () => onForkSession(selectedSessionId!),
+                    child: const Text('Fork'),
+                  ),
+                if (capabilities.canShareSession) ...<Widget>[
+                  OutlinedButton(
+                    onPressed: () => onShareSession(selectedSessionId!),
+                    child: const Text('Share'),
+                  ),
+                  OutlinedButton(
+                    onPressed: () => onUnshareSession(selectedSessionId!),
+                    child: const Text('Unshare'),
+                  ),
+                ],
+                if (capabilities.hasShellCommands)
+                  OutlinedButton(
+                    onPressed: () => onAbortSession(selectedSessionId!),
+                    child: const Text('Abort'),
+                  ),
+                if (capabilities.canRevertSession) ...<Widget>[
+                  OutlinedButton(
+                    onPressed: () => onRevertSession(selectedSessionId!),
+                    child: const Text('Revert'),
+                  ),
+                  OutlinedButton(
+                    onPressed: () => onUnrevertSession(selectedSessionId!),
+                    child: const Text('Unrevert'),
+                  ),
+                ],
+                if (capabilities.canInitSession)
+                  OutlinedButton(
+                    onPressed: () => onInitSession(selectedSessionId!),
+                    child: const Text('Init'),
+                  ),
+                if (capabilities.canSummarizeSession)
+                  OutlinedButton(
+                    onPressed: () => onSummarizeSession(selectedSessionId!),
+                    child: const Text('Summarize'),
+                  ),
               ],
             ),
           ),
@@ -1762,6 +1790,7 @@ class _ChatCanvas extends StatelessWidget {
 
 class _ContextRail extends StatelessWidget {
   const _ContextRail({
+    required this.capabilities,
     required this.fileNodes,
     required this.fileStatuses,
     required this.fileSearchResults,
@@ -1792,6 +1821,7 @@ class _ContextRail extends StatelessWidget {
   });
 
   final bool compact;
+  final CapabilityRegistry capabilities;
   final List<FileNodeSummary> fileNodes;
   final List<FileStatusSummary> fileStatuses;
   final List<String> fileSearchResults;
@@ -1830,58 +1860,73 @@ class _ContextRail extends StatelessWidget {
             title: l10n.shellContextTitle,
             child: Column(
               children: <Widget>[
-                _FilePanel(
-                  fileNodes: fileNodes,
-                  fileStatuses: fileStatuses,
-                  fileSearchResults: fileSearchResults,
-                  textMatches: textMatches,
-                  symbols: symbols,
-                  filePreview: filePreview,
-                  selectedFilePath: selectedFilePath,
-                  fileSearchQuery: fileSearchQuery,
-                  onSelectFile: onSelectFile,
-                  onSearchFiles: onSearchFiles,
-                ),
-                const SizedBox(height: AppSpacing.sm),
+                if (capabilities.hasFiles) ...<Widget>[
+                  _FilePanel(
+                    fileNodes: fileNodes,
+                    fileStatuses: fileStatuses,
+                    fileSearchResults: fileSearchResults,
+                    textMatches: textMatches,
+                    symbols: symbols,
+                    filePreview: filePreview,
+                    selectedFilePath: selectedFilePath,
+                    fileSearchQuery: fileSearchQuery,
+                    onSelectFile: onSelectFile,
+                    onSearchFiles: onSearchFiles,
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                ],
                 _UtilityTile(
                   title: l10n.shellDiffTitle,
                   subtitle: l10n.shellDiffSubtitle,
                 ),
-                const SizedBox(height: AppSpacing.sm),
-                _TodoTileList(todos: todos),
+                if (capabilities.hasTodos) ...<Widget>[
+                  const SizedBox(height: AppSpacing.sm),
+                  _TodoTileList(todos: todos),
+                ],
                 const SizedBox(height: AppSpacing.sm),
                 _UtilityTile(
                   title: l10n.shellToolsTitle,
                   subtitle: l10n.shellToolsSubtitle,
                 ),
                 if (!compact) ...<Widget>[
-                  const SizedBox(height: AppSpacing.sm),
-                  _TerminalPanel(
-                    command: terminalCommand,
-                    result: lastShellResult,
-                    running: runningShellCommand,
-                    onRun: onRunShellCommand,
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  _PendingRequestsPanel(
-                    questions: questionRequests,
-                    permissions: permissionRequests,
-                    onReplyQuestion: onReplyQuestion,
-                    onRejectQuestion: onRejectQuestion,
-                    onReplyPermission: onReplyPermission,
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  _ConfigPreviewPanel(
-                    snapshot: configSnapshot,
-                    onApply: onApplyConfig,
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  _IntegrationStatusPanel(
-                    snapshot: integrationStatusSnapshot,
-                    lastAuthorizationUrl: lastIntegrationAuthUrl,
-                    onStartProviderAuth: onStartProviderAuth,
-                    onStartMcpAuth: onStartMcpAuth,
-                  ),
+                  if (capabilities.hasShellCommands) ...<Widget>[
+                    const SizedBox(height: AppSpacing.sm),
+                    _TerminalPanel(
+                      command: terminalCommand,
+                      result: lastShellResult,
+                      running: runningShellCommand,
+                      onRun: onRunShellCommand,
+                    ),
+                  ],
+                  if (capabilities.hasQuestions ||
+                      capabilities.hasPermissions) ...<Widget>[
+                    const SizedBox(height: AppSpacing.sm),
+                    _PendingRequestsPanel(
+                      questions: questionRequests,
+                      permissions: permissionRequests,
+                      onReplyQuestion: onReplyQuestion,
+                      onRejectQuestion: onRejectQuestion,
+                      onReplyPermission: onReplyPermission,
+                    ),
+                  ],
+                  if (capabilities.hasConfigRead ||
+                      capabilities.hasConfigWrite) ...<Widget>[
+                    const SizedBox(height: AppSpacing.sm),
+                    _ConfigPreviewPanel(
+                      snapshot: configSnapshot,
+                      onApply: onApplyConfig,
+                    ),
+                  ],
+                  if (capabilities.hasProviderOAuth ||
+                      capabilities.hasMcpAuth) ...<Widget>[
+                    const SizedBox(height: AppSpacing.sm),
+                    _IntegrationStatusPanel(
+                      snapshot: integrationStatusSnapshot,
+                      lastAuthorizationUrl: lastIntegrationAuthUrl,
+                      onStartProviderAuth: onStartProviderAuth,
+                      onStartMcpAuth: onStartMcpAuth,
+                    ),
+                  ],
                 ],
               ],
             ),
@@ -1894,6 +1939,7 @@ class _ContextRail extends StatelessWidget {
 
 class _BottomUtilitySheet extends StatelessWidget {
   const _BottomUtilitySheet({
+    required this.capabilities,
     required this.fileNodes,
     required this.fileStatuses,
     required this.fileSearchResults,
@@ -1924,6 +1970,7 @@ class _BottomUtilitySheet extends StatelessWidget {
   });
 
   final bool compact;
+  final CapabilityRegistry capabilities;
   final List<FileNodeSummary> fileNodes;
   final List<FileStatusSummary> fileStatuses;
   final List<String> fileSearchResults;
@@ -1957,6 +2004,7 @@ class _BottomUtilitySheet extends StatelessWidget {
       height: compact ? 220 : 260,
       child: _ContextRail(
         compact: true,
+        capabilities: capabilities,
         fileNodes: fileNodes,
         fileStatuses: fileStatuses,
         fileSearchResults: fileSearchResults,
