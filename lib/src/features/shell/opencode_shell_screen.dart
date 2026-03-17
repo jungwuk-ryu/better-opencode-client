@@ -515,6 +515,27 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     await _loadBundle();
   }
 
+  Future<void> _initSession(String sessionId) async {
+    if (_messages.isEmpty) {
+      return;
+    }
+    final info = _messages.last.info;
+    final providerId = info.providerId;
+    final modelId = info.modelId;
+    if (providerId == null || modelId == null) {
+      return;
+    }
+    await _sessionActionService.initSession(
+      profile: widget.profile,
+      project: widget.project,
+      sessionId: sessionId,
+      messageId: info.id,
+      providerId: providerId,
+      modelId: modelId,
+    );
+    await _loadBundle();
+  }
+
   Future<void> _connectEvents() async {
     await _eventStreamService.connect(
       profile: widget.profile,
@@ -584,6 +605,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         onUnshareSession: _unshareSession,
         onRevertSession: _revertSession,
         onUnrevertSession: _unrevertSession,
+        onInitSession: _initSession,
         onSelectFile: _selectFile,
         onSearchFiles: (query) => _loadFiles(searchQuery: query),
         onRunShellCommand: _runShellCommand,
@@ -630,6 +652,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         onUnshareSession: _unshareSession,
         onRevertSession: _revertSession,
         onUnrevertSession: _unrevertSession,
+        onInitSession: _initSession,
         onSelectFile: _selectFile,
         onSearchFiles: (query) => _loadFiles(searchQuery: query),
         onRunShellCommand: _runShellCommand,
@@ -676,6 +699,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         onUnshareSession: _unshareSession,
         onRevertSession: _revertSession,
         onUnrevertSession: _unrevertSession,
+        onInitSession: _initSession,
         onSelectFile: _selectFile,
         onSearchFiles: (query) => _loadFiles(searchQuery: query),
         onRunShellCommand: _runShellCommand,
@@ -727,6 +751,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       onUnshareSession: _unshareSession,
       onRevertSession: _revertSession,
       onUnrevertSession: _unrevertSession,
+      onInitSession: _initSession,
       onSelectFile: _selectFile,
       onSearchFiles: (query) => _loadFiles(searchQuery: query),
       onRunShellCommand: _runShellCommand,
@@ -781,6 +806,7 @@ class _DesktopShell extends StatelessWidget {
     required this.onUnshareSession,
     required this.onRevertSession,
     required this.onUnrevertSession,
+    required this.onInitSession,
     required this.onSelectFile,
     required this.onSearchFiles,
     required this.onRunShellCommand,
@@ -825,6 +851,7 @@ class _DesktopShell extends StatelessWidget {
   final Future<void> Function(String) onUnshareSession;
   final Future<void> Function(String) onRevertSession;
   final Future<void> Function(String) onUnrevertSession;
+  final Future<void> Function(String) onInitSession;
   final ValueChanged<String> onSelectFile;
   final ValueChanged<String> onSearchFiles;
   final ValueChanged<String> onRunShellCommand;
@@ -857,6 +884,7 @@ class _DesktopShell extends StatelessWidget {
               onUnshareSession: onUnshareSession,
               onRevertSession: onRevertSession,
               onUnrevertSession: onUnrevertSession,
+              onInitSession: onInitSession,
             ),
           ),
           const SizedBox(width: AppSpacing.lg),
@@ -941,6 +969,7 @@ class _TabletLandscapeShell extends StatelessWidget {
     required this.onUnshareSession,
     required this.onRevertSession,
     required this.onUnrevertSession,
+    required this.onInitSession,
     required this.onSelectFile,
     required this.onSearchFiles,
     required this.onRunShellCommand,
@@ -985,6 +1014,7 @@ class _TabletLandscapeShell extends StatelessWidget {
   final Future<void> Function(String) onUnshareSession;
   final Future<void> Function(String) onRevertSession;
   final Future<void> Function(String) onUnrevertSession;
+  final Future<void> Function(String) onInitSession;
   final ValueChanged<String> onSelectFile;
   final ValueChanged<String> onSearchFiles;
   final ValueChanged<String> onRunShellCommand;
@@ -1017,6 +1047,7 @@ class _TabletLandscapeShell extends StatelessWidget {
               onUnshareSession: onUnshareSession,
               onRevertSession: onRevertSession,
               onUnrevertSession: onUnrevertSession,
+              onInitSession: onInitSession,
             ),
           ),
           const SizedBox(width: AppSpacing.lg),
@@ -1101,6 +1132,7 @@ class _TabletPortraitShell extends StatelessWidget {
     required this.onUnshareSession,
     required this.onRevertSession,
     required this.onUnrevertSession,
+    required this.onInitSession,
     required this.onSelectFile,
     required this.onSearchFiles,
     required this.onRunShellCommand,
@@ -1147,6 +1179,7 @@ class _TabletPortraitShell extends StatelessWidget {
   final Future<void> Function(String) onUnshareSession;
   final Future<void> Function(String) onRevertSession;
   final Future<void> Function(String) onUnrevertSession;
+  final Future<void> Function(String) onInitSession;
   final ValueChanged<String> onSelectFile;
   final ValueChanged<String> onSearchFiles;
   final ValueChanged<String> onRunShellCommand;
@@ -1255,6 +1288,7 @@ class _MobileShell extends StatelessWidget {
     required this.onUnshareSession,
     required this.onRevertSession,
     required this.onUnrevertSession,
+    required this.onInitSession,
     required this.onSelectFile,
     required this.onSearchFiles,
     required this.onRunShellCommand,
@@ -1301,6 +1335,7 @@ class _MobileShell extends StatelessWidget {
   final Future<void> Function(String) onUnshareSession;
   final Future<void> Function(String) onRevertSession;
   final Future<void> Function(String) onUnrevertSession;
+  final Future<void> Function(String) onInitSession;
   final ValueChanged<String> onSelectFile;
   final ValueChanged<String> onSearchFiles;
   final ValueChanged<String> onRunShellCommand;
@@ -1422,6 +1457,7 @@ class _LeftRail extends StatelessWidget {
     required this.onUnshareSession,
     required this.onRevertSession,
     required this.onUnrevertSession,
+    required this.onInitSession,
   });
 
   final ServerProfile profile;
@@ -1437,6 +1473,7 @@ class _LeftRail extends StatelessWidget {
   final Future<void> Function(String) onUnshareSession;
   final Future<void> Function(String) onRevertSession;
   final Future<void> Function(String) onUnrevertSession;
+  final Future<void> Function(String) onInitSession;
 
   @override
   Widget build(BuildContext context) {
@@ -1539,6 +1576,10 @@ class _LeftRail extends StatelessWidget {
                 OutlinedButton(
                   onPressed: () => onUnrevertSession(selectedSessionId!),
                   child: const Text('Unrevert'),
+                ),
+                OutlinedButton(
+                  onPressed: () => onInitSession(selectedSessionId!),
+                  child: const Text('Init'),
                 ),
               ],
             ),
