@@ -78,6 +78,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
   ConfigSnapshot? _configSnapshot;
   IntegrationStatusSnapshot? _integrationStatusSnapshot;
   String? _lastIntegrationAuthUrl;
+  List<EventEnvelope> _recentEvents = const <EventEnvelope>[];
   List<TodoItem> _todos = const <TodoItem>[];
   String? _selectedSessionId;
 
@@ -150,6 +151,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         _configSnapshot = null;
         _integrationStatusSnapshot = null;
         _lastIntegrationAuthUrl = null;
+        _recentEvents = const <EventEnvelope>[];
         _todos = const <TodoItem>[];
         _selectedSessionId = bundle.selectedSessionId;
         _loading = false;
@@ -587,6 +589,12 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         if (!mounted) {
           return;
         }
+        setState(() {
+          _recentEvents = <EventEnvelope>[
+            event,
+            ..._recentEvents,
+          ].take(12).toList(growable: false);
+        });
         switch (event.type) {
           case 'session.status':
             final sessionId = event.properties['sessionID']?.toString();
@@ -638,6 +646,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         configSnapshot: _configSnapshot,
         integrationStatusSnapshot: _integrationStatusSnapshot,
         lastIntegrationAuthUrl: _lastIntegrationAuthUrl,
+        recentEvents: _recentEvents,
         todos: _todos,
         selectedSessionId: _selectedSessionId,
         loading: _loading,
@@ -687,6 +696,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         configSnapshot: _configSnapshot,
         integrationStatusSnapshot: _integrationStatusSnapshot,
         lastIntegrationAuthUrl: _lastIntegrationAuthUrl,
+        recentEvents: _recentEvents,
         todos: _todos,
         selectedSessionId: _selectedSessionId,
         loading: _loading,
@@ -736,6 +746,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         configSnapshot: _configSnapshot,
         integrationStatusSnapshot: _integrationStatusSnapshot,
         lastIntegrationAuthUrl: _lastIntegrationAuthUrl,
+        recentEvents: _recentEvents,
         todos: _todos,
         selectedSessionId: _selectedSessionId,
         loading: _loading,
@@ -790,6 +801,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       configSnapshot: _configSnapshot,
       integrationStatusSnapshot: _integrationStatusSnapshot,
       lastIntegrationAuthUrl: _lastIntegrationAuthUrl,
+      recentEvents: _recentEvents,
       todos: _todos,
       selectedSessionId: _selectedSessionId,
       loading: _loading,
@@ -847,6 +859,7 @@ class _DesktopShell extends StatelessWidget {
     required this.configSnapshot,
     required this.integrationStatusSnapshot,
     required this.lastIntegrationAuthUrl,
+    required this.recentEvents,
     required this.todos,
     required this.selectedSessionId,
     required this.loading,
@@ -894,6 +907,7 @@ class _DesktopShell extends StatelessWidget {
   final ConfigSnapshot? configSnapshot;
   final IntegrationStatusSnapshot? integrationStatusSnapshot;
   final String? lastIntegrationAuthUrl;
+  final List<EventEnvelope> recentEvents;
   final List<TodoItem> todos;
   final String? selectedSessionId;
   final bool loading;
@@ -974,6 +988,7 @@ class _DesktopShell extends StatelessWidget {
               configSnapshot: configSnapshot,
               integrationStatusSnapshot: integrationStatusSnapshot,
               lastIntegrationAuthUrl: lastIntegrationAuthUrl,
+              recentEvents: recentEvents,
               onApplyConfig: onApplyConfig,
               onStartProviderAuth: onStartProviderAuth,
               onStartMcpAuth: onStartMcpAuth,
@@ -1017,6 +1032,7 @@ class _TabletLandscapeShell extends StatelessWidget {
     required this.configSnapshot,
     required this.integrationStatusSnapshot,
     required this.lastIntegrationAuthUrl,
+    required this.recentEvents,
     required this.todos,
     required this.selectedSessionId,
     required this.loading,
@@ -1064,6 +1080,7 @@ class _TabletLandscapeShell extends StatelessWidget {
   final ConfigSnapshot? configSnapshot;
   final IntegrationStatusSnapshot? integrationStatusSnapshot;
   final String? lastIntegrationAuthUrl;
+  final List<EventEnvelope> recentEvents;
   final List<TodoItem> todos;
   final String? selectedSessionId;
   final bool loading;
@@ -1144,6 +1161,7 @@ class _TabletLandscapeShell extends StatelessWidget {
               configSnapshot: configSnapshot,
               integrationStatusSnapshot: integrationStatusSnapshot,
               lastIntegrationAuthUrl: lastIntegrationAuthUrl,
+              recentEvents: recentEvents,
               onApplyConfig: onApplyConfig,
               onStartProviderAuth: onStartProviderAuth,
               onStartMcpAuth: onStartMcpAuth,
@@ -1187,6 +1205,7 @@ class _TabletPortraitShell extends StatelessWidget {
     required this.configSnapshot,
     required this.integrationStatusSnapshot,
     required this.lastIntegrationAuthUrl,
+    required this.recentEvents,
     required this.todos,
     required this.selectedSessionId,
     required this.loading,
@@ -1236,6 +1255,7 @@ class _TabletPortraitShell extends StatelessWidget {
   final ConfigSnapshot? configSnapshot;
   final IntegrationStatusSnapshot? integrationStatusSnapshot;
   final String? lastIntegrationAuthUrl;
+  final List<EventEnvelope> recentEvents;
   final List<TodoItem> todos;
   final String? selectedSessionId;
   final bool loading;
@@ -1303,6 +1323,7 @@ class _TabletPortraitShell extends StatelessWidget {
               configSnapshot: configSnapshot,
               integrationStatusSnapshot: integrationStatusSnapshot,
               lastIntegrationAuthUrl: lastIntegrationAuthUrl,
+              recentEvents: recentEvents,
               onApplyConfig: onApplyConfig,
               onStartProviderAuth: onStartProviderAuth,
               onStartMcpAuth: onStartMcpAuth,
@@ -1348,6 +1369,7 @@ class _MobileShell extends StatelessWidget {
     required this.configSnapshot,
     required this.integrationStatusSnapshot,
     required this.lastIntegrationAuthUrl,
+    required this.recentEvents,
     required this.todos,
     required this.selectedSessionId,
     required this.loading,
@@ -1397,6 +1419,7 @@ class _MobileShell extends StatelessWidget {
   final ConfigSnapshot? configSnapshot;
   final IntegrationStatusSnapshot? integrationStatusSnapshot;
   final String? lastIntegrationAuthUrl;
+  final List<EventEnvelope> recentEvents;
   final List<TodoItem> todos;
   final String? selectedSessionId;
   final bool loading;
@@ -1466,6 +1489,7 @@ class _MobileShell extends StatelessWidget {
               configSnapshot: configSnapshot,
               integrationStatusSnapshot: integrationStatusSnapshot,
               lastIntegrationAuthUrl: lastIntegrationAuthUrl,
+              recentEvents: recentEvents,
               onApplyConfig: onApplyConfig,
               onStartProviderAuth: onStartProviderAuth,
               onStartMcpAuth: onStartMcpAuth,
@@ -1807,6 +1831,7 @@ class _ContextRail extends StatelessWidget {
     required this.configSnapshot,
     required this.integrationStatusSnapshot,
     required this.lastIntegrationAuthUrl,
+    required this.recentEvents,
     required this.onApplyConfig,
     required this.onStartProviderAuth,
     required this.onStartMcpAuth,
@@ -1838,6 +1863,7 @@ class _ContextRail extends StatelessWidget {
   final ConfigSnapshot? configSnapshot;
   final IntegrationStatusSnapshot? integrationStatusSnapshot;
   final String? lastIntegrationAuthUrl;
+  final List<EventEnvelope> recentEvents;
   final Future<void> Function(String) onApplyConfig;
   final Future<void> Function(String) onStartProviderAuth;
   final Future<void> Function(String) onStartMcpAuth;
@@ -1923,6 +1949,7 @@ class _ContextRail extends StatelessWidget {
                     _IntegrationStatusPanel(
                       snapshot: integrationStatusSnapshot,
                       lastAuthorizationUrl: lastIntegrationAuthUrl,
+                      recentEvents: recentEvents,
                       onStartProviderAuth: onStartProviderAuth,
                       onStartMcpAuth: onStartMcpAuth,
                     ),
@@ -1956,6 +1983,7 @@ class _BottomUtilitySheet extends StatelessWidget {
     required this.configSnapshot,
     required this.integrationStatusSnapshot,
     required this.lastIntegrationAuthUrl,
+    required this.recentEvents,
     required this.onApplyConfig,
     required this.onStartProviderAuth,
     required this.onStartMcpAuth,
@@ -1987,6 +2015,7 @@ class _BottomUtilitySheet extends StatelessWidget {
   final ConfigSnapshot? configSnapshot;
   final IntegrationStatusSnapshot? integrationStatusSnapshot;
   final String? lastIntegrationAuthUrl;
+  final List<EventEnvelope> recentEvents;
   final Future<void> Function(String) onApplyConfig;
   final Future<void> Function(String) onStartProviderAuth;
   final Future<void> Function(String) onStartMcpAuth;
@@ -2021,6 +2050,7 @@ class _BottomUtilitySheet extends StatelessWidget {
         configSnapshot: configSnapshot,
         integrationStatusSnapshot: integrationStatusSnapshot,
         lastIntegrationAuthUrl: lastIntegrationAuthUrl,
+        recentEvents: recentEvents,
         onApplyConfig: onApplyConfig,
         onStartProviderAuth: onStartProviderAuth,
         onStartMcpAuth: onStartMcpAuth,
@@ -2508,12 +2538,14 @@ class _IntegrationStatusPanel extends StatelessWidget {
   const _IntegrationStatusPanel({
     required this.snapshot,
     required this.lastAuthorizationUrl,
+    required this.recentEvents,
     required this.onStartProviderAuth,
     required this.onStartMcpAuth,
   });
 
   final IntegrationStatusSnapshot? snapshot;
   final String? lastAuthorizationUrl;
+  final List<EventEnvelope> recentEvents;
   final Future<void> Function(String) onStartProviderAuth;
   final Future<void> Function(String) onStartMcpAuth;
 
@@ -2572,6 +2604,14 @@ class _IntegrationStatusPanel extends StatelessWidget {
           const SizedBox(height: AppSpacing.xs),
           Text(
             lastAuthorizationUrl!,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+        if (recentEvents.isNotEmpty) ...<Widget>[
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            recentEvents.take(3).map((event) => event.type).join(', '),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
