@@ -21,6 +21,8 @@ Future<void> main(List<String> args) async {
 
   stdout.writeln('nodes=${bundle.nodes.length}');
   stdout.writeln('results=${bundle.searchResults.length}');
+  stdout.writeln('textMatches=${bundle.textMatches.length}');
+  stdout.writeln('symbols=${bundle.symbols.length}');
   stdout.writeln('selected=${bundle.selectedPath ?? '-'}');
   stdout.writeln('preview=${bundle.preview?.content ?? '-'}');
 }

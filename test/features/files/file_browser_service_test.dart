@@ -35,6 +35,16 @@ void main() {
           {'path': 'README.md', 'added': 4, 'removed': 1, 'status': 'modified'},
         ],
         '/find/file' => ['README.md', 'lib/main.dart'],
+        '/find' => [
+          {'path': 'README.md', 'lines': 'Demo search line'},
+        ],
+        '/find/symbol' => [
+          {
+            'name': 'main',
+            'kind': 'function',
+            'location': {'path': 'lib/main.dart'},
+          },
+        ],
         '/file/content' => {'type': 'text', 'content': '# Demo'},
         _ => null,
       };
@@ -67,6 +77,8 @@ void main() {
     expect(bundle.nodes.length, 2);
     expect(bundle.statuses.first.status, 'modified');
     expect(bundle.searchResults.first, 'README.md');
+    expect(bundle.textMatches.first.path, 'README.md');
+    expect(bundle.symbols.first.name, 'main');
     expect(bundle.preview?.content, '# Demo');
     service.dispose();
   });

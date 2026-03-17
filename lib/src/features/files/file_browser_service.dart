@@ -39,6 +39,22 @@ class FileBrowserService {
               'limit': '8',
             },
           );
+    final textSearchBody = searchQuery.trim().isEmpty
+        ? const <Object?>[]
+        : await _getJson(
+            profile: profile,
+            path: '/find',
+            project: project,
+            query: <String, String>{'pattern': searchQuery},
+          );
+    final symbolBody = searchQuery.trim().isEmpty
+        ? const <Object?>[]
+        : await _getJson(
+            profile: profile,
+            path: '/find/symbol',
+            project: project,
+            query: <String, String>{'query': searchQuery},
+          );
 
     final nodes = nodesBody is List
         ? nodesBody
@@ -61,6 +77,23 @@ class FileBrowserService {
     final searchResults = searchBody is List
         ? searchBody.map((item) => item.toString()).toList(growable: false)
         : const <String>[];
+    final textMatches = textSearchBody is List
+        ? textSearchBody
+              .whereType<Map>()
+              .map(
+                (item) =>
+                    TextMatchSummary.fromJson(item.cast<String, Object?>()),
+              )
+              .toList(growable: false)
+        : const <TextMatchSummary>[];
+    final symbols = symbolBody is List
+        ? symbolBody
+              .whereType<Map>()
+              .map(
+                (item) => SymbolSummary.fromJson(item.cast<String, Object?>()),
+              )
+              .toList(growable: false)
+        : const <SymbolSummary>[];
 
     final selectedPath = searchResults.isNotEmpty
         ? searchResults.first
@@ -76,6 +109,8 @@ class FileBrowserService {
     return FileBrowserBundle(
       nodes: nodes,
       searchResults: searchResults,
+      textMatches: textMatches,
+      symbols: symbols,
       statuses: statuses,
       preview: preview,
       selectedPath: selectedPath,
