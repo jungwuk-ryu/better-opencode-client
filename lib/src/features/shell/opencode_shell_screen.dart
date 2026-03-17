@@ -10,6 +10,8 @@ import '../chat/chat_service.dart';
 import '../files/file_browser_service.dart';
 import '../files/file_models.dart';
 import '../projects/project_models.dart';
+import '../requests/request_models.dart';
+import '../requests/request_service.dart';
 import '../terminal/terminal_service.dart';
 import '../tools/todo_models.dart';
 import '../tools/todo_service.dart';
@@ -33,6 +35,7 @@ class OpenCodeShellScreen extends StatefulWidget {
 class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
   final ChatService _chatService = ChatService();
   final FileBrowserService _fileBrowserService = FileBrowserService();
+  final RequestService _requestService = RequestService();
   final TerminalService _terminalService = TerminalService();
   final TodoService _todoService = TodoService();
   bool _showContextSheet = false;
@@ -53,6 +56,10 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
   String _terminalCommand = 'pwd';
   ShellCommandResult? _lastShellResult;
   bool _runningShellCommand = false;
+  List<QuestionRequestSummary> _questionRequests =
+      const <QuestionRequestSummary>[];
+  List<PermissionRequestSummary> _permissionRequests =
+      const <PermissionRequestSummary>[];
   List<TodoItem> _todos = const <TodoItem>[];
   String? _selectedSessionId;
 
@@ -75,6 +82,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
   void dispose() {
     _chatService.dispose();
     _fileBrowserService.dispose();
+    _requestService.dispose();
     _terminalService.dispose();
     _todoService.dispose();
     super.dispose();
@@ -107,6 +115,8 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         _fileSearchQuery = '';
         _lastShellResult = null;
         _runningShellCommand = false;
+        _questionRequests = const <QuestionRequestSummary>[];
+        _permissionRequests = const <PermissionRequestSummary>[];
         _todos = const <TodoItem>[];
         _selectedSessionId = bundle.selectedSessionId;
         _loading = false;
@@ -115,6 +125,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         await _loadTodos(bundle.selectedSessionId!);
       }
       await _loadFiles();
+      await _loadPendingRequests();
     } catch (error) {
       if (!mounted) {
         return;
@@ -260,6 +271,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         _lastShellResult = result;
         _runningShellCommand = false;
       });
+      await _loadPendingRequests();
     } catch (error) {
       if (!mounted) {
         return;
@@ -269,6 +281,62 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         _runningShellCommand = false;
       });
     }
+  }
+
+  Future<void> _loadPendingRequests() async {
+    try {
+      final bundle = await _requestService.fetchPending(
+        profile: widget.profile,
+        project: widget.project,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _questionRequests = bundle.questions;
+        _permissionRequests = bundle.permissions;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _questionRequests = const <QuestionRequestSummary>[];
+        _permissionRequests = const <PermissionRequestSummary>[];
+      });
+    }
+  }
+
+  Future<void> _replyPermission(String requestId, String reply) async {
+    await _requestService.replyToPermission(
+      profile: widget.profile,
+      project: widget.project,
+      requestId: requestId,
+      reply: reply,
+    );
+    await _loadPendingRequests();
+  }
+
+  Future<void> _replyQuestion(
+    String requestId,
+    List<List<String>> answers,
+  ) async {
+    await _requestService.replyToQuestion(
+      profile: widget.profile,
+      project: widget.project,
+      requestId: requestId,
+      answers: answers,
+    );
+    await _loadPendingRequests();
+  }
+
+  Future<void> _rejectQuestion(String requestId) async {
+    await _requestService.rejectQuestion(
+      profile: widget.profile,
+      project: widget.project,
+      requestId: requestId,
+    );
+    await _loadPendingRequests();
   }
 
   @override
@@ -293,6 +361,8 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         terminalCommand: _terminalCommand,
         lastShellResult: _lastShellResult,
         runningShellCommand: _runningShellCommand,
+        questionRequests: _questionRequests,
+        permissionRequests: _permissionRequests,
         todos: _todos,
         selectedSessionId: _selectedSessionId,
         loading: _loading,
@@ -301,6 +371,9 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         onSelectFile: _selectFile,
         onSearchFiles: (query) => _loadFiles(searchQuery: query),
         onRunShellCommand: _runShellCommand,
+        onReplyQuestion: _replyQuestion,
+        onRejectQuestion: _rejectQuestion,
+        onReplyPermission: _replyPermission,
       );
     }
     if (width >= 960) {
@@ -322,6 +395,8 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         terminalCommand: _terminalCommand,
         lastShellResult: _lastShellResult,
         runningShellCommand: _runningShellCommand,
+        questionRequests: _questionRequests,
+        permissionRequests: _permissionRequests,
         todos: _todos,
         selectedSessionId: _selectedSessionId,
         loading: _loading,
@@ -330,6 +405,9 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         onSelectFile: _selectFile,
         onSearchFiles: (query) => _loadFiles(searchQuery: query),
         onRunShellCommand: _runShellCommand,
+        onReplyQuestion: _replyQuestion,
+        onRejectQuestion: _rejectQuestion,
+        onReplyPermission: _replyPermission,
       );
     }
     if (width >= 700) {
@@ -351,6 +429,8 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         terminalCommand: _terminalCommand,
         lastShellResult: _lastShellResult,
         runningShellCommand: _runningShellCommand,
+        questionRequests: _questionRequests,
+        permissionRequests: _permissionRequests,
         todos: _todos,
         selectedSessionId: _selectedSessionId,
         loading: _loading,
@@ -359,6 +439,9 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         onSelectFile: _selectFile,
         onSearchFiles: (query) => _loadFiles(searchQuery: query),
         onRunShellCommand: _runShellCommand,
+        onReplyQuestion: _replyQuestion,
+        onRejectQuestion: _rejectQuestion,
+        onReplyPermission: _replyPermission,
         showContextSheet: _showContextSheet,
         onToggleContextSheet: () {
           setState(() {
@@ -385,6 +468,8 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       terminalCommand: _terminalCommand,
       lastShellResult: _lastShellResult,
       runningShellCommand: _runningShellCommand,
+      questionRequests: _questionRequests,
+      permissionRequests: _permissionRequests,
       todos: _todos,
       selectedSessionId: _selectedSessionId,
       loading: _loading,
@@ -393,6 +478,9 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       onSelectFile: _selectFile,
       onSearchFiles: (query) => _loadFiles(searchQuery: query),
       onRunShellCommand: _runShellCommand,
+      onReplyQuestion: _replyQuestion,
+      onRejectQuestion: _rejectQuestion,
+      onReplyPermission: _replyPermission,
       showContextSheet: _showContextSheet,
       onToggleContextSheet: () {
         setState(() {
@@ -422,6 +510,8 @@ class _DesktopShell extends StatelessWidget {
     required this.terminalCommand,
     required this.lastShellResult,
     required this.runningShellCommand,
+    required this.questionRequests,
+    required this.permissionRequests,
     required this.todos,
     required this.selectedSessionId,
     required this.loading,
@@ -430,6 +520,9 @@ class _DesktopShell extends StatelessWidget {
     required this.onSelectFile,
     required this.onSearchFiles,
     required this.onRunShellCommand,
+    required this.onReplyQuestion,
+    required this.onRejectQuestion,
+    required this.onReplyPermission,
   });
 
   final ServerProfile profile;
@@ -449,6 +542,8 @@ class _DesktopShell extends StatelessWidget {
   final String terminalCommand;
   final ShellCommandResult? lastShellResult;
   final bool runningShellCommand;
+  final List<QuestionRequestSummary> questionRequests;
+  final List<PermissionRequestSummary> permissionRequests;
   final List<TodoItem> todos;
   final String? selectedSessionId;
   final bool loading;
@@ -457,6 +552,9 @@ class _DesktopShell extends StatelessWidget {
   final ValueChanged<String> onSelectFile;
   final ValueChanged<String> onSearchFiles;
   final ValueChanged<String> onRunShellCommand;
+  final Future<void> Function(String, List<List<String>>) onReplyQuestion;
+  final Future<void> Function(String) onRejectQuestion;
+  final Future<void> Function(String, String) onReplyPermission;
 
   @override
   Widget build(BuildContext context) {
@@ -500,9 +598,14 @@ class _DesktopShell extends StatelessWidget {
               terminalCommand: terminalCommand,
               lastShellResult: lastShellResult,
               runningShellCommand: runningShellCommand,
+              questionRequests: questionRequests,
+              permissionRequests: permissionRequests,
               onSelectFile: onSelectFile,
               onSearchFiles: onSearchFiles,
               onRunShellCommand: onRunShellCommand,
+              onReplyQuestion: onReplyQuestion,
+              onRejectQuestion: onRejectQuestion,
+              onReplyPermission: onReplyPermission,
               todos: todos,
             ),
           ),
@@ -531,6 +634,8 @@ class _TabletLandscapeShell extends StatelessWidget {
     required this.terminalCommand,
     required this.lastShellResult,
     required this.runningShellCommand,
+    required this.questionRequests,
+    required this.permissionRequests,
     required this.todos,
     required this.selectedSessionId,
     required this.loading,
@@ -539,6 +644,9 @@ class _TabletLandscapeShell extends StatelessWidget {
     required this.onSelectFile,
     required this.onSearchFiles,
     required this.onRunShellCommand,
+    required this.onReplyQuestion,
+    required this.onRejectQuestion,
+    required this.onReplyPermission,
   });
 
   final ServerProfile profile;
@@ -558,6 +666,8 @@ class _TabletLandscapeShell extends StatelessWidget {
   final String terminalCommand;
   final ShellCommandResult? lastShellResult;
   final bool runningShellCommand;
+  final List<QuestionRequestSummary> questionRequests;
+  final List<PermissionRequestSummary> permissionRequests;
   final List<TodoItem> todos;
   final String? selectedSessionId;
   final bool loading;
@@ -566,6 +676,9 @@ class _TabletLandscapeShell extends StatelessWidget {
   final ValueChanged<String> onSelectFile;
   final ValueChanged<String> onSearchFiles;
   final ValueChanged<String> onRunShellCommand;
+  final Future<void> Function(String, List<List<String>>) onReplyQuestion;
+  final Future<void> Function(String) onRejectQuestion;
+  final Future<void> Function(String, String) onReplyPermission;
 
   @override
   Widget build(BuildContext context) {
@@ -609,9 +722,14 @@ class _TabletLandscapeShell extends StatelessWidget {
               terminalCommand: terminalCommand,
               lastShellResult: lastShellResult,
               runningShellCommand: runningShellCommand,
+              questionRequests: questionRequests,
+              permissionRequests: permissionRequests,
               onSelectFile: onSelectFile,
               onSearchFiles: onSearchFiles,
               onRunShellCommand: onRunShellCommand,
+              onReplyQuestion: onReplyQuestion,
+              onRejectQuestion: onRejectQuestion,
+              onReplyPermission: onReplyPermission,
               todos: todos,
             ),
           ),
@@ -640,6 +758,8 @@ class _TabletPortraitShell extends StatelessWidget {
     required this.terminalCommand,
     required this.lastShellResult,
     required this.runningShellCommand,
+    required this.questionRequests,
+    required this.permissionRequests,
     required this.todos,
     required this.selectedSessionId,
     required this.loading,
@@ -648,6 +768,9 @@ class _TabletPortraitShell extends StatelessWidget {
     required this.onSelectFile,
     required this.onSearchFiles,
     required this.onRunShellCommand,
+    required this.onReplyQuestion,
+    required this.onRejectQuestion,
+    required this.onReplyPermission,
     required this.showContextSheet,
     required this.onToggleContextSheet,
   });
@@ -669,6 +792,8 @@ class _TabletPortraitShell extends StatelessWidget {
   final String terminalCommand;
   final ShellCommandResult? lastShellResult;
   final bool runningShellCommand;
+  final List<QuestionRequestSummary> questionRequests;
+  final List<PermissionRequestSummary> permissionRequests;
   final List<TodoItem> todos;
   final String? selectedSessionId;
   final bool loading;
@@ -677,6 +802,9 @@ class _TabletPortraitShell extends StatelessWidget {
   final ValueChanged<String> onSelectFile;
   final ValueChanged<String> onSearchFiles;
   final ValueChanged<String> onRunShellCommand;
+  final Future<void> Function(String, List<List<String>>) onReplyQuestion;
+  final Future<void> Function(String) onRejectQuestion;
+  final Future<void> Function(String, String) onReplyPermission;
   final bool showContextSheet;
   final VoidCallback onToggleContextSheet;
 
@@ -716,9 +844,14 @@ class _TabletPortraitShell extends StatelessWidget {
               terminalCommand: terminalCommand,
               lastShellResult: lastShellResult,
               runningShellCommand: runningShellCommand,
+              questionRequests: questionRequests,
+              permissionRequests: permissionRequests,
               onSelectFile: onSelectFile,
               onSearchFiles: onSearchFiles,
               onRunShellCommand: onRunShellCommand,
+              onReplyQuestion: onReplyQuestion,
+              onRejectQuestion: onRejectQuestion,
+              onReplyPermission: onReplyPermission,
               todos: todos,
             ),
             // kept simple for now: portrait utility content comes from shared context rail
@@ -749,6 +882,8 @@ class _MobileShell extends StatelessWidget {
     required this.terminalCommand,
     required this.lastShellResult,
     required this.runningShellCommand,
+    required this.questionRequests,
+    required this.permissionRequests,
     required this.todos,
     required this.selectedSessionId,
     required this.loading,
@@ -757,6 +892,9 @@ class _MobileShell extends StatelessWidget {
     required this.onSelectFile,
     required this.onSearchFiles,
     required this.onRunShellCommand,
+    required this.onReplyQuestion,
+    required this.onRejectQuestion,
+    required this.onReplyPermission,
     required this.showContextSheet,
     required this.onToggleContextSheet,
   });
@@ -778,6 +916,8 @@ class _MobileShell extends StatelessWidget {
   final String terminalCommand;
   final ShellCommandResult? lastShellResult;
   final bool runningShellCommand;
+  final List<QuestionRequestSummary> questionRequests;
+  final List<PermissionRequestSummary> permissionRequests;
   final List<TodoItem> todos;
   final String? selectedSessionId;
   final bool loading;
@@ -786,6 +926,9 @@ class _MobileShell extends StatelessWidget {
   final ValueChanged<String> onSelectFile;
   final ValueChanged<String> onSearchFiles;
   final ValueChanged<String> onRunShellCommand;
+  final Future<void> Function(String, List<List<String>>) onReplyQuestion;
+  final Future<void> Function(String) onRejectQuestion;
+  final Future<void> Function(String, String) onReplyPermission;
   final bool showContextSheet;
   final VoidCallback onToggleContextSheet;
 
@@ -827,9 +970,14 @@ class _MobileShell extends StatelessWidget {
               terminalCommand: terminalCommand,
               lastShellResult: lastShellResult,
               runningShellCommand: runningShellCommand,
+              questionRequests: questionRequests,
+              permissionRequests: permissionRequests,
               onSelectFile: onSelectFile,
               onSearchFiles: onSearchFiles,
               onRunShellCommand: onRunShellCommand,
+              onReplyQuestion: onReplyQuestion,
+              onRejectQuestion: onRejectQuestion,
+              onReplyPermission: onReplyPermission,
               todos: todos,
             ),
             secondChild: const _UtilityToggleHint(compact: true),
@@ -1055,9 +1203,14 @@ class _ContextRail extends StatelessWidget {
     required this.terminalCommand,
     required this.lastShellResult,
     required this.runningShellCommand,
+    required this.questionRequests,
+    required this.permissionRequests,
     required this.onSelectFile,
     required this.onSearchFiles,
     required this.onRunShellCommand,
+    required this.onReplyQuestion,
+    required this.onRejectQuestion,
+    required this.onReplyPermission,
     required this.todos,
     this.compact = false,
   });
@@ -1074,9 +1227,14 @@ class _ContextRail extends StatelessWidget {
   final String terminalCommand;
   final ShellCommandResult? lastShellResult;
   final bool runningShellCommand;
+  final List<QuestionRequestSummary> questionRequests;
+  final List<PermissionRequestSummary> permissionRequests;
   final ValueChanged<String> onSelectFile;
   final ValueChanged<String> onSearchFiles;
   final ValueChanged<String> onRunShellCommand;
+  final Future<void> Function(String, List<List<String>>) onReplyQuestion;
+  final Future<void> Function(String) onRejectQuestion;
+  final Future<void> Function(String, String) onReplyPermission;
   final List<TodoItem> todos;
 
   @override
@@ -1122,6 +1280,14 @@ class _ContextRail extends StatelessWidget {
                     running: runningShellCommand,
                     onRun: onRunShellCommand,
                   ),
+                  const SizedBox(height: AppSpacing.sm),
+                  _PendingRequestsPanel(
+                    questions: questionRequests,
+                    permissions: permissionRequests,
+                    onReplyQuestion: onReplyQuestion,
+                    onRejectQuestion: onRejectQuestion,
+                    onReplyPermission: onReplyPermission,
+                  ),
                 ],
               ],
             ),
@@ -1145,9 +1311,14 @@ class _BottomUtilitySheet extends StatelessWidget {
     required this.terminalCommand,
     required this.lastShellResult,
     required this.runningShellCommand,
+    required this.questionRequests,
+    required this.permissionRequests,
     required this.onSelectFile,
     required this.onSearchFiles,
     required this.onRunShellCommand,
+    required this.onReplyQuestion,
+    required this.onRejectQuestion,
+    required this.onReplyPermission,
     required this.todos,
     this.compact = false,
   });
@@ -1164,9 +1335,14 @@ class _BottomUtilitySheet extends StatelessWidget {
   final String terminalCommand;
   final ShellCommandResult? lastShellResult;
   final bool runningShellCommand;
+  final List<QuestionRequestSummary> questionRequests;
+  final List<PermissionRequestSummary> permissionRequests;
   final ValueChanged<String> onSelectFile;
   final ValueChanged<String> onSearchFiles;
   final ValueChanged<String> onRunShellCommand;
+  final Future<void> Function(String, List<List<String>>) onReplyQuestion;
+  final Future<void> Function(String) onRejectQuestion;
+  final Future<void> Function(String, String) onReplyPermission;
   final List<TodoItem> todos;
 
   @override
@@ -1186,9 +1362,14 @@ class _BottomUtilitySheet extends StatelessWidget {
         terminalCommand: terminalCommand,
         lastShellResult: lastShellResult,
         runningShellCommand: runningShellCommand,
+        questionRequests: questionRequests,
+        permissionRequests: permissionRequests,
         onSelectFile: onSelectFile,
         onSearchFiles: onSearchFiles,
         onRunShellCommand: onRunShellCommand,
+        onReplyQuestion: onReplyQuestion,
+        onRejectQuestion: onRejectQuestion,
+        onReplyPermission: onReplyPermission,
         todos: todos,
       ),
     );
@@ -1500,6 +1681,75 @@ class _TerminalPanel extends StatelessWidget {
             title: Text(result!.messageId),
             subtitle: Text(
               '${result!.providerId ?? '-'} · ${result!.modelId ?? '-'}',
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _PendingRequestsPanel extends StatelessWidget {
+  const _PendingRequestsPanel({
+    required this.questions,
+    required this.permissions,
+    required this.onReplyQuestion,
+    required this.onRejectQuestion,
+    required this.onReplyPermission,
+  });
+
+  final List<QuestionRequestSummary> questions;
+  final List<PermissionRequestSummary> permissions;
+  final Future<void> Function(String, List<List<String>>) onReplyQuestion;
+  final Future<void> Function(String) onRejectQuestion;
+  final Future<void> Function(String, String) onReplyPermission;
+
+  @override
+  Widget build(BuildContext context) {
+    if (questions.isEmpty && permissions.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Column(
+      children: <Widget>[
+        for (final permission in permissions)
+          ListTile(
+            title: Text(permission.permission),
+            subtitle: Text(permission.patterns.join(', ')),
+            trailing: Wrap(
+              spacing: AppSpacing.xs,
+              children: <Widget>[
+                TextButton(
+                  onPressed: () => onReplyPermission(permission.id, 'once'),
+                  child: const Text('Once'),
+                ),
+                TextButton(
+                  onPressed: () => onReplyPermission(permission.id, 'reject'),
+                  child: const Text('Reject'),
+                ),
+              ],
+            ),
+          ),
+        for (final question in questions)
+          ListTile(
+            title: Text(question.questions.first.header),
+            subtitle: Text(question.questions.first.question),
+            trailing: Wrap(
+              spacing: AppSpacing.xs,
+              children: <Widget>[
+                TextButton(
+                  onPressed: question.questions.first.options.isEmpty
+                      ? null
+                      : () => onReplyQuestion(question.id, <List<String>>[
+                          <String>[
+                            question.questions.first.options.first.label,
+                          ],
+                        ]),
+                  child: const Text('Answer'),
+                ),
+                TextButton(
+                  onPressed: () => onRejectQuestion(question.id),
+                  child: const Text('Reject'),
+                ),
+              ],
             ),
           ),
       ],
