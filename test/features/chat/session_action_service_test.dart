@@ -37,6 +37,26 @@ void main() {
           request.uri.path == '/session/ses_1/share') {
         body = {'id': 'ses_1'};
       }
+      if (request.method == 'POST' &&
+          request.uri.path == '/session/ses_1/revert') {
+        body = {
+          'id': 'ses_1',
+          'directory': '/workspace/demo',
+          'title': 'Reverted session',
+          'version': '2',
+          'time': {'updated': 1710000001000},
+        };
+      }
+      if (request.method == 'POST' &&
+          request.uri.path == '/session/ses_1/unrevert') {
+        body = {
+          'id': 'ses_1',
+          'directory': '/workspace/demo',
+          'title': 'Restored session',
+          'version': '3',
+          'time': {'updated': 1710000002000},
+        };
+      }
       if (body == null) {
         request.response.statusCode = 404;
       } else {
@@ -89,6 +109,23 @@ void main() {
         sessionId: 'ses_1',
       ),
       isTrue,
+    );
+    expect(
+      (await service.revertSession(
+        profile: profile,
+        project: project,
+        sessionId: 'ses_1',
+        messageId: 'msg_1',
+      )).title,
+      'Reverted session',
+    );
+    expect(
+      (await service.unrevertSession(
+        profile: profile,
+        project: project,
+        sessionId: 'ses_1',
+      )).title,
+      'Restored session',
     );
     service.dispose();
   });

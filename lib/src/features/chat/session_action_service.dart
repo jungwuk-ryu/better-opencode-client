@@ -72,6 +72,39 @@ class SessionActionService {
     return response.body.trim().isNotEmpty;
   }
 
+  Future<SessionSummary> revertSession({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String sessionId,
+    required String messageId,
+    String? partId,
+  }) async {
+    final body = await _postJson(
+      profile: profile,
+      project: project,
+      path: '/session/$sessionId/revert',
+      body: <String, Object?>{
+        'messageID': messageId,
+        ...?(partId == null ? null : <String, Object?>{'partID': partId}),
+      },
+    );
+    return SessionSummary.fromJson((body as Map).cast<String, Object?>());
+  }
+
+  Future<SessionSummary> unrevertSession({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String sessionId,
+  }) async {
+    final body = await _postJson(
+      profile: profile,
+      project: project,
+      path: '/session/$sessionId/unrevert',
+      body: const <String, Object?>{},
+    );
+    return SessionSummary.fromJson((body as Map).cast<String, Object?>());
+  }
+
   Future<Object?> _postJson({
     required ServerProfile profile,
     required ProjectTarget project,
