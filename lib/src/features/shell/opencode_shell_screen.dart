@@ -4,6 +4,9 @@ import '../../../l10n/app_localizations.dart';
 import '../../core/connection/connection_models.dart';
 import '../../design_system/app_spacing.dart';
 import '../../design_system/app_theme.dart';
+import '../chat/chat_models.dart';
+import '../chat/chat_part_view.dart';
+import '../chat/chat_service.dart';
 import '../projects/project_models.dart';
 
 class OpenCodeShellScreen extends StatefulWidget {
@@ -23,7 +26,97 @@ class OpenCodeShellScreen extends StatefulWidget {
 }
 
 class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
+  final ChatService _chatService = ChatService();
   bool _showContextSheet = false;
+  bool _loading = true;
+  String? _error;
+  List<SessionSummary> _sessions = const <SessionSummary>[];
+  Map<String, SessionStatusSummary> _statuses =
+      const <String, SessionStatusSummary>{};
+  List<ChatMessage> _messages = const <ChatMessage>[];
+  String? _selectedSessionId;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBundle();
+  }
+
+  @override
+  void didUpdateWidget(covariant OpenCodeShellScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.project.directory != widget.project.directory ||
+        oldWidget.profile.storageKey != widget.profile.storageKey) {
+      _loadBundle();
+    }
+  }
+
+  @override
+  void dispose() {
+    _chatService.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadBundle() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final bundle = await _chatService.fetchBundle(
+        profile: widget.profile,
+        project: widget.project,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _sessions = bundle.sessions;
+        _statuses = bundle.statuses;
+        _messages = bundle.messages;
+        _selectedSessionId = bundle.selectedSessionId;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _error = error.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _selectSession(String sessionId) async {
+    setState(() {
+      _selectedSessionId = sessionId;
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final messages = await _chatService.fetchMessages(
+        profile: widget.profile,
+        project: widget.project,
+        sessionId: sessionId,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _messages = messages;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _error = error.toString();
+        _loading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -33,6 +126,13 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         profile: widget.profile,
         project: widget.project,
         onExit: widget.onExit,
+        sessions: _sessions,
+        statuses: _statuses,
+        messages: _messages,
+        selectedSessionId: _selectedSessionId,
+        loading: _loading,
+        error: _error,
+        onSelectSession: _selectSession,
       );
     }
     if (width >= 960) {
@@ -40,6 +140,13 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         profile: widget.profile,
         project: widget.project,
         onExit: widget.onExit,
+        sessions: _sessions,
+        statuses: _statuses,
+        messages: _messages,
+        selectedSessionId: _selectedSessionId,
+        loading: _loading,
+        error: _error,
+        onSelectSession: _selectSession,
       );
     }
     if (width >= 700) {
@@ -47,6 +154,13 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         profile: widget.profile,
         project: widget.project,
         onExit: widget.onExit,
+        sessions: _sessions,
+        statuses: _statuses,
+        messages: _messages,
+        selectedSessionId: _selectedSessionId,
+        loading: _loading,
+        error: _error,
+        onSelectSession: _selectSession,
         showContextSheet: _showContextSheet,
         onToggleContextSheet: () {
           setState(() {
@@ -59,6 +173,13 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       profile: widget.profile,
       project: widget.project,
       onExit: widget.onExit,
+      sessions: _sessions,
+      statuses: _statuses,
+      messages: _messages,
+      selectedSessionId: _selectedSessionId,
+      loading: _loading,
+      error: _error,
+      onSelectSession: _selectSession,
       showContextSheet: _showContextSheet,
       onToggleContextSheet: () {
         setState(() {
@@ -74,11 +195,25 @@ class _DesktopShell extends StatelessWidget {
     required this.profile,
     required this.project,
     required this.onExit,
+    required this.sessions,
+    required this.statuses,
+    required this.messages,
+    required this.selectedSessionId,
+    required this.loading,
+    required this.error,
+    required this.onSelectSession,
   });
 
   final ServerProfile profile;
   final ProjectTarget project;
   final VoidCallback onExit;
+  final List<SessionSummary> sessions;
+  final Map<String, SessionStatusSummary> statuses;
+  final List<ChatMessage> messages;
+  final String? selectedSessionId;
+  final bool loading;
+  final String? error;
+  final ValueChanged<String> onSelectSession;
 
   @override
   Widget build(BuildContext context) {
@@ -92,10 +227,21 @@ class _DesktopShell extends StatelessWidget {
               profile: profile,
               project: project,
               onExit: onExit,
+              sessions: sessions,
+              statuses: statuses,
+              selectedSessionId: selectedSessionId,
+              onSelectSession: onSelectSession,
             ),
           ),
           const SizedBox(width: AppSpacing.lg),
-          const Expanded(flex: 9, child: _ChatCanvas()),
+          Expanded(
+            flex: 9,
+            child: _ChatCanvas(
+              messages: messages,
+              loading: loading,
+              error: error,
+            ),
+          ),
           const SizedBox(width: AppSpacing.lg),
           const SizedBox(width: 340, child: _ContextRail()),
         ],
@@ -109,11 +255,25 @@ class _TabletLandscapeShell extends StatelessWidget {
     required this.profile,
     required this.project,
     required this.onExit,
+    required this.sessions,
+    required this.statuses,
+    required this.messages,
+    required this.selectedSessionId,
+    required this.loading,
+    required this.error,
+    required this.onSelectSession,
   });
 
   final ServerProfile profile;
   final ProjectTarget project;
   final VoidCallback onExit;
+  final List<SessionSummary> sessions;
+  final Map<String, SessionStatusSummary> statuses;
+  final List<ChatMessage> messages;
+  final String? selectedSessionId;
+  final bool loading;
+  final String? error;
+  final ValueChanged<String> onSelectSession;
 
   @override
   Widget build(BuildContext context) {
@@ -127,10 +287,20 @@ class _TabletLandscapeShell extends StatelessWidget {
               profile: profile,
               project: project,
               onExit: onExit,
+              sessions: sessions,
+              statuses: statuses,
+              selectedSessionId: selectedSessionId,
+              onSelectSession: onSelectSession,
             ),
           ),
           const SizedBox(width: AppSpacing.lg),
-          const Expanded(child: _ChatCanvas()),
+          Expanded(
+            child: _ChatCanvas(
+              messages: messages,
+              loading: loading,
+              error: error,
+            ),
+          ),
           const SizedBox(width: AppSpacing.lg),
           const SizedBox(width: 280, child: _ContextRail(compact: true)),
         ],
@@ -144,6 +314,13 @@ class _TabletPortraitShell extends StatelessWidget {
     required this.profile,
     required this.project,
     required this.onExit,
+    required this.sessions,
+    required this.statuses,
+    required this.messages,
+    required this.selectedSessionId,
+    required this.loading,
+    required this.error,
+    required this.onSelectSession,
     required this.showContextSheet,
     required this.onToggleContextSheet,
   });
@@ -151,6 +328,13 @@ class _TabletPortraitShell extends StatelessWidget {
   final ServerProfile profile;
   final ProjectTarget project;
   final VoidCallback onExit;
+  final List<SessionSummary> sessions;
+  final Map<String, SessionStatusSummary> statuses;
+  final List<ChatMessage> messages;
+  final String? selectedSessionId;
+  final bool loading;
+  final String? error;
+  final ValueChanged<String> onSelectSession;
   final bool showContextSheet;
   final VoidCallback onToggleContextSheet;
 
@@ -165,7 +349,13 @@ class _TabletPortraitShell extends StatelessWidget {
             onToggleUtilities: onToggleContextSheet,
           ),
           const SizedBox(height: AppSpacing.lg),
-          const Expanded(child: _ChatCanvas()),
+          Expanded(
+            child: _ChatCanvas(
+              messages: messages,
+              loading: loading,
+              error: error,
+            ),
+          ),
           const SizedBox(height: AppSpacing.lg),
           AnimatedCrossFade(
             duration: const Duration(milliseconds: 220),
@@ -186,6 +376,13 @@ class _MobileShell extends StatelessWidget {
     required this.profile,
     required this.project,
     required this.onExit,
+    required this.sessions,
+    required this.statuses,
+    required this.messages,
+    required this.selectedSessionId,
+    required this.loading,
+    required this.error,
+    required this.onSelectSession,
     required this.showContextSheet,
     required this.onToggleContextSheet,
   });
@@ -193,6 +390,13 @@ class _MobileShell extends StatelessWidget {
   final ServerProfile profile;
   final ProjectTarget project;
   final VoidCallback onExit;
+  final List<SessionSummary> sessions;
+  final Map<String, SessionStatusSummary> statuses;
+  final List<ChatMessage> messages;
+  final String? selectedSessionId;
+  final bool loading;
+  final String? error;
+  final ValueChanged<String> onSelectSession;
   final bool showContextSheet;
   final VoidCallback onToggleContextSheet;
 
@@ -207,7 +411,14 @@ class _MobileShell extends StatelessWidget {
             onToggleUtilities: onToggleContextSheet,
           ),
           const SizedBox(height: AppSpacing.md),
-          const Expanded(child: _ChatCanvas(compact: true)),
+          Expanded(
+            child: _ChatCanvas(
+              compact: true,
+              messages: messages,
+              loading: loading,
+              error: error,
+            ),
+          ),
           const SizedBox(height: AppSpacing.md),
           AnimatedCrossFade(
             duration: const Duration(milliseconds: 220),
@@ -260,11 +471,19 @@ class _LeftRail extends StatelessWidget {
     required this.profile,
     required this.project,
     required this.onExit,
+    required this.sessions,
+    required this.statuses,
+    required this.selectedSessionId,
+    required this.onSelectSession,
   });
 
   final ServerProfile profile;
   final ProjectTarget project;
   final VoidCallback onExit;
+  final List<SessionSummary> sessions;
+  final Map<String, SessionStatusSummary> statuses;
+  final String? selectedSessionId;
+  final ValueChanged<String> onSelectSession;
 
   @override
   Widget build(BuildContext context) {
@@ -301,22 +520,31 @@ class _LeftRail extends StatelessWidget {
           child: _PanelCard(
             title: l10n.shellSessionsTitle,
             child: Column(
-              children: <Widget>[
-                _SessionTile(
-                  title: l10n.shellSessionCurrent,
-                  status: l10n.shellStatusActive,
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                _SessionTile(
-                  title: l10n.shellSessionDraft,
-                  status: l10n.shellStatusIdle,
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                _SessionTile(
-                  title: l10n.shellSessionReview,
-                  status: l10n.shellStatusError,
-                ),
-              ],
+              children: sessions.isEmpty
+                  ? <Widget>[
+                      _SessionTile(
+                        title: l10n.shellSessionCurrent,
+                        status: l10n.shellStatusIdle,
+                      ),
+                    ]
+                  : sessions
+                        .map(
+                          (session) => Padding(
+                            padding: const EdgeInsets.only(
+                              bottom: AppSpacing.sm,
+                            ),
+                            child: _SessionTile(
+                              title: session.title,
+                              status: _statusLabel(
+                                l10n,
+                                statuses[session.id]?.type ?? 'idle',
+                              ),
+                              selected: session.id == selectedSessionId,
+                              onTap: () => onSelectSession(session.id),
+                            ),
+                          ),
+                        )
+                        .toList(growable: false),
             ),
           ),
         ),
@@ -326,9 +554,17 @@ class _LeftRail extends StatelessWidget {
 }
 
 class _ChatCanvas extends StatelessWidget {
-  const _ChatCanvas({this.compact = false});
+  const _ChatCanvas({
+    required this.messages,
+    required this.loading,
+    required this.error,
+    this.compact = false,
+  });
 
   final bool compact;
+  final List<ChatMessage> messages;
+  final bool loading;
+  final String? error;
 
   @override
   Widget build(BuildContext context) {
@@ -352,40 +588,19 @@ class _ChatCanvas extends StatelessWidget {
           child: _PanelCard(
             title: l10n.shellChatTimelineTitle,
             fillChild: true,
-            child: compact
-                ? ListView(
-                    children: <Widget>[
-                      _MessageBubble(
-                        title: l10n.shellUserMessageTitle,
-                        body: l10n.shellUserMessageBody,
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      _MessageBubble(
-                        title: l10n.shellAssistantMessageTitle,
-                        body: l10n.shellAssistantMessageBody,
-                        accent: true,
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      _ComposerCard(
-                        compact: compact,
-                        label: l10n.shellComposerPlaceholder,
-                      ),
-                    ],
-                  )
+            child: loading
+                ? const Center(child: CircularProgressIndicator())
+                : error != null
+                ? Text(error!)
+                : compact
+                ? ListView(children: _messageContent(l10n))
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      _MessageBubble(
-                        title: l10n.shellUserMessageTitle,
-                        body: l10n.shellUserMessageBody,
+                      Expanded(
+                        child: ListView(children: _messageContent(l10n)),
                       ),
                       const SizedBox(height: AppSpacing.md),
-                      _MessageBubble(
-                        title: l10n.shellAssistantMessageTitle,
-                        body: l10n.shellAssistantMessageBody,
-                        accent: true,
-                      ),
-                      const Spacer(),
                       _ComposerCard(
                         compact: compact,
                         label: l10n.shellComposerPlaceholder,
@@ -396,6 +611,28 @@ class _ChatCanvas extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  List<Widget> _messageContent(AppLocalizations l10n) {
+    if (messages.isEmpty) {
+      return <Widget>[
+        _MessageBubble(
+          title: l10n.shellAssistantMessageTitle,
+          body: l10n.shellAssistantMessageBody,
+          accent: true,
+        ),
+      ];
+    }
+    return messages
+        .expand(
+          (message) => message.parts.map(
+            (part) => Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.md),
+              child: ChatPartView(message: message.info, part: part),
+            ),
+          ),
+        )
+        .toList(growable: false);
   }
 }
 
@@ -564,17 +801,26 @@ class _PanelCard extends StatelessWidget {
 }
 
 class _SessionTile extends StatelessWidget {
-  const _SessionTile({required this.title, required this.status});
+  const _SessionTile({
+    required this.title,
+    required this.status,
+    this.selected = false,
+    this.onTap,
+  });
 
   final String title;
   final String status;
+  final bool selected;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
+      selected: selected,
       title: Text(title),
       subtitle: Text(status),
       trailing: const Icon(Icons.chevron_right_rounded),
+      onTap: onTap,
     );
   }
 }
@@ -671,4 +917,12 @@ class _InfoChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return Chip(label: Text(label));
   }
+}
+
+String _statusLabel(AppLocalizations l10n, String status) {
+  return switch (status) {
+    'busy' => l10n.shellStatusActive,
+    'retry' => l10n.shellStatusError,
+    _ => l10n.shellStatusIdle,
+  };
 }
