@@ -1,0 +1,40 @@
+{
+  "name": "full-capability",
+  "version": "1.2.0",
+  "paths": [
+    "/global/health",
+    "/doc",
+    "/config",
+    "/config/providers",
+    "/provider",
+    "/provider/auth",
+    "/agent",
+    "/question",
+    "/permission",
+    "/experimental/tool/ids",
+    "/session/{sessionID}/fork",
+    "/session/{sessionID}/share",
+    "/session/{sessionID}/summarize",
+    "/session/{sessionID}/revert",
+    "/provider/{providerID}/oauth/authorize",
+    "/mcp/{name}/auth/start",
+    "/tui/control/next"
+  ],
+  "endpoints": [
+    {"path": "/config/providers", "status": "success", "statusCode": 200},
+    {"path": "/provider", "status": "success", "statusCode": 200},
+    {"path": "/provider/auth", "status": "success", "statusCode": 200},
+    {"path": "/agent", "status": "success", "statusCode": 200},
+    {"path": "/experimental/tool/ids", "status": "success", "statusCode": 200},
+    {"path": "/permission", "status": "success", "statusCode": 200},
+    {"path": "/question", "status": "success", "statusCode": 200},
+    {"path": "/tui/control/next", "status": "success", "statusCode": 200}
+  ],
+  "config": {
+    "model": "anthropic/claude-sonnet-4.5",
+    "x-future": {"enabled": true, "x-layout": "triple-pane"}
+  },
+  "providerConfig": {
+    "openai": {"default": true, "x-reasoning": "high"}
+  }
+}

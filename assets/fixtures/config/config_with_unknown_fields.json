@@ -1,0 +1,16 @@
+{
+  "model": "openai/gpt-5",
+  "theme": "dark",
+  "x-ui": {
+    "density": "comfortable",
+    "x-surface-token": "luma"
+  },
+  "providers": [
+    {
+      "id": "openai",
+      "x-extra": {
+        "reasoning": "xhigh"
+      }
+    }
+  ]
+}

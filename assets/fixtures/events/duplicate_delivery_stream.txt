@@ -1,0 +1,8 @@
+event: server.connected
+data: {}
+
+event: message.part.updated
+data: {"partID":"p-2","content":"draft"}
+
+event: message.part.updated
+data: {"partID":"p-2","content":"draft"}

@@ -1,0 +1,11 @@
+event: server.connected
+data: {}
+
+event: session.status
+data: {"sessionID":"s-1","status":"active"}
+
+event: message.part.updated
+data: {"partID":"p-1","content":"hello"}
+
+event: todo.updated
+data: {"todoID":"t-1","status":"in_progress"}

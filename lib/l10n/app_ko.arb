@@ -1,0 +1,19 @@
+{
+  "@@locale": "ko",
+  "appTitle": "OpenCode Remote",
+  "foundationTitle": "파운데이션 디버그 워크스페이스",
+  "foundationSubtitle": "UI 패리티 작업 전에 capability, fixture, stream 기반을 먼저 연결합니다.",
+  "currentFlavor": "플레이버",
+  "currentLocale": "로케일",
+  "fullCapabilityProbe": "전체 capability probe",
+  "legacyCapabilityProbe": "레거시 capability probe",
+  "probeErrorCapability": "probe 오류 처리",
+  "healthyStream": "정상 스트림",
+  "staleStream": "stale stream 복구",
+  "duplicateStream": "중복 이벤트 처리",
+  "resyncStream": "resync 필요",
+  "capabilityFlags": "capability 플래그",
+  "streamFrames": "스트림 프레임",
+  "unknownFields": "알 수 없는 필드 보존",
+  "switchLocale": "언어 전환"
+}

@@ -1,0 +1,5 @@
+event: server.connected
+data: {}
+
+event: stream.resync_required
+data: {"reason":"missed sequence"}

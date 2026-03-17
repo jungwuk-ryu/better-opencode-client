@@ -1,0 +1,22 @@
+{
+  "name": "probe-error",
+  "version": "1.1.1",
+  "paths": [
+    "/global/health",
+    "/doc",
+    "/config",
+    "/session/{sessionID}/fork"
+  ],
+  "endpoints": [
+    {"path": "/config/providers", "status": "unauthorized", "statusCode": 401},
+    {"path": "/provider", "status": "failure", "statusCode": 500},
+    {"path": "/provider/auth", "status": "unauthorized", "statusCode": 403},
+    {"path": "/agent", "status": "unknown", "statusCode": 501},
+    {"path": "/experimental/tool/ids", "status": "unsupported", "statusCode": 404},
+    {"path": "/question", "status": "unknown", "statusCode": 501}
+  ],
+  "config": {
+    "permission": {"default": "ask"},
+    "x-probe": {"mode": "degraded"}
+  }
+}

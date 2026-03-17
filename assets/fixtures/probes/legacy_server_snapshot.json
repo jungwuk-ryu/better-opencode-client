@@ -1,0 +1,24 @@
+{
+  "name": "legacy-server",
+  "version": "1.0.8",
+  "paths": [
+    "/global/health",
+    "/doc",
+    "/config",
+    "/provider",
+    "/session/{sessionID}/fork",
+    "/session/{sessionID}/revert"
+  ],
+  "endpoints": [
+    {"path": "/config/providers", "status": "unsupported", "statusCode": 404},
+    {"path": "/provider/auth", "status": "unsupported", "statusCode": 404},
+    {"path": "/agent", "status": "unsupported", "statusCode": 404},
+    {"path": "/experimental/tool/ids", "status": "unsupported", "statusCode": 404},
+    {"path": "/permission", "status": "unsupported", "statusCode": 404},
+    {"path": "/question", "status": "unsupported", "statusCode": 404}
+  ],
+  "config": {
+    "tools": {"bash": true, "edit": false},
+    "x-legacy": {"mode": "boolean-tools"}
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "@@locale": "en",
+  "appTitle": "OpenCode Remote",
+  "foundationTitle": "Foundation debug workspace",
+  "foundationSubtitle": "Capability, fixture, and stream foundations are wired before UI parity work.",
+  "currentFlavor": "Flavor",
+  "currentLocale": "Locale",
+  "fullCapabilityProbe": "Full capability probe",
+  "legacyCapabilityProbe": "Legacy capability probe",
+  "probeErrorCapability": "Probe error handling",
+  "healthyStream": "Healthy stream",
+  "staleStream": "Stale stream recovery",
+  "duplicateStream": "Duplicate event handling",
+  "resyncStream": "Resync required",
+  "capabilityFlags": "Capability flags",
+  "streamFrames": "Stream frames",
+  "unknownFields": "Unknown fields preserved",
+  "switchLocale": "Switch locale"
+}
