@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../l10n/app_localizations.dart';
 import '../../core/connection/connection_models.dart';
+import '../../core/network/event_stream_service.dart';
 import '../../design_system/app_spacing.dart';
 import '../../design_system/app_theme.dart';
 import '../chat/chat_models.dart';
@@ -36,6 +37,7 @@ class OpenCodeShellScreen extends StatefulWidget {
 class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
   final ChatService _chatService = ChatService();
   final SessionActionService _sessionActionService = SessionActionService();
+  final EventStreamService _eventStreamService = EventStreamService();
   final FileBrowserService _fileBrowserService = FileBrowserService();
   final RequestService _requestService = RequestService();
   final TerminalService _terminalService = TerminalService();
@@ -84,6 +86,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
   void dispose() {
     _chatService.dispose();
     _sessionActionService.dispose();
+    _eventStreamService.dispose();
     _fileBrowserService.dispose();
     _requestService.dispose();
     _terminalService.dispose();
@@ -129,6 +132,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       }
       await _loadFiles();
       await _loadPendingRequests();
+      await _connectEvents();
     } catch (error) {
       if (!mounted) {
         return;
@@ -373,6 +377,37 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       profile: widget.profile,
       project: widget.project,
       sessionId: sessionId,
+    );
+  }
+
+  Future<void> _connectEvents() async {
+    await _eventStreamService.connect(
+      profile: widget.profile,
+      project: widget.project,
+      onEvent: (event) {
+        if (!mounted) {
+          return;
+        }
+        switch (event.type) {
+          case 'session.status':
+            final sessionId = event.properties['sessionID']?.toString();
+            final status = event.properties['status']?.toString();
+            if (sessionId != null && status != null) {
+              setState(() {
+                _statuses = Map<String, SessionStatusSummary>.from(_statuses)
+                  ..[sessionId] = SessionStatusSummary(type: status);
+              });
+            }
+          case 'todo.updated':
+            final sessionId = _selectedSessionId;
+            if (sessionId != null && sessionId.isNotEmpty) {
+              _loadTodos(sessionId);
+            }
+          case 'question.asked':
+          case 'permission.asked':
+            _loadPendingRequests();
+        }
+      },
     );
   }
 
