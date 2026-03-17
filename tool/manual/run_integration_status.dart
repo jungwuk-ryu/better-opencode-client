@@ -27,6 +27,8 @@ Future<void> main(List<String> args) async {
 
   stdout.writeln('providerAuth=${snapshot.providerAuth.length}');
   stdout.writeln('mcp=${snapshot.mcpStatus.length}');
+  stdout.writeln('lsp=${snapshot.lspStatus.length}');
+  stdout.writeln('formatter=${snapshot.formatterStatus.length}');
   stdout.writeln('firstProvider=$firstProvider');
   stdout.writeln('firstMcp=$firstMcp');
 }

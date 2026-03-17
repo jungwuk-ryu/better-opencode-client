@@ -9,10 +9,14 @@ class IntegrationStatusSnapshot {
   const IntegrationStatusSnapshot({
     required this.providerAuth,
     required this.mcpStatus,
+    required this.lspStatus,
+    required this.formatterStatus,
   });
 
   final Map<String, List<String>> providerAuth;
   final Map<String, String> mcpStatus;
+  final Map<String, String> lspStatus;
+  final Map<String, bool> formatterStatus;
 }
 
 class IntegrationStatusService {
@@ -34,6 +38,16 @@ class IntegrationStatusService {
       profile: profile,
       project: project,
       path: '/mcp',
+    );
+    final lspBody = await _getJson(
+      profile: profile,
+      project: project,
+      path: '/lsp',
+    );
+    final formatterBody = await _getJson(
+      profile: profile,
+      project: project,
+      path: '/formatter',
     );
 
     final providerAuth = <String, List<String>>{};
@@ -57,9 +71,33 @@ class IntegrationStatusService {
       }
     }
 
+    final lspStatus = <String, String>{};
+    if (lspBody is List) {
+      for (final item in lspBody.whereType<Map>()) {
+        final json = item.cast<String, Object?>();
+        final name = json['name']?.toString() ?? json['id']?.toString();
+        if (name != null) {
+          lspStatus[name] = json['status']?.toString() ?? 'unknown';
+        }
+      }
+    }
+
+    final formatterStatus = <String, bool>{};
+    if (formatterBody is List) {
+      for (final item in formatterBody.whereType<Map>()) {
+        final json = item.cast<String, Object?>();
+        final name = json['name']?.toString();
+        if (name != null) {
+          formatterStatus[name] = (json['enabled'] as bool?) ?? false;
+        }
+      }
+    }
+
     return IntegrationStatusSnapshot(
       providerAuth: providerAuth,
       mcpStatus: mcpStatus,
+      lspStatus: lspStatus,
+      formatterStatus: formatterStatus,
     );
   }
 

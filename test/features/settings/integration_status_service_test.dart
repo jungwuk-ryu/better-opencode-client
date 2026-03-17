@@ -27,6 +27,25 @@ void main() {
           'docs': {'status': 'needs_auth'},
         };
       }
+      if (request.uri.path == '/lsp') {
+        body = [
+          {
+            'id': 'ts',
+            'name': 'typescript',
+            'root': '/workspace/demo',
+            'status': 'connected',
+          },
+        ];
+      }
+      if (request.uri.path == '/formatter') {
+        body = [
+          {
+            'name': 'prettier',
+            'extensions': ['.ts'],
+            'enabled': true,
+          },
+        ];
+      }
       if (request.method == 'POST' &&
           request.uri.path == '/provider/openai/oauth/authorize') {
         body = {'authorizationUrl': 'https://provider.example/auth'};
@@ -61,6 +80,8 @@ void main() {
 
     expect(snapshot.providerAuth['openai']?.first, 'api_key');
     expect(snapshot.mcpStatus['github'], 'connected');
+    expect(snapshot.lspStatus['typescript'], 'connected');
+    expect(snapshot.formatterStatus['prettier'], isTrue);
     service.dispose();
   });
 
