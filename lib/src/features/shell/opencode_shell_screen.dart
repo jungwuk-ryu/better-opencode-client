@@ -43,8 +43,11 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
   List<FileNodeSummary> _fileNodes = const <FileNodeSummary>[];
   List<FileStatusSummary> _fileStatuses = const <FileStatusSummary>[];
   List<String> _fileSearchResults = const <String>[];
+  List<TextMatchSummary> _textMatches = const <TextMatchSummary>[];
+  List<SymbolSummary> _symbols = const <SymbolSummary>[];
   FileContentSummary? _filePreview;
   String? _selectedFilePath;
+  String _fileSearchQuery = '';
   List<TodoItem> _todos = const <TodoItem>[];
   String? _selectedSessionId;
 
@@ -91,8 +94,11 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         _fileNodes = const <FileNodeSummary>[];
         _fileStatuses = const <FileStatusSummary>[];
         _fileSearchResults = const <String>[];
+        _textMatches = const <TextMatchSummary>[];
+        _symbols = const <SymbolSummary>[];
         _filePreview = null;
         _selectedFilePath = null;
+        _fileSearchQuery = '';
         _todos = const <TodoItem>[];
         _selectedSessionId = bundle.selectedSessionId;
         _loading = false;
@@ -185,8 +191,11 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         _fileNodes = bundle.nodes;
         _fileStatuses = bundle.statuses;
         _fileSearchResults = bundle.searchResults;
+        _textMatches = bundle.textMatches;
+        _symbols = bundle.symbols;
         _filePreview = bundle.preview;
         _selectedFilePath = bundle.selectedPath;
+        _fileSearchQuery = searchQuery;
       });
     } catch (_) {
       if (!mounted) {
@@ -196,6 +205,8 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         _fileNodes = const <FileNodeSummary>[];
         _fileStatuses = const <FileStatusSummary>[];
         _fileSearchResults = const <String>[];
+        _textMatches = const <TextMatchSummary>[];
+        _symbols = const <SymbolSummary>[];
         _filePreview = null;
         _selectedFilePath = null;
       });
@@ -231,14 +242,18 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         fileNodes: _fileNodes,
         fileStatuses: _fileStatuses,
         fileSearchResults: _fileSearchResults,
+        textMatches: _textMatches,
+        symbols: _symbols,
         filePreview: _filePreview,
         selectedFilePath: _selectedFilePath,
+        fileSearchQuery: _fileSearchQuery,
         todos: _todos,
         selectedSessionId: _selectedSessionId,
         loading: _loading,
         error: _error,
         onSelectSession: _selectSession,
         onSelectFile: _selectFile,
+        onSearchFiles: (query) => _loadFiles(searchQuery: query),
       );
     }
     if (width >= 960) {
@@ -252,14 +267,18 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         fileNodes: _fileNodes,
         fileStatuses: _fileStatuses,
         fileSearchResults: _fileSearchResults,
+        textMatches: _textMatches,
+        symbols: _symbols,
         filePreview: _filePreview,
         selectedFilePath: _selectedFilePath,
+        fileSearchQuery: _fileSearchQuery,
         todos: _todos,
         selectedSessionId: _selectedSessionId,
         loading: _loading,
         error: _error,
         onSelectSession: _selectSession,
         onSelectFile: _selectFile,
+        onSearchFiles: (query) => _loadFiles(searchQuery: query),
       );
     }
     if (width >= 700) {
@@ -273,14 +292,18 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         fileNodes: _fileNodes,
         fileStatuses: _fileStatuses,
         fileSearchResults: _fileSearchResults,
+        textMatches: _textMatches,
+        symbols: _symbols,
         filePreview: _filePreview,
         selectedFilePath: _selectedFilePath,
+        fileSearchQuery: _fileSearchQuery,
         todos: _todos,
         selectedSessionId: _selectedSessionId,
         loading: _loading,
         error: _error,
         onSelectSession: _selectSession,
         onSelectFile: _selectFile,
+        onSearchFiles: (query) => _loadFiles(searchQuery: query),
         showContextSheet: _showContextSheet,
         onToggleContextSheet: () {
           setState(() {
@@ -299,14 +322,18 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       fileNodes: _fileNodes,
       fileStatuses: _fileStatuses,
       fileSearchResults: _fileSearchResults,
+      textMatches: _textMatches,
+      symbols: _symbols,
       filePreview: _filePreview,
       selectedFilePath: _selectedFilePath,
+      fileSearchQuery: _fileSearchQuery,
       todos: _todos,
       selectedSessionId: _selectedSessionId,
       loading: _loading,
       error: _error,
       onSelectSession: _selectSession,
       onSelectFile: _selectFile,
+      onSearchFiles: (query) => _loadFiles(searchQuery: query),
       showContextSheet: _showContextSheet,
       onToggleContextSheet: () {
         setState(() {
@@ -328,14 +355,18 @@ class _DesktopShell extends StatelessWidget {
     required this.fileNodes,
     required this.fileStatuses,
     required this.fileSearchResults,
+    required this.textMatches,
+    required this.symbols,
     required this.filePreview,
     required this.selectedFilePath,
+    required this.fileSearchQuery,
     required this.todos,
     required this.selectedSessionId,
     required this.loading,
     required this.error,
     required this.onSelectSession,
     required this.onSelectFile,
+    required this.onSearchFiles,
   });
 
   final ServerProfile profile;
@@ -347,14 +378,18 @@ class _DesktopShell extends StatelessWidget {
   final List<FileNodeSummary> fileNodes;
   final List<FileStatusSummary> fileStatuses;
   final List<String> fileSearchResults;
+  final List<TextMatchSummary> textMatches;
+  final List<SymbolSummary> symbols;
   final FileContentSummary? filePreview;
   final String? selectedFilePath;
+  final String fileSearchQuery;
   final List<TodoItem> todos;
   final String? selectedSessionId;
   final bool loading;
   final String? error;
   final ValueChanged<String> onSelectSession;
   final ValueChanged<String> onSelectFile;
+  final ValueChanged<String> onSearchFiles;
 
   @override
   Widget build(BuildContext context) {
@@ -390,9 +425,13 @@ class _DesktopShell extends StatelessWidget {
               fileNodes: fileNodes,
               fileStatuses: fileStatuses,
               fileSearchResults: fileSearchResults,
+              textMatches: textMatches,
+              symbols: symbols,
               filePreview: filePreview,
               selectedFilePath: selectedFilePath,
+              fileSearchQuery: fileSearchQuery,
               onSelectFile: onSelectFile,
+              onSearchFiles: onSearchFiles,
               todos: todos,
             ),
           ),
@@ -413,14 +452,18 @@ class _TabletLandscapeShell extends StatelessWidget {
     required this.fileNodes,
     required this.fileStatuses,
     required this.fileSearchResults,
+    required this.textMatches,
+    required this.symbols,
     required this.filePreview,
     required this.selectedFilePath,
+    required this.fileSearchQuery,
     required this.todos,
     required this.selectedSessionId,
     required this.loading,
     required this.error,
     required this.onSelectSession,
     required this.onSelectFile,
+    required this.onSearchFiles,
   });
 
   final ServerProfile profile;
@@ -432,14 +475,18 @@ class _TabletLandscapeShell extends StatelessWidget {
   final List<FileNodeSummary> fileNodes;
   final List<FileStatusSummary> fileStatuses;
   final List<String> fileSearchResults;
+  final List<TextMatchSummary> textMatches;
+  final List<SymbolSummary> symbols;
   final FileContentSummary? filePreview;
   final String? selectedFilePath;
+  final String fileSearchQuery;
   final List<TodoItem> todos;
   final String? selectedSessionId;
   final bool loading;
   final String? error;
   final ValueChanged<String> onSelectSession;
   final ValueChanged<String> onSelectFile;
+  final ValueChanged<String> onSearchFiles;
 
   @override
   Widget build(BuildContext context) {
@@ -475,9 +522,13 @@ class _TabletLandscapeShell extends StatelessWidget {
               fileNodes: fileNodes,
               fileStatuses: fileStatuses,
               fileSearchResults: fileSearchResults,
+              textMatches: textMatches,
+              symbols: symbols,
               filePreview: filePreview,
               selectedFilePath: selectedFilePath,
+              fileSearchQuery: fileSearchQuery,
               onSelectFile: onSelectFile,
+              onSearchFiles: onSearchFiles,
               todos: todos,
             ),
           ),
@@ -498,14 +549,18 @@ class _TabletPortraitShell extends StatelessWidget {
     required this.fileNodes,
     required this.fileStatuses,
     required this.fileSearchResults,
+    required this.textMatches,
+    required this.symbols,
     required this.filePreview,
     required this.selectedFilePath,
+    required this.fileSearchQuery,
     required this.todos,
     required this.selectedSessionId,
     required this.loading,
     required this.error,
     required this.onSelectSession,
     required this.onSelectFile,
+    required this.onSearchFiles,
     required this.showContextSheet,
     required this.onToggleContextSheet,
   });
@@ -519,14 +574,18 @@ class _TabletPortraitShell extends StatelessWidget {
   final List<FileNodeSummary> fileNodes;
   final List<FileStatusSummary> fileStatuses;
   final List<String> fileSearchResults;
+  final List<TextMatchSummary> textMatches;
+  final List<SymbolSummary> symbols;
   final FileContentSummary? filePreview;
   final String? selectedFilePath;
+  final String fileSearchQuery;
   final List<TodoItem> todos;
   final String? selectedSessionId;
   final bool loading;
   final String? error;
   final ValueChanged<String> onSelectSession;
   final ValueChanged<String> onSelectFile;
+  final ValueChanged<String> onSearchFiles;
   final bool showContextSheet;
   final VoidCallback onToggleContextSheet;
 
@@ -558,9 +617,13 @@ class _TabletPortraitShell extends StatelessWidget {
               fileNodes: fileNodes,
               fileStatuses: fileStatuses,
               fileSearchResults: fileSearchResults,
+              textMatches: textMatches,
+              symbols: symbols,
               filePreview: filePreview,
               selectedFilePath: selectedFilePath,
+              fileSearchQuery: fileSearchQuery,
               onSelectFile: onSelectFile,
+              onSearchFiles: onSearchFiles,
               todos: todos,
             ),
             // kept simple for now: portrait utility content comes from shared context rail
@@ -583,14 +646,18 @@ class _MobileShell extends StatelessWidget {
     required this.fileNodes,
     required this.fileStatuses,
     required this.fileSearchResults,
+    required this.textMatches,
+    required this.symbols,
     required this.filePreview,
     required this.selectedFilePath,
+    required this.fileSearchQuery,
     required this.todos,
     required this.selectedSessionId,
     required this.loading,
     required this.error,
     required this.onSelectSession,
     required this.onSelectFile,
+    required this.onSearchFiles,
     required this.showContextSheet,
     required this.onToggleContextSheet,
   });
@@ -604,14 +671,18 @@ class _MobileShell extends StatelessWidget {
   final List<FileNodeSummary> fileNodes;
   final List<FileStatusSummary> fileStatuses;
   final List<String> fileSearchResults;
+  final List<TextMatchSummary> textMatches;
+  final List<SymbolSummary> symbols;
   final FileContentSummary? filePreview;
   final String? selectedFilePath;
+  final String fileSearchQuery;
   final List<TodoItem> todos;
   final String? selectedSessionId;
   final bool loading;
   final String? error;
   final ValueChanged<String> onSelectSession;
   final ValueChanged<String> onSelectFile;
+  final ValueChanged<String> onSearchFiles;
   final bool showContextSheet;
   final VoidCallback onToggleContextSheet;
 
@@ -645,9 +716,13 @@ class _MobileShell extends StatelessWidget {
               fileNodes: fileNodes,
               fileStatuses: fileStatuses,
               fileSearchResults: fileSearchResults,
+              textMatches: textMatches,
+              symbols: symbols,
               filePreview: filePreview,
               selectedFilePath: selectedFilePath,
+              fileSearchQuery: fileSearchQuery,
               onSelectFile: onSelectFile,
+              onSearchFiles: onSearchFiles,
               todos: todos,
             ),
             secondChild: const _UtilityToggleHint(compact: true),
@@ -865,9 +940,13 @@ class _ContextRail extends StatelessWidget {
     required this.fileNodes,
     required this.fileStatuses,
     required this.fileSearchResults,
+    required this.textMatches,
+    required this.symbols,
     required this.filePreview,
     required this.selectedFilePath,
+    required this.fileSearchQuery,
     required this.onSelectFile,
+    required this.onSearchFiles,
     required this.todos,
     this.compact = false,
   });
@@ -876,9 +955,13 @@ class _ContextRail extends StatelessWidget {
   final List<FileNodeSummary> fileNodes;
   final List<FileStatusSummary> fileStatuses;
   final List<String> fileSearchResults;
+  final List<TextMatchSummary> textMatches;
+  final List<SymbolSummary> symbols;
   final FileContentSummary? filePreview;
   final String? selectedFilePath;
+  final String fileSearchQuery;
   final ValueChanged<String> onSelectFile;
+  final ValueChanged<String> onSearchFiles;
   final List<TodoItem> todos;
 
   @override
@@ -896,9 +979,13 @@ class _ContextRail extends StatelessWidget {
                   fileNodes: fileNodes,
                   fileStatuses: fileStatuses,
                   fileSearchResults: fileSearchResults,
+                  textMatches: textMatches,
+                  symbols: symbols,
                   filePreview: filePreview,
                   selectedFilePath: selectedFilePath,
+                  fileSearchQuery: fileSearchQuery,
                   onSelectFile: onSelectFile,
+                  onSearchFiles: onSearchFiles,
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 _UtilityTile(
@@ -933,9 +1020,13 @@ class _BottomUtilitySheet extends StatelessWidget {
     required this.fileNodes,
     required this.fileStatuses,
     required this.fileSearchResults,
+    required this.textMatches,
+    required this.symbols,
     required this.filePreview,
     required this.selectedFilePath,
+    required this.fileSearchQuery,
     required this.onSelectFile,
+    required this.onSearchFiles,
     required this.todos,
     this.compact = false,
   });
@@ -944,9 +1035,13 @@ class _BottomUtilitySheet extends StatelessWidget {
   final List<FileNodeSummary> fileNodes;
   final List<FileStatusSummary> fileStatuses;
   final List<String> fileSearchResults;
+  final List<TextMatchSummary> textMatches;
+  final List<SymbolSummary> symbols;
   final FileContentSummary? filePreview;
   final String? selectedFilePath;
+  final String fileSearchQuery;
   final ValueChanged<String> onSelectFile;
+  final ValueChanged<String> onSearchFiles;
   final List<TodoItem> todos;
 
   @override
@@ -958,9 +1053,13 @@ class _BottomUtilitySheet extends StatelessWidget {
         fileNodes: fileNodes,
         fileStatuses: fileStatuses,
         fileSearchResults: fileSearchResults,
+        textMatches: textMatches,
+        symbols: symbols,
         filePreview: filePreview,
         selectedFilePath: selectedFilePath,
+        fileSearchQuery: fileSearchQuery,
         onSelectFile: onSelectFile,
+        onSearchFiles: onSearchFiles,
         todos: todos,
       ),
     );
@@ -1143,17 +1242,25 @@ class _FilePanel extends StatelessWidget {
     required this.fileNodes,
     required this.fileStatuses,
     required this.fileSearchResults,
+    required this.textMatches,
+    required this.symbols,
     required this.filePreview,
     required this.selectedFilePath,
+    required this.fileSearchQuery,
     required this.onSelectFile,
+    required this.onSearchFiles,
   });
 
   final List<FileNodeSummary> fileNodes;
   final List<FileStatusSummary> fileStatuses;
   final List<String> fileSearchResults;
+  final List<TextMatchSummary> textMatches;
+  final List<SymbolSummary> symbols;
   final FileContentSummary? filePreview;
   final String? selectedFilePath;
+  final String fileSearchQuery;
   final ValueChanged<String> onSelectFile;
+  final ValueChanged<String> onSearchFiles;
 
   @override
   Widget build(BuildContext context) {
@@ -1168,6 +1275,15 @@ class _FilePanel extends StatelessWidget {
           title: Text(l10n.shellFilesTitle),
           subtitle: Text(l10n.shellFilesSubtitle),
         ),
+        TextField(
+          controller: TextEditingController(text: fileSearchQuery),
+          onSubmitted: onSearchFiles,
+          decoration: const InputDecoration(
+            hintText: 'Search files, text, or symbols',
+            isDense: true,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.xs),
         for (final path in visiblePaths)
           Padding(
             padding: const EdgeInsets.only(bottom: AppSpacing.xs),
@@ -1185,6 +1301,21 @@ class _FilePanel extends StatelessWidget {
             maxLines: 6,
             overflow: TextOverflow.ellipsis,
           ),
+        ],
+        if (textMatches.isNotEmpty) ...<Widget>[
+          const SizedBox(height: AppSpacing.xs),
+          for (final match in textMatches.take(2))
+            ListTile(title: Text(match.path), subtitle: Text(match.lines)),
+        ],
+        if (symbols.isNotEmpty) ...<Widget>[
+          const SizedBox(height: AppSpacing.xs),
+          for (final symbol in symbols.take(2))
+            ListTile(
+              title: Text(symbol.name),
+              subtitle: Text(
+                '${symbol.kind ?? 'symbol'} · ${symbol.path ?? '-'}',
+              ),
+            ),
         ],
       ],
     );
