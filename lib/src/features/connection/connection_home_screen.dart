@@ -62,6 +62,7 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
   List<RecentConnection> _recentConnections = const <RecentConnection>[];
   ServerProbeReport? _latestProbe;
   ServerProfile? _readyProfile;
+  CapabilityRegistry? _readyCapabilities;
   ProjectTarget? _openedProject;
   String? _activeProfileId;
   bool _isSaving = false;
@@ -205,6 +206,9 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
       _latestProbe = report;
       _recentConnections = recents;
       _readyProfile = report.isReady ? draft : _readyProfile;
+      _readyCapabilities = report.isReady
+          ? report.capabilityRegistry
+          : _readyCapabilities;
       _isProbing = false;
     });
   }
@@ -220,10 +224,13 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_openedProject != null && _readyProfile != null) {
+    if (_openedProject != null &&
+        _readyProfile != null &&
+        _readyCapabilities != null) {
       return OpenCodeShellScreen(
         profile: _readyProfile!,
         project: _openedProject!,
+        capabilities: _readyCapabilities!,
         onExit: () {
           setState(() {
             _openedProject = null;

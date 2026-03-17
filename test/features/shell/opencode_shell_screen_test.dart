@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:opencode_mobile_remote/l10n/app_localizations.dart';
 import 'package:opencode_mobile_remote/src/core/connection/connection_models.dart';
+import 'package:opencode_mobile_remote/src/core/spec/capability_registry.dart';
 import 'package:opencode_mobile_remote/src/design_system/app_theme.dart';
+import 'package:opencode_mobile_remote/src/core/spec/probe_snapshot.dart';
 import 'package:opencode_mobile_remote/src/features/projects/project_models.dart';
 import 'package:opencode_mobile_remote/src/features/shell/opencode_shell_screen.dart';
 
@@ -19,6 +21,38 @@ void main() {
     vcs: 'git',
     branch: 'main',
   );
+  final capabilities = CapabilityRegistry.fromSnapshot(
+    ProbeSnapshot(
+      name: 'test',
+      version: '1.0.0',
+      paths: const <String>{
+        '/project',
+        '/project/current',
+        '/session',
+        '/session/status',
+        '/event',
+        '/session/{sessionID}/todo',
+        '/file',
+        '/file/content',
+        '/file/status',
+        '/find/file',
+        '/find/symbol',
+        '/session/{sessionID}/shell',
+        '/config',
+        '/config/providers',
+        '/question',
+        '/permission',
+        '/session/{sessionID}/share',
+        '/session/{sessionID}/fork',
+        '/session/{sessionID}/summarize',
+        '/session/{sessionID}/revert',
+        '/session/{sessionID}/init',
+        '/provider/{providerID}/oauth/authorize',
+        '/mcp/{name}/auth',
+      },
+      endpoints: const <String, ProbeEndpointResult>{},
+    ),
+  );
 
   Future<void> pumpShell(WidgetTester tester, {required Size size}) async {
     tester.view.physicalSize = size;
@@ -31,9 +65,10 @@ void main() {
         theme: AppTheme.dark(),
         supportedLocales: AppLocalizations.supportedLocales,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
-        home: const OpenCodeShellScreen(
+        home: OpenCodeShellScreen(
           profile: profile,
           project: project,
+          capabilities: capabilities,
           onExit: _noop,
         ),
       ),

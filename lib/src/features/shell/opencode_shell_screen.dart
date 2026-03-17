@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../core/connection/connection_models.dart';
 import '../../core/network/event_stream_service.dart';
+import '../../core/spec/capability_registry.dart';
 import '../../core/spec/raw_json_document.dart';
 import '../../design_system/app_spacing.dart';
 import '../../design_system/app_theme.dart';
@@ -27,12 +28,14 @@ class OpenCodeShellScreen extends StatefulWidget {
   const OpenCodeShellScreen({
     required this.profile,
     required this.project,
+    required this.capabilities,
     required this.onExit,
     super.key,
   });
 
   final ServerProfile profile;
   final ProjectTarget project;
+  final CapabilityRegistry capabilities;
   final VoidCallback onExit;
 
   @override
@@ -88,7 +91,9 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
   void didUpdateWidget(covariant OpenCodeShellScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.project.directory != widget.project.directory ||
-        oldWidget.profile.storageKey != widget.profile.storageKey) {
+        oldWidget.profile.storageKey != widget.profile.storageKey ||
+        oldWidget.capabilities.asMap().toString() !=
+            widget.capabilities.asMap().toString()) {
       _loadBundle();
     }
   }
@@ -113,10 +118,16 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       _error = null;
     });
     try {
-      final bundle = await _chatService.fetchBundle(
-        profile: widget.profile,
-        project: widget.project,
-      );
+      final bundle = widget.capabilities.hasSessions
+          ? await _chatService.fetchBundle(
+              profile: widget.profile,
+              project: widget.project,
+            )
+          : const ChatSessionBundle(
+              sessions: <SessionSummary>[],
+              statuses: <String, SessionStatusSummary>{},
+              messages: <ChatMessage>[],
+            );
       if (!mounted) {
         return;
       }
@@ -143,14 +154,26 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         _selectedSessionId = bundle.selectedSessionId;
         _loading = false;
       });
-      if (bundle.selectedSessionId != null) {
+      if (widget.capabilities.hasTodos && bundle.selectedSessionId != null) {
         await _loadTodos(bundle.selectedSessionId!);
       }
-      await _loadFiles();
-      await _loadPendingRequests();
-      await _loadConfigSnapshot();
-      await _loadIntegrationStatus();
-      await _connectEvents();
+      if (widget.capabilities.hasFiles) {
+        await _loadFiles();
+      }
+      if (widget.capabilities.hasQuestions ||
+          widget.capabilities.hasPermissions) {
+        await _loadPendingRequests();
+      }
+      if (widget.capabilities.hasConfigRead) {
+        await _loadConfigSnapshot();
+      }
+      if (widget.capabilities.hasProviderOAuth ||
+          widget.capabilities.hasMcpAuth) {
+        await _loadIntegrationStatus();
+      }
+      if (widget.capabilities.hasEventStream) {
+        await _connectEvents();
+      }
     } catch (error) {
       if (!mounted) {
         return;
