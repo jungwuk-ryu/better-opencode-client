@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 
 import '../../../l10n/app_localizations.dart';
 import '../../app/flavor.dart';
@@ -16,6 +17,20 @@ import '../../core/spec/raw_json_document.dart';
 import '../../design_system/app_spacing.dart';
 import '../../design_system/app_theme.dart';
 import '../../i18n/locale_controller.dart';
+import '../projects/project_workspace_section.dart';
+
+const _contentMaxWidth = 1480.0;
+const _sideColumnWidth = 420.0;
+const _probeEndpointOrder = <String>[
+  '/global/health',
+  '/doc',
+  '/config',
+  '/config/providers',
+  '/provider',
+  '/provider/auth',
+  '/agent',
+  '/experimental/tool/ids',
+];
 
 class ConnectionHomeScreen extends StatefulWidget {
   const ConnectionHomeScreen({
@@ -32,27 +47,28 @@ class ConnectionHomeScreen extends StatefulWidget {
 }
 
 class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
-  final _labelController = TextEditingController();
-  final _baseUrlController = TextEditingController();
-  final _usernameController = TextEditingController();
-  final _passwordController = TextEditingController();
+  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final ServerProfileStore _profileStore = ServerProfileStore();
-  final OpenCodeServerProbe _probe = OpenCodeServerProbe();
+  final OpenCodeServerProbe _probeService = OpenCodeServerProbe();
+  final TextEditingController _labelController = TextEditingController();
+  final TextEditingController _baseUrlController = TextEditingController();
+  final TextEditingController _usernameController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  late final Future<_FixtureDebugData> _fixtureData = _loadFixtureData();
 
-  late final Future<_FoundationDebugData> _foundationData =
-      _loadFoundationData();
-
-  List<ServerProfile> _profiles = const <ServerProfile>[];
+  List<ServerProfile> _savedProfiles = const <ServerProfile>[];
   List<RecentConnection> _recentConnections = const <RecentConnection>[];
-  ServerProbeReport? _report;
-  String? _selectedProfileId;
-  bool _loadingProfiles = true;
-  bool _probing = false;
+  ServerProbeReport? _latestProbe;
+  ServerProfile? _readyProfile;
+  String? _activeProfileId;
+  bool _isSaving = false;
+  bool _isProbing = false;
+  bool _showPassword = false;
 
   @override
   void initState() {
     super.initState();
-    _loadSavedState();
+    _loadStoredConnections();
   }
 
   @override
@@ -61,95 +77,119 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
     _baseUrlController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
-    _probe.dispose();
+    _probeService.dispose();
     super.dispose();
   }
 
-  Future<void> _loadSavedState() async {
+  Future<void> _loadStoredConnections() async {
     final profiles = await _profileStore.load();
     final recents = await _profileStore.loadRecentConnections();
     if (!mounted) {
       return;
     }
     setState(() {
-      _profiles = profiles;
+      _savedProfiles = profiles;
       _recentConnections = recents;
-      _loadingProfiles = false;
     });
     if (profiles.isNotEmpty) {
-      _applyProfile(profiles.first);
+      _applyProfile(profiles.first, preferSavedSelection: true);
     }
   }
 
-  ServerProfile _draftProfile() {
-    return ServerProfile(
-      id:
-          _selectedProfileId ??
-          DateTime.now().microsecondsSinceEpoch.toString(),
-      label: _labelController.text,
-      baseUrl: _baseUrlController.text,
-      username: _usernameController.text.trim().isEmpty
-          ? null
-          : _usernameController.text.trim(),
-      password: _passwordController.text.isEmpty
-          ? null
-          : _passwordController.text,
-    );
+  void _applyProfile(
+    ServerProfile profile, {
+    required bool preferSavedSelection,
+  }) {
+    _labelController.text = profile.label;
+    _baseUrlController.text = profile.normalizedBaseUrl;
+    _usernameController.text = profile.username ?? '';
+    _passwordController.text = profile.password ?? '';
+    final matchedSavedProfile = _matchSavedProfile(profile);
+    setState(() {
+      _activeProfileId = preferSavedSelection ? matchedSavedProfile?.id : null;
+    });
   }
 
-  void _applyProfile(ServerProfile profile) {
-    setState(() {
-      _selectedProfileId = profile.id;
-      _labelController.text = profile.label;
-      _baseUrlController.text = profile.baseUrl;
-      _usernameController.text = profile.username ?? '';
-      _passwordController.text = profile.password ?? '';
-    });
+  ServerProfile? _matchSavedProfile(ServerProfile profile) {
+    for (final savedProfile in _savedProfiles) {
+      if (savedProfile.id == profile.id ||
+          savedProfile.storageKey == profile.storageKey) {
+        return savedProfile;
+      }
+    }
+    return null;
+  }
+
+  ServerProfile _currentDraftProfile() {
+    final candidate = ServerProfile(
+      id: _activeProfileId ?? _newProfileId(),
+      label: _labelController.text.trim(),
+      baseUrl: _baseUrlController.text.trim(),
+      username: _normalizedOptional(_usernameController.text),
+      password: _normalizedOptional(_passwordController.text),
+    );
+    final matchedSavedProfile = _matchSavedProfile(candidate);
+    if (matchedSavedProfile == null) {
+      return candidate;
+    }
+    return candidate.copyWith(id: matchedSavedProfile.id);
+  }
+
+  String _newProfileId() => DateTime.now().microsecondsSinceEpoch.toString();
+
+  String? _normalizedOptional(String value) {
+    final trimmed = value.trim();
+    return trimmed.isEmpty ? null : trimmed;
   }
 
   Future<void> _saveProfile() async {
-    final profile = _draftProfile();
-    final profiles = await _profileStore.upsertProfile(profile);
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+    final draft = _currentDraftProfile();
+    setState(() {
+      _isSaving = true;
+    });
+    final savedProfiles = await _profileStore.upsertProfile(draft);
     if (!mounted) {
       return;
     }
     setState(() {
-      _profiles = profiles;
-      _selectedProfileId = profile.id;
+      _savedProfiles = savedProfiles;
+      _activeProfileId = draft.id;
+      _isSaving = false;
     });
   }
 
-  Future<void> _deleteSelectedProfile() async {
-    final selectedId = _selectedProfileId;
-    if (selectedId == null) {
-      return;
-    }
-    final profiles = await _profileStore.deleteProfile(selectedId);
+  Future<void> _deleteProfile(ServerProfile profile) async {
+    final savedProfiles = await _profileStore.deleteProfile(profile.id);
     if (!mounted) {
       return;
     }
     setState(() {
-      _profiles = profiles;
-      _selectedProfileId = null;
-      _labelController.clear();
-      _baseUrlController.clear();
-      _usernameController.clear();
-      _passwordController.clear();
+      _savedProfiles = savedProfiles;
+      if (_activeProfileId == profile.id) {
+        _activeProfileId = null;
+      }
     });
   }
 
-  Future<void> _probeCurrentProfile() async {
+  Future<void> _runProbe() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+    FocusScope.of(context).unfocus();
+    final draft = _currentDraftProfile();
     setState(() {
-      _probing = true;
+      _isProbing = true;
     });
-    final profile = _draftProfile();
-    final report = await _probe.probe(profile);
+    final report = await _probeService.probe(draft);
     final recents = await _profileStore.recordRecentConnection(
       RecentConnection(
-        id: profile.id,
-        label: profile.effectiveLabel,
-        baseUrl: profile.baseUrl,
-        username: profile.username,
+        id: draft.id,
+        label: draft.effectiveLabel,
+        baseUrl: draft.normalizedBaseUrl,
+        username: draft.username,
         attemptedAt: report.checkedAt,
         classification: report.classification,
         summary: report.summary,
@@ -159,13 +199,822 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
       return;
     }
     setState(() {
-      _report = report;
+      _latestProbe = report;
       _recentConnections = recents;
-      _probing = false;
+      _readyProfile = report.isReady ? draft : _readyProfile;
+      _isProbing = false;
     });
   }
 
-  Future<_FoundationDebugData> _loadFoundationData() async {
+  String? _validateAddress(String? value) {
+    final draft = ServerProfile(id: 'draft', label: '', baseUrl: value ?? '');
+    final uri = draft.uriOrNull;
+    if (uri == null || uri.host.isEmpty) {
+      return AppLocalizations.of(context)!.connectionAddressValidation;
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+
+    return Scaffold(
+      body: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: <Color>[
+              surfaces.background,
+              surfaces.panel,
+              surfaces.background.withValues(alpha: 0.94),
+            ],
+          ),
+        ),
+        child: Stack(
+          children: <Widget>[
+            Positioned(
+              top: -120,
+              left: -80,
+              child: _GlowOrb(
+                color: Theme.of(
+                  context,
+                ).colorScheme.primary.withValues(alpha: 0.18),
+                size: 300,
+              ),
+            ),
+            Positioned(
+              right: -120,
+              top: 120,
+              child: _GlowOrb(
+                color: surfaces.accentSoft.withValues(alpha: 0.12),
+                size: 260,
+              ),
+            ),
+            Positioned.fill(
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: const <Color>[
+                        Color(0x11000000),
+                        Color(0x00000000),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            SafeArea(
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(AppSpacing.lg),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      maxWidth: _contentMaxWidth,
+                    ),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final isWide =
+                            constraints.maxWidth >=
+                            AppSpacing.wideLayoutBreakpoint;
+                        final primary = _buildPrimaryColumn(context);
+                        final side = _buildSideColumn(context);
+                        if (isWide) {
+                          return Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Expanded(child: primary),
+                              const SizedBox(width: AppSpacing.lg),
+                              SizedBox(width: _sideColumnWidth, child: side),
+                            ],
+                          );
+                        }
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            primary,
+                            const SizedBox(height: AppSpacing.lg),
+                            side,
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPrimaryColumn(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        _buildHeader(context),
+        const SizedBox(height: AppSpacing.lg),
+        _buildHeroCard(context),
+        const SizedBox(height: AppSpacing.lg),
+        _buildProbeResultCard(context),
+        if (_latestProbe?.isReady == true && _readyProfile != null) ...<Widget>[
+          const SizedBox(height: AppSpacing.lg),
+          ProjectWorkspaceSection(profile: _readyProfile!),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildSideColumn(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        _buildSavedProfilesCard(context),
+        const SizedBox(height: AppSpacing.lg),
+        _buildRecentConnectionsCard(context),
+        if (widget.flavor.enablesFixtureTools) ...<Widget>[
+          const SizedBox(height: AppSpacing.lg),
+          FutureBuilder<_FixtureDebugData>(
+            future: _fixtureData,
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return _PanelShell(
+                  title: AppLocalizations.of(context)!.fixtureDiagnosticsTitle,
+                  subtitle: AppLocalizations.of(
+                    context,
+                  )!.fixtureDiagnosticsSubtitle,
+                  child: const Padding(
+                    padding: EdgeInsets.all(AppSpacing.lg),
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
+                );
+              }
+              return _FixtureDiagnosticsCard(data: snapshot.data!);
+            },
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildHeader(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                l10n.connectionHeaderEyebrow,
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                l10n.connectionHeaderTitle,
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                l10n.connectionHeaderSubtitle,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyLarge?.copyWith(color: surfaces.muted),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: AppSpacing.md),
+        Wrap(
+          spacing: AppSpacing.sm,
+          runSpacing: AppSpacing.sm,
+          alignment: WrapAlignment.end,
+          children: <Widget>[
+            _TagChip(
+              icon: Icons.tune,
+              label: '${l10n.currentFlavor}: ${widget.flavor.label}',
+            ),
+            _TagChip(
+              icon: Icons.language,
+              label:
+                  '${l10n.currentLocale}: ${widget.localeController.locale.languageCode}',
+            ),
+            OutlinedButton.icon(
+              onPressed: widget.localeController.toggle,
+              icon: const Icon(Icons.translate),
+              label: Text(l10n.switchLocale),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHeroCard(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final l10n = AppLocalizations.of(context)!;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: <Color>[
+                theme.colorScheme.primary.withValues(alpha: 0.18),
+                surfaces.panelRaised.withValues(alpha: 0.92),
+                surfaces.panel.withValues(alpha: 0.96),
+              ],
+            ),
+            border: Border.all(color: surfaces.line),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final stacked = constraints.maxWidth < 780;
+                final intro = Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    _StatusBadge(
+                      icon: _latestProbe == null
+                          ? Icons.route_outlined
+                          : _classificationIcon(_latestProbe!.classification),
+                      label: _latestProbe == null
+                          ? l10n.connectionStatusAwaiting
+                          : _classificationLabel(
+                              l10n,
+                              _latestProbe!.classification,
+                            ),
+                      color: _latestProbe == null
+                          ? surfaces.accentSoft
+                          : _classificationColor(
+                              surfaces,
+                              _latestProbe!.classification,
+                            ),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    Text(
+                      l10n.connectionFormTitle,
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(
+                      l10n.connectionFormSubtitle,
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        color: surfaces.muted,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    Wrap(
+                      spacing: AppSpacing.sm,
+                      runSpacing: AppSpacing.sm,
+                      children: <Widget>[
+                        _TagChip(
+                          icon: Icons.storage_rounded,
+                          label:
+                              '${_savedProfiles.length} ${l10n.savedProfilesCountLabel}',
+                        ),
+                        _TagChip(
+                          icon: Icons.history_toggle_off,
+                          label:
+                              '${_recentConnections.length} ${l10n.recentConnectionsCountLabel}',
+                        ),
+                        _TagChip(
+                          icon: Icons.stream,
+                          label: _latestProbe?.sseReady == true
+                              ? l10n.sseReadyLabel
+                              : l10n.ssePendingLabel,
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+                final form = _buildConnectionForm(context);
+                if (stacked) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      intro,
+                      const SizedBox(height: AppSpacing.lg),
+                      form,
+                    ],
+                  );
+                }
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Expanded(child: intro),
+                    const SizedBox(width: AppSpacing.lg),
+                    Expanded(child: form),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildConnectionForm(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    return Form(
+      key: _formKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          TextFormField(
+            controller: _labelController,
+            textInputAction: TextInputAction.next,
+            decoration: InputDecoration(
+              labelText: l10n.connectionProfileLabel,
+              hintText: l10n.connectionProfileLabelHint,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          TextFormField(
+            controller: _baseUrlController,
+            textInputAction: TextInputAction.next,
+            keyboardType: TextInputType.url,
+            autofillHints: const <String>[AutofillHints.url],
+            decoration: InputDecoration(
+              labelText: l10n.connectionAddressLabel,
+              hintText: l10n.connectionAddressHint,
+            ),
+            validator: _validateAddress,
+          ),
+          const SizedBox(height: AppSpacing.md),
+          TextFormField(
+            controller: _usernameController,
+            textInputAction: TextInputAction.next,
+            autofillHints: const <String>[AutofillHints.username],
+            decoration: InputDecoration(
+              labelText: l10n.connectionUsernameLabel,
+              hintText: l10n.connectionUsernameHint,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          TextFormField(
+            controller: _passwordController,
+            textInputAction: TextInputAction.done,
+            obscureText: !_showPassword,
+            autofillHints: const <String>[AutofillHints.password],
+            decoration: InputDecoration(
+              labelText: l10n.connectionPasswordLabel,
+              hintText: l10n.connectionPasswordHint,
+              suffixIcon: IconButton(
+                onPressed: () {
+                  setState(() {
+                    _showPassword = !_showPassword;
+                  });
+                },
+                icon: Icon(
+                  _showPassword ? Icons.visibility_off : Icons.visibility,
+                ),
+              ),
+            ),
+            onFieldSubmitted: (_) {
+              _runProbe();
+            },
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
+            children: <Widget>[
+              ElevatedButton.icon(
+                onPressed: _isProbing ? null : _runProbe,
+                icon: _isProbing
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.podcasts),
+                label: Text(l10n.connectionProbeAction),
+              ),
+              OutlinedButton.icon(
+                onPressed: _isSaving ? null : _saveProfile,
+                icon: _isSaving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.bookmark_add_outlined),
+                label: Text(l10n.connectionSaveAction),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProbeResultCard(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final l10n = AppLocalizations.of(context)!;
+
+    return _PanelShell(
+      title: l10n.connectionProbeResultTitle,
+      subtitle: l10n.connectionProbeResultSubtitle,
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 240),
+        child: _latestProbe == null
+            ? Padding(
+                key: const ValueKey<String>('empty-probe'),
+                padding: const EdgeInsets.all(AppSpacing.lg),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      l10n.connectionProbeEmptyTitle,
+                      style: theme.textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(
+                      l10n.connectionProbeEmptySubtitle,
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        color: surfaces.muted,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            : Padding(
+                key: const ValueKey<String>('probe-report'),
+                padding: const EdgeInsets.all(AppSpacing.lg),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              _StatusBadge(
+                                icon: _classificationIcon(
+                                  _latestProbe!.classification,
+                                ),
+                                label: _classificationLabel(
+                                  l10n,
+                                  _latestProbe!.classification,
+                                ),
+                                color: _classificationColor(
+                                  surfaces,
+                                  _latestProbe!.classification,
+                                ),
+                              ),
+                              const SizedBox(height: AppSpacing.md),
+                              Text(
+                                _latestProbe!.snapshot.name,
+                                style: theme.textTheme.headlineSmall?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: AppSpacing.xs),
+                              Text(
+                                _classificationDetail(
+                                  l10n,
+                                  _latestProbe!.classification,
+                                ),
+                                style: theme.textTheme.bodyLarge?.copyWith(
+                                  color: surfaces.muted,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.md),
+                        _MetricBlock(
+                          label: l10n.connectionVersionLabel,
+                          value: _latestProbe!.snapshot.version,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    Wrap(
+                      spacing: AppSpacing.md,
+                      runSpacing: AppSpacing.md,
+                      children: <Widget>[
+                        _MetricBlock(
+                          label: l10n.connectionCheckedAtLabel,
+                          value: _formatTimestamp(
+                            context,
+                            _latestProbe!.checkedAt,
+                          ),
+                        ),
+                        _MetricBlock(
+                          label: l10n.connectionCapabilitiesLabel,
+                          value:
+                              '${_enabledCapabilities(_latestProbe!.capabilityRegistry)}',
+                        ),
+                        _MetricBlock(
+                          label: l10n.connectionReadinessLabel,
+                          value: _latestProbe!.sseReady
+                              ? l10n.sseReadyLabel
+                              : l10n.ssePendingLabel,
+                        ),
+                      ],
+                    ),
+                    if (_latestProbe!
+                        .missingCapabilities
+                        .isNotEmpty) ...<Widget>[
+                      const SizedBox(height: AppSpacing.lg),
+                      Text(
+                        l10n.connectionMissingCapabilitiesLabel,
+                        style: theme.textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      Wrap(
+                        spacing: AppSpacing.sm,
+                        runSpacing: AppSpacing.sm,
+                        children: _latestProbe!.missingCapabilities
+                            .map(
+                              (path) => _TagChip(
+                                icon: Icons.warning_amber_rounded,
+                                label: path,
+                              ),
+                            )
+                            .toList(growable: false),
+                      ),
+                    ],
+                    if (_latestProbe!
+                        .discoveredExperimentalPaths
+                        .isNotEmpty) ...<Widget>[
+                      const SizedBox(height: AppSpacing.lg),
+                      Text(
+                        l10n.connectionExperimentalPathsLabel,
+                        style: theme.textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      Wrap(
+                        spacing: AppSpacing.sm,
+                        runSpacing: AppSpacing.sm,
+                        children: _latestProbe!.discoveredExperimentalPaths
+                            .map(
+                              (path) => _TagChip(
+                                icon: Icons.construction_outlined,
+                                label: path,
+                              ),
+                            )
+                            .toList(growable: false),
+                      ),
+                    ],
+                    const SizedBox(height: AppSpacing.lg),
+                    _SectionTitle(label: l10n.connectionEndpointSectionTitle),
+                    const SizedBox(height: AppSpacing.sm),
+                    Column(
+                      children: _probeEndpointOrder
+                          .where(
+                            (path) => _latestProbe!.snapshot.endpoints
+                                .containsKey(path),
+                          )
+                          .map(
+                            (path) => Padding(
+                              padding: const EdgeInsets.only(
+                                bottom: AppSpacing.sm,
+                              ),
+                              child: _EndpointRow(
+                                path: path,
+                                result: _latestProbe!.snapshot.endpoints[path]!,
+                                statusLabel: _endpointStatusLabel(
+                                  l10n,
+                                  _latestProbe!
+                                      .snapshot
+                                      .endpoints[path]!
+                                      .status,
+                                ),
+                              ),
+                            ),
+                          )
+                          .toList(growable: false),
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    _SectionTitle(label: l10n.connectionCapabilitySectionTitle),
+                    const SizedBox(height: AppSpacing.sm),
+                    Wrap(
+                      spacing: AppSpacing.sm,
+                      runSpacing: AppSpacing.sm,
+                      children: _latestProbe!.capabilityRegistry
+                          .asMap()
+                          .entries
+                          .map(
+                            (entry) => _CapabilityChip(
+                              label: _capabilityLabel(l10n, entry.key),
+                              enabled: entry.value,
+                            ),
+                          )
+                          .toList(growable: false),
+                    ),
+                  ],
+                ),
+              ),
+      ),
+    );
+  }
+
+  Widget _buildSavedProfilesCard(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+
+    return _PanelShell(
+      title: l10n.savedProfilesTitle,
+      subtitle: l10n.savedProfilesSubtitle,
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        child: _savedProfiles.isEmpty
+            ? _EmptyPanelState(
+                title: l10n.savedProfilesEmptyTitle,
+                subtitle: l10n.savedProfilesEmptySubtitle,
+              )
+            : Column(
+                children: _savedProfiles
+                    .map(
+                      (profile) => Padding(
+                        padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                        child: _ProfileTile(
+                          label: profile.effectiveLabel,
+                          subtitle: profile.normalizedBaseUrl,
+                          isSelected: profile.id == _activeProfileId,
+                          trailing: IconButton(
+                            onPressed: () => _deleteProfile(profile),
+                            icon: const Icon(Icons.delete_outline),
+                          ),
+                          onTap: () => _applyProfile(
+                            profile,
+                            preferSavedSelection: true,
+                          ),
+                        ),
+                      ),
+                    )
+                    .toList(growable: false),
+              ),
+      ),
+    );
+  }
+
+  Widget _buildRecentConnectionsCard(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+
+    return _PanelShell(
+      title: l10n.recentConnectionsTitle,
+      subtitle: l10n.recentConnectionsSubtitle,
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        child: _recentConnections.isEmpty
+            ? _EmptyPanelState(
+                title: l10n.recentConnectionsEmptyTitle,
+                subtitle: l10n.recentConnectionsEmptySubtitle,
+              )
+            : Column(
+                children: _recentConnections
+                    .map(
+                      (connection) => Padding(
+                        padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                        child: _RecentConnectionTile(
+                          connection: connection,
+                          statusLabel: _classificationLabel(
+                            l10n,
+                            connection.classification,
+                          ),
+                          statusColor: _classificationColor(
+                            surfaces,
+                            connection.classification,
+                          ),
+                          timestamp: _formatTimestamp(
+                            context,
+                            connection.attemptedAt,
+                          ),
+                          onTap: () => _applyProfile(
+                            connection.toProfile(),
+                            preferSavedSelection: false,
+                          ),
+                        ),
+                      ),
+                    )
+                    .toList(growable: false),
+              ),
+      ),
+    );
+  }
+
+  String _classificationLabel(
+    AppLocalizations l10n,
+    ConnectionProbeClassification classification,
+  ) {
+    return switch (classification) {
+      ConnectionProbeClassification.ready => l10n.connectionOutcomeReady,
+      ConnectionProbeClassification.authFailure =>
+        l10n.connectionOutcomeAuthFailure,
+      ConnectionProbeClassification.specFetchFailure =>
+        l10n.connectionOutcomeSpecFailure,
+      ConnectionProbeClassification.unsupportedCapabilities =>
+        l10n.connectionOutcomeUnsupported,
+      ConnectionProbeClassification.connectivityFailure =>
+        l10n.connectionOutcomeConnectivityFailure,
+    };
+  }
+
+  String _classificationDetail(
+    AppLocalizations l10n,
+    ConnectionProbeClassification classification,
+  ) {
+    return switch (classification) {
+      ConnectionProbeClassification.ready => l10n.connectionDetailReady,
+      ConnectionProbeClassification.authFailure =>
+        l10n.connectionDetailAuthFailure,
+      ConnectionProbeClassification.specFetchFailure =>
+        l10n.connectionDetailSpecFailure,
+      ConnectionProbeClassification.unsupportedCapabilities =>
+        l10n.connectionDetailUnsupported,
+      ConnectionProbeClassification.connectivityFailure =>
+        l10n.connectionDetailConnectivityFailure,
+    };
+  }
+
+  Color _classificationColor(
+    AppSurfaces surfaces,
+    ConnectionProbeClassification classification,
+  ) {
+    return switch (classification) {
+      ConnectionProbeClassification.ready => surfaces.success,
+      ConnectionProbeClassification.authFailure => surfaces.warning,
+      ConnectionProbeClassification.specFetchFailure => surfaces.danger,
+      ConnectionProbeClassification.unsupportedCapabilities => surfaces.warning,
+      ConnectionProbeClassification.connectivityFailure => surfaces.danger,
+    };
+  }
+
+  IconData _classificationIcon(ConnectionProbeClassification classification) {
+    return switch (classification) {
+      ConnectionProbeClassification.ready => Icons.verified,
+      ConnectionProbeClassification.authFailure => Icons.lock_outline,
+      ConnectionProbeClassification.specFetchFailure =>
+        Icons.description_outlined,
+      ConnectionProbeClassification.unsupportedCapabilities =>
+        Icons.report_gmailerrorred,
+      ConnectionProbeClassification.connectivityFailure =>
+        Icons.wifi_tethering_error_rounded,
+    };
+  }
+
+  String _endpointStatusLabel(AppLocalizations l10n, ProbeStatus status) {
+    return switch (status) {
+      ProbeStatus.success => l10n.endpointReadyStatus,
+      ProbeStatus.unauthorized => l10n.endpointAuthStatus,
+      ProbeStatus.unsupported => l10n.endpointUnsupportedStatus,
+      ProbeStatus.failure => l10n.endpointFailureStatus,
+      ProbeStatus.unknown => l10n.endpointUnknownStatus,
+    };
+  }
+
+  String _capabilityLabel(AppLocalizations l10n, String key) {
+    return switch (key) {
+      'canShareSession' => l10n.capabilityCanShareSession,
+      'canForkSession' => l10n.capabilityCanForkSession,
+      'canSummarizeSession' => l10n.capabilityCanSummarizeSession,
+      'canRevertSession' => l10n.capabilityCanRevertSession,
+      'hasQuestions' => l10n.capabilityHasQuestions,
+      'hasPermissions' => l10n.capabilityHasPermissions,
+      'hasExperimentalTools' => l10n.capabilityHasExperimentalTools,
+      'hasProviderOAuth' => l10n.capabilityHasProviderOAuth,
+      'hasMcpAuth' => l10n.capabilityHasMcpAuth,
+      'hasTuiControl' => l10n.capabilityHasTuiControl,
+      _ => key,
+    };
+  }
+
+  int _enabledCapabilities(CapabilityRegistry registry) {
+    return registry.asMap().values.where((enabled) => enabled).length;
+  }
+
+  String _formatTimestamp(BuildContext context, DateTime value) {
+    final locale = Localizations.localeOf(context).toLanguageTag();
+    return DateFormat.yMMMd(locale).add_Hm().format(value.toLocal());
+  }
+
+  static Future<_FixtureDebugData> _loadFixtureData() async {
     final bundle = rootBundle;
     final fullProbe = ProbeSnapshot.fromJsonString(
       await bundle.loadString(
@@ -183,7 +1032,7 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
       ),
     );
 
-    final streamFrames = {
+    final streamFrames = <String, int>{
       'healthy': await _frameCount(
         bundle,
         'assets/fixtures/events/healthy_stream.txt',
@@ -203,20 +1052,18 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
     };
 
     final config = RawJsonDocument(
-      (jsonDecode(
-                await bundle.loadString(
-                  'assets/fixtures/config/config_with_unknown_fields.json',
-                ),
-              )
-              as Map)
-          .cast<String, Object?>(),
+      _decodeMap(
+        await bundle.loadString(
+          'assets/fixtures/config/config_with_unknown_fields.json',
+        ),
+      ),
     );
-    final merged = config.merge({
+    final merged = config.merge(<String, Object?>{
       'model': 'openai/gpt-5',
-      'provider': {'default': 'openai'},
+      'provider': <String, Object?>{'default': 'openai'},
     });
 
-    return _FoundationDebugData(
+    return _FixtureDebugData(
       fullProbe: CapabilityRegistry.fromSnapshot(fullProbe),
       legacyProbe: CapabilityRegistry.fromSnapshot(legacyProbe),
       errorProbe: CapabilityRegistry.fromSnapshot(errorProbe),
@@ -237,8 +1084,12 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
     return frames.length + reducer.state.connectionCount;
   }
 
+  static Map<String, Object?> _decodeMap(String source) {
+    return (jsonDecode(source) as Map).cast<String, Object?>();
+  }
+
   static int _countUnknownFields(Map<String, Object?> json) {
-    int total = 0;
+    var total = 0;
 
     void visit(Object? value) {
       if (value is Map<String, Object?>) {
@@ -246,6 +1097,7 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
         for (final nested in value.values) {
           visit(nested);
         }
+        return;
       }
       if (value is List<Object?>) {
         for (final nested in value) {
@@ -257,384 +1109,595 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
     visit(json);
     return total;
   }
+}
+
+class _PanelShell extends StatelessWidget {
+  const _PanelShell({
+    required this.title,
+    required this.subtitle,
+    required this.child,
+  });
+
+  final String title;
+  final String subtitle;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.lg,
+              AppSpacing.lg,
+              AppSpacing.md,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(title, style: Theme.of(context).textTheme.titleLarge),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  subtitle,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+class _GlowOrb extends StatelessWidget {
+  const _GlowOrb({required this.color, required this.size});
+
+  final Color color;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          boxShadow: <BoxShadow>[
+            BoxShadow(
+              color: color,
+              blurRadius: size / 2,
+              spreadRadius: size / 6,
+            ),
+          ],
+        ),
+        child: SizedBox(width: size, height: size),
+      ),
+    );
+  }
+}
+
+class _StatusBadge extends StatelessWidget {
+  const _StatusBadge({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
+        border: Border.all(color: color.withValues(alpha: 0.32)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(icon, size: 16, color: color),
+            const SizedBox(width: AppSpacing.xs),
+            Text(
+              label,
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                color: surfaces.onColor(color),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TagChip extends StatelessWidget {
+  const _TagChip({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: surfaces.panelRaised.withValues(alpha: 0.78),
+        borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
+        border: Border.all(color: surfaces.line),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(icon, size: 16, color: surfaces.accentSoft),
+            const SizedBox(width: AppSpacing.xs),
+            Text(label),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MetricBlock extends StatelessWidget {
+  const _MetricBlock({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: surfaces.panelRaised.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(AppSpacing.md),
+        border: Border.all(color: surfaces.line),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              label,
+              style: Theme.of(
+                context,
+              ).textTheme.labelMedium?.copyWith(color: surfaces.muted),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(value, style: Theme.of(context).textTheme.titleMedium),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SectionTitle extends StatelessWidget {
+  const _SectionTitle({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      style: Theme.of(
+        context,
+      ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+    );
+  }
+}
+
+class _EndpointRow extends StatelessWidget {
+  const _EndpointRow({
+    required this.path,
+    required this.result,
+    required this.statusLabel,
+  });
+
+  final String path;
+  final ProbeEndpointResult result;
+  final String statusLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final statusColor = switch (result.status) {
+      ProbeStatus.success => surfaces.success,
+      ProbeStatus.unauthorized => surfaces.warning,
+      ProbeStatus.unsupported => surfaces.warning,
+      ProbeStatus.failure => surfaces.danger,
+      ProbeStatus.unknown => surfaces.accentSoft,
+    };
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: surfaces.panelRaised.withValues(alpha: 0.56),
+        borderRadius: BorderRadius.circular(AppSpacing.md),
+        border: Border.all(color: surfaces.line),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Row(
+          children: <Widget>[
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(path, style: Theme.of(context).textTheme.titleSmall),
+                  if (result.statusCode != null) ...<Widget>[
+                    const SizedBox(height: AppSpacing.xxs),
+                    Text(
+                      'HTTP ${result.statusCode}',
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            _StatusBadge(
+              icon: Icons.circle,
+              label: statusLabel,
+              color: statusColor,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CapabilityChip extends StatelessWidget {
+  const _CapabilityChip({required this.label, required this.enabled});
+
+  final String label;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final color = enabled ? surfaces.success : surfaces.danger;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
+        border: Border.all(color: color.withValues(alpha: 0.28)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(
+              enabled ? Icons.check_circle : Icons.remove_circle,
+              size: 16,
+              color: color,
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            Text(label),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyPanelState extends StatelessWidget {
+  const _EmptyPanelState({required this.title, required this.subtitle});
+
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(title, style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          subtitle,
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
+        ),
+      ],
+    );
+  }
+}
+
+class _ProfileTile extends StatelessWidget {
+  const _ProfileTile({
+    required this.label,
+    required this.subtitle,
+    required this.isSelected,
+    required this.trailing,
+    required this.onTap,
+  });
+
+  final String label;
+  final String subtitle;
+  final bool isSelected;
+  final Widget trailing;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return InkWell(
+      borderRadius: BorderRadius.circular(AppSpacing.md),
+      onTap: onTap,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: isSelected
+              ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.12)
+              : surfaces.panelRaised.withValues(alpha: 0.54),
+          borderRadius: BorderRadius.circular(AppSpacing.md),
+          border: Border.all(
+            color: isSelected
+                ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.42)
+                : surfaces.line,
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(label, style: Theme.of(context).textTheme.titleSmall),
+                    const SizedBox(height: AppSpacing.xxs),
+                    Text(
+                      subtitle,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              trailing,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RecentConnectionTile extends StatelessWidget {
+  const _RecentConnectionTile({
+    required this.connection,
+    required this.statusLabel,
+    required this.statusColor,
+    required this.timestamp,
+    required this.onTap,
+  });
+
+  final RecentConnection connection;
+  final String statusLabel;
+  final Color statusColor;
+  final String timestamp;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return InkWell(
+      borderRadius: BorderRadius.circular(AppSpacing.md),
+      onTap: onTap,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: surfaces.panelRaised.withValues(alpha: 0.54),
+          borderRadius: BorderRadius.circular(AppSpacing.md),
+          border: Border.all(color: surfaces.line),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          connection.label,
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                        const SizedBox(height: AppSpacing.xxs),
+                        Text(
+                          connection.baseUrl,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: surfaces.muted),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  _StatusBadge(
+                    icon: Icons.history,
+                    label: statusLabel,
+                    color: statusColor,
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                timestamp,
+                style: Theme.of(
+                  context,
+                ).textTheme.labelMedium?.copyWith(color: surfaces.muted),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FixtureDiagnosticsCard extends StatelessWidget {
+  const _FixtureDiagnosticsCard({required this.data});
+
+  final _FixtureDebugData data;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
-    return Scaffold(
-      body: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              surfaces.background,
-              surfaces.panel,
-              const Color(0xFF0D2137),
-            ],
-          ),
-        ),
-        child: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final wide =
-                  constraints.maxWidth >= AppSpacing.wideLayoutBreakpoint;
-              final content = [
-                _buildHeader(context, l10n),
-                const SizedBox(height: AppSpacing.lg),
-                if (wide)
-                  Expanded(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SizedBox(
-                          width: 380,
-                          child: _buildControlColumn(context, l10n),
-                        ),
-                        const SizedBox(width: AppSpacing.lg),
-                        Expanded(child: _buildDiagnosticsColumn(context, l10n)),
-                      ],
-                    ),
-                  )
-                else
-                  Expanded(
-                    child: ListView(
-                      children: [
-                        _buildControlColumn(context, l10n),
-                        const SizedBox(height: AppSpacing.lg),
-                        _buildDiagnosticsColumn(context, l10n),
-                      ],
-                    ),
-                  ),
-              ];
-
-              return Padding(
-                padding: const EdgeInsets.all(AppSpacing.lg),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: content,
-                ),
-              );
-            },
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeader(BuildContext context, AppLocalizations l10n) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                l10n.connectionTitle,
-                style: Theme.of(context).textTheme.headlineMedium,
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                l10n.connectionSubtitle,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyLarge?.copyWith(color: surfaces.muted),
-              ),
-            ],
-          ),
-        ),
-        ElevatedButton(
-          onPressed: widget.localeController.toggle,
-          child: Text(l10n.switchLocale),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildControlColumn(BuildContext context, AppLocalizations l10n) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildProfileForm(context, l10n),
-        const SizedBox(height: AppSpacing.lg),
-        Expanded(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: _buildProfileList(context, l10n)),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(child: _buildRecentList(context, l10n)),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildProfileForm(BuildContext context, AppLocalizations l10n) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
-    return Card(
+    return _PanelShell(
+      title: l10n.fixtureDiagnosticsTitle,
+      subtitle: l10n.fixtureDiagnosticsSubtitle,
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.lg),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              l10n.serverProfileManager,
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              l10n.connectionProfileHint,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            TextField(
-              controller: _labelController,
-              decoration: InputDecoration(labelText: l10n.profileLabel),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            TextField(
-              controller: _baseUrlController,
-              keyboardType: TextInputType.url,
-              decoration: InputDecoration(labelText: l10n.serverAddress),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            TextField(
-              controller: _usernameController,
-              decoration: InputDecoration(labelText: l10n.username),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            TextField(
-              controller: _passwordController,
-              obscureText: true,
-              decoration: InputDecoration(labelText: l10n.password),
-            ),
-            const SizedBox(height: AppSpacing.lg),
+          children: <Widget>[
             Wrap(
               spacing: AppSpacing.sm,
               runSpacing: AppSpacing.sm,
-              children: [
-                ElevatedButton(
-                  onPressed: _probing ? null : _probeCurrentProfile,
-                  child: Text(
-                    _probing ? l10n.testingConnection : l10n.testConnection,
-                  ),
+              children: <Widget>[
+                _MetricBlock(
+                  label: l10n.unknownFields,
+                  value: '${data.unknownFieldCount}',
                 ),
-                OutlinedButton(
-                  onPressed: _saveProfile,
-                  child: Text(l10n.saveProfile),
-                ),
-                OutlinedButton(
-                  onPressed: _selectedProfileId == null
-                      ? null
-                      : _deleteSelectedProfile,
-                  child: Text(l10n.deleteProfile),
+                _MetricBlock(
+                  label: l10n.streamFrames,
+                  value:
+                      '${data.streamFrames.values.fold<int>(0, (total, value) => total + value)}',
                 ),
               ],
             ),
+            const SizedBox(height: AppSpacing.lg),
+            _FixtureCapabilityCard(
+              title: l10n.fullCapabilityProbe,
+              capabilities: data.fullProbe,
+            ),
             const SizedBox(height: AppSpacing.md),
-            Text(
-              l10n.connectionGuidance,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
+            _FixtureCapabilityCard(
+              title: l10n.legacyCapabilityProbe,
+              capabilities: data.legacyProbe,
             ),
+            const SizedBox(height: AppSpacing.md),
+            _FixtureCapabilityCard(
+              title: l10n.probeErrorCapability,
+              capabilities: data.errorProbe,
+            ),
+            const SizedBox(height: AppSpacing.md),
+            _FixtureStreamsCard(streamFrames: data.streamFrames),
           ],
         ),
       ),
     );
   }
+}
 
-  Widget _buildProfileList(BuildContext context, AppLocalizations l10n) {
-    return Card(
+class _FixtureCapabilityCard extends StatelessWidget {
+  const _FixtureCapabilityCard({
+    required this.title,
+    required this.capabilities,
+  });
+
+  final String title;
+  final CapabilityRegistry capabilities;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppSpacing.md),
+        border: Border.all(color: Theme.of(context).dividerColor),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              l10n.savedServers,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
+          children: <Widget>[
+            Text(title, style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: AppSpacing.sm),
-            Expanded(
-              child: _loadingProfiles
-                  ? const Center(child: CircularProgressIndicator())
-                  : _profiles.isEmpty
-                  ? Center(child: Text(l10n.noSavedServers))
-                  : ListView.separated(
-                      itemBuilder: (context, index) {
-                        final profile = _profiles[index];
-                        return ListTile(
-                          selected: profile.id == _selectedProfileId,
-                          title: Text(profile.effectiveLabel),
-                          subtitle: Text(profile.normalizedBaseUrl),
-                          onTap: () => _applyProfile(profile),
-                        );
-                      },
-                      separatorBuilder: (_, _) =>
-                          const SizedBox(height: AppSpacing.xs),
-                      itemCount: _profiles.length,
-                    ),
+            Wrap(
+              spacing: AppSpacing.xs,
+              runSpacing: AppSpacing.xs,
+              children: capabilities
+                  .asMap()
+                  .entries
+                  .map(
+                    (entry) =>
+                        _CapabilityChip(label: entry.key, enabled: entry.value),
+                  )
+                  .toList(growable: false),
             ),
           ],
         ),
       ),
     );
   }
+}
 
-  Widget _buildRecentList(BuildContext context, AppLocalizations l10n) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              l10n.recentConnections,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Expanded(
-              child: _recentConnections.isEmpty
-                  ? Center(child: Text(l10n.noRecentConnections))
-                  : ListView.separated(
-                      itemBuilder: (context, index) {
-                        final connection = _recentConnections[index];
-                        return ListTile(
-                          title: Text(connection.label),
-                          subtitle: Text(connection.summary),
-                          trailing: _ClassificationPill(
-                            classification: connection.classification,
-                          ),
-                          onTap: () => _applyProfile(connection.toProfile()),
-                        );
-                      },
-                      separatorBuilder: (_, _) =>
-                          const SizedBox(height: AppSpacing.xs),
-                      itemCount: _recentConnections.length,
-                    ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+class _FixtureStreamsCard extends StatelessWidget {
+  const _FixtureStreamsCard({required this.streamFrames});
 
-  Widget _buildDiagnosticsColumn(BuildContext context, AppLocalizations l10n) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildProbeResultCard(context, l10n),
-        const SizedBox(height: AppSpacing.lg),
-        Expanded(
-          child: FutureBuilder<_FoundationDebugData>(
-            future: _foundationData,
-            builder: (context, snapshot) {
-              if (!snapshot.hasData) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              final data = snapshot.data!;
-              return GridView.count(
-                crossAxisCount: 2,
-                crossAxisSpacing: AppSpacing.md,
-                mainAxisSpacing: AppSpacing.md,
-                childAspectRatio: 1.3,
-                children: [
-                  _CapabilityCard(
-                    title: l10n.fullCapabilityProbe,
-                    capabilityMap: data.fullProbe.asMap(),
-                  ),
-                  _CapabilityCard(
-                    title: l10n.legacyCapabilityProbe,
-                    capabilityMap: data.legacyProbe.asMap(),
-                  ),
-                  _CapabilityCard(
-                    title: l10n.probeErrorCapability,
-                    capabilityMap: data.errorProbe.asMap(),
-                  ),
-                  _StreamCard(
-                    title: l10n.streamFrames,
-                    streamFrames: data.streamFrames,
-                  ),
-                ],
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
+  final Map<String, int> streamFrames;
 
-  Widget _buildProbeResultCard(BuildContext context, AppLocalizations l10n) {
+  @override
+  Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
-    final report = _report;
-    return Card(
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppSpacing.md),
+        border: Border.all(color: Theme.of(context).dividerColor),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
+        padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    l10n.connectionDiagnostics,
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                ),
-                _MetaChip(
-                  label: l10n.currentFlavor,
-                  value: widget.flavor.label,
-                ),
-              ],
+          children: <Widget>[
+            Text(
+              AppLocalizations.of(context)!.streamFrames,
+              style: Theme.of(context).textTheme.titleSmall,
             ),
             const SizedBox(height: AppSpacing.sm),
-            Text(
-              report?.summary ?? l10n.connectionDiagnosticsHint,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            if (report != null) ...[
-              Wrap(
-                spacing: AppSpacing.sm,
-                runSpacing: AppSpacing.sm,
-                children: [
-                  _ClassificationPill(classification: report.classification),
-                  _MetaChip(
-                    label: l10n.serverVersion,
-                    value: report.snapshot.version,
-                  ),
-                  _MetaChip(
-                    label: l10n.sseStatus,
-                    value: report.sseReady
-                        ? l10n.readyStatus
-                        : l10n.needsAttentionStatus,
+            for (final entry in streamFrames.entries) ...<Widget>[
+              Row(
+                children: <Widget>[
+                  Expanded(child: Text(entry.key)),
+                  Text(
+                    '${entry.value}',
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: surfaces.accentSoft,
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: AppSpacing.md),
-              Wrap(
-                spacing: AppSpacing.sm,
-                runSpacing: AppSpacing.sm,
-                children: report.capabilityRegistry
-                    .asMap()
-                    .entries
-                    .map((entry) => _BooleanCapabilityChip(entry: entry))
-                    .toList(growable: false),
-              ),
-            ] else ...[
-              Text(
-                l10n.connectionEmptyState,
-                style: Theme.of(context).textTheme.bodyLarge,
-              ),
+              if (entry.key != streamFrames.keys.last)
+                const SizedBox(height: AppSpacing.xs),
             ],
           ],
         ),
@@ -643,8 +1706,8 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
   }
 }
 
-class _FoundationDebugData {
-  const _FoundationDebugData({
+class _FixtureDebugData {
+  const _FixtureDebugData({
     required this.fullProbe,
     required this.legacyProbe,
     required this.errorProbe,
@@ -659,138 +1722,9 @@ class _FoundationDebugData {
   final int unknownFieldCount;
 }
 
-class _CapabilityCard extends StatelessWidget {
-  const _CapabilityCard({required this.title, required this.capabilityMap});
-
-  final String title;
-  final Map<String, bool> capabilityMap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: AppSpacing.md),
-            for (final entry in capabilityMap.entries)
-              Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-                child: Row(
-                  children: [
-                    Expanded(child: Text(entry.key)),
-                    Icon(
-                      entry.value ? Icons.check_circle : Icons.remove_circle,
-                      color: entry.value
-                          ? const Color(0xFF8BE39B)
-                          : const Color(0xFFFF9B9B),
-                    ),
-                  ],
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _StreamCard extends StatelessWidget {
-  const _StreamCard({required this.title, required this.streamFrames});
-
-  final String title;
-  final Map<String, int> streamFrames;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: AppSpacing.md),
-            for (final entry in streamFrames.entries)
-              Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-                child: Row(
-                  children: [
-                    Expanded(child: Text(entry.key)),
-                    Text('${entry.value}'),
-                  ],
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _MetaChip extends StatelessWidget {
-  const _MetaChip({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Chip(label: Text('$label: $value'));
-  }
-}
-
-class _ClassificationPill extends StatelessWidget {
-  const _ClassificationPill({required this.classification});
-
-  final ConnectionProbeClassification classification;
-
-  @override
-  Widget build(BuildContext context) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
-    final (label, color) = switch (classification) {
-      ConnectionProbeClassification.ready => ('ready', surfaces.success),
-      ConnectionProbeClassification.authFailure => ('auth', surfaces.warning),
-      ConnectionProbeClassification.specFetchFailure => (
-        'spec',
-        surfaces.warning,
-      ),
-      ConnectionProbeClassification.unsupportedCapabilities => (
-        'unsupported',
-        surfaces.danger,
-      ),
-      ConnectionProbeClassification.connectivityFailure => (
-        'offline',
-        surfaces.danger,
-      ),
-    };
-    return Chip(
-      backgroundColor: color.withValues(alpha: 0.16),
-      side: BorderSide(color: color.withValues(alpha: 0.5)),
-      label: Text(label),
-    );
-  }
-}
-
-class _BooleanCapabilityChip extends StatelessWidget {
-  const _BooleanCapabilityChip({required this.entry});
-
-  final MapEntry<String, bool> entry;
-
-  @override
-  Widget build(BuildContext context) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
-    return Chip(
-      backgroundColor: (entry.value ? surfaces.success : surfaces.danger)
-          .withValues(alpha: 0.14),
-      side: BorderSide(
-        color: (entry.value ? surfaces.success : surfaces.danger).withValues(
-          alpha: 0.4,
-        ),
-      ),
-      label: Text(entry.key),
-    );
+extension on AppSurfaces {
+  Color onColor(Color color) {
+    final brightness = ThemeData.estimateBrightnessForColor(color);
+    return brightness == Brightness.dark ? Colors.white : background;
   }
 }

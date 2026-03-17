@@ -133,4 +133,318 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get connectionEmptyState =>
       'Enter a server profile and run the probe to populate capability diagnostics.';
+
+  @override
+  String get connectionHeaderEyebrow => 'Phase 2 · Live server connection';
+
+  @override
+  String get connectionHeaderTitle => 'Connect a real OpenCode server';
+
+  @override
+  String get connectionHeaderSubtitle =>
+      'Probe the live spec, verify auth, and keep the next handoff grounded in actual server capability.';
+
+  @override
+  String get connectionStatusAwaiting => 'Awaiting first probe';
+
+  @override
+  String get connectionFormTitle => 'Server profile manager';
+
+  @override
+  String get connectionFormSubtitle =>
+      'Save known endpoints, retry recent attempts, and verify whether the server is actually ready for this client.';
+
+  @override
+  String get savedProfilesCountLabel => 'saved';
+
+  @override
+  String get recentConnectionsCountLabel => 'recent';
+
+  @override
+  String get sseReadyLabel => 'SSE-ready';
+
+  @override
+  String get ssePendingLabel => 'Probe pending';
+
+  @override
+  String get connectionProfileLabel => 'Profile name';
+
+  @override
+  String get connectionProfileLabelHint =>
+      'Studio staging, laptop tunnel, on-prem gateway';
+
+  @override
+  String get connectionAddressLabel => 'Server address';
+
+  @override
+  String get connectionAddressHint => 'https://opencode.example.com';
+
+  @override
+  String get connectionUsernameLabel => 'Basic auth username';
+
+  @override
+  String get connectionUsernameHint => 'Optional';
+
+  @override
+  String get connectionPasswordLabel => 'Basic auth password';
+
+  @override
+  String get connectionPasswordHint => 'Optional';
+
+  @override
+  String get connectionAddressValidation => 'Enter a valid server address.';
+
+  @override
+  String get connectionProbeAction => 'Probe server';
+
+  @override
+  String get connectionSaveAction => 'Save profile';
+
+  @override
+  String get connectionProbeResultTitle => 'Live capability probe';
+
+  @override
+  String get connectionProbeResultSubtitle =>
+      'Each run checks health, spec, config, providers, agents, and experimental tools when the spec exposes them.';
+
+  @override
+  String get connectionProbeEmptyTitle => 'No live probe yet';
+
+  @override
+  String get connectionProbeEmptySubtitle =>
+      'Run a probe to classify auth failures, spec fetch issues, unsupported capability gaps, or readiness for the SSE/connectivity layer.';
+
+  @override
+  String get connectionVersionLabel => 'Version';
+
+  @override
+  String get connectionCheckedAtLabel => 'Checked';
+
+  @override
+  String get connectionCapabilitiesLabel => 'Capabilities enabled';
+
+  @override
+  String get connectionReadinessLabel => 'Readiness';
+
+  @override
+  String get connectionMissingCapabilitiesLabel => 'Missing required endpoints';
+
+  @override
+  String get connectionExperimentalPathsLabel => 'Experimental tool endpoints';
+
+  @override
+  String get connectionEndpointSectionTitle => 'Endpoint outcomes';
+
+  @override
+  String get connectionCapabilitySectionTitle => 'Capability registry';
+
+  @override
+  String get savedProfilesTitle => 'Saved profiles';
+
+  @override
+  String get savedProfilesSubtitle =>
+      'Pinned connections stay ready for repeat probe cycles.';
+
+  @override
+  String get savedProfilesEmptyTitle => 'No saved profiles yet';
+
+  @override
+  String get savedProfilesEmptySubtitle =>
+      'Save a working address so the app opens with a known server target next time.';
+
+  @override
+  String get recentConnectionsTitle => 'Recent attempts';
+
+  @override
+  String get recentConnectionsSubtitle =>
+      'Last live probes, kept separate from pinned server profiles.';
+
+  @override
+  String get recentConnectionsEmptyTitle => 'No recent attempts yet';
+
+  @override
+  String get recentConnectionsEmptySubtitle =>
+      'Probe a server and the latest outcome will stay here for quick retry.';
+
+  @override
+  String get connectionOutcomeReady => 'Ready for connection';
+
+  @override
+  String get connectionOutcomeAuthFailure => 'Auth failure';
+
+  @override
+  String get connectionOutcomeSpecFailure => 'Spec fetch failure';
+
+  @override
+  String get connectionOutcomeUnsupported => 'Unsupported capability set';
+
+  @override
+  String get connectionOutcomeConnectivityFailure => 'Connectivity failure';
+
+  @override
+  String get connectionDetailReady =>
+      'Core endpoints responded and the server looks ready for SSE handoff.';
+
+  @override
+  String get connectionDetailAuthFailure =>
+      'The server responded, but at least one core endpoint rejected the supplied credentials.';
+
+  @override
+  String get connectionDetailSpecFailure =>
+      'The server is reachable, but the OpenAPI spec could not be fetched or parsed cleanly.';
+
+  @override
+  String get connectionDetailUnsupported =>
+      'The server spec is readable, but required endpoints for this client are still missing.';
+
+  @override
+  String get connectionDetailConnectivityFailure =>
+      'The server could not be reached reliably enough to complete probing.';
+
+  @override
+  String get endpointReadyStatus => 'ready';
+
+  @override
+  String get endpointAuthStatus => 'auth';
+
+  @override
+  String get endpointUnsupportedStatus => 'unsupported';
+
+  @override
+  String get endpointFailureStatus => 'failure';
+
+  @override
+  String get endpointUnknownStatus => 'unknown';
+
+  @override
+  String get fixtureDiagnosticsTitle => 'Fixture diagnostics';
+
+  @override
+  String get fixtureDiagnosticsSubtitle =>
+      'The phase 1 manual QA surfaces stay visible here while live connection work comes online.';
+
+  @override
+  String get capabilityCanShareSession => 'Share session';
+
+  @override
+  String get capabilityCanForkSession => 'Fork session';
+
+  @override
+  String get capabilityCanSummarizeSession => 'Summarize session';
+
+  @override
+  String get capabilityCanRevertSession => 'Revert session';
+
+  @override
+  String get capabilityHasQuestions => 'Questions';
+
+  @override
+  String get capabilityHasPermissions => 'Permissions';
+
+  @override
+  String get capabilityHasExperimentalTools => 'Experimental tools';
+
+  @override
+  String get capabilityHasProviderOAuth => 'Provider OAuth';
+
+  @override
+  String get capabilityHasMcpAuth => 'MCP auth';
+
+  @override
+  String get capabilityHasTuiControl => 'TUI control';
+
+  @override
+  String get projectSelectionTitle => 'Project selection';
+
+  @override
+  String get projectSelectionSubtitle =>
+      'Choose the active project context from the server\'s current project, server-listed projects, a manual path, or a folder browser.';
+
+  @override
+  String get currentProjectTitle => 'Current project';
+
+  @override
+  String get currentProjectSubtitle =>
+      'The project currently scoped by the connected server instance.';
+
+  @override
+  String get serverProjectsTitle => 'Server-listed projects';
+
+  @override
+  String get serverProjectsSubtitle =>
+      'Projects OpenCode already knows about on this server.';
+
+  @override
+  String get serverProjectsEmpty => 'No server-listed projects yet.';
+
+  @override
+  String get manualProjectTitle => 'Manual path or folder browser';
+
+  @override
+  String get manualProjectSubtitle =>
+      'Use this when search misses a folder or you need to open an exact path.';
+
+  @override
+  String get manualProjectPathLabel => 'Project directory';
+
+  @override
+  String get manualProjectPathHint => '/workspace/my-project';
+
+  @override
+  String get projectInspectAction => 'Inspect path';
+
+  @override
+  String get projectInspectingAction => 'Inspecting...';
+
+  @override
+  String get projectBrowseAction => 'Browse folder';
+
+  @override
+  String get recentProjectsTitle => 'Recent projects';
+
+  @override
+  String get recentProjectsSubtitle =>
+      'Recent local project targets kept separately from server-listed projects.';
+
+  @override
+  String get recentProjectsEmpty => 'No recent projects yet.';
+
+  @override
+  String get projectPreviewTitle => 'Project preview';
+
+  @override
+  String get projectPreviewSubtitle =>
+      'Metadata for the next project context before sessions and chat bind to it.';
+
+  @override
+  String get projectPreviewEmpty =>
+      'Select a project from one of the four entry points to preview it here.';
+
+  @override
+  String get projectDirectoryLabel => 'Directory';
+
+  @override
+  String get projectSourceLabel => 'Source';
+
+  @override
+  String get projectVcsLabel => 'VCS';
+
+  @override
+  String get projectBranchLabel => 'Branch';
+
+  @override
+  String get projectLastSessionLabel => 'Last session';
+
+  @override
+  String get projectLastStatusLabel => 'Last status';
+
+  @override
+  String get projectLastSessionUnknown => 'Not captured yet';
+
+  @override
+  String get projectLastStatusUnknown => 'Not captured yet';
+
+  @override
+  String get projectSelectionReadyHint =>
+      'This target is ready for the next phase where sessions and chat use the selected project context.';
 }
