@@ -74,6 +74,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       const <PermissionRequestSummary>[];
   ConfigSnapshot? _configSnapshot;
   IntegrationStatusSnapshot? _integrationStatusSnapshot;
+  String? _lastIntegrationAuthUrl;
   List<TodoItem> _todos = const <TodoItem>[];
   String? _selectedSessionId;
 
@@ -137,6 +138,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         _permissionRequests = const <PermissionRequestSummary>[];
         _configSnapshot = null;
         _integrationStatusSnapshot = null;
+        _lastIntegrationAuthUrl = null;
         _todos = const <TodoItem>[];
         _selectedSessionId = bundle.selectedSessionId;
         _loading = false;
@@ -397,6 +399,34 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     }
   }
 
+  Future<void> _startProviderAuth(String providerId) async {
+    final url = await _integrationStatusService.startProviderAuth(
+      profile: widget.profile,
+      project: widget.project,
+      providerId: providerId,
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _lastIntegrationAuthUrl = url;
+    });
+  }
+
+  Future<void> _startMcpAuth(String name) async {
+    final url = await _integrationStatusService.startMcpAuth(
+      profile: widget.profile,
+      project: widget.project,
+      name: name,
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _lastIntegrationAuthUrl = url;
+    });
+  }
+
   Future<void> _replyPermission(String requestId, String reply) async {
     await _requestService.replyToPermission(
       profile: widget.profile,
@@ -520,6 +550,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         permissionRequests: _permissionRequests,
         configSnapshot: _configSnapshot,
         integrationStatusSnapshot: _integrationStatusSnapshot,
+        lastIntegrationAuthUrl: _lastIntegrationAuthUrl,
         todos: _todos,
         selectedSessionId: _selectedSessionId,
         loading: _loading,
@@ -536,6 +567,8 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         onRejectQuestion: _rejectQuestion,
         onReplyPermission: _replyPermission,
         onApplyConfig: _applyConfigRaw,
+        onStartProviderAuth: _startProviderAuth,
+        onStartMcpAuth: _startMcpAuth,
       );
     }
     if (width >= 960) {
@@ -561,6 +594,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         permissionRequests: _permissionRequests,
         configSnapshot: _configSnapshot,
         integrationStatusSnapshot: _integrationStatusSnapshot,
+        lastIntegrationAuthUrl: _lastIntegrationAuthUrl,
         todos: _todos,
         selectedSessionId: _selectedSessionId,
         loading: _loading,
@@ -577,6 +611,8 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         onRejectQuestion: _rejectQuestion,
         onReplyPermission: _replyPermission,
         onApplyConfig: _applyConfigRaw,
+        onStartProviderAuth: _startProviderAuth,
+        onStartMcpAuth: _startMcpAuth,
       );
     }
     if (width >= 700) {
@@ -602,6 +638,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         permissionRequests: _permissionRequests,
         configSnapshot: _configSnapshot,
         integrationStatusSnapshot: _integrationStatusSnapshot,
+        lastIntegrationAuthUrl: _lastIntegrationAuthUrl,
         todos: _todos,
         selectedSessionId: _selectedSessionId,
         loading: _loading,
@@ -618,6 +655,8 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         onRejectQuestion: _rejectQuestion,
         onReplyPermission: _replyPermission,
         onApplyConfig: _applyConfigRaw,
+        onStartProviderAuth: _startProviderAuth,
+        onStartMcpAuth: _startMcpAuth,
         showContextSheet: _showContextSheet,
         onToggleContextSheet: () {
           setState(() {
@@ -648,6 +687,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       permissionRequests: _permissionRequests,
       configSnapshot: _configSnapshot,
       integrationStatusSnapshot: _integrationStatusSnapshot,
+      lastIntegrationAuthUrl: _lastIntegrationAuthUrl,
       todos: _todos,
       selectedSessionId: _selectedSessionId,
       loading: _loading,
@@ -664,6 +704,8 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       onRejectQuestion: _rejectQuestion,
       onReplyPermission: _replyPermission,
       onApplyConfig: _applyConfigRaw,
+      onStartProviderAuth: _startProviderAuth,
+      onStartMcpAuth: _startMcpAuth,
       showContextSheet: _showContextSheet,
       onToggleContextSheet: () {
         setState(() {
@@ -697,6 +739,7 @@ class _DesktopShell extends StatelessWidget {
     required this.permissionRequests,
     required this.configSnapshot,
     required this.integrationStatusSnapshot,
+    required this.lastIntegrationAuthUrl,
     required this.todos,
     required this.selectedSessionId,
     required this.loading,
@@ -713,6 +756,8 @@ class _DesktopShell extends StatelessWidget {
     required this.onRejectQuestion,
     required this.onReplyPermission,
     required this.onApplyConfig,
+    required this.onStartProviderAuth,
+    required this.onStartMcpAuth,
   });
 
   final ServerProfile profile;
@@ -736,6 +781,7 @@ class _DesktopShell extends StatelessWidget {
   final List<PermissionRequestSummary> permissionRequests;
   final ConfigSnapshot? configSnapshot;
   final IntegrationStatusSnapshot? integrationStatusSnapshot;
+  final String? lastIntegrationAuthUrl;
   final List<TodoItem> todos;
   final String? selectedSessionId;
   final bool loading;
@@ -752,6 +798,8 @@ class _DesktopShell extends StatelessWidget {
   final Future<void> Function(String) onRejectQuestion;
   final Future<void> Function(String, String) onReplyPermission;
   final Future<void> Function(String) onApplyConfig;
+  final Future<void> Function(String) onStartProviderAuth;
+  final Future<void> Function(String) onStartMcpAuth;
 
   @override
   Widget build(BuildContext context) {
@@ -803,7 +851,10 @@ class _DesktopShell extends StatelessWidget {
               permissionRequests: permissionRequests,
               configSnapshot: configSnapshot,
               integrationStatusSnapshot: integrationStatusSnapshot,
+              lastIntegrationAuthUrl: lastIntegrationAuthUrl,
               onApplyConfig: onApplyConfig,
+              onStartProviderAuth: onStartProviderAuth,
+              onStartMcpAuth: onStartMcpAuth,
               onSelectFile: onSelectFile,
               onSearchFiles: onSearchFiles,
               onRunShellCommand: onRunShellCommand,
@@ -842,6 +893,7 @@ class _TabletLandscapeShell extends StatelessWidget {
     required this.permissionRequests,
     required this.configSnapshot,
     required this.integrationStatusSnapshot,
+    required this.lastIntegrationAuthUrl,
     required this.todos,
     required this.selectedSessionId,
     required this.loading,
@@ -858,6 +910,8 @@ class _TabletLandscapeShell extends StatelessWidget {
     required this.onRejectQuestion,
     required this.onReplyPermission,
     required this.onApplyConfig,
+    required this.onStartProviderAuth,
+    required this.onStartMcpAuth,
   });
 
   final ServerProfile profile;
@@ -881,6 +935,7 @@ class _TabletLandscapeShell extends StatelessWidget {
   final List<PermissionRequestSummary> permissionRequests;
   final ConfigSnapshot? configSnapshot;
   final IntegrationStatusSnapshot? integrationStatusSnapshot;
+  final String? lastIntegrationAuthUrl;
   final List<TodoItem> todos;
   final String? selectedSessionId;
   final bool loading;
@@ -897,6 +952,8 @@ class _TabletLandscapeShell extends StatelessWidget {
   final Future<void> Function(String) onRejectQuestion;
   final Future<void> Function(String, String) onReplyPermission;
   final Future<void> Function(String) onApplyConfig;
+  final Future<void> Function(String) onStartProviderAuth;
+  final Future<void> Function(String) onStartMcpAuth;
 
   @override
   Widget build(BuildContext context) {
@@ -948,7 +1005,10 @@ class _TabletLandscapeShell extends StatelessWidget {
               permissionRequests: permissionRequests,
               configSnapshot: configSnapshot,
               integrationStatusSnapshot: integrationStatusSnapshot,
+              lastIntegrationAuthUrl: lastIntegrationAuthUrl,
               onApplyConfig: onApplyConfig,
+              onStartProviderAuth: onStartProviderAuth,
+              onStartMcpAuth: onStartMcpAuth,
               onSelectFile: onSelectFile,
               onSearchFiles: onSearchFiles,
               onRunShellCommand: onRunShellCommand,
@@ -987,6 +1047,7 @@ class _TabletPortraitShell extends StatelessWidget {
     required this.permissionRequests,
     required this.configSnapshot,
     required this.integrationStatusSnapshot,
+    required this.lastIntegrationAuthUrl,
     required this.todos,
     required this.selectedSessionId,
     required this.loading,
@@ -1003,6 +1064,8 @@ class _TabletPortraitShell extends StatelessWidget {
     required this.onRejectQuestion,
     required this.onReplyPermission,
     required this.onApplyConfig,
+    required this.onStartProviderAuth,
+    required this.onStartMcpAuth,
     required this.showContextSheet,
     required this.onToggleContextSheet,
   });
@@ -1028,6 +1091,7 @@ class _TabletPortraitShell extends StatelessWidget {
   final List<PermissionRequestSummary> permissionRequests;
   final ConfigSnapshot? configSnapshot;
   final IntegrationStatusSnapshot? integrationStatusSnapshot;
+  final String? lastIntegrationAuthUrl;
   final List<TodoItem> todos;
   final String? selectedSessionId;
   final bool loading;
@@ -1044,6 +1108,8 @@ class _TabletPortraitShell extends StatelessWidget {
   final Future<void> Function(String) onRejectQuestion;
   final Future<void> Function(String, String) onReplyPermission;
   final Future<void> Function(String) onApplyConfig;
+  final Future<void> Function(String) onStartProviderAuth;
+  final Future<void> Function(String) onStartMcpAuth;
   final bool showContextSheet;
   final VoidCallback onToggleContextSheet;
 
@@ -1087,7 +1153,10 @@ class _TabletPortraitShell extends StatelessWidget {
               permissionRequests: permissionRequests,
               configSnapshot: configSnapshot,
               integrationStatusSnapshot: integrationStatusSnapshot,
+              lastIntegrationAuthUrl: lastIntegrationAuthUrl,
               onApplyConfig: onApplyConfig,
+              onStartProviderAuth: onStartProviderAuth,
+              onStartMcpAuth: onStartMcpAuth,
               onSelectFile: onSelectFile,
               onSearchFiles: onSearchFiles,
               onRunShellCommand: onRunShellCommand,
@@ -1128,6 +1197,7 @@ class _MobileShell extends StatelessWidget {
     required this.permissionRequests,
     required this.configSnapshot,
     required this.integrationStatusSnapshot,
+    required this.lastIntegrationAuthUrl,
     required this.todos,
     required this.selectedSessionId,
     required this.loading,
@@ -1144,6 +1214,8 @@ class _MobileShell extends StatelessWidget {
     required this.onRejectQuestion,
     required this.onReplyPermission,
     required this.onApplyConfig,
+    required this.onStartProviderAuth,
+    required this.onStartMcpAuth,
     required this.showContextSheet,
     required this.onToggleContextSheet,
   });
@@ -1169,6 +1241,7 @@ class _MobileShell extends StatelessWidget {
   final List<PermissionRequestSummary> permissionRequests;
   final ConfigSnapshot? configSnapshot;
   final IntegrationStatusSnapshot? integrationStatusSnapshot;
+  final String? lastIntegrationAuthUrl;
   final List<TodoItem> todos;
   final String? selectedSessionId;
   final bool loading;
@@ -1185,6 +1258,8 @@ class _MobileShell extends StatelessWidget {
   final Future<void> Function(String) onRejectQuestion;
   final Future<void> Function(String, String) onReplyPermission;
   final Future<void> Function(String) onApplyConfig;
+  final Future<void> Function(String) onStartProviderAuth;
+  final Future<void> Function(String) onStartMcpAuth;
   final bool showContextSheet;
   final VoidCallback onToggleContextSheet;
 
@@ -1230,7 +1305,10 @@ class _MobileShell extends StatelessWidget {
               permissionRequests: permissionRequests,
               configSnapshot: configSnapshot,
               integrationStatusSnapshot: integrationStatusSnapshot,
+              lastIntegrationAuthUrl: lastIntegrationAuthUrl,
               onApplyConfig: onApplyConfig,
+              onStartProviderAuth: onStartProviderAuth,
+              onStartMcpAuth: onStartMcpAuth,
               onSelectFile: onSelectFile,
               onSearchFiles: onSearchFiles,
               onRunShellCommand: onRunShellCommand,
@@ -1533,7 +1611,10 @@ class _ContextRail extends StatelessWidget {
     required this.permissionRequests,
     required this.configSnapshot,
     required this.integrationStatusSnapshot,
+    required this.lastIntegrationAuthUrl,
     required this.onApplyConfig,
+    required this.onStartProviderAuth,
+    required this.onStartMcpAuth,
     required this.onSelectFile,
     required this.onSearchFiles,
     required this.onRunShellCommand,
@@ -1560,7 +1641,10 @@ class _ContextRail extends StatelessWidget {
   final List<PermissionRequestSummary> permissionRequests;
   final ConfigSnapshot? configSnapshot;
   final IntegrationStatusSnapshot? integrationStatusSnapshot;
+  final String? lastIntegrationAuthUrl;
   final Future<void> Function(String) onApplyConfig;
+  final Future<void> Function(String) onStartProviderAuth;
+  final Future<void> Function(String) onStartMcpAuth;
   final ValueChanged<String> onSelectFile;
   final ValueChanged<String> onSearchFiles;
   final ValueChanged<String> onRunShellCommand;
@@ -1626,7 +1710,12 @@ class _ContextRail extends StatelessWidget {
                     onApply: onApplyConfig,
                   ),
                   const SizedBox(height: AppSpacing.sm),
-                  _IntegrationStatusPanel(snapshot: integrationStatusSnapshot),
+                  _IntegrationStatusPanel(
+                    snapshot: integrationStatusSnapshot,
+                    lastAuthorizationUrl: lastIntegrationAuthUrl,
+                    onStartProviderAuth: onStartProviderAuth,
+                    onStartMcpAuth: onStartMcpAuth,
+                  ),
                 ],
               ],
             ),
@@ -1654,7 +1743,10 @@ class _BottomUtilitySheet extends StatelessWidget {
     required this.permissionRequests,
     required this.configSnapshot,
     required this.integrationStatusSnapshot,
+    required this.lastIntegrationAuthUrl,
     required this.onApplyConfig,
+    required this.onStartProviderAuth,
+    required this.onStartMcpAuth,
     required this.onSelectFile,
     required this.onSearchFiles,
     required this.onRunShellCommand,
@@ -1681,7 +1773,10 @@ class _BottomUtilitySheet extends StatelessWidget {
   final List<PermissionRequestSummary> permissionRequests;
   final ConfigSnapshot? configSnapshot;
   final IntegrationStatusSnapshot? integrationStatusSnapshot;
+  final String? lastIntegrationAuthUrl;
   final Future<void> Function(String) onApplyConfig;
+  final Future<void> Function(String) onStartProviderAuth;
+  final Future<void> Function(String) onStartMcpAuth;
   final ValueChanged<String> onSelectFile;
   final ValueChanged<String> onSearchFiles;
   final ValueChanged<String> onRunShellCommand;
@@ -1711,7 +1806,10 @@ class _BottomUtilitySheet extends StatelessWidget {
         permissionRequests: permissionRequests,
         configSnapshot: configSnapshot,
         integrationStatusSnapshot: integrationStatusSnapshot,
+        lastIntegrationAuthUrl: lastIntegrationAuthUrl,
         onApplyConfig: onApplyConfig,
+        onStartProviderAuth: onStartProviderAuth,
+        onStartMcpAuth: onStartMcpAuth,
         onSelectFile: onSelectFile,
         onSearchFiles: onSearchFiles,
         onRunShellCommand: onRunShellCommand,
@@ -2193,9 +2291,17 @@ class _ConfigPreviewPanelState extends State<_ConfigPreviewPanel> {
 }
 
 class _IntegrationStatusPanel extends StatelessWidget {
-  const _IntegrationStatusPanel({required this.snapshot});
+  const _IntegrationStatusPanel({
+    required this.snapshot,
+    required this.lastAuthorizationUrl,
+    required this.onStartProviderAuth,
+    required this.onStartMcpAuth,
+  });
 
   final IntegrationStatusSnapshot? snapshot;
+  final String? lastAuthorizationUrl;
+  final Future<void> Function(String) onStartProviderAuth;
+  final Future<void> Function(String) onStartMcpAuth;
 
   @override
   Widget build(BuildContext context) {
@@ -2218,6 +2324,32 @@ class _IntegrationStatusPanel extends StatelessWidget {
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
         ),
+        const SizedBox(height: AppSpacing.xs),
+        Wrap(
+          spacing: AppSpacing.xs,
+          runSpacing: AppSpacing.xs,
+          children: <Widget>[
+            if (snapshot!.providerAuth.isNotEmpty)
+              OutlinedButton(
+                onPressed: () =>
+                    onStartProviderAuth(snapshot!.providerAuth.keys.first),
+                child: const Text('Start provider auth'),
+              ),
+            if (snapshot!.mcpStatus.isNotEmpty)
+              OutlinedButton(
+                onPressed: () => onStartMcpAuth(snapshot!.mcpStatus.keys.first),
+                child: const Text('Start MCP auth'),
+              ),
+          ],
+        ),
+        if (lastAuthorizationUrl != null) ...<Widget>[
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            lastAuthorizationUrl!,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
       ],
     );
   }
