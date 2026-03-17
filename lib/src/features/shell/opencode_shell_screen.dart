@@ -35,6 +35,8 @@ class OpenCodeShellScreen extends StatefulWidget {
     required this.project,
     required this.capabilities,
     required this.onExit,
+    this.chatService,
+    this.todoService,
     super.key,
   });
 
@@ -42,13 +44,15 @@ class OpenCodeShellScreen extends StatefulWidget {
   final ProjectTarget project;
   final CapabilityRegistry capabilities;
   final VoidCallback onExit;
+  final ChatService? chatService;
+  final TodoService? todoService;
 
   @override
   State<OpenCodeShellScreen> createState() => _OpenCodeShellScreenState();
 }
 
 class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
-  final ChatService _chatService = ChatService();
+  late final ChatService _chatService;
   final SessionActionService _sessionActionService = SessionActionService();
   final EventStreamService _eventStreamService = EventStreamService();
   final FileBrowserService _fileBrowserService = FileBrowserService();
@@ -57,7 +61,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
   final IntegrationStatusService _integrationStatusService =
       IntegrationStatusService();
   final TerminalService _terminalService = TerminalService();
-  final TodoService _todoService = TodoService();
+  late final TodoService _todoService;
   final SseConnectionMonitor _sseConnectionMonitor = SseConnectionMonitor(
     heartbeatTimeout: const Duration(seconds: 8),
   );
@@ -98,6 +102,8 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
   @override
   void initState() {
     super.initState();
+    _chatService = widget.chatService ?? ChatService();
+    _todoService = widget.todoService ?? TodoService();
     _loadBundle();
   }
 
@@ -2991,7 +2997,7 @@ class _TodoTileList extends StatelessWidget {
                 icon: _todoIcon(todo.status),
                 emphasis: todo.status == 'in_progress',
                 trailing: _InfoChip(
-                  label: _todoStatusLabel(todo.status),
+                  label: _todoStatusLabel(l10n, todo.status),
                   emphasis: todo.status == 'in_progress',
                 ),
               ),
@@ -4062,8 +4068,13 @@ int _todoRank(String status) {
   };
 }
 
-String _todoStatusLabel(String status) {
-  return status.replaceAll('_', ' ');
+String _todoStatusLabel(AppLocalizations l10n, String status) {
+  return switch (status) {
+    'in_progress' => l10n.shellTodoStatusInProgress,
+    'pending' => l10n.shellTodoStatusPending,
+    'completed' => l10n.shellTodoStatusCompleted,
+    _ => l10n.shellTodoStatusUnknown,
+  };
 }
 
 IconData _todoIcon(String status) {

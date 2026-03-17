@@ -84,7 +84,16 @@ class ChatPartView extends StatelessWidget {
         : surfaces.panelMuted.withValues(alpha: 0.94);
     final rendered =
         _chatPartRenderers[part.type]?.call(l10n, message, part) ??
-        _RenderedChatPart(title: part.type, body: _defaultBody(part));
+        _RenderedChatPart(
+          title: l10n.chatPartUnknown(part.type),
+          body: _defaultBody(part),
+        );
+    final secondaryLabel = _secondaryPartLabel(
+      l10n: l10n,
+      part: part,
+      rendered: rendered,
+      accent: accent,
+    );
     return DecoratedBox(
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -123,8 +132,11 @@ class ChatPartView extends StatelessWidget {
                   emphasis: accent,
                 ),
                 const SizedBox(width: AppSpacing.xs),
-                if (part.type != 'text')
-                  _MessagePill(label: part.type, icon: Icons.layers_outlined),
+                if (secondaryLabel != null)
+                  _MessagePill(
+                    label: secondaryLabel,
+                    icon: Icons.layers_outlined,
+                  ),
               ],
             ),
             const SizedBox(height: AppSpacing.sm),
@@ -188,6 +200,20 @@ class _MessagePill extends StatelessWidget {
       ),
     );
   }
+}
+
+String? _secondaryPartLabel({
+  required AppLocalizations l10n,
+  required ChatPart part,
+  required _RenderedChatPart rendered,
+  required bool accent,
+}) {
+  if (part.type == 'text' || !accent) {
+    return null;
+  }
+  return _chatPartRenderers.containsKey(part.type)
+      ? rendered.title
+      : l10n.chatPartUnknown(part.type);
 }
 
 String _defaultBody(ChatPart part) {

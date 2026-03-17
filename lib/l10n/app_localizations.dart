@@ -1663,6 +1663,132 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Open utilities to switch between files, diff, todo, tools, and terminal panels.'**
   String get shellUtilitiesToggleBodyCompact;
+
+  /// No description provided for @shellContextEyebrow.
+  ///
+  /// In en, this message translates to:
+  /// **'Context'**
+  String get shellContextEyebrow;
+
+  /// No description provided for @shellSecondaryContextSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Secondary context for the active conversation'**
+  String get shellSecondaryContextSubtitle;
+
+  /// No description provided for @shellSupportRailsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Support rails for files, tasks, commands, and integrations'**
+  String get shellSupportRailsSubtitle;
+
+  /// No description provided for @shellModulesCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} modules'**
+  String shellModulesCount(int count);
+
+  /// No description provided for @shellSwipeUtilitiesIntoView.
+  ///
+  /// In en, this message translates to:
+  /// **'Swipe utilities into view'**
+  String get shellSwipeUtilitiesIntoView;
+
+  /// No description provided for @shellOpenUtilityRail.
+  ///
+  /// In en, this message translates to:
+  /// **'Open the utility rail'**
+  String get shellOpenUtilityRail;
+
+  /// No description provided for @shellOpenCodeRemote.
+  ///
+  /// In en, this message translates to:
+  /// **'OpenCode remote'**
+  String get shellOpenCodeRemote;
+
+  /// No description provided for @shellContextNearby.
+  ///
+  /// In en, this message translates to:
+  /// **'Context nearby'**
+  String get shellContextNearby;
+
+  /// No description provided for @shellShownCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} shown'**
+  String shellShownCount(int count);
+
+  /// No description provided for @shellSymbolFallback.
+  ///
+  /// In en, this message translates to:
+  /// **'symbol'**
+  String get shellSymbolFallback;
+
+  /// No description provided for @shellFileStatusSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'{status} +{added} -{removed}'**
+  String shellFileStatusSummary(String status, int added, int removed);
+
+  /// No description provided for @shellNewSession.
+  ///
+  /// In en, this message translates to:
+  /// **'New session'**
+  String get shellNewSession;
+
+  /// No description provided for @shellReplying.
+  ///
+  /// In en, this message translates to:
+  /// **'Replying'**
+  String get shellReplying;
+
+  /// No description provided for @shellCompactComposer.
+  ///
+  /// In en, this message translates to:
+  /// **'Compact composer'**
+  String get shellCompactComposer;
+
+  /// No description provided for @shellExpandedComposer.
+  ///
+  /// In en, this message translates to:
+  /// **'Expanded composer'**
+  String get shellExpandedComposer;
+
+  /// No description provided for @shellRetryAttempt.
+  ///
+  /// In en, this message translates to:
+  /// **'attempt {count}'**
+  String shellRetryAttempt(int count);
+
+  /// No description provided for @shellTodoStatusInProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'in progress'**
+  String get shellTodoStatusInProgress;
+
+  /// No description provided for @shellTodoStatusPending.
+  ///
+  /// In en, this message translates to:
+  /// **'pending'**
+  String get shellTodoStatusPending;
+
+  /// No description provided for @shellTodoStatusCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'completed'**
+  String get shellTodoStatusCompleted;
+
+  /// No description provided for @shellTodoStatusUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'unknown'**
+  String get shellTodoStatusUnknown;
+
+  /// No description provided for @chatPartUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown part: {type}'**
+  String chatPartUnknown(String type);
 }
 
 class _AppLocalizationsDelegate

@@ -4,9 +4,13 @@ import 'package:opencode_mobile_remote/l10n/app_localizations.dart';
 import 'package:opencode_mobile_remote/src/core/connection/connection_models.dart';
 import 'package:opencode_mobile_remote/src/core/spec/capability_registry.dart';
 import 'package:opencode_mobile_remote/src/design_system/app_theme.dart';
+import 'package:opencode_mobile_remote/src/features/chat/chat_models.dart';
+import 'package:opencode_mobile_remote/src/features/chat/chat_service.dart';
 import 'package:opencode_mobile_remote/src/core/spec/probe_snapshot.dart';
 import 'package:opencode_mobile_remote/src/features/projects/project_models.dart';
 import 'package:opencode_mobile_remote/src/features/shell/opencode_shell_screen.dart';
+import 'package:opencode_mobile_remote/src/features/tools/todo_models.dart';
+import 'package:opencode_mobile_remote/src/features/tools/todo_service.dart';
 
 void main() {
   const profile = ServerProfile(
@@ -66,6 +70,8 @@ void main() {
     WidgetTester tester, {
     required Size size,
     required CapabilityRegistry capabilitiesToUse,
+    ChatService? chatService,
+    TodoService? todoService,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -82,6 +88,8 @@ void main() {
           project: project,
           capabilities: capabilitiesToUse,
           onExit: _noop,
+          chatService: chatService,
+          todoService: todoService,
         ),
       ),
     );
@@ -136,6 +144,107 @@ void main() {
     expect(find.text('Terminal'), findsNothing);
     expect(find.text('Config'), findsNothing);
   });
+
+  testWidgets(
+    'selecting a session skips todo fetch when todos are unsupported',
+    (tester) async {
+      final chatService = _FakeChatService();
+      final todoService = _RecordingTodoService();
+
+      await pumpShellWithCapabilities(
+        tester,
+        size: const Size(1440, 1000),
+        capabilitiesToUse: minimalCapabilities,
+        chatService: chatService,
+        todoService: todoService,
+      );
+
+      expect(todoService.fetchCount, 0);
+
+      await tester.tap(find.text('Second session'));
+      await tester.pumpAndSettle();
+
+      expect(chatService.selectedMessagesSessionIds, contains('session-2'));
+      expect(todoService.fetchCount, 0);
+    },
+  );
 }
 
 void _noop() {}
+
+class _FakeChatService extends ChatService {
+  _FakeChatService();
+
+  final List<String> selectedMessagesSessionIds = <String>[];
+
+  @override
+  Future<ChatSessionBundle> fetchBundle({
+    required ServerProfile profile,
+    required ProjectTarget project,
+  }) async {
+    return ChatSessionBundle(
+      sessions: <SessionSummary>[
+        _session('session-1', 'First session'),
+        _session('session-2', 'Second session'),
+      ],
+      statuses: const <String, SessionStatusSummary>{},
+      messages: <ChatMessage>[_message('session-1')],
+      selectedSessionId: 'session-1',
+    );
+  }
+
+  @override
+  Future<List<ChatMessage>> fetchMessages({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String sessionId,
+  }) async {
+    selectedMessagesSessionIds.add(sessionId);
+    return <ChatMessage>[_message(sessionId)];
+  }
+
+  SessionSummary _session(String id, String title) {
+    return SessionSummary(
+      id: id,
+      directory: '/workspace/demo',
+      title: title,
+      version: '1',
+      updatedAt: DateTime.utc(2026, 3, 17),
+    );
+  }
+
+  ChatMessage _message(String sessionId) {
+    return ChatMessage(
+      info: ChatMessageInfo(
+        id: 'msg-$sessionId',
+        role: 'assistant',
+        sessionId: sessionId,
+      ),
+      parts: const <ChatPart>[
+        ChatPart(id: 'part-1', type: 'text', text: 'hello'),
+      ],
+    );
+  }
+
+  @override
+  void dispose() {}
+}
+
+class _RecordingTodoService extends TodoService {
+  _RecordingTodoService();
+
+  int fetchCount = 0;
+
+  @override
+  Future<List<TodoItem>> fetchTodos({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String sessionId,
+  }) async {
+    fetchCount += 1;
+    return const <TodoItem>[];
+  }
+
+  @override
+  void dispose() {}
+}

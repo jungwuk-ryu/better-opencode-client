@@ -842,4 +842,79 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get shellUtilitiesToggleBodyCompact =>
       'Open utilities to switch between files, diff, todo, tools, and terminal panels.';
+
+  @override
+  String get shellContextEyebrow => 'Context';
+
+  @override
+  String get shellSecondaryContextSubtitle =>
+      'Secondary context for the active conversation';
+
+  @override
+  String get shellSupportRailsSubtitle =>
+      'Support rails for files, tasks, commands, and integrations';
+
+  @override
+  String shellModulesCount(int count) {
+    return '$count modules';
+  }
+
+  @override
+  String get shellSwipeUtilitiesIntoView => 'Swipe utilities into view';
+
+  @override
+  String get shellOpenUtilityRail => 'Open the utility rail';
+
+  @override
+  String get shellOpenCodeRemote => 'OpenCode remote';
+
+  @override
+  String get shellContextNearby => 'Context nearby';
+
+  @override
+  String shellShownCount(int count) {
+    return '$count shown';
+  }
+
+  @override
+  String get shellSymbolFallback => 'symbol';
+
+  @override
+  String shellFileStatusSummary(String status, int added, int removed) {
+    return '$status +$added -$removed';
+  }
+
+  @override
+  String get shellNewSession => 'New session';
+
+  @override
+  String get shellReplying => 'Replying';
+
+  @override
+  String get shellCompactComposer => 'Compact composer';
+
+  @override
+  String get shellExpandedComposer => 'Expanded composer';
+
+  @override
+  String shellRetryAttempt(int count) {
+    return 'attempt $count';
+  }
+
+  @override
+  String get shellTodoStatusInProgress => 'in progress';
+
+  @override
+  String get shellTodoStatusPending => 'pending';
+
+  @override
+  String get shellTodoStatusCompleted => 'completed';
+
+  @override
+  String get shellTodoStatusUnknown => 'unknown';
+
+  @override
+  String chatPartUnknown(String type) {
+    return 'Unknown part: $type';
+  }
 }

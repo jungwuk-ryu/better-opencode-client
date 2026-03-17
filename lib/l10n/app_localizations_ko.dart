@@ -827,4 +827,77 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get shellUtilitiesToggleBodyCompact =>
       '유틸리티를 열어 파일, diff, todo, tools, terminal 패널을 전환합니다.';
+
+  @override
+  String get shellContextEyebrow => '컨텍스트';
+
+  @override
+  String get shellSecondaryContextSubtitle => '활성 대화를 위한 보조 문맥';
+
+  @override
+  String get shellSupportRailsSubtitle => '파일, 작업, 명령, 통합을 위한 보조 레일';
+
+  @override
+  String shellModulesCount(int count) {
+    return '모듈 $count개';
+  }
+
+  @override
+  String get shellSwipeUtilitiesIntoView => '유틸리티를 화면으로 밀어 올리기';
+
+  @override
+  String get shellOpenUtilityRail => '유틸리티 레일 열기';
+
+  @override
+  String get shellOpenCodeRemote => 'OpenCode 리모트';
+
+  @override
+  String get shellContextNearby => '주변 컨텍스트';
+
+  @override
+  String shellShownCount(int count) {
+    return '$count개 표시 중';
+  }
+
+  @override
+  String get shellSymbolFallback => '심볼';
+
+  @override
+  String shellFileStatusSummary(String status, int added, int removed) {
+    return '$status +$added -$removed';
+  }
+
+  @override
+  String get shellNewSession => '새 세션';
+
+  @override
+  String get shellReplying => '응답 중';
+
+  @override
+  String get shellCompactComposer => '간결한 작성기';
+
+  @override
+  String get shellExpandedComposer => '확장 작성기';
+
+  @override
+  String shellRetryAttempt(int count) {
+    return '시도 $count회';
+  }
+
+  @override
+  String get shellTodoStatusInProgress => '진행 중';
+
+  @override
+  String get shellTodoStatusPending => '대기 중';
+
+  @override
+  String get shellTodoStatusCompleted => '완료';
+
+  @override
+  String get shellTodoStatusUnknown => '알 수 없음';
+
+  @override
+  String chatPartUnknown(String type) {
+    return '알 수 없는 파트: $type';
+  }
 }
