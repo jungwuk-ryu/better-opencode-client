@@ -10,6 +10,7 @@ import '../chat/chat_service.dart';
 import '../files/file_browser_service.dart';
 import '../files/file_models.dart';
 import '../projects/project_models.dart';
+import '../terminal/terminal_service.dart';
 import '../tools/todo_models.dart';
 import '../tools/todo_service.dart';
 
@@ -32,6 +33,7 @@ class OpenCodeShellScreen extends StatefulWidget {
 class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
   final ChatService _chatService = ChatService();
   final FileBrowserService _fileBrowserService = FileBrowserService();
+  final TerminalService _terminalService = TerminalService();
   final TodoService _todoService = TodoService();
   bool _showContextSheet = false;
   bool _loading = true;
@@ -48,6 +50,9 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
   FileContentSummary? _filePreview;
   String? _selectedFilePath;
   String _fileSearchQuery = '';
+  String _terminalCommand = 'pwd';
+  ShellCommandResult? _lastShellResult;
+  bool _runningShellCommand = false;
   List<TodoItem> _todos = const <TodoItem>[];
   String? _selectedSessionId;
 
@@ -70,6 +75,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
   void dispose() {
     _chatService.dispose();
     _fileBrowserService.dispose();
+    _terminalService.dispose();
     _todoService.dispose();
     super.dispose();
   }
@@ -99,6 +105,8 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         _filePreview = null;
         _selectedFilePath = null;
         _fileSearchQuery = '';
+        _lastShellResult = null;
+        _runningShellCommand = false;
         _todos = const <TodoItem>[];
         _selectedSessionId = bundle.selectedSessionId;
         _loading = false;
@@ -228,6 +236,41 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     });
   }
 
+  Future<void> _runShellCommand(String command) async {
+    final sessionId = _selectedSessionId;
+    if (sessionId == null || command.trim().isEmpty) {
+      return;
+    }
+    setState(() {
+      _runningShellCommand = true;
+      _terminalCommand = command;
+    });
+    try {
+      final result = await _terminalService.runShellCommand(
+        profile: widget.profile,
+        project: widget.project,
+        sessionId: sessionId,
+        command: command,
+      );
+      await _selectSession(sessionId);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _lastShellResult = result;
+        _runningShellCommand = false;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _error = error.toString();
+        _runningShellCommand = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
@@ -247,6 +290,9 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         filePreview: _filePreview,
         selectedFilePath: _selectedFilePath,
         fileSearchQuery: _fileSearchQuery,
+        terminalCommand: _terminalCommand,
+        lastShellResult: _lastShellResult,
+        runningShellCommand: _runningShellCommand,
         todos: _todos,
         selectedSessionId: _selectedSessionId,
         loading: _loading,
@@ -254,6 +300,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         onSelectSession: _selectSession,
         onSelectFile: _selectFile,
         onSearchFiles: (query) => _loadFiles(searchQuery: query),
+        onRunShellCommand: _runShellCommand,
       );
     }
     if (width >= 960) {
@@ -272,6 +319,9 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         filePreview: _filePreview,
         selectedFilePath: _selectedFilePath,
         fileSearchQuery: _fileSearchQuery,
+        terminalCommand: _terminalCommand,
+        lastShellResult: _lastShellResult,
+        runningShellCommand: _runningShellCommand,
         todos: _todos,
         selectedSessionId: _selectedSessionId,
         loading: _loading,
@@ -279,6 +329,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         onSelectSession: _selectSession,
         onSelectFile: _selectFile,
         onSearchFiles: (query) => _loadFiles(searchQuery: query),
+        onRunShellCommand: _runShellCommand,
       );
     }
     if (width >= 700) {
@@ -297,6 +348,9 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         filePreview: _filePreview,
         selectedFilePath: _selectedFilePath,
         fileSearchQuery: _fileSearchQuery,
+        terminalCommand: _terminalCommand,
+        lastShellResult: _lastShellResult,
+        runningShellCommand: _runningShellCommand,
         todos: _todos,
         selectedSessionId: _selectedSessionId,
         loading: _loading,
@@ -304,6 +358,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         onSelectSession: _selectSession,
         onSelectFile: _selectFile,
         onSearchFiles: (query) => _loadFiles(searchQuery: query),
+        onRunShellCommand: _runShellCommand,
         showContextSheet: _showContextSheet,
         onToggleContextSheet: () {
           setState(() {
@@ -327,6 +382,9 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       filePreview: _filePreview,
       selectedFilePath: _selectedFilePath,
       fileSearchQuery: _fileSearchQuery,
+      terminalCommand: _terminalCommand,
+      lastShellResult: _lastShellResult,
+      runningShellCommand: _runningShellCommand,
       todos: _todos,
       selectedSessionId: _selectedSessionId,
       loading: _loading,
@@ -334,6 +392,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       onSelectSession: _selectSession,
       onSelectFile: _selectFile,
       onSearchFiles: (query) => _loadFiles(searchQuery: query),
+      onRunShellCommand: _runShellCommand,
       showContextSheet: _showContextSheet,
       onToggleContextSheet: () {
         setState(() {
@@ -360,6 +419,9 @@ class _DesktopShell extends StatelessWidget {
     required this.filePreview,
     required this.selectedFilePath,
     required this.fileSearchQuery,
+    required this.terminalCommand,
+    required this.lastShellResult,
+    required this.runningShellCommand,
     required this.todos,
     required this.selectedSessionId,
     required this.loading,
@@ -367,6 +429,7 @@ class _DesktopShell extends StatelessWidget {
     required this.onSelectSession,
     required this.onSelectFile,
     required this.onSearchFiles,
+    required this.onRunShellCommand,
   });
 
   final ServerProfile profile;
@@ -383,6 +446,9 @@ class _DesktopShell extends StatelessWidget {
   final FileContentSummary? filePreview;
   final String? selectedFilePath;
   final String fileSearchQuery;
+  final String terminalCommand;
+  final ShellCommandResult? lastShellResult;
+  final bool runningShellCommand;
   final List<TodoItem> todos;
   final String? selectedSessionId;
   final bool loading;
@@ -390,6 +456,7 @@ class _DesktopShell extends StatelessWidget {
   final ValueChanged<String> onSelectSession;
   final ValueChanged<String> onSelectFile;
   final ValueChanged<String> onSearchFiles;
+  final ValueChanged<String> onRunShellCommand;
 
   @override
   Widget build(BuildContext context) {
@@ -430,8 +497,12 @@ class _DesktopShell extends StatelessWidget {
               filePreview: filePreview,
               selectedFilePath: selectedFilePath,
               fileSearchQuery: fileSearchQuery,
+              terminalCommand: terminalCommand,
+              lastShellResult: lastShellResult,
+              runningShellCommand: runningShellCommand,
               onSelectFile: onSelectFile,
               onSearchFiles: onSearchFiles,
+              onRunShellCommand: onRunShellCommand,
               todos: todos,
             ),
           ),
@@ -457,6 +528,9 @@ class _TabletLandscapeShell extends StatelessWidget {
     required this.filePreview,
     required this.selectedFilePath,
     required this.fileSearchQuery,
+    required this.terminalCommand,
+    required this.lastShellResult,
+    required this.runningShellCommand,
     required this.todos,
     required this.selectedSessionId,
     required this.loading,
@@ -464,6 +538,7 @@ class _TabletLandscapeShell extends StatelessWidget {
     required this.onSelectSession,
     required this.onSelectFile,
     required this.onSearchFiles,
+    required this.onRunShellCommand,
   });
 
   final ServerProfile profile;
@@ -480,6 +555,9 @@ class _TabletLandscapeShell extends StatelessWidget {
   final FileContentSummary? filePreview;
   final String? selectedFilePath;
   final String fileSearchQuery;
+  final String terminalCommand;
+  final ShellCommandResult? lastShellResult;
+  final bool runningShellCommand;
   final List<TodoItem> todos;
   final String? selectedSessionId;
   final bool loading;
@@ -487,6 +565,7 @@ class _TabletLandscapeShell extends StatelessWidget {
   final ValueChanged<String> onSelectSession;
   final ValueChanged<String> onSelectFile;
   final ValueChanged<String> onSearchFiles;
+  final ValueChanged<String> onRunShellCommand;
 
   @override
   Widget build(BuildContext context) {
@@ -527,8 +606,12 @@ class _TabletLandscapeShell extends StatelessWidget {
               filePreview: filePreview,
               selectedFilePath: selectedFilePath,
               fileSearchQuery: fileSearchQuery,
+              terminalCommand: terminalCommand,
+              lastShellResult: lastShellResult,
+              runningShellCommand: runningShellCommand,
               onSelectFile: onSelectFile,
               onSearchFiles: onSearchFiles,
+              onRunShellCommand: onRunShellCommand,
               todos: todos,
             ),
           ),
@@ -554,6 +637,9 @@ class _TabletPortraitShell extends StatelessWidget {
     required this.filePreview,
     required this.selectedFilePath,
     required this.fileSearchQuery,
+    required this.terminalCommand,
+    required this.lastShellResult,
+    required this.runningShellCommand,
     required this.todos,
     required this.selectedSessionId,
     required this.loading,
@@ -561,6 +647,7 @@ class _TabletPortraitShell extends StatelessWidget {
     required this.onSelectSession,
     required this.onSelectFile,
     required this.onSearchFiles,
+    required this.onRunShellCommand,
     required this.showContextSheet,
     required this.onToggleContextSheet,
   });
@@ -579,6 +666,9 @@ class _TabletPortraitShell extends StatelessWidget {
   final FileContentSummary? filePreview;
   final String? selectedFilePath;
   final String fileSearchQuery;
+  final String terminalCommand;
+  final ShellCommandResult? lastShellResult;
+  final bool runningShellCommand;
   final List<TodoItem> todos;
   final String? selectedSessionId;
   final bool loading;
@@ -586,6 +676,7 @@ class _TabletPortraitShell extends StatelessWidget {
   final ValueChanged<String> onSelectSession;
   final ValueChanged<String> onSelectFile;
   final ValueChanged<String> onSearchFiles;
+  final ValueChanged<String> onRunShellCommand;
   final bool showContextSheet;
   final VoidCallback onToggleContextSheet;
 
@@ -622,8 +713,12 @@ class _TabletPortraitShell extends StatelessWidget {
               filePreview: filePreview,
               selectedFilePath: selectedFilePath,
               fileSearchQuery: fileSearchQuery,
+              terminalCommand: terminalCommand,
+              lastShellResult: lastShellResult,
+              runningShellCommand: runningShellCommand,
               onSelectFile: onSelectFile,
               onSearchFiles: onSearchFiles,
+              onRunShellCommand: onRunShellCommand,
               todos: todos,
             ),
             // kept simple for now: portrait utility content comes from shared context rail
@@ -651,6 +746,9 @@ class _MobileShell extends StatelessWidget {
     required this.filePreview,
     required this.selectedFilePath,
     required this.fileSearchQuery,
+    required this.terminalCommand,
+    required this.lastShellResult,
+    required this.runningShellCommand,
     required this.todos,
     required this.selectedSessionId,
     required this.loading,
@@ -658,6 +756,7 @@ class _MobileShell extends StatelessWidget {
     required this.onSelectSession,
     required this.onSelectFile,
     required this.onSearchFiles,
+    required this.onRunShellCommand,
     required this.showContextSheet,
     required this.onToggleContextSheet,
   });
@@ -676,6 +775,9 @@ class _MobileShell extends StatelessWidget {
   final FileContentSummary? filePreview;
   final String? selectedFilePath;
   final String fileSearchQuery;
+  final String terminalCommand;
+  final ShellCommandResult? lastShellResult;
+  final bool runningShellCommand;
   final List<TodoItem> todos;
   final String? selectedSessionId;
   final bool loading;
@@ -683,6 +785,7 @@ class _MobileShell extends StatelessWidget {
   final ValueChanged<String> onSelectSession;
   final ValueChanged<String> onSelectFile;
   final ValueChanged<String> onSearchFiles;
+  final ValueChanged<String> onRunShellCommand;
   final bool showContextSheet;
   final VoidCallback onToggleContextSheet;
 
@@ -721,8 +824,12 @@ class _MobileShell extends StatelessWidget {
               filePreview: filePreview,
               selectedFilePath: selectedFilePath,
               fileSearchQuery: fileSearchQuery,
+              terminalCommand: terminalCommand,
+              lastShellResult: lastShellResult,
+              runningShellCommand: runningShellCommand,
               onSelectFile: onSelectFile,
               onSearchFiles: onSearchFiles,
+              onRunShellCommand: onRunShellCommand,
               todos: todos,
             ),
             secondChild: const _UtilityToggleHint(compact: true),
@@ -945,8 +1052,12 @@ class _ContextRail extends StatelessWidget {
     required this.filePreview,
     required this.selectedFilePath,
     required this.fileSearchQuery,
+    required this.terminalCommand,
+    required this.lastShellResult,
+    required this.runningShellCommand,
     required this.onSelectFile,
     required this.onSearchFiles,
+    required this.onRunShellCommand,
     required this.todos,
     this.compact = false,
   });
@@ -960,8 +1071,12 @@ class _ContextRail extends StatelessWidget {
   final FileContentSummary? filePreview;
   final String? selectedFilePath;
   final String fileSearchQuery;
+  final String terminalCommand;
+  final ShellCommandResult? lastShellResult;
+  final bool runningShellCommand;
   final ValueChanged<String> onSelectFile;
   final ValueChanged<String> onSearchFiles;
+  final ValueChanged<String> onRunShellCommand;
   final List<TodoItem> todos;
 
   @override
@@ -1001,9 +1116,11 @@ class _ContextRail extends StatelessWidget {
                 ),
                 if (!compact) ...<Widget>[
                   const SizedBox(height: AppSpacing.sm),
-                  _UtilityTile(
-                    title: l10n.shellTerminalTitle,
-                    subtitle: l10n.shellTerminalSubtitle,
+                  _TerminalPanel(
+                    command: terminalCommand,
+                    result: lastShellResult,
+                    running: runningShellCommand,
+                    onRun: onRunShellCommand,
                   ),
                 ],
               ],
@@ -1025,8 +1142,12 @@ class _BottomUtilitySheet extends StatelessWidget {
     required this.filePreview,
     required this.selectedFilePath,
     required this.fileSearchQuery,
+    required this.terminalCommand,
+    required this.lastShellResult,
+    required this.runningShellCommand,
     required this.onSelectFile,
     required this.onSearchFiles,
+    required this.onRunShellCommand,
     required this.todos,
     this.compact = false,
   });
@@ -1040,8 +1161,12 @@ class _BottomUtilitySheet extends StatelessWidget {
   final FileContentSummary? filePreview;
   final String? selectedFilePath;
   final String fileSearchQuery;
+  final String terminalCommand;
+  final ShellCommandResult? lastShellResult;
+  final bool runningShellCommand;
   final ValueChanged<String> onSelectFile;
   final ValueChanged<String> onSearchFiles;
+  final ValueChanged<String> onRunShellCommand;
   final List<TodoItem> todos;
 
   @override
@@ -1058,8 +1183,12 @@ class _BottomUtilitySheet extends StatelessWidget {
         filePreview: filePreview,
         selectedFilePath: selectedFilePath,
         fileSearchQuery: fileSearchQuery,
+        terminalCommand: terminalCommand,
+        lastShellResult: lastShellResult,
+        runningShellCommand: runningShellCommand,
         onSelectFile: onSelectFile,
         onSearchFiles: onSearchFiles,
+        onRunShellCommand: onRunShellCommand,
         todos: todos,
       ),
     );
@@ -1328,6 +1457,53 @@ class _FilePanel extends StatelessWidget {
     }
     final match = matches.first;
     return '${match.status} +${match.added} -${match.removed}';
+  }
+}
+
+class _TerminalPanel extends StatelessWidget {
+  const _TerminalPanel({
+    required this.command,
+    required this.result,
+    required this.running,
+    required this.onRun,
+  });
+
+  final String command;
+  final ShellCommandResult? result;
+  final bool running;
+  final ValueChanged<String> onRun;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    return Column(
+      children: <Widget>[
+        ListTile(
+          title: Text(l10n.shellTerminalTitle),
+          subtitle: Text(l10n.shellTerminalSubtitle),
+        ),
+        TextField(
+          controller: TextEditingController(text: command),
+          onSubmitted: onRun,
+          decoration: const InputDecoration(hintText: 'pwd', isDense: true),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: ElevatedButton(
+            onPressed: running ? null : () => onRun(command),
+            child: Text(running ? 'Running...' : 'Run'),
+          ),
+        ),
+        if (result != null)
+          ListTile(
+            title: Text(result!.messageId),
+            subtitle: Text(
+              '${result!.providerId ?? '-'} · ${result!.modelId ?? '-'}',
+            ),
+          ),
+      ],
+    );
   }
 }
 
