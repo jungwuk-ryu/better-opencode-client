@@ -14,6 +14,7 @@ import '../files/file_models.dart';
 import '../projects/project_models.dart';
 import '../requests/request_models.dart';
 import '../requests/request_service.dart';
+import '../settings/config_service.dart';
 import '../terminal/terminal_service.dart';
 import '../tools/todo_models.dart';
 import '../tools/todo_service.dart';
@@ -40,6 +41,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
   final EventStreamService _eventStreamService = EventStreamService();
   final FileBrowserService _fileBrowserService = FileBrowserService();
   final RequestService _requestService = RequestService();
+  final ConfigService _configService = ConfigService();
   final TerminalService _terminalService = TerminalService();
   final TodoService _todoService = TodoService();
   bool _showContextSheet = false;
@@ -64,6 +66,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       const <QuestionRequestSummary>[];
   List<PermissionRequestSummary> _permissionRequests =
       const <PermissionRequestSummary>[];
+  ConfigSnapshot? _configSnapshot;
   List<TodoItem> _todos = const <TodoItem>[];
   String? _selectedSessionId;
 
@@ -89,6 +92,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     _eventStreamService.dispose();
     _fileBrowserService.dispose();
     _requestService.dispose();
+    _configService.dispose();
     _terminalService.dispose();
     _todoService.dispose();
     super.dispose();
@@ -123,6 +127,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         _runningShellCommand = false;
         _questionRequests = const <QuestionRequestSummary>[];
         _permissionRequests = const <PermissionRequestSummary>[];
+        _configSnapshot = null;
         _todos = const <TodoItem>[];
         _selectedSessionId = bundle.selectedSessionId;
         _loading = false;
@@ -132,6 +137,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       }
       await _loadFiles();
       await _loadPendingRequests();
+      await _loadConfigSnapshot();
       await _connectEvents();
     } catch (error) {
       if (!mounted) {
@@ -314,6 +320,28 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     }
   }
 
+  Future<void> _loadConfigSnapshot() async {
+    try {
+      final snapshot = await _configService.fetch(
+        profile: widget.profile,
+        project: widget.project,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _configSnapshot = snapshot;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _configSnapshot = null;
+      });
+    }
+  }
+
   Future<void> _replyPermission(String requestId, String reply) async {
     await _requestService.replyToPermission(
       profile: widget.profile,
@@ -435,6 +463,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         runningShellCommand: _runningShellCommand,
         questionRequests: _questionRequests,
         permissionRequests: _permissionRequests,
+        configSnapshot: _configSnapshot,
         todos: _todos,
         selectedSessionId: _selectedSessionId,
         loading: _loading,
@@ -473,6 +502,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         runningShellCommand: _runningShellCommand,
         questionRequests: _questionRequests,
         permissionRequests: _permissionRequests,
+        configSnapshot: _configSnapshot,
         todos: _todos,
         selectedSessionId: _selectedSessionId,
         loading: _loading,
@@ -511,6 +541,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         runningShellCommand: _runningShellCommand,
         questionRequests: _questionRequests,
         permissionRequests: _permissionRequests,
+        configSnapshot: _configSnapshot,
         todos: _todos,
         selectedSessionId: _selectedSessionId,
         loading: _loading,
@@ -554,6 +585,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       runningShellCommand: _runningShellCommand,
       questionRequests: _questionRequests,
       permissionRequests: _permissionRequests,
+      configSnapshot: _configSnapshot,
       todos: _todos,
       selectedSessionId: _selectedSessionId,
       loading: _loading,
@@ -600,6 +632,7 @@ class _DesktopShell extends StatelessWidget {
     required this.runningShellCommand,
     required this.questionRequests,
     required this.permissionRequests,
+    required this.configSnapshot,
     required this.todos,
     required this.selectedSessionId,
     required this.loading,
@@ -636,6 +669,7 @@ class _DesktopShell extends StatelessWidget {
   final bool runningShellCommand;
   final List<QuestionRequestSummary> questionRequests;
   final List<PermissionRequestSummary> permissionRequests;
+  final ConfigSnapshot? configSnapshot;
   final List<TodoItem> todos;
   final String? selectedSessionId;
   final bool loading;
@@ -700,6 +734,7 @@ class _DesktopShell extends StatelessWidget {
               runningShellCommand: runningShellCommand,
               questionRequests: questionRequests,
               permissionRequests: permissionRequests,
+              configSnapshot: configSnapshot,
               onSelectFile: onSelectFile,
               onSearchFiles: onSearchFiles,
               onRunShellCommand: onRunShellCommand,
@@ -736,6 +771,7 @@ class _TabletLandscapeShell extends StatelessWidget {
     required this.runningShellCommand,
     required this.questionRequests,
     required this.permissionRequests,
+    required this.configSnapshot,
     required this.todos,
     required this.selectedSessionId,
     required this.loading,
@@ -772,6 +808,7 @@ class _TabletLandscapeShell extends StatelessWidget {
   final bool runningShellCommand;
   final List<QuestionRequestSummary> questionRequests;
   final List<PermissionRequestSummary> permissionRequests;
+  final ConfigSnapshot? configSnapshot;
   final List<TodoItem> todos;
   final String? selectedSessionId;
   final bool loading;
@@ -836,6 +873,7 @@ class _TabletLandscapeShell extends StatelessWidget {
               runningShellCommand: runningShellCommand,
               questionRequests: questionRequests,
               permissionRequests: permissionRequests,
+              configSnapshot: configSnapshot,
               onSelectFile: onSelectFile,
               onSearchFiles: onSearchFiles,
               onRunShellCommand: onRunShellCommand,
@@ -872,6 +910,7 @@ class _TabletPortraitShell extends StatelessWidget {
     required this.runningShellCommand,
     required this.questionRequests,
     required this.permissionRequests,
+    required this.configSnapshot,
     required this.todos,
     required this.selectedSessionId,
     required this.loading,
@@ -910,6 +949,7 @@ class _TabletPortraitShell extends StatelessWidget {
   final bool runningShellCommand;
   final List<QuestionRequestSummary> questionRequests;
   final List<PermissionRequestSummary> permissionRequests;
+  final ConfigSnapshot? configSnapshot;
   final List<TodoItem> todos;
   final String? selectedSessionId;
   final bool loading;
@@ -966,6 +1006,7 @@ class _TabletPortraitShell extends StatelessWidget {
               runningShellCommand: runningShellCommand,
               questionRequests: questionRequests,
               permissionRequests: permissionRequests,
+              configSnapshot: configSnapshot,
               onSelectFile: onSelectFile,
               onSearchFiles: onSearchFiles,
               onRunShellCommand: onRunShellCommand,
@@ -1004,6 +1045,7 @@ class _MobileShell extends StatelessWidget {
     required this.runningShellCommand,
     required this.questionRequests,
     required this.permissionRequests,
+    required this.configSnapshot,
     required this.todos,
     required this.selectedSessionId,
     required this.loading,
@@ -1042,6 +1084,7 @@ class _MobileShell extends StatelessWidget {
   final bool runningShellCommand;
   final List<QuestionRequestSummary> questionRequests;
   final List<PermissionRequestSummary> permissionRequests;
+  final ConfigSnapshot? configSnapshot;
   final List<TodoItem> todos;
   final String? selectedSessionId;
   final bool loading;
@@ -1100,6 +1143,7 @@ class _MobileShell extends StatelessWidget {
               runningShellCommand: runningShellCommand,
               questionRequests: questionRequests,
               permissionRequests: permissionRequests,
+              configSnapshot: configSnapshot,
               onSelectFile: onSelectFile,
               onSearchFiles: onSearchFiles,
               onRunShellCommand: onRunShellCommand,
@@ -1369,6 +1413,7 @@ class _ContextRail extends StatelessWidget {
     required this.runningShellCommand,
     required this.questionRequests,
     required this.permissionRequests,
+    required this.configSnapshot,
     required this.onSelectFile,
     required this.onSearchFiles,
     required this.onRunShellCommand,
@@ -1393,6 +1438,7 @@ class _ContextRail extends StatelessWidget {
   final bool runningShellCommand;
   final List<QuestionRequestSummary> questionRequests;
   final List<PermissionRequestSummary> permissionRequests;
+  final ConfigSnapshot? configSnapshot;
   final ValueChanged<String> onSelectFile;
   final ValueChanged<String> onSearchFiles;
   final ValueChanged<String> onRunShellCommand;
@@ -1452,6 +1498,8 @@ class _ContextRail extends StatelessWidget {
                     onRejectQuestion: onRejectQuestion,
                     onReplyPermission: onReplyPermission,
                   ),
+                  const SizedBox(height: AppSpacing.sm),
+                  _ConfigPreviewPanel(snapshot: configSnapshot),
                 ],
               ],
             ),
@@ -1477,6 +1525,7 @@ class _BottomUtilitySheet extends StatelessWidget {
     required this.runningShellCommand,
     required this.questionRequests,
     required this.permissionRequests,
+    required this.configSnapshot,
     required this.onSelectFile,
     required this.onSearchFiles,
     required this.onRunShellCommand,
@@ -1501,6 +1550,7 @@ class _BottomUtilitySheet extends StatelessWidget {
   final bool runningShellCommand;
   final List<QuestionRequestSummary> questionRequests;
   final List<PermissionRequestSummary> permissionRequests;
+  final ConfigSnapshot? configSnapshot;
   final ValueChanged<String> onSelectFile;
   final ValueChanged<String> onSearchFiles;
   final ValueChanged<String> onRunShellCommand;
@@ -1528,6 +1578,7 @@ class _BottomUtilitySheet extends StatelessWidget {
         runningShellCommand: runningShellCommand,
         questionRequests: questionRequests,
         permissionRequests: permissionRequests,
+        configSnapshot: configSnapshot,
         onSelectFile: onSelectFile,
         onSearchFiles: onSearchFiles,
         onRunShellCommand: onRunShellCommand,
@@ -1916,6 +1967,31 @@ class _PendingRequestsPanel extends StatelessWidget {
               ],
             ),
           ),
+      ],
+    );
+  }
+}
+
+class _ConfigPreviewPanel extends StatelessWidget {
+  const _ConfigPreviewPanel({required this.snapshot});
+
+  final ConfigSnapshot? snapshot;
+
+  @override
+  Widget build(BuildContext context) {
+    if (snapshot == null) {
+      return const SizedBox.shrink();
+    }
+    final config = snapshot!.config.toJson().toString();
+    final providers = snapshot!.providerConfig.toJson().toString();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        const Text('Config'),
+        const SizedBox(height: AppSpacing.xs),
+        Text(config, maxLines: 3, overflow: TextOverflow.ellipsis),
+        const SizedBox(height: AppSpacing.xs),
+        Text(providers, maxLines: 3, overflow: TextOverflow.ellipsis),
       ],
     );
   }
