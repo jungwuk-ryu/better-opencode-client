@@ -1,8 +1,65 @@
 import 'package:flutter/material.dart';
+import 'package:opencode_mobile_remote/l10n/app_localizations.dart';
 
 import '../../design_system/app_spacing.dart';
 import '../../design_system/app_theme.dart';
 import 'chat_models.dart';
+
+typedef _ChatPartRenderer =
+    _RenderedChatPart Function(
+      AppLocalizations l10n,
+      ChatMessageInfo message,
+      ChatPart part,
+    );
+
+class _RenderedChatPart {
+  const _RenderedChatPart({required this.title, required this.body});
+
+  final String title;
+  final String body;
+}
+
+final Map<String, _ChatPartRenderer>
+_chatPartRenderers = <String, _ChatPartRenderer>{
+  'text': (l10n, message, part) => _RenderedChatPart(
+    title: message.role == 'assistant'
+        ? l10n.chatPartAssistant
+        : l10n.chatPartUser,
+    body: _defaultBody(part),
+  ),
+  'reasoning': (l10n, _, part) =>
+      _RenderedChatPart(title: l10n.chatPartThinking, body: _defaultBody(part)),
+  'tool': (l10n, _, part) => _RenderedChatPart(
+    title: part.tool == null
+        ? l10n.chatPartTool
+        : l10n.chatPartToolNamed(part.tool!),
+    body: _defaultBody(part),
+  ),
+  'file': (l10n, _, part) =>
+      _RenderedChatPart(title: l10n.chatPartFile, body: _defaultBody(part)),
+  'step-start': (l10n, _, part) => _RenderedChatPart(
+    title: l10n.chatPartStepStart,
+    body: _defaultBody(part),
+  ),
+  'step-finish': (l10n, _, part) => _RenderedChatPart(
+    title: l10n.chatPartStepFinish,
+    body: _defaultBody(part),
+  ),
+  'snapshot': (l10n, _, part) =>
+      _RenderedChatPart(title: l10n.chatPartSnapshot, body: _defaultBody(part)),
+  'patch': (l10n, _, part) =>
+      _RenderedChatPart(title: l10n.chatPartPatch, body: _defaultBody(part)),
+  'retry': (l10n, _, part) =>
+      _RenderedChatPart(title: l10n.chatPartRetry, body: _defaultBody(part)),
+  'agent': (l10n, _, part) =>
+      _RenderedChatPart(title: l10n.chatPartAgent, body: _defaultBody(part)),
+  'subtask': (l10n, _, part) =>
+      _RenderedChatPart(title: l10n.chatPartSubtask, body: _defaultBody(part)),
+  'compaction': (l10n, _, part) => _RenderedChatPart(
+    title: l10n.chatPartCompaction,
+    body: _defaultBody(part),
+  ),
+};
 
 class ChatPartView extends StatelessWidget {
   const ChatPartView({required this.message, required this.part, super.key});
@@ -12,54 +69,133 @@ class ChatPartView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context)!;
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final accent = message.role == 'assistant';
+    final primary = accent
+        ? Color.alphaBlend(
+            theme.colorScheme.primary.withValues(alpha: 0.08),
+            surfaces.panelEmphasis.withValues(alpha: 0.92),
+          )
+        : surfaces.panelRaised.withValues(alpha: 0.82);
+    final secondary = accent
+        ? surfaces.panel.withValues(alpha: 0.98)
+        : surfaces.panelMuted.withValues(alpha: 0.94);
+    final rendered =
+        _chatPartRenderers[part.type]?.call(l10n, message, part) ??
+        _RenderedChatPart(title: part.type, body: _defaultBody(part));
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: (accent ? surfaces.accentSoft : surfaces.panelRaised).withValues(
-          alpha: 0.12,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[primary, secondary],
         ),
         borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
-        border: Border.all(color: surfaces.line),
+        border: Border.all(
+          color: accent
+              ? theme.colorScheme.primary.withValues(alpha: 0.22)
+              : surfaces.lineSoft,
+        ),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: accent
+                ? theme.colorScheme.primary.withValues(alpha: 0.06)
+                : Colors.black.withValues(alpha: 0.12),
+            blurRadius: 24,
+            offset: const Offset(0, 14),
+          ),
+        ],
       ),
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text(_title(), style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: AppSpacing.xs),
-            Text(_body()),
+            Row(
+              children: <Widget>[
+                _MessagePill(
+                  label: accent ? l10n.chatPartAssistant : rendered.title,
+                  icon: accent
+                      ? Icons.auto_awesome_rounded
+                      : Icons.person_outline_rounded,
+                  emphasis: accent,
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                if (part.type != 'text')
+                  _MessagePill(label: part.type, icon: Icons.layers_outlined),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              rendered.body,
+              style: theme.textTheme.bodyMedium?.copyWith(height: 1.6),
+            ),
           ],
         ),
       ),
     );
   }
+}
 
-  String _title() {
-    return switch (part.type) {
-      'text' => message.role == 'assistant' ? 'Assistant' : 'User',
-      'reasoning' => 'Thinking',
-      'tool' => part.tool == null ? 'Tool' : 'Tool: ${part.tool}',
-      'file' => 'File',
-      'step-start' => 'Step start',
-      'step-finish' => 'Step finish',
-      'snapshot' => 'Snapshot',
-      'patch' => 'Patch',
-      'agent' => 'Agent',
-      'subtask' => 'Subtask',
-      'compaction' => 'Compaction',
-      _ => part.type,
-    };
-  }
+class _MessagePill extends StatelessWidget {
+  const _MessagePill({
+    required this.label,
+    required this.icon,
+    this.emphasis = false,
+  });
 
-  String _body() {
-    if ((part.text ?? '').trim().isNotEmpty) {
-      return part.text!.trim();
-    }
-    if ((part.filename ?? '').trim().isNotEmpty) {
-      return part.filename!.trim();
-    }
-    return part.metadata.toString();
+  final String label;
+  final IconData icon;
+  final bool emphasis;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: emphasis
+            ? theme.colorScheme.primary.withValues(alpha: 0.12)
+            : surfaces.panelMuted.withValues(alpha: 0.96),
+        borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
+        border: Border.all(
+          color: emphasis
+              ? theme.colorScheme.primary.withValues(alpha: 0.18)
+              : surfaces.lineSoft,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(
+              icon,
+              size: 14,
+              color: emphasis ? theme.colorScheme.primary : surfaces.accentSoft,
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            Text(
+              label,
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: emphasis ? theme.colorScheme.primary : null,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
+}
+
+String _defaultBody(ChatPart part) {
+  if ((part.text ?? '').trim().isNotEmpty) {
+    return part.text!.trim();
+  }
+  if ((part.filename ?? '').trim().isNotEmpty) {
+    return part.filename!.trim();
+  }
+  return part.metadata.toString();
 }

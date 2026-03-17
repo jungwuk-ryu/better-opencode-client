@@ -33,6 +33,18 @@ void main() {
           request.uri.path == '/session/ses_1/share') {
         body = {'id': 'ses_1'};
       }
+      if (request.method == 'DELETE' && request.uri.path == '/session/ses_1') {
+        body = true;
+      }
+      if (request.method == 'PATCH' && request.uri.path == '/session/ses_1') {
+        body = {
+          'id': 'ses_1',
+          'directory': '/workspace/demo',
+          'title': 'Renamed session',
+          'version': '4',
+          'time': {'updated': 1710000003000},
+        };
+      }
       if (request.method == 'DELETE' &&
           request.uri.path == '/session/ses_1/share') {
         body = {'id': 'ses_1'};
@@ -117,6 +129,23 @@ void main() {
         sessionId: 'ses_1',
       ),
       isTrue,
+    );
+    expect(
+      await service.deleteSession(
+        profile: profile,
+        project: project,
+        sessionId: 'ses_1',
+      ),
+      isTrue,
+    );
+    expect(
+      (await service.updateSession(
+        profile: profile,
+        project: project,
+        sessionId: 'ses_1',
+        title: 'Renamed session',
+      )).title,
+      'Renamed session',
     );
     expect(
       (await service.revertSession(

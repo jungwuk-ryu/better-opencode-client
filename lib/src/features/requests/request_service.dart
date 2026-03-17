@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../../core/connection/connection_models.dart';
+import '../../core/network/request_headers.dart';
 import '../projects/project_models.dart';
 import 'request_models.dart';
 
@@ -154,15 +155,11 @@ class RequestService {
   }
 
   Map<String, String> _headers(ServerProfile profile, {bool jsonBody = false}) {
-    final headers = <String, String>{'accept': 'application/json'};
-    if (jsonBody) {
-      headers['content-type'] = 'application/json';
-    }
-    final authHeader = profile.basicAuthHeader;
-    if (authHeader != null) {
-      headers['authorization'] = authHeader;
-    }
-    return headers;
+    return buildRequestHeaders(
+      profile,
+      accept: 'application/json',
+      jsonBody: jsonBody,
+    );
   }
 
   void dispose() {

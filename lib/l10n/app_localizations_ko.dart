@@ -501,6 +501,27 @@ class AppLocalizationsKo extends AppLocalizations {
   String get shellComposerPlaceholder => '입력창은 기본 자동 포커스 없이 이 위치를 유지합니다.';
 
   @override
+  String get shellComposerSendAction => '보내기';
+
+  @override
+  String get shellComposerCreatingSession => '세션 생성 후 보내기';
+
+  @override
+  String get shellComposerSending => '전송 중...';
+
+  @override
+  String get shellRenameSessionTitle => '세션 이름 변경';
+
+  @override
+  String get shellSessionTitleHint => '세션 제목';
+
+  @override
+  String get shellCancelAction => '취소';
+
+  @override
+  String get shellSaveAction => '저장';
+
+  @override
   String get shellContextTitle => '문맥 유틸리티';
 
   @override
@@ -532,6 +553,269 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get shellTerminalSubtitle => '빠른 shell과 attach 흐름이 여기에 배치됩니다.';
+
+  @override
+  String get shellInspectorTitle => '인스펙터';
+
+  @override
+  String get shellConfigTitle => '설정';
+
+  @override
+  String get shellConfigInvalid => '설정 JSON이 올바르지 않습니다.';
+
+  @override
+  String get shellConfigDraftEmpty => '설정 초안이 비어 있습니다.';
+
+  @override
+  String shellConfigChangedKeys(int count) {
+    return '변경된 키: $count';
+  }
+
+  @override
+  String get shellConfigApplying => '적용 중...';
+
+  @override
+  String get shellConfigApplyAction => '설정 적용';
+
+  @override
+  String get shellIntegrationsTitle => '통합 상태';
+
+  @override
+  String get shellIntegrationsProviders => '프로바이더';
+
+  @override
+  String get shellIntegrationsMethods => '방식';
+
+  @override
+  String get shellIntegrationsStartProviderAuth => '프로바이더 인증 시작';
+
+  @override
+  String get shellIntegrationsMcp => 'MCP';
+
+  @override
+  String get shellIntegrationsStartMcpAuth => 'MCP 인증 시작';
+
+  @override
+  String get shellIntegrationsLsp => 'LSP';
+
+  @override
+  String get shellIntegrationsFormatter => '포매터';
+
+  @override
+  String get shellIntegrationsEnabled => '활성';
+
+  @override
+  String get shellIntegrationsDisabled => '비활성';
+
+  @override
+  String get shellIntegrationsRecentEvents => '최근 이벤트';
+
+  @override
+  String get shellIntegrationsStreamHealth => '스트림 상태';
+
+  @override
+  String get shellIntegrationsRecoveryLog => '복구 로그';
+
+  @override
+  String get shellWorkspaceEyebrow => '워크스페이스';
+
+  @override
+  String get shellSessionsEyebrow => '세션';
+
+  @override
+  String get shellControlsEyebrow => '제어';
+
+  @override
+  String get shellActionsTitle => '작업';
+
+  @override
+  String get shellActionFork => '포크';
+
+  @override
+  String get shellActionShare => '공유';
+
+  @override
+  String get shellActionUnshare => '공유 해제';
+
+  @override
+  String get shellActionRename => '이름 변경';
+
+  @override
+  String get shellActionDelete => '삭제';
+
+  @override
+  String get shellActionAbort => '중단';
+
+  @override
+  String get shellActionRevert => '되돌리기';
+
+  @override
+  String get shellActionUnrevert => '되돌림 해제';
+
+  @override
+  String get shellActionInit => '초기화';
+
+  @override
+  String get shellActionSummarize => '요약';
+
+  @override
+  String get shellPrimaryEyebrow => '주요 흐름';
+
+  @override
+  String get shellTimelineEyebrow => '타임라인';
+
+  @override
+  String get shellFocusedThreadEyebrow => '집중 스레드';
+
+  @override
+  String get shellNewSessionDraft => '새 세션 초안';
+
+  @override
+  String shellTimelinePartsInFocus(int count) {
+    return '포커스된 타임라인 파트 $count개';
+  }
+
+  @override
+  String get shellReadyToStart => '시작 준비 완료';
+
+  @override
+  String get shellLiveContext => '실시간 문맥';
+
+  @override
+  String shellPartsCount(int count) {
+    return '파트 $count개';
+  }
+
+  @override
+  String get shellFocusedThreadSubtitle => '활성 스레드에 집중합니다';
+
+  @override
+  String get shellConversationSubtitle => '긴 대화 읽기와 응답 작성에 맞춘 중심 영역입니다';
+
+  @override
+  String get shellConnectionIssueTitle => '연결 문제';
+
+  @override
+  String get shellUtilitiesEyebrow => '유틸리티';
+
+  @override
+  String get shellFilesSearchHint => '파일, 텍스트, 심볼 검색';
+
+  @override
+  String get shellPreviewTitle => '미리보기';
+
+  @override
+  String get shellCurrentSelection => '현재 선택';
+
+  @override
+  String get shellMatchesTitle => '검색 결과';
+
+  @override
+  String get shellMatchesSubtitle => '관련 텍스트 결과';
+
+  @override
+  String get shellSymbolsTitle => '심볼';
+
+  @override
+  String get shellSymbolsSubtitle => '빠른 코드 랜드마크';
+
+  @override
+  String get shellTerminalHint => 'pwd';
+
+  @override
+  String get shellTerminalRunAction => '명령 실행';
+
+  @override
+  String get shellTerminalRunning => '실행 중...';
+
+  @override
+  String get shellTrackedLabel => '추적됨';
+
+  @override
+  String get shellPendingApprovalsTitle => '대기 중인 승인';
+
+  @override
+  String shellPendingApprovalsSubtitle(int count) {
+    return '입력을 기다리는 항목 $count개';
+  }
+
+  @override
+  String get shellAllowOnceAction => '이번만 허용';
+
+  @override
+  String get shellRejectAction => '거부';
+
+  @override
+  String get shellAnswerAction => '응답';
+
+  @override
+  String get shellConfigPreviewSubtitle => '편집 가능한 설정의 실시간 미리보기';
+
+  @override
+  String get shellInspectorSubtitle => '세션과 메시지 메타데이터 스냅샷';
+
+  @override
+  String get shellIntegrationsLspSubtitle => '언어 서버 준비 상태';
+
+  @override
+  String get shellIntegrationsFormatterSubtitle => '포맷터 사용 가능 상태';
+
+  @override
+  String get shellActionsSubtitle => '세션 제어와 수명주기 작업';
+
+  @override
+  String shellActiveCount(int count) {
+    return '활성 $count개';
+  }
+
+  @override
+  String shellThreadsCount(int count) {
+    return '현재 프로젝트의 스레드 $count개';
+  }
+
+  @override
+  String get chatPartAssistant => '어시스턴트';
+
+  @override
+  String get chatPartUser => '사용자';
+
+  @override
+  String get chatPartThinking => '사고 과정';
+
+  @override
+  String get chatPartTool => '도구';
+
+  @override
+  String chatPartToolNamed(String name) {
+    return '도구: $name';
+  }
+
+  @override
+  String get chatPartFile => '파일';
+
+  @override
+  String get chatPartStepStart => '단계 시작';
+
+  @override
+  String get chatPartStepFinish => '단계 완료';
+
+  @override
+  String get chatPartSnapshot => '스냅샷';
+
+  @override
+  String get chatPartPatch => '패치';
+
+  @override
+  String get chatPartRetry => '재시도';
+
+  @override
+  String get chatPartAgent => '에이전트';
+
+  @override
+  String get chatPartSubtask => '하위 작업';
+
+  @override
+  String get chatPartCompaction => '압축';
 
   @override
   String get shellUtilitiesToggleTitle => '유틸리티 서랍';

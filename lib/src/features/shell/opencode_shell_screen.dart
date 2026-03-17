@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -5,6 +6,8 @@ import 'package:flutter/material.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../core/connection/connection_models.dart';
 import '../../core/network/event_stream_service.dart';
+import '../../core/network/live_event_applier.dart';
+import '../../core/network/sse_connection_monitor.dart';
 import '../../core/spec/capability_registry.dart';
 import '../../core/spec/raw_json_document.dart';
 import '../../design_system/app_spacing.dart';
@@ -17,8 +20,10 @@ import '../files/file_browser_service.dart';
 import '../files/file_models.dart';
 import '../projects/project_models.dart';
 import '../requests/request_models.dart';
+import '../requests/request_event_applier.dart';
 import '../requests/request_service.dart';
 import '../settings/config_service.dart';
+import '../settings/config_edit_preview.dart';
 import '../settings/integration_status_service.dart';
 import '../terminal/terminal_service.dart';
 import '../tools/todo_models.dart';
@@ -53,9 +58,15 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       IntegrationStatusService();
   final TerminalService _terminalService = TerminalService();
   final TodoService _todoService = TodoService();
+  final SseConnectionMonitor _sseConnectionMonitor = SseConnectionMonitor(
+    heartbeatTimeout: const Duration(seconds: 8),
+  );
+  Timer? _eventHealthTimer;
+  bool _recoveringEventStream = false;
   bool _showContextSheet = false;
   bool _loading = true;
   String? _error;
+  SseConnectionHealth _eventStreamHealth = SseConnectionHealth.stale;
   List<SessionSummary> _sessions = const <SessionSummary>[];
   Map<String, SessionStatusSummary> _statuses =
       const <String, SessionStatusSummary>{};
@@ -71,6 +82,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
   String _terminalCommand = 'pwd';
   ShellCommandResult? _lastShellResult;
   bool _runningShellCommand = false;
+  bool _submittingPrompt = false;
   List<QuestionRequestSummary> _questionRequests =
       const <QuestionRequestSummary>[];
   List<PermissionRequestSummary> _permissionRequests =
@@ -79,6 +91,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
   IntegrationStatusSnapshot? _integrationStatusSnapshot;
   String? _lastIntegrationAuthUrl;
   List<EventEnvelope> _recentEvents = const <EventEnvelope>[];
+  List<String> _eventRecoveryLog = const <String>[];
   List<TodoItem> _todos = const <TodoItem>[];
   String? _selectedSessionId;
 
@@ -101,6 +114,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
 
   @override
   void dispose() {
+    _eventHealthTimer?.cancel();
     _chatService.dispose();
     _sessionActionService.dispose();
     _eventStreamService.dispose();
@@ -333,6 +347,65 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     }
   }
 
+  Future<bool> _submitPrompt(String prompt) async {
+    final trimmed = prompt.trim();
+    if (trimmed.isEmpty) {
+      return false;
+    }
+    setState(() {
+      _submittingPrompt = true;
+      _error = null;
+    });
+    try {
+      var sessionId = _selectedSessionId;
+      if (sessionId == null || sessionId.isEmpty) {
+        final created = await _chatService.createSession(
+          profile: widget.profile,
+          project: widget.project,
+        );
+        sessionId = created.id;
+        if (!mounted) {
+          return false;
+        }
+        setState(() {
+          _sessions = <SessionSummary>[created, ..._sessions];
+          _selectedSessionId = created.id;
+        });
+      }
+
+      final reply = await _chatService.sendMessage(
+        profile: widget.profile,
+        project: widget.project,
+        sessionId: sessionId,
+        prompt: trimmed,
+      );
+      final messages = await _chatService.fetchMessages(
+        profile: widget.profile,
+        project: widget.project,
+        sessionId: sessionId,
+      );
+      if (!mounted) {
+        return false;
+      }
+      setState(() {
+        _selectedSessionId = sessionId;
+        _messages = messages.isEmpty ? <ChatMessage>[reply] : messages;
+        _submittingPrompt = false;
+      });
+      await _loadPendingRequests();
+      return true;
+    } catch (error) {
+      if (!mounted) {
+        return false;
+      }
+      setState(() {
+        _error = error.toString();
+        _submittingPrompt = false;
+      });
+      return false;
+    }
+  }
+
   Future<void> _loadPendingRequests() async {
     try {
       final bundle = await _requestService.fetchPending(
@@ -518,6 +591,58 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     );
   }
 
+  Future<void> _deleteSession(String sessionId) async {
+    await _sessionActionService.deleteSession(
+      profile: widget.profile,
+      project: widget.project,
+      sessionId: sessionId,
+    );
+    await _loadBundle();
+  }
+
+  Future<void> _renameSession(String sessionId) async {
+    final session = _sessions.where((item) => item.id == sessionId).firstOrNull;
+    final initialTitle = session?.title ?? '';
+    final controller = TextEditingController(text: initialTitle);
+    final nextTitle = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(AppLocalizations.of(context)!.shellRenameSessionTitle),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: InputDecoration(
+              hintText: AppLocalizations.of(context)!.shellSessionTitleHint,
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text(AppLocalizations.of(context)!.shellCancelAction),
+            ),
+            ElevatedButton(
+              onPressed: () =>
+                  Navigator.of(context).pop(controller.text.trim()),
+              child: Text(AppLocalizations.of(context)!.shellSaveAction),
+            ),
+          ],
+        );
+      },
+    );
+    controller.dispose();
+    if (nextTitle == null || nextTitle.isEmpty) {
+      return;
+    }
+    await _sessionActionService.updateSession(
+      profile: widget.profile,
+      project: widget.project,
+      sessionId: sessionId,
+      title: nextTitle,
+    );
+    await _loadBundle();
+  }
+
   Future<void> _revertSession(String sessionId) async {
     if (_messages.isEmpty) {
       return;
@@ -582,6 +707,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
   }
 
   Future<void> _connectEvents() async {
+    _eventHealthTimer?.cancel();
     await _eventStreamService.connect(
       profile: widget.profile,
       project: widget.project,
@@ -589,7 +715,13 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         if (!mounted) {
           return;
         }
+        final now = DateTime.now();
+        _sseConnectionMonitor.recordFrame(now);
+        if (event.type == 'server.connected') {
+          _sseConnectionMonitor.recordHeartbeat(now);
+        }
         setState(() {
+          _eventStreamHealth = _sseConnectionMonitor.healthAt(now);
           _recentEvents = <EventEnvelope>[
             event,
             ..._recentEvents,
@@ -597,25 +729,136 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         });
         switch (event.type) {
           case 'session.status':
-            final sessionId = event.properties['sessionID']?.toString();
-            final status = event.properties['status']?.toString();
-            if (sessionId != null && status != null) {
-              setState(() {
-                _statuses = Map<String, SessionStatusSummary>.from(_statuses)
-                  ..[sessionId] = SessionStatusSummary(type: status);
-              });
-            }
+            setState(() {
+              _statuses = applySessionStatusEvent(_statuses, event.properties);
+            });
+          case 'message.updated':
+            setState(() {
+              _messages = applyMessageUpdatedEvent(
+                _messages,
+                event.properties,
+                selectedSessionId: _selectedSessionId,
+              );
+            });
+          case 'message.removed':
+            setState(() {
+              _messages = applyMessageRemovedEvent(
+                _messages,
+                event.properties,
+                selectedSessionId: _selectedSessionId,
+              );
+            });
+          case 'message.part.updated':
+            setState(() {
+              _messages = applyMessagePartUpdatedEvent(
+                _messages,
+                event.properties,
+                selectedSessionId: _selectedSessionId,
+              );
+            });
           case 'todo.updated':
+            setState(() {
+              _todos = applyTodoUpdatedEvent(
+                _todos,
+                event.properties,
+                selectedSessionId: _selectedSessionId,
+              );
+            });
             final sessionId = _selectedSessionId;
-            if (sessionId != null && sessionId.isNotEmpty) {
+            final hasSnapshot = event.properties['todos'] is List;
+            if (!hasSnapshot && sessionId != null && sessionId.isNotEmpty) {
               _loadTodos(sessionId);
             }
           case 'question.asked':
+            setState(() {
+              _questionRequests = applyQuestionAskedEvent(
+                _questionRequests,
+                event.properties,
+                selectedSessionId: _selectedSessionId,
+              );
+            });
           case 'permission.asked':
+            setState(() {
+              _permissionRequests = applyPermissionAskedEvent(
+                _permissionRequests,
+                event.properties,
+                selectedSessionId: _selectedSessionId,
+              );
+            });
+          case 'question.rejected':
+          case 'question.replied':
+            setState(() {
+              _questionRequests = applyQuestionResolvedEvent(
+                _questionRequests,
+                event.properties,
+                selectedSessionId: _selectedSessionId,
+              );
+            });
+          case 'permission.replied':
+            setState(() {
+              _permissionRequests = applyPermissionResolvedEvent(
+                _permissionRequests,
+                event.properties,
+                selectedSessionId: _selectedSessionId,
+              );
+            });
             _loadPendingRequests();
         }
       },
+      onDone: _handleEventStreamDropped,
+      onError: (error, stackTrace) => _handleEventStreamDropped(),
     );
+    _eventHealthTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      if (!mounted) {
+        return;
+      }
+      final health = _sseConnectionMonitor.healthAt(DateTime.now());
+      if (_eventStreamHealth != health) {
+        setState(() {
+          _eventStreamHealth = health;
+        });
+      }
+      if (health == SseConnectionHealth.stale) {
+        _handleEventStreamDropped();
+      }
+    });
+  }
+
+  void _handleEventStreamDropped() {
+    if (!mounted ||
+        _recoveringEventStream ||
+        !widget.capabilities.hasEventStream) {
+      return;
+    }
+    _recoveringEventStream = true;
+    _sseConnectionMonitor.markReconnecting();
+    setState(() {
+      _eventStreamHealth = SseConnectionHealth.reconnecting;
+      _eventRecoveryLog = <String>[
+        'reconnect requested',
+        ..._eventRecoveryLog,
+      ].take(8).toList(growable: false);
+    });
+    unawaited(_recoverEventStream());
+  }
+
+  Future<void> _recoverEventStream() async {
+    try {
+      await _eventStreamService.disconnect();
+      await _loadBundle();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _eventStreamHealth = _sseConnectionMonitor.healthAt(DateTime.now());
+        _eventRecoveryLog = <String>[
+          'reconnect completed',
+          ..._eventRecoveryLog,
+        ].take(8).toList(growable: false);
+      });
+    } finally {
+      _recoveringEventStream = false;
+    }
   }
 
   @override
@@ -647,15 +890,20 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         integrationStatusSnapshot: _integrationStatusSnapshot,
         lastIntegrationAuthUrl: _lastIntegrationAuthUrl,
         recentEvents: _recentEvents,
+        eventStreamHealth: _eventStreamHealth,
+        eventRecoveryLog: _eventRecoveryLog,
         todos: _todos,
         selectedSessionId: _selectedSessionId,
         loading: _loading,
         error: _error,
+        submittingPrompt: _submittingPrompt,
         onSelectSession: _selectSession,
         onForkSession: _forkSession,
         onAbortSession: _abortSession,
         onShareSession: _shareSession,
         onUnshareSession: _unshareSession,
+        onDeleteSession: _deleteSession,
+        onRenameSession: _renameSession,
         onRevertSession: _revertSession,
         onUnrevertSession: _unrevertSession,
         onInitSession: _initSession,
@@ -666,6 +914,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         onReplyQuestion: _replyQuestion,
         onRejectQuestion: _rejectQuestion,
         onReplyPermission: _replyPermission,
+        onSubmitPrompt: _submitPrompt,
         onApplyConfig: _applyConfigRaw,
         onStartProviderAuth: _startProviderAuth,
         onStartMcpAuth: _startMcpAuth,
@@ -697,15 +946,20 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         integrationStatusSnapshot: _integrationStatusSnapshot,
         lastIntegrationAuthUrl: _lastIntegrationAuthUrl,
         recentEvents: _recentEvents,
+        eventStreamHealth: _eventStreamHealth,
+        eventRecoveryLog: _eventRecoveryLog,
         todos: _todos,
         selectedSessionId: _selectedSessionId,
         loading: _loading,
         error: _error,
+        submittingPrompt: _submittingPrompt,
         onSelectSession: _selectSession,
         onForkSession: _forkSession,
         onAbortSession: _abortSession,
         onShareSession: _shareSession,
         onUnshareSession: _unshareSession,
+        onDeleteSession: _deleteSession,
+        onRenameSession: _renameSession,
         onRevertSession: _revertSession,
         onUnrevertSession: _unrevertSession,
         onInitSession: _initSession,
@@ -716,6 +970,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         onReplyQuestion: _replyQuestion,
         onRejectQuestion: _rejectQuestion,
         onReplyPermission: _replyPermission,
+        onSubmitPrompt: _submitPrompt,
         onApplyConfig: _applyConfigRaw,
         onStartProviderAuth: _startProviderAuth,
         onStartMcpAuth: _startMcpAuth,
@@ -747,15 +1002,20 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         integrationStatusSnapshot: _integrationStatusSnapshot,
         lastIntegrationAuthUrl: _lastIntegrationAuthUrl,
         recentEvents: _recentEvents,
+        eventStreamHealth: _eventStreamHealth,
+        eventRecoveryLog: _eventRecoveryLog,
         todos: _todos,
         selectedSessionId: _selectedSessionId,
         loading: _loading,
         error: _error,
+        submittingPrompt: _submittingPrompt,
         onSelectSession: _selectSession,
         onForkSession: _forkSession,
         onAbortSession: _abortSession,
         onShareSession: _shareSession,
         onUnshareSession: _unshareSession,
+        onDeleteSession: _deleteSession,
+        onRenameSession: _renameSession,
         onRevertSession: _revertSession,
         onUnrevertSession: _unrevertSession,
         onInitSession: _initSession,
@@ -766,6 +1026,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         onReplyQuestion: _replyQuestion,
         onRejectQuestion: _rejectQuestion,
         onReplyPermission: _replyPermission,
+        onSubmitPrompt: _submitPrompt,
         onApplyConfig: _applyConfigRaw,
         onStartProviderAuth: _startProviderAuth,
         onStartMcpAuth: _startMcpAuth,
@@ -802,15 +1063,20 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       integrationStatusSnapshot: _integrationStatusSnapshot,
       lastIntegrationAuthUrl: _lastIntegrationAuthUrl,
       recentEvents: _recentEvents,
+      eventStreamHealth: _eventStreamHealth,
+      eventRecoveryLog: _eventRecoveryLog,
       todos: _todos,
       selectedSessionId: _selectedSessionId,
       loading: _loading,
       error: _error,
+      submittingPrompt: _submittingPrompt,
       onSelectSession: _selectSession,
       onForkSession: _forkSession,
       onAbortSession: _abortSession,
       onShareSession: _shareSession,
       onUnshareSession: _unshareSession,
+      onDeleteSession: _deleteSession,
+      onRenameSession: _renameSession,
       onRevertSession: _revertSession,
       onUnrevertSession: _unrevertSession,
       onInitSession: _initSession,
@@ -821,6 +1087,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       onReplyQuestion: _replyQuestion,
       onRejectQuestion: _rejectQuestion,
       onReplyPermission: _replyPermission,
+      onSubmitPrompt: _submitPrompt,
       onApplyConfig: _applyConfigRaw,
       onStartProviderAuth: _startProviderAuth,
       onStartMcpAuth: _startMcpAuth,
@@ -860,6 +1127,8 @@ class _DesktopShell extends StatelessWidget {
     required this.integrationStatusSnapshot,
     required this.lastIntegrationAuthUrl,
     required this.recentEvents,
+    required this.eventStreamHealth,
+    required this.eventRecoveryLog,
     required this.todos,
     required this.selectedSessionId,
     required this.loading,
@@ -869,6 +1138,8 @@ class _DesktopShell extends StatelessWidget {
     required this.onAbortSession,
     required this.onShareSession,
     required this.onUnshareSession,
+    required this.onDeleteSession,
+    required this.onRenameSession,
     required this.onRevertSession,
     required this.onUnrevertSession,
     required this.onInitSession,
@@ -882,6 +1153,8 @@ class _DesktopShell extends StatelessWidget {
     required this.onApplyConfig,
     required this.onStartProviderAuth,
     required this.onStartMcpAuth,
+    required this.submittingPrompt,
+    required this.onSubmitPrompt,
   });
 
   final ServerProfile profile;
@@ -908,6 +1181,8 @@ class _DesktopShell extends StatelessWidget {
   final IntegrationStatusSnapshot? integrationStatusSnapshot;
   final String? lastIntegrationAuthUrl;
   final List<EventEnvelope> recentEvents;
+  final SseConnectionHealth eventStreamHealth;
+  final List<String> eventRecoveryLog;
   final List<TodoItem> todos;
   final String? selectedSessionId;
   final bool loading;
@@ -917,6 +1192,8 @@ class _DesktopShell extends StatelessWidget {
   final Future<void> Function(String) onAbortSession;
   final Future<void> Function(String) onShareSession;
   final Future<void> Function(String) onUnshareSession;
+  final Future<void> Function(String) onDeleteSession;
+  final Future<void> Function(String) onRenameSession;
   final Future<void> Function(String) onRevertSession;
   final Future<void> Function(String) onUnrevertSession;
   final Future<void> Function(String) onInitSession;
@@ -930,6 +1207,8 @@ class _DesktopShell extends StatelessWidget {
   final Future<void> Function(String) onApplyConfig;
   final Future<void> Function(String) onStartProviderAuth;
   final Future<void> Function(String) onStartMcpAuth;
+  final bool submittingPrompt;
+  final Future<bool> Function(String) onSubmitPrompt;
 
   @override
   Widget build(BuildContext context) {
@@ -952,6 +1231,8 @@ class _DesktopShell extends StatelessWidget {
               onAbortSession: onAbortSession,
               onShareSession: onShareSession,
               onUnshareSession: onUnshareSession,
+              onDeleteSession: onDeleteSession,
+              onRenameSession: onRenameSession,
               onRevertSession: onRevertSession,
               onUnrevertSession: onUnrevertSession,
               onInitSession: onInitSession,
@@ -965,6 +1246,9 @@ class _DesktopShell extends StatelessWidget {
               messages: messages,
               loading: loading,
               error: error,
+              submittingPrompt: submittingPrompt,
+              selectedSessionId: selectedSessionId,
+              onSubmitPrompt: onSubmitPrompt,
             ),
           ),
           const SizedBox(width: AppSpacing.lg),
@@ -992,6 +1276,8 @@ class _DesktopShell extends StatelessWidget {
               integrationStatusSnapshot: integrationStatusSnapshot,
               lastIntegrationAuthUrl: lastIntegrationAuthUrl,
               recentEvents: recentEvents,
+              eventStreamHealth: eventStreamHealth,
+              eventRecoveryLog: eventRecoveryLog,
               onApplyConfig: onApplyConfig,
               onStartProviderAuth: onStartProviderAuth,
               onStartMcpAuth: onStartMcpAuth,
@@ -1036,6 +1322,8 @@ class _TabletLandscapeShell extends StatelessWidget {
     required this.integrationStatusSnapshot,
     required this.lastIntegrationAuthUrl,
     required this.recentEvents,
+    required this.eventStreamHealth,
+    required this.eventRecoveryLog,
     required this.todos,
     required this.selectedSessionId,
     required this.loading,
@@ -1045,6 +1333,8 @@ class _TabletLandscapeShell extends StatelessWidget {
     required this.onAbortSession,
     required this.onShareSession,
     required this.onUnshareSession,
+    required this.onDeleteSession,
+    required this.onRenameSession,
     required this.onRevertSession,
     required this.onUnrevertSession,
     required this.onInitSession,
@@ -1058,6 +1348,8 @@ class _TabletLandscapeShell extends StatelessWidget {
     required this.onApplyConfig,
     required this.onStartProviderAuth,
     required this.onStartMcpAuth,
+    required this.submittingPrompt,
+    required this.onSubmitPrompt,
   });
 
   final ServerProfile profile;
@@ -1084,6 +1376,8 @@ class _TabletLandscapeShell extends StatelessWidget {
   final IntegrationStatusSnapshot? integrationStatusSnapshot;
   final String? lastIntegrationAuthUrl;
   final List<EventEnvelope> recentEvents;
+  final SseConnectionHealth eventStreamHealth;
+  final List<String> eventRecoveryLog;
   final List<TodoItem> todos;
   final String? selectedSessionId;
   final bool loading;
@@ -1093,6 +1387,8 @@ class _TabletLandscapeShell extends StatelessWidget {
   final Future<void> Function(String) onAbortSession;
   final Future<void> Function(String) onShareSession;
   final Future<void> Function(String) onUnshareSession;
+  final Future<void> Function(String) onDeleteSession;
+  final Future<void> Function(String) onRenameSession;
   final Future<void> Function(String) onRevertSession;
   final Future<void> Function(String) onUnrevertSession;
   final Future<void> Function(String) onInitSession;
@@ -1106,6 +1402,8 @@ class _TabletLandscapeShell extends StatelessWidget {
   final Future<void> Function(String) onApplyConfig;
   final Future<void> Function(String) onStartProviderAuth;
   final Future<void> Function(String) onStartMcpAuth;
+  final bool submittingPrompt;
+  final Future<bool> Function(String) onSubmitPrompt;
 
   @override
   Widget build(BuildContext context) {
@@ -1128,6 +1426,8 @@ class _TabletLandscapeShell extends StatelessWidget {
               onAbortSession: onAbortSession,
               onShareSession: onShareSession,
               onUnshareSession: onUnshareSession,
+              onDeleteSession: onDeleteSession,
+              onRenameSession: onRenameSession,
               onRevertSession: onRevertSession,
               onUnrevertSession: onUnrevertSession,
               onInitSession: onInitSession,
@@ -1140,6 +1440,9 @@ class _TabletLandscapeShell extends StatelessWidget {
               messages: messages,
               loading: loading,
               error: error,
+              submittingPrompt: submittingPrompt,
+              selectedSessionId: selectedSessionId,
+              onSubmitPrompt: onSubmitPrompt,
             ),
           ),
           const SizedBox(width: AppSpacing.lg),
@@ -1168,6 +1471,8 @@ class _TabletLandscapeShell extends StatelessWidget {
               integrationStatusSnapshot: integrationStatusSnapshot,
               lastIntegrationAuthUrl: lastIntegrationAuthUrl,
               recentEvents: recentEvents,
+              eventStreamHealth: eventStreamHealth,
+              eventRecoveryLog: eventRecoveryLog,
               onApplyConfig: onApplyConfig,
               onStartProviderAuth: onStartProviderAuth,
               onStartMcpAuth: onStartMcpAuth,
@@ -1212,6 +1517,8 @@ class _TabletPortraitShell extends StatelessWidget {
     required this.integrationStatusSnapshot,
     required this.lastIntegrationAuthUrl,
     required this.recentEvents,
+    required this.eventStreamHealth,
+    required this.eventRecoveryLog,
     required this.todos,
     required this.selectedSessionId,
     required this.loading,
@@ -1221,6 +1528,8 @@ class _TabletPortraitShell extends StatelessWidget {
     required this.onAbortSession,
     required this.onShareSession,
     required this.onUnshareSession,
+    required this.onDeleteSession,
+    required this.onRenameSession,
     required this.onRevertSession,
     required this.onUnrevertSession,
     required this.onInitSession,
@@ -1234,6 +1543,8 @@ class _TabletPortraitShell extends StatelessWidget {
     required this.onApplyConfig,
     required this.onStartProviderAuth,
     required this.onStartMcpAuth,
+    required this.submittingPrompt,
+    required this.onSubmitPrompt,
     required this.showContextSheet,
     required this.onToggleContextSheet,
   });
@@ -1262,6 +1573,8 @@ class _TabletPortraitShell extends StatelessWidget {
   final IntegrationStatusSnapshot? integrationStatusSnapshot;
   final String? lastIntegrationAuthUrl;
   final List<EventEnvelope> recentEvents;
+  final SseConnectionHealth eventStreamHealth;
+  final List<String> eventRecoveryLog;
   final List<TodoItem> todos;
   final String? selectedSessionId;
   final bool loading;
@@ -1271,6 +1584,8 @@ class _TabletPortraitShell extends StatelessWidget {
   final Future<void> Function(String) onAbortSession;
   final Future<void> Function(String) onShareSession;
   final Future<void> Function(String) onUnshareSession;
+  final Future<void> Function(String) onDeleteSession;
+  final Future<void> Function(String) onRenameSession;
   final Future<void> Function(String) onRevertSession;
   final Future<void> Function(String) onUnrevertSession;
   final Future<void> Function(String) onInitSession;
@@ -1284,6 +1599,8 @@ class _TabletPortraitShell extends StatelessWidget {
   final Future<void> Function(String) onApplyConfig;
   final Future<void> Function(String) onStartProviderAuth;
   final Future<void> Function(String) onStartMcpAuth;
+  final bool submittingPrompt;
+  final Future<bool> Function(String) onSubmitPrompt;
   final bool showContextSheet;
   final VoidCallback onToggleContextSheet;
 
@@ -1303,6 +1620,9 @@ class _TabletPortraitShell extends StatelessWidget {
               messages: messages,
               loading: loading,
               error: error,
+              submittingPrompt: submittingPrompt,
+              selectedSessionId: selectedSessionId,
+              onSubmitPrompt: onSubmitPrompt,
             ),
           ),
           const SizedBox(height: AppSpacing.lg),
@@ -1333,6 +1653,8 @@ class _TabletPortraitShell extends StatelessWidget {
               integrationStatusSnapshot: integrationStatusSnapshot,
               lastIntegrationAuthUrl: lastIntegrationAuthUrl,
               recentEvents: recentEvents,
+              eventStreamHealth: eventStreamHealth,
+              eventRecoveryLog: eventRecoveryLog,
               onApplyConfig: onApplyConfig,
               onStartProviderAuth: onStartProviderAuth,
               onStartMcpAuth: onStartMcpAuth,
@@ -1379,6 +1701,8 @@ class _MobileShell extends StatelessWidget {
     required this.integrationStatusSnapshot,
     required this.lastIntegrationAuthUrl,
     required this.recentEvents,
+    required this.eventStreamHealth,
+    required this.eventRecoveryLog,
     required this.todos,
     required this.selectedSessionId,
     required this.loading,
@@ -1388,6 +1712,8 @@ class _MobileShell extends StatelessWidget {
     required this.onAbortSession,
     required this.onShareSession,
     required this.onUnshareSession,
+    required this.onDeleteSession,
+    required this.onRenameSession,
     required this.onRevertSession,
     required this.onUnrevertSession,
     required this.onInitSession,
@@ -1401,6 +1727,8 @@ class _MobileShell extends StatelessWidget {
     required this.onApplyConfig,
     required this.onStartProviderAuth,
     required this.onStartMcpAuth,
+    required this.submittingPrompt,
+    required this.onSubmitPrompt,
     required this.showContextSheet,
     required this.onToggleContextSheet,
   });
@@ -1429,6 +1757,8 @@ class _MobileShell extends StatelessWidget {
   final IntegrationStatusSnapshot? integrationStatusSnapshot;
   final String? lastIntegrationAuthUrl;
   final List<EventEnvelope> recentEvents;
+  final SseConnectionHealth eventStreamHealth;
+  final List<String> eventRecoveryLog;
   final List<TodoItem> todos;
   final String? selectedSessionId;
   final bool loading;
@@ -1438,6 +1768,8 @@ class _MobileShell extends StatelessWidget {
   final Future<void> Function(String) onAbortSession;
   final Future<void> Function(String) onShareSession;
   final Future<void> Function(String) onUnshareSession;
+  final Future<void> Function(String) onDeleteSession;
+  final Future<void> Function(String) onRenameSession;
   final Future<void> Function(String) onRevertSession;
   final Future<void> Function(String) onUnrevertSession;
   final Future<void> Function(String) onInitSession;
@@ -1451,6 +1783,8 @@ class _MobileShell extends StatelessWidget {
   final Future<void> Function(String) onApplyConfig;
   final Future<void> Function(String) onStartProviderAuth;
   final Future<void> Function(String) onStartMcpAuth;
+  final bool submittingPrompt;
+  final Future<bool> Function(String) onSubmitPrompt;
   final bool showContextSheet;
   final VoidCallback onToggleContextSheet;
 
@@ -1471,6 +1805,9 @@ class _MobileShell extends StatelessWidget {
               messages: messages,
               loading: loading,
               error: error,
+              submittingPrompt: submittingPrompt,
+              selectedSessionId: selectedSessionId,
+              onSubmitPrompt: onSubmitPrompt,
             ),
           ),
           const SizedBox(height: AppSpacing.md),
@@ -1502,6 +1839,8 @@ class _MobileShell extends StatelessWidget {
               integrationStatusSnapshot: integrationStatusSnapshot,
               lastIntegrationAuthUrl: lastIntegrationAuthUrl,
               recentEvents: recentEvents,
+              eventStreamHealth: eventStreamHealth,
+              eventRecoveryLog: eventRecoveryLog,
               onApplyConfig: onApplyConfig,
               onStartProviderAuth: onStartProviderAuth,
               onStartMcpAuth: onStartMcpAuth,
@@ -1528,26 +1867,98 @@ class _ShellScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     return Scaffold(
-      body: DecoratedBox(
+      body: Stack(
+        children: <Widget>[
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: <Color>[
+                  surfaces.background,
+                  surfaces.panel,
+                  surfaces.background.withValues(alpha: 0.95),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            top: -140,
+            left: -100,
+            child: _AmbientGlow(
+              color: theme.colorScheme.primary.withValues(alpha: 0.12),
+              size: 320,
+            ),
+          ),
+          Positioned(
+            right: -110,
+            top: 120,
+            child: _AmbientGlow(
+              color: surfaces.panelEmphasis.withValues(alpha: 0.46),
+              size: 280,
+            ),
+          ),
+          Positioned(
+            bottom: -180,
+            left: MediaQuery.sizeOf(context).width * 0.28,
+            child: _AmbientGlow(
+              color: theme.colorScheme.primary.withValues(alpha: 0.08),
+              size: 360,
+            ),
+          ),
+          Positioned.fill(
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: <Color>[
+                      Colors.white.withValues(alpha: 0.02),
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.06),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              child: child,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AmbientGlow extends StatelessWidget {
+  const _AmbientGlow({required this.color, required this.size});
+
+  final Color color;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: DecoratedBox(
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: <Color>[
-              surfaces.background,
-              surfaces.panel,
-              surfaces.background.withValues(alpha: 0.94),
-            ],
-          ),
+          shape: BoxShape.circle,
+          boxShadow: <BoxShadow>[
+            BoxShadow(
+              color: color,
+              blurRadius: size / 2,
+              spreadRadius: size / 6,
+            ),
+          ],
         ),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.lg),
-            child: child,
-          ),
-        ),
+        child: SizedBox(width: size, height: size),
       ),
     );
   }
@@ -1567,6 +1978,8 @@ class _LeftRail extends StatelessWidget {
     required this.onAbortSession,
     required this.onShareSession,
     required this.onUnshareSession,
+    required this.onDeleteSession,
+    required this.onRenameSession,
     required this.onRevertSession,
     required this.onUnrevertSession,
     required this.onInitSession,
@@ -1585,6 +1998,8 @@ class _LeftRail extends StatelessWidget {
   final Future<void> Function(String) onAbortSession;
   final Future<void> Function(String) onShareSession;
   final Future<void> Function(String) onUnshareSession;
+  final Future<void> Function(String) onDeleteSession;
+  final Future<void> Function(String) onRenameSession;
   final Future<void> Function(String) onRevertSession;
   final Future<void> Function(String) onUnrevertSession;
   final Future<void> Function(String) onInitSession;
@@ -1594,24 +2009,44 @@ class _LeftRail extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final orderedSessions = _buildSessionTree(sessions);
+    final activeSessions = statuses.values.where(
+      (status) => status.type == 'busy',
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         _PanelCard(
+          tone: _PanelTone.subtle,
+          eyebrow: 'Workspace',
           title: l10n.shellProjectRailTitle,
+          subtitle: project.directory,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Text(
                 project.label,
-                style: Theme.of(context).textTheme.titleLarge,
+                style: Theme.of(context).textTheme.headlineSmall,
               ),
-              const SizedBox(height: AppSpacing.xs),
-              Text(project.directory),
               const SizedBox(height: AppSpacing.md),
-              _InfoChip(label: project.branch ?? l10n.shellUnknownLabel),
-              const SizedBox(height: AppSpacing.sm),
-              _InfoChip(label: profile.effectiveLabel),
+              Wrap(
+                spacing: AppSpacing.sm,
+                runSpacing: AppSpacing.sm,
+                children: <Widget>[
+                  _InfoChip(
+                    label: project.branch ?? l10n.shellUnknownLabel,
+                    icon: Icons.account_tree_outlined,
+                    emphasis: true,
+                  ),
+                  _InfoChip(
+                    label: profile.effectiveLabel,
+                    icon: Icons.cloud_outlined,
+                  ),
+                  _InfoChip(
+                    label: l10n.shellActiveCount(activeSessions.length),
+                    icon: Icons.bolt_rounded,
+                  ),
+                ],
+              ),
               const SizedBox(height: AppSpacing.md),
               OutlinedButton.icon(
                 onPressed: onExit,
@@ -1624,8 +2059,13 @@ class _LeftRail extends StatelessWidget {
         const SizedBox(height: AppSpacing.lg),
         Expanded(
           child: _PanelCard(
+            tone: _PanelTone.subtle,
+            eyebrow: 'Sessions',
             title: l10n.shellSessionsTitle,
-            child: Column(
+            subtitle: l10n.shellThreadsCount(sessions.length),
+            fillChild: true,
+            child: ListView(
+              padding: EdgeInsets.zero,
               children: sessions.isEmpty
                   ? <Widget>[
                       _SessionTile(
@@ -1637,22 +2077,15 @@ class _LeftRail extends StatelessWidget {
                         .map((session) {
                           final depth = orderedSessions[session.id] ?? 0;
                           return Padding(
-                            padding: const EdgeInsets.only(
+                            padding: EdgeInsets.only(
+                              left: depth * AppSpacing.sm,
                               bottom: AppSpacing.sm,
                             ),
-                            child: Padding(
-                              padding: EdgeInsets.only(
-                                left: depth * AppSpacing.sm,
-                              ),
-                              child: _SessionTile(
-                                title: session.title,
-                                status: _statusLabel(
-                                  l10n,
-                                  statuses[session.id]?.type ?? 'idle',
-                                ),
-                                selected: session.id == selectedSessionId,
-                                onTap: () => onSelectSession(session.id),
-                              ),
+                            child: _SessionTile(
+                              title: session.title,
+                              status: _statusLabel(l10n, statuses[session.id]),
+                              selected: session.id == selectedSessionId,
+                              onTap: () => onSelectSession(session.id),
                             ),
                           );
                         })
@@ -1663,6 +2096,8 @@ class _LeftRail extends StatelessWidget {
         if (selectedSessionId != null) ...<Widget>[
           const SizedBox(height: AppSpacing.lg),
           _PanelCard(
+            tone: _PanelTone.subtle,
+            eyebrow: 'Controls',
             title: 'Actions',
             child: Wrap(
               spacing: AppSpacing.sm,
@@ -1671,42 +2106,50 @@ class _LeftRail extends StatelessWidget {
                 if (capabilities.canForkSession)
                   OutlinedButton(
                     onPressed: () => onForkSession(selectedSessionId!),
-                    child: const Text('Fork'),
+                    child: Text(l10n.shellActionFork),
                   ),
                 if (capabilities.canShareSession) ...<Widget>[
                   OutlinedButton(
                     onPressed: () => onShareSession(selectedSessionId!),
-                    child: const Text('Share'),
+                    child: Text(l10n.shellActionShare),
                   ),
                   OutlinedButton(
                     onPressed: () => onUnshareSession(selectedSessionId!),
-                    child: const Text('Unshare'),
+                    child: Text(l10n.shellActionUnshare),
                   ),
                 ],
+                OutlinedButton(
+                  onPressed: () => onRenameSession(selectedSessionId!),
+                  child: Text(l10n.shellActionRename),
+                ),
+                OutlinedButton(
+                  onPressed: () => onDeleteSession(selectedSessionId!),
+                  child: Text(l10n.shellActionDelete),
+                ),
                 if (capabilities.hasShellCommands)
                   OutlinedButton(
                     onPressed: () => onAbortSession(selectedSessionId!),
-                    child: const Text('Abort'),
+                    child: Text(l10n.shellActionAbort),
                   ),
                 if (capabilities.canRevertSession) ...<Widget>[
                   OutlinedButton(
                     onPressed: () => onRevertSession(selectedSessionId!),
-                    child: const Text('Revert'),
+                    child: Text(l10n.shellActionRevert),
                   ),
                   OutlinedButton(
                     onPressed: () => onUnrevertSession(selectedSessionId!),
-                    child: const Text('Unrevert'),
+                    child: Text(l10n.shellActionUnrevert),
                   ),
                 ],
                 if (capabilities.canInitSession)
                   OutlinedButton(
                     onPressed: () => onInitSession(selectedSessionId!),
-                    child: const Text('Init'),
+                    child: Text(l10n.shellActionInit),
                   ),
                 if (capabilities.canSummarizeSession)
                   OutlinedButton(
                     onPressed: () => onSummarizeSession(selectedSessionId!),
-                    child: const Text('Summarize'),
+                    child: Text(l10n.shellActionSummarize),
                   ),
               ],
             ),
@@ -1746,6 +2189,9 @@ class _ChatCanvas extends StatelessWidget {
     required this.messages,
     required this.loading,
     required this.error,
+    required this.submittingPrompt,
+    required this.selectedSessionId,
+    required this.onSubmitPrompt,
     this.compact = false,
   });
 
@@ -1753,45 +2199,138 @@ class _ChatCanvas extends StatelessWidget {
   final List<ChatMessage> messages;
   final bool loading;
   final String? error;
+  final bool submittingPrompt;
+  final String? selectedSessionId;
+  final Future<bool> Function(String) onSubmitPrompt;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
+    final parts = _flattenedParts();
+    final maxContentWidth = compact ? double.infinity : 840.0;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        _PanelCard(
-          title: l10n.shellChatHeaderTitle,
-          child: Wrap(
-            spacing: AppSpacing.sm,
-            runSpacing: AppSpacing.sm,
-            children: <Widget>[
-              _InfoChip(label: l10n.shellThinkingModeLabel),
-              _InfoChip(label: l10n.shellAgentLabel),
-            ],
+        if (!compact) ...<Widget>[
+          _PanelCard(
+            tone: _PanelTone.primary,
+            eyebrow: 'Primary',
+            title: l10n.shellChatHeaderTitle,
+            subtitle: selectedSessionId == null
+                ? 'New session draft'
+                : '${parts.length} timeline parts in focus',
+            trailing: Wrap(
+              spacing: AppSpacing.xs,
+              runSpacing: AppSpacing.xs,
+              children: <Widget>[
+                _InfoChip(
+                  label: l10n.shellThinkingModeLabel,
+                  icon: Icons.psychology_alt_outlined,
+                ),
+                _InfoChip(
+                  label: l10n.shellAgentLabel,
+                  icon: Icons.auto_awesome_outlined,
+                  emphasis: true,
+                ),
+              ],
+            ),
+            child: Wrap(
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
+              children: <Widget>[
+                _InfoChip(
+                  label: selectedSessionId == null
+                      ? l10n.shellReadyToStart
+                      : l10n.shellLiveContext,
+                  icon: Icons.forum_outlined,
+                ),
+                _InfoChip(
+                  label: l10n.shellPartsCount(parts.length),
+                  icon: Icons.layers_outlined,
+                ),
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: AppSpacing.lg),
+          const SizedBox(height: AppSpacing.lg),
+        ],
         Expanded(
           child: _PanelCard(
+            tone: _PanelTone.primary,
+            eyebrow: compact
+                ? l10n.shellFocusedThreadEyebrow
+                : l10n.shellTimelineEyebrow,
             title: l10n.shellChatTimelineTitle,
+            subtitle: compact ? null : l10n.shellConversationSubtitle,
             fillChild: true,
             child: loading
                 ? const Center(child: CircularProgressIndicator())
                 : error != null
-                ? Text(error!)
-                : compact
-                ? ListView(children: _messageContent(l10n))
+                ? _MessageBubble(
+                    title: l10n.shellConnectionIssueTitle,
+                    body: error!,
+                  )
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
                       Expanded(
-                        child: ListView(children: _messageContent(l10n)),
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: <Color>[
+                                Theme.of(context)
+                                    .extension<AppSurfaces>()!
+                                    .panelMuted
+                                    .withValues(alpha: 0.84),
+                                Theme.of(context)
+                                    .extension<AppSurfaces>()!
+                                    .panel
+                                    .withValues(alpha: 0.96),
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(
+                              AppSpacing.cardRadius,
+                            ),
+                            border: Border.all(
+                              color: Theme.of(
+                                context,
+                              ).extension<AppSurfaces>()!.lineSoft,
+                            ),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(
+                              AppSpacing.cardRadius,
+                            ),
+                            child: Align(
+                              alignment: Alignment.topCenter,
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxWidth: maxContentWidth,
+                                ),
+                                child: _buildMessageList(l10n, parts),
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
                       const SizedBox(height: AppSpacing.md),
-                      _ComposerCard(
-                        compact: compact,
-                        label: l10n.shellComposerPlaceholder,
+                      Align(
+                        alignment: Alignment.center,
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxWidth: maxContentWidth,
+                          ),
+                          child: _ComposerCard(
+                            compact: compact,
+                            label: l10n.shellComposerPlaceholder,
+                            submitting: submittingPrompt,
+                            startsNewSession:
+                                selectedSessionId == null ||
+                                selectedSessionId!.isEmpty,
+                            onSubmit: onSubmitPrompt,
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -1801,24 +2340,52 @@ class _ChatCanvas extends StatelessWidget {
     );
   }
 
-  List<Widget> _messageContent(AppLocalizations l10n) {
-    if (messages.isEmpty) {
-      return <Widget>[
-        _MessageBubble(
-          title: l10n.shellAssistantMessageTitle,
-          body: l10n.shellAssistantMessageBody,
-          accent: true,
+  Widget _buildMessageList(
+    AppLocalizations l10n,
+    List<({ChatMessageInfo message, ChatPart part})> parts,
+  ) {
+    if (parts.isEmpty) {
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.md,
+          AppSpacing.xl,
+          AppSpacing.md,
+          AppSpacing.lg,
         ),
-      ];
+        children: <Widget>[
+          _MessageBubble(
+            title: l10n.shellAssistantMessageTitle,
+            body: l10n.shellAssistantMessageBody,
+            accent: true,
+          ),
+        ],
+      );
+    }
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.md,
+        AppSpacing.md,
+        AppSpacing.md,
+        AppSpacing.lg,
+      ),
+      itemCount: parts.length,
+      separatorBuilder: (context, index) =>
+          const SizedBox(height: AppSpacing.md),
+      itemBuilder: (context, index) {
+        final item = parts[index];
+        return ChatPartView(message: item.message, part: item.part);
+      },
+    );
+  }
+
+  List<({ChatMessageInfo message, ChatPart part})> _flattenedParts() {
+    if (messages.isEmpty) {
+      return const <({ChatMessageInfo message, ChatPart part})>[];
     }
     return messages
         .expand(
-          (message) => message.parts.map(
-            (part) => Padding(
-              padding: const EdgeInsets.only(bottom: AppSpacing.md),
-              child: ChatPartView(message: message.info, part: part),
-            ),
-          ),
+          (message) =>
+              message.parts.map((part) => (message: message.info, part: part)),
         )
         .toList(growable: false);
   }
@@ -1847,6 +2414,8 @@ class _ContextRail extends StatelessWidget {
     required this.integrationStatusSnapshot,
     required this.lastIntegrationAuthUrl,
     required this.recentEvents,
+    required this.eventStreamHealth,
+    required this.eventRecoveryLog,
     required this.onApplyConfig,
     required this.onStartProviderAuth,
     required this.onStartMcpAuth,
@@ -1882,6 +2451,8 @@ class _ContextRail extends StatelessWidget {
   final IntegrationStatusSnapshot? integrationStatusSnapshot;
   final String? lastIntegrationAuthUrl;
   final List<EventEnvelope> recentEvents;
+  final SseConnectionHealth eventStreamHealth;
+  final List<String> eventRecoveryLog;
   final Future<void> Function(String) onApplyConfig;
   final Future<void> Function(String) onStartProviderAuth;
   final Future<void> Function(String) onStartMcpAuth;
@@ -1896,14 +2467,32 @@ class _ContextRail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
+    final sectionCount = <bool>[
+      capabilities.hasFiles,
+      capabilities.hasTodos,
+      capabilities.hasShellCommands && !compact,
+      (capabilities.hasQuestions || capabilities.hasPermissions) && !compact,
+      (capabilities.hasConfigRead || capabilities.hasConfigWrite) && !compact,
+      (capabilities.hasProviderOAuth || capabilities.hasMcpAuth) && !compact,
+    ].where((enabled) => enabled).length;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         Expanded(
           child: _PanelCard(
+            tone: _PanelTone.subtle,
+            eyebrow: compact ? 'Context' : 'Utilities',
             title: l10n.shellContextTitle,
+            subtitle: compact
+                ? 'Secondary context for the active conversation'
+                : 'Support rails for files, tasks, commands, and integrations',
+            trailing: _InfoChip(
+              label: '$sectionCount modules',
+              icon: Icons.dashboard_customize_outlined,
+            ),
             fillChild: true,
             child: ListView(
+              padding: EdgeInsets.zero,
               children: <Widget>[
                 if (capabilities.hasFiles) ...<Widget>[
                   _FilePanel(
@@ -1923,6 +2512,7 @@ class _ContextRail extends StatelessWidget {
                 _UtilityTile(
                   title: l10n.shellDiffTitle,
                   subtitle: l10n.shellDiffSubtitle,
+                  icon: Icons.difference_outlined,
                 ),
                 if (capabilities.hasTodos) ...<Widget>[
                   const SizedBox(height: AppSpacing.sm),
@@ -1932,6 +2522,7 @@ class _ContextRail extends StatelessWidget {
                 _UtilityTile(
                   title: l10n.shellToolsTitle,
                   subtitle: l10n.shellToolsSubtitle,
+                  icon: Icons.handyman_outlined,
                 ),
                 if (!compact) ...<Widget>[
                   if (capabilities.hasShellCommands) ...<Widget>[
@@ -1975,6 +2566,8 @@ class _ContextRail extends StatelessWidget {
                       snapshot: integrationStatusSnapshot,
                       lastAuthorizationUrl: lastIntegrationAuthUrl,
                       recentEvents: recentEvents,
+                      eventStreamHealth: eventStreamHealth,
+                      eventRecoveryLog: eventRecoveryLog,
                       onStartProviderAuth: onStartProviderAuth,
                       onStartMcpAuth: onStartMcpAuth,
                     ),
@@ -2012,6 +2605,8 @@ class _BottomUtilitySheet extends StatelessWidget {
     required this.integrationStatusSnapshot,
     required this.lastIntegrationAuthUrl,
     required this.recentEvents,
+    required this.eventStreamHealth,
+    required this.eventRecoveryLog,
     required this.onApplyConfig,
     required this.onStartProviderAuth,
     required this.onStartMcpAuth,
@@ -2047,6 +2642,8 @@ class _BottomUtilitySheet extends StatelessWidget {
   final IntegrationStatusSnapshot? integrationStatusSnapshot;
   final String? lastIntegrationAuthUrl;
   final List<EventEnvelope> recentEvents;
+  final SseConnectionHealth eventStreamHealth;
+  final List<String> eventRecoveryLog;
   final Future<void> Function(String) onApplyConfig;
   final Future<void> Function(String) onStartProviderAuth;
   final Future<void> Function(String) onStartMcpAuth;
@@ -2061,7 +2658,7 @@ class _BottomUtilitySheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: compact ? 220 : 260,
+      height: compact ? 260 : 300,
       child: _ContextRail(
         compact: true,
         capabilities: capabilities,
@@ -2085,6 +2682,8 @@ class _BottomUtilitySheet extends StatelessWidget {
         integrationStatusSnapshot: integrationStatusSnapshot,
         lastIntegrationAuthUrl: lastIntegrationAuthUrl,
         recentEvents: recentEvents,
+        eventStreamHealth: eventStreamHealth,
+        eventRecoveryLog: eventRecoveryLog,
         onApplyConfig: onApplyConfig,
         onStartProviderAuth: onStartProviderAuth,
         onStartMcpAuth: onStartMcpAuth,
@@ -2109,11 +2708,23 @@ class _UtilityToggleHint extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     return _PanelCard(
+      tone: _PanelTone.subtle,
+      eyebrow: 'Utilities',
       title: l10n.shellUtilitiesToggleTitle,
-      child: Text(
-        compact
-            ? l10n.shellUtilitiesToggleBodyCompact
-            : l10n.shellUtilitiesToggleBody,
+      subtitle: compact
+          ? l10n.shellUtilitiesToggleBodyCompact
+          : l10n.shellUtilitiesToggleBody,
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: _InfoChip(
+              label: compact
+                  ? 'Swipe utilities into view'
+                  : 'Open the utility rail',
+              icon: Icons.swipe_up_alt_rounded,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2133,63 +2744,153 @@ class _ShellTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    return Row(
-      children: <Widget>[
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(
-                project.label,
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              Text(project.directory),
-            ],
+    return _PanelCard(
+      tone: _PanelTone.subtle,
+      eyebrow: 'Workspace',
+      title: project.label,
+      subtitle: project.directory,
+      trailing: Wrap(
+        spacing: AppSpacing.xs,
+        children: <Widget>[
+          IconButton(
+            onPressed: onToggleUtilities,
+            icon: const Icon(Icons.view_sidebar_outlined),
+            tooltip: l10n.shellUtilitiesToggleTitle,
           ),
-        ),
-        IconButton(
-          onPressed: onToggleUtilities,
-          icon: const Icon(Icons.view_sidebar_outlined),
-          tooltip: l10n.shellUtilitiesToggleTitle,
-        ),
-        const SizedBox(width: AppSpacing.xs),
-        OutlinedButton.icon(
-          onPressed: onExit,
-          icon: const Icon(Icons.arrow_back_rounded),
-          label: Text(l10n.shellBackToProjectsAction),
-        ),
-      ],
+          OutlinedButton.icon(
+            onPressed: onExit,
+            icon: const Icon(Icons.arrow_back_rounded),
+            label: Text(l10n.shellBackToProjectsAction),
+          ),
+        ],
+      ),
+      child: Wrap(
+        spacing: AppSpacing.sm,
+        runSpacing: AppSpacing.sm,
+        children: <Widget>[
+          _InfoChip(label: 'OpenCode remote', icon: Icons.waves_rounded),
+          _InfoChip(label: 'Context nearby', icon: Icons.layers_outlined),
+        ],
+      ),
     );
   }
 }
+
+enum _PanelTone { primary, neutral, subtle }
 
 class _PanelCard extends StatelessWidget {
   const _PanelCard({
     required this.title,
     required this.child,
     this.fillChild = false,
+    this.tone = _PanelTone.neutral,
+    this.eyebrow,
+    this.subtitle,
+    this.trailing,
   });
 
   final String title;
   final Widget child;
   final bool fillChild;
+  final _PanelTone tone;
+  final String? eyebrow;
+  final String? subtitle;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final topColor = switch (tone) {
+      _PanelTone.primary => Color.alphaBlend(
+        theme.colorScheme.primary.withValues(alpha: 0.08),
+        surfaces.panelEmphasis.withValues(alpha: 0.98),
+      ),
+      _PanelTone.neutral => surfaces.panelRaised.withValues(alpha: 0.92),
+      _PanelTone.subtle => surfaces.panelMuted.withValues(alpha: 0.88),
+    };
+    final bottomColor = switch (tone) {
+      _PanelTone.primary => surfaces.panel.withValues(alpha: 0.98),
+      _PanelTone.neutral => surfaces.panel.withValues(alpha: 0.96),
+      _PanelTone.subtle => surfaces.panel.withValues(alpha: 0.92),
+    };
+    final borderColor = switch (tone) {
+      _PanelTone.primary => theme.colorScheme.primary.withValues(alpha: 0.24),
+      _PanelTone.neutral => surfaces.line,
+      _PanelTone.subtle => surfaces.lineSoft,
+    };
+    final shadowColor = switch (tone) {
+      _PanelTone.primary => theme.colorScheme.primary.withValues(alpha: 0.1),
+      _PanelTone.neutral => Colors.black.withValues(alpha: 0.22),
+      _PanelTone.subtle => Colors.black.withValues(alpha: 0.14),
+    };
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: surfaces.panel.withValues(alpha: 0.92),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[topColor, bottomColor],
+        ),
         borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
-        border: Border.all(color: surfaces.line),
+        border: Border.all(color: borderColor),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: shadowColor,
+            blurRadius: tone == _PanelTone.primary ? 36 : 22,
+            offset: const Offset(0, 16),
+          ),
+        ],
       ),
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.lg),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text(title, style: Theme.of(context).textTheme.titleMedium),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      if (eyebrow != null) ...<Widget>[
+                        Text(
+                          eyebrow!,
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: theme.colorScheme.primary.withValues(
+                              alpha: tone == _PanelTone.primary ? 0.88 : 0.72,
+                            ),
+                            letterSpacing: 0.7,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.xs),
+                      ],
+                      Text(
+                        title,
+                        style:
+                            (tone == _PanelTone.primary
+                                    ? theme.textTheme.titleLarge
+                                    : theme.textTheme.titleMedium)
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                      if (subtitle != null) ...<Widget>[
+                        const SizedBox(height: AppSpacing.xs),
+                        Text(
+                          subtitle!,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: surfaces.muted,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                if (trailing != null) ...<Widget>[
+                  const SizedBox(width: AppSpacing.md),
+                  Flexible(child: trailing!),
+                ],
+              ],
+            ),
             const SizedBox(height: AppSpacing.md),
             if (fillChild) Expanded(child: child) else child,
           ],
@@ -2214,28 +2915,46 @@ class _SessionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
+    return _UtilityListRow(
+      title: title,
+      subtitle: status,
       selected: selected,
-      title: Text(title),
-      subtitle: Text(status),
-      trailing: const Icon(Icons.chevron_right_rounded),
+      icon: selected ? Icons.bolt_rounded : Icons.chat_bubble_outline_rounded,
+      trailing: Icon(
+        Icons.chevron_right_rounded,
+        color: Theme.of(context).extension<AppSurfaces>()!.muted,
+      ),
       onTap: onTap,
     );
   }
 }
 
 class _UtilityTile extends StatelessWidget {
-  const _UtilityTile({required this.title, required this.subtitle});
+  const _UtilityTile({
+    required this.title,
+    required this.subtitle,
+    this.icon = Icons.widgets_outlined,
+  });
 
   final String title;
   final String subtitle;
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      title: Text(title),
-      subtitle: Text(subtitle),
-      trailing: const Icon(Icons.chevron_right_rounded),
+    return _UtilitySection(
+      title: title,
+      subtitle: subtitle,
+      icon: icon,
+      child: _UtilityListRow(
+        title: title,
+        subtitle: subtitle,
+        icon: icon,
+        trailing: Icon(
+          Icons.chevron_right_rounded,
+          color: Theme.of(context).extension<AppSurfaces>()!.muted,
+        ),
+      ),
     );
   }
 }
@@ -2252,21 +2971,220 @@ class _TodoTileList extends StatelessWidget {
       return _UtilityTile(
         title: l10n.shellTodoTitle,
         subtitle: l10n.shellTodoSubtitle,
+        icon: Icons.checklist_rounded,
       );
     }
     final sorted = todos.toList()
       ..sort((a, b) => _todoRank(a.status).compareTo(_todoRank(b.status)));
-    return Column(
-      children: <Widget>[
-        for (final todo in sorted)
-          Padding(
-            padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-            child: ListTile(
-              title: Text(todo.content),
-              subtitle: Text('${todo.status} · ${todo.priority}'),
+    return _UtilitySection(
+      title: l10n.shellTodoTitle,
+      subtitle: l10n.shellTodoSubtitle,
+      icon: Icons.checklist_rounded,
+      child: Column(
+        children: <Widget>[
+          for (final todo in sorted)
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+              child: _UtilityListRow(
+                title: todo.content,
+                subtitle: todo.priority,
+                icon: _todoIcon(todo.status),
+                emphasis: todo.status == 'in_progress',
+                trailing: _InfoChip(
+                  label: _todoStatusLabel(todo.status),
+                  emphasis: todo.status == 'in_progress',
+                ),
+              ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+class _UtilitySection extends StatelessWidget {
+  const _UtilitySection({
+    required this.title,
+    required this.subtitle,
+    required this.child,
+    required this.icon,
+    this.trailing,
+  });
+
+  final String title;
+  final String subtitle;
+  final Widget child;
+  final IconData icon;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[
+            surfaces.panelMuted.withValues(alpha: 0.92),
+            surfaces.panel.withValues(alpha: 0.98),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(AppSpacing.lg),
+        border: Border.all(color: surfaces.lineSoft),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: surfaces.panelEmphasis.withValues(alpha: 0.92),
+                    borderRadius: BorderRadius.circular(AppSpacing.sm),
+                    border: Border.all(color: surfaces.lineSoft),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppSpacing.xs),
+                    child: Icon(icon, size: 16, color: surfaces.accentSoft),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        title,
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: AppSpacing.xxs),
+                      Text(
+                        subtitle,
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
+                      ),
+                    ],
+                  ),
+                ),
+                if (trailing != null) ...<Widget>[
+                  const SizedBox(width: AppSpacing.sm),
+                  trailing!,
+                ],
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _UtilityListRow extends StatelessWidget {
+  const _UtilityListRow({
+    required this.title,
+    required this.subtitle,
+    this.icon,
+    this.selected = false,
+    this.emphasis = false,
+    this.onTap,
+    this.trailing,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData? icon;
+  final bool selected;
+  final bool emphasis;
+  final VoidCallback? onTap;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final highlighted = selected || emphasis;
+    final fill = highlighted
+        ? Color.alphaBlend(
+            theme.colorScheme.primary.withValues(alpha: 0.1),
+            surfaces.panelEmphasis.withValues(alpha: 0.92),
+          )
+        : surfaces.panelRaised.withValues(alpha: 0.56);
+    final border = highlighted
+        ? theme.colorScheme.primary.withValues(alpha: 0.2)
+        : surfaces.lineSoft;
+    return InkWell(
+      borderRadius: BorderRadius.circular(AppSpacing.md),
+      onTap: onTap,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: fill,
+          borderRadius: BorderRadius.circular(AppSpacing.md),
+          border: Border.all(color: border),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm,
           ),
-      ],
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              if (icon != null) ...<Widget>[
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: highlighted
+                        ? theme.colorScheme.primary.withValues(alpha: 0.16)
+                        : surfaces.panelMuted.withValues(alpha: 0.96),
+                    borderRadius: BorderRadius.circular(AppSpacing.xs),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppSpacing.xs),
+                    child: Icon(
+                      icon,
+                      size: 16,
+                      color: highlighted
+                          ? theme.colorScheme.primary
+                          : surfaces.accentSoft,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+              ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      title,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xxs),
+                    Text(
+                      subtitle,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: surfaces.muted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (trailing != null) ...<Widget>[
+                const SizedBox(width: AppSpacing.sm),
+                trailing!,
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -2303,62 +3221,111 @@ class _FilePanel extends StatelessWidget {
         ? fileSearchResults
         : fileNodes.map((item) => item.path).take(5).toList(growable: false);
 
-    return Column(
-      children: <Widget>[
-        ListTile(
-          title: Text(l10n.shellFilesTitle),
-          subtitle: Text(l10n.shellFilesSubtitle),
-        ),
-        TextField(
-          controller: TextEditingController(text: fileSearchQuery),
-          onSubmitted: onSearchFiles,
-          decoration: const InputDecoration(
-            hintText: 'Search files, text, or symbols',
-            isDense: true,
-          ),
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        for (final path in visiblePaths)
-          Padding(
-            padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-            child: ListTile(
-              selected: path == selectedFilePath,
-              title: Text(path),
-              subtitle: Text(_statusFor(path)),
-              onTap: () => onSelectFile(path),
+    return _UtilitySection(
+      title: l10n.shellFilesTitle,
+      subtitle: l10n.shellFilesSubtitle,
+      icon: Icons.folder_open_outlined,
+      trailing: _InfoChip(
+        label: '${visiblePaths.length} shown',
+        icon: Icons.insert_drive_file_outlined,
+      ),
+      child: Column(
+        children: <Widget>[
+          TextField(
+            controller: TextEditingController(text: fileSearchQuery),
+            onSubmitted: onSearchFiles,
+            decoration: InputDecoration(
+              hintText: l10n.shellFilesSearchHint,
+              isDense: true,
+              prefixIcon: const Icon(Icons.search_rounded),
             ),
           ),
-        if (filePreview != null) ...<Widget>[
-          const SizedBox(height: AppSpacing.xs),
-          Text(
-            filePreview!.content,
-            maxLines: 6,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
-        if (textMatches.isNotEmpty) ...<Widget>[
-          const SizedBox(height: AppSpacing.xs),
-          for (final match in textMatches.take(2))
-            ListTile(title: Text(match.path), subtitle: Text(match.lines)),
-        ],
-        if (symbols.isNotEmpty) ...<Widget>[
-          const SizedBox(height: AppSpacing.xs),
-          for (final symbol in symbols.take(2))
-            ListTile(
-              title: Text(symbol.name),
-              subtitle: Text(
-                '${symbol.kind ?? 'symbol'} · ${symbol.path ?? '-'}',
+          const SizedBox(height: AppSpacing.sm),
+          for (final path in visiblePaths)
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+              child: _UtilityListRow(
+                title: path,
+                subtitle: _statusFor(path, l10n),
+                selected: path == selectedFilePath,
+                icon: Icons.description_outlined,
+                trailing: Icon(
+                  Icons.chevron_right_rounded,
+                  color: Theme.of(context).extension<AppSurfaces>()!.muted,
+                ),
+                onTap: () => onSelectFile(path),
               ),
             ),
+          if (filePreview != null) ...<Widget>[
+            const SizedBox(height: AppSpacing.sm),
+            _UtilitySection(
+              title: l10n.shellPreviewTitle,
+              subtitle: selectedFilePath ?? l10n.shellCurrentSelection,
+              icon: Icons.code_rounded,
+              child: Text(
+                filePreview!.content,
+                maxLines: 6,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+          ],
+          if (textMatches.isNotEmpty) ...<Widget>[
+            const SizedBox(height: AppSpacing.sm),
+            _UtilitySection(
+              title: l10n.shellMatchesTitle,
+              subtitle: l10n.shellMatchesSubtitle,
+              icon: Icons.find_in_page_outlined,
+              child: Column(
+                children: textMatches
+                    .take(2)
+                    .map(
+                      (match) => Padding(
+                        padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                        child: _UtilityListRow(
+                          title: match.path,
+                          subtitle: match.lines,
+                          icon: Icons.short_text_rounded,
+                        ),
+                      ),
+                    )
+                    .toList(growable: false),
+              ),
+            ),
+          ],
+          if (symbols.isNotEmpty) ...<Widget>[
+            const SizedBox(height: AppSpacing.sm),
+            _UtilitySection(
+              title: l10n.shellSymbolsTitle,
+              subtitle: l10n.shellSymbolsSubtitle,
+              icon: Icons.hub_outlined,
+              child: Column(
+                children: symbols
+                    .take(2)
+                    .map(
+                      (symbol) => Padding(
+                        padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                        child: _UtilityListRow(
+                          title: symbol.name,
+                          subtitle:
+                              '${symbol.kind ?? 'symbol'} · ${symbol.path ?? '-'}',
+                          icon: Icons.alternate_email_rounded,
+                        ),
+                      ),
+                    )
+                    .toList(growable: false),
+              ),
+            ),
+          ],
         ],
-      ],
+      ),
     );
   }
 
-  String _statusFor(String path) {
+  String _statusFor(String path, AppLocalizations l10n) {
     final matches = fileStatuses.where((item) => item.path == path);
     if (matches.isEmpty) {
-      return 'tracked';
+      return l10n.shellTrackedLabel;
     }
     final match = matches.first;
     return '${match.status} +${match.added} -${match.removed}';
@@ -2381,33 +3348,51 @@ class _TerminalPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    return Column(
-      children: <Widget>[
-        ListTile(
-          title: Text(l10n.shellTerminalTitle),
-          subtitle: Text(l10n.shellTerminalSubtitle),
-        ),
-        TextField(
-          controller: TextEditingController(text: command),
-          onSubmitted: onRun,
-          decoration: const InputDecoration(hintText: 'pwd', isDense: true),
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: ElevatedButton(
-            onPressed: running ? null : () => onRun(command),
-            child: Text(running ? 'Running...' : 'Run'),
-          ),
-        ),
-        if (result != null)
-          ListTile(
-            title: Text(result!.messageId),
-            subtitle: Text(
-              '${result!.providerId ?? '-'} · ${result!.modelId ?? '-'}',
+    return _UtilitySection(
+      title: l10n.shellTerminalTitle,
+      subtitle: l10n.shellTerminalSubtitle,
+      icon: Icons.terminal_rounded,
+      child: Column(
+        children: <Widget>[
+          TextField(
+            controller: TextEditingController(text: command),
+            onSubmitted: onRun,
+            decoration: InputDecoration(
+              hintText: l10n.shellTerminalHint,
+              isDense: true,
+              prefixIcon: const Icon(Icons.keyboard_command_key_rounded),
             ),
           ),
-      ],
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            children: <Widget>[
+              ElevatedButton.icon(
+                onPressed: running ? null : () => onRun(command),
+                icon: Icon(
+                  running
+                      ? Icons.hourglass_top_rounded
+                      : Icons.play_arrow_rounded,
+                ),
+                label: Text(
+                  running
+                      ? l10n.shellTerminalRunning
+                      : l10n.shellTerminalRunAction,
+                ),
+              ),
+            ],
+          ),
+          if (result != null) ...<Widget>[
+            const SizedBox(height: AppSpacing.sm),
+            _UtilityListRow(
+              title: result!.messageId,
+              subtitle:
+                  '${result!.providerId ?? '-'} · ${result!.modelId ?? '-'}',
+              icon: Icons.check_circle_outline_rounded,
+              emphasis: true,
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -2429,54 +3414,72 @@ class _PendingRequestsPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     if (questions.isEmpty && permissions.isEmpty) {
       return const SizedBox.shrink();
     }
-    return Column(
-      children: <Widget>[
-        for (final permission in permissions)
-          ListTile(
-            title: Text(permission.permission),
-            subtitle: Text(permission.patterns.join(', ')),
-            trailing: Wrap(
-              spacing: AppSpacing.xs,
-              children: <Widget>[
-                TextButton(
-                  onPressed: () => onReplyPermission(permission.id, 'once'),
-                  child: const Text('Once'),
+    final total = questions.length + permissions.length;
+    return _UtilitySection(
+      title: l10n.shellPendingApprovalsTitle,
+      subtitle: l10n.shellPendingApprovalsSubtitle(total),
+      icon: Icons.notification_important_outlined,
+      child: Column(
+        children: <Widget>[
+          for (final permission in permissions)
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+              child: _UtilitySection(
+                title: permission.permission,
+                subtitle: permission.patterns.join(', '),
+                icon: Icons.lock_open_outlined,
+                child: Wrap(
+                  spacing: AppSpacing.xs,
+                  runSpacing: AppSpacing.xs,
+                  children: <Widget>[
+                    TextButton(
+                      onPressed: () => onReplyPermission(permission.id, 'once'),
+                      child: Text(l10n.shellAllowOnceAction),
+                    ),
+                    TextButton(
+                      onPressed: () =>
+                          onReplyPermission(permission.id, 'reject'),
+                      child: Text(l10n.shellRejectAction),
+                    ),
+                  ],
                 ),
-                TextButton(
-                  onPressed: () => onReplyPermission(permission.id, 'reject'),
-                  child: const Text('Reject'),
-                ),
-              ],
+              ),
             ),
-          ),
-        for (final question in questions)
-          ListTile(
-            title: Text(question.questions.first.header),
-            subtitle: Text(question.questions.first.question),
-            trailing: Wrap(
-              spacing: AppSpacing.xs,
-              children: <Widget>[
-                TextButton(
-                  onPressed: question.questions.first.options.isEmpty
-                      ? null
-                      : () => onReplyQuestion(question.id, <List<String>>[
-                          <String>[
-                            question.questions.first.options.first.label,
-                          ],
-                        ]),
-                  child: const Text('Answer'),
+          for (final question in questions)
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+              child: _UtilitySection(
+                title: question.questions.first.header,
+                subtitle: question.questions.first.question,
+                icon: Icons.help_outline_rounded,
+                child: Wrap(
+                  spacing: AppSpacing.xs,
+                  runSpacing: AppSpacing.xs,
+                  children: <Widget>[
+                    TextButton(
+                      onPressed: question.questions.first.options.isEmpty
+                          ? null
+                          : () => onReplyQuestion(question.id, <List<String>>[
+                              <String>[
+                                question.questions.first.options.first.label,
+                              ],
+                            ]),
+                      child: Text(l10n.shellAnswerAction),
+                    ),
+                    TextButton(
+                      onPressed: () => onRejectQuestion(question.id),
+                      child: Text(l10n.shellRejectAction),
+                    ),
+                  ],
                 ),
-                TextButton(
-                  onPressed: () => onRejectQuestion(question.id),
-                  child: const Text('Reject'),
-                ),
-              ],
+              ),
             ),
-          ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -2527,43 +3530,78 @@ class _ConfigPreviewPanelState extends State<_ConfigPreviewPanel> {
     if (widget.snapshot == null) {
       return const SizedBox.shrink();
     }
+    final l10n = AppLocalizations.of(context)!;
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final preview = buildConfigEditPreview(
+      current: widget.snapshot!.config,
+      draft: _controller.text,
+    );
     final providers = widget.snapshot!.providerConfig.toJson().toString();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        const Text('Config'),
-        const SizedBox(height: AppSpacing.xs),
-        TextField(
-          controller: _controller,
-          maxLines: 8,
-          decoration: const InputDecoration(isDense: true),
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: ElevatedButton(
-            onPressed: _applying
-                ? null
-                : () async {
-                    setState(() {
-                      _applying = true;
-                    });
-                    try {
-                      await widget.onApply(_controller.text);
-                    } finally {
-                      if (mounted) {
-                        setState(() {
-                          _applying = false;
-                        });
-                      }
-                    }
-                  },
-            child: Text(_applying ? 'Applying...' : 'Apply config'),
+    return _UtilitySection(
+      title: l10n.shellConfigTitle,
+      subtitle: 'Live preview of editable configuration',
+      icon: Icons.settings_suggest_outlined,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          TextField(
+            controller: _controller,
+            maxLines: 8,
+            onChanged: (_) => setState(() {}),
+            decoration: const InputDecoration(isDense: true),
           ),
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        Text(providers, maxLines: 3, overflow: TextOverflow.ellipsis),
-      ],
+          const SizedBox(height: AppSpacing.sm),
+          if (!preview.isValid) ...<Widget>[
+            Text(
+              preview.error ?? l10n.shellConfigInvalid,
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: surfaces.danger),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+          ] else ...<Widget>[
+            _InfoChip(
+              label: l10n.shellConfigChangedKeys(preview.changedPaths.length),
+              icon: Icons.tune_rounded,
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              preview.changedPaths.take(6).join(', '),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+          ],
+          Align(
+            alignment: Alignment.centerLeft,
+            child: ElevatedButton(
+              onPressed: _applying || !preview.isValid
+                  ? null
+                  : () async {
+                      setState(() {
+                        _applying = true;
+                      });
+                      try {
+                        await widget.onApply(_controller.text);
+                      } finally {
+                        if (mounted) {
+                          setState(() {
+                            _applying = false;
+                          });
+                        }
+                      }
+                    },
+              child: Text(
+                _applying
+                    ? l10n.shellConfigApplying
+                    : l10n.shellConfigApplyAction,
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(providers, maxLines: 3, overflow: TextOverflow.ellipsis),
+        ],
+      ),
     );
   }
 }
@@ -2582,6 +3620,7 @@ class _RawInspectorPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     SessionSummary? selectedSession;
+    final l10n = AppLocalizations.of(context)!;
     for (final session in sessions) {
       if (session.id == selectedSessionId) {
         selectedSession = session;
@@ -2611,15 +3650,18 @@ class _RawInspectorPanel extends StatelessWidget {
                 .toList(growable: false),
           });
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        const Text('Inspector'),
-        const SizedBox(height: AppSpacing.xs),
-        Text(sessionJson, maxLines: 5, overflow: TextOverflow.ellipsis),
-        const SizedBox(height: AppSpacing.xs),
-        Text(messageJson, maxLines: 6, overflow: TextOverflow.ellipsis),
-      ],
+    return _UtilitySection(
+      title: l10n.shellInspectorTitle,
+      subtitle: 'Session and message metadata snapshot',
+      icon: Icons.data_object_rounded,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(sessionJson, maxLines: 5, overflow: TextOverflow.ellipsis),
+          const SizedBox(height: AppSpacing.sm),
+          Text(messageJson, maxLines: 6, overflow: TextOverflow.ellipsis),
+        ],
+      ),
     );
   }
 }
@@ -2629,6 +3671,8 @@ class _IntegrationStatusPanel extends StatelessWidget {
     required this.snapshot,
     required this.lastAuthorizationUrl,
     required this.recentEvents,
+    required this.eventStreamHealth,
+    required this.eventRecoveryLog,
     required this.onStartProviderAuth,
     required this.onStartMcpAuth,
   });
@@ -2636,6 +3680,8 @@ class _IntegrationStatusPanel extends StatelessWidget {
   final IntegrationStatusSnapshot? snapshot;
   final String? lastAuthorizationUrl;
   final List<EventEnvelope> recentEvents;
+  final SseConnectionHealth eventStreamHealth;
+  final List<String> eventRecoveryLog;
   final Future<void> Function(String) onStartProviderAuth;
   final Future<void> Function(String) onStartMcpAuth;
 
@@ -2644,69 +3690,115 @@ class _IntegrationStatusPanel extends StatelessWidget {
     if (snapshot == null) {
       return const SizedBox.shrink();
     }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        const Text('Integrations'),
-        const SizedBox(height: AppSpacing.xs),
-        Text(
-          'Providers: ${snapshot!.providerAuth.keys.join(', ')}',
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        Text(
-          'MCP: ${snapshot!.mcpStatus.entries.map((entry) => '${entry.key}:${entry.value}').join(', ')}',
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        Text(
-          'LSP: ${snapshot!.lspStatus.entries.map((entry) => '${entry.key}:${entry.value}').join(', ')}',
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        Text(
-          'Formatter: ${snapshot!.formatterStatus.entries.map((entry) => '${entry.key}:${entry.value ? 'enabled' : 'disabled'}').join(', ')}',
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        Wrap(
-          spacing: AppSpacing.xs,
-          runSpacing: AppSpacing.xs,
-          children: <Widget>[
-            if (snapshot!.providerAuth.isNotEmpty)
-              OutlinedButton(
-                onPressed: () =>
-                    onStartProviderAuth(snapshot!.providerAuth.keys.first),
-                child: const Text('Start provider auth'),
+    final l10n = AppLocalizations.of(context)!;
+    return _UtilitySection(
+      title: l10n.shellIntegrationsTitle,
+      subtitle:
+          '${l10n.shellIntegrationsStreamHealth}: ${eventStreamHealth.name}',
+      icon: Icons.hub_outlined,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          for (final entry in snapshot!.providerAuth.entries)
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+              child: _UtilitySection(
+                title: entry.key,
+                subtitle:
+                    '${l10n.shellIntegrationsMethods}: ${entry.value.join(', ')}',
+                icon: Icons.cloud_outlined,
+                child: OutlinedButton(
+                  onPressed: () => onStartProviderAuth(entry.key),
+                  child: Text(l10n.shellIntegrationsStartProviderAuth),
+                ),
               ),
-            if (snapshot!.mcpStatus.isNotEmpty)
-              OutlinedButton(
-                onPressed: () => onStartMcpAuth(snapshot!.mcpStatus.keys.first),
-                child: const Text('Start MCP auth'),
+            ),
+          for (final entry in snapshot!.mcpStatus.entries)
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+              child: _UtilitySection(
+                title: entry.key,
+                subtitle: '${l10n.shellIntegrationsMcp}: ${entry.value}',
+                icon: Icons.extension_outlined,
+                child: OutlinedButton(
+                  onPressed: () => onStartMcpAuth(entry.key),
+                  child: Text(l10n.shellIntegrationsStartMcpAuth),
+                ),
               ),
+            ),
+          if (snapshot!.lspStatus.isNotEmpty) ...<Widget>[
+            _UtilitySection(
+              title: l10n.shellIntegrationsLsp,
+              subtitle: 'Language server readiness',
+              icon: Icons.memory_rounded,
+              child: Column(
+                children: snapshot!.lspStatus.entries
+                    .map(
+                      (entry) => Padding(
+                        padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                        child: _UtilityListRow(
+                          title: entry.key,
+                          subtitle: entry.value,
+                          icon: Icons.circle_outlined,
+                        ),
+                      ),
+                    )
+                    .toList(growable: false),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
           ],
-        ),
-        if (lastAuthorizationUrl != null) ...<Widget>[
-          const SizedBox(height: AppSpacing.xs),
-          Text(
-            lastAuthorizationUrl!,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
+          if (snapshot!.formatterStatus.isNotEmpty) ...<Widget>[
+            _UtilitySection(
+              title: l10n.shellIntegrationsFormatter,
+              subtitle: 'Formatting availability',
+              icon: Icons.auto_fix_high_rounded,
+              child: Column(
+                children: snapshot!.formatterStatus.entries
+                    .map(
+                      (entry) => Padding(
+                        padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                        child: _UtilityListRow(
+                          title: entry.key,
+                          subtitle: entry.value
+                              ? l10n.shellIntegrationsEnabled
+                              : l10n.shellIntegrationsDisabled,
+                          icon: entry.value
+                              ? Icons.check_circle_outline_rounded
+                              : Icons.remove_circle_outline_rounded,
+                          emphasis: entry.value,
+                        ),
+                      ),
+                    )
+                    .toList(growable: false),
+              ),
+            ),
+          ],
+          if (lastAuthorizationUrl != null) ...<Widget>[
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              lastAuthorizationUrl!,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+          if (recentEvents.isNotEmpty) ...<Widget>[
+            const SizedBox(height: AppSpacing.sm),
+            _InfoChip(
+              label: recentEvents.take(3).map((event) => event.type).join(', '),
+              icon: Icons.stream_rounded,
+            ),
+          ],
+          if (eventRecoveryLog.isNotEmpty) ...<Widget>[
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              '${l10n.shellIntegrationsRecoveryLog}: ${eventRecoveryLog.join(', ')}',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
         ],
-        if (recentEvents.isNotEmpty) ...<Widget>[
-          const SizedBox(height: AppSpacing.xs),
-          Text(
-            recentEvents.take(3).map((event) => event.type).join(', '),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
-      ],
+      ),
     );
   }
 }
@@ -2724,15 +3816,27 @@ class _MessageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final fill = accent
-        ? surfaces.accentSoft.withValues(alpha: 0.16)
-        : surfaces.panelRaised.withValues(alpha: 0.78);
+        ? Color.alphaBlend(
+            theme.colorScheme.primary.withValues(alpha: 0.08),
+            surfaces.panelEmphasis.withValues(alpha: 0.92),
+          )
+        : surfaces.panelRaised.withValues(alpha: 0.82);
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: fill,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[fill, surfaces.panel.withValues(alpha: 0.98)],
+        ),
         borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
-        border: Border.all(color: surfaces.line),
+        border: Border.all(
+          color: accent
+              ? theme.colorScheme.primary.withValues(alpha: 0.24)
+              : surfaces.lineSoft,
+        ),
       ),
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.lg),
@@ -2749,28 +3853,122 @@ class _MessageBubble extends StatelessWidget {
   }
 }
 
-class _ComposerCard extends StatelessWidget {
-  const _ComposerCard({required this.compact, required this.label});
+class _ComposerCard extends StatefulWidget {
+  const _ComposerCard({
+    required this.compact,
+    required this.label,
+    required this.submitting,
+    required this.startsNewSession,
+    required this.onSubmit,
+  });
 
   final bool compact;
   final String label;
+  final bool submitting;
+  final bool startsNewSession;
+  final Future<bool> Function(String) onSubmit;
+
+  @override
+  State<_ComposerCard> createState() => _ComposerCardState();
+}
+
+class _ComposerCardState extends State<_ComposerCard> {
+  late final TextEditingController _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final text = _controller.text;
+    final success = await widget.onSubmit(text);
+    if (success && mounted) {
+      _controller.clear();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final theme = Theme.of(context);
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: surfaces.panelRaised.withValues(alpha: 0.72),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[
+            Color.alphaBlend(
+              theme.colorScheme.primary.withValues(alpha: 0.06),
+              surfaces.panelEmphasis.withValues(alpha: 0.9),
+            ),
+            surfaces.panel.withValues(alpha: 0.98),
+          ],
+        ),
         borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
-        border: Border.all(color: surfaces.line),
+        border: Border.all(
+          color: theme.colorScheme.primary.withValues(alpha: 0.18),
+        ),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: theme.colorScheme.primary.withValues(alpha: 0.08),
+            blurRadius: 28,
+            offset: const Offset(0, 14),
+          ),
+        ],
       ),
       child: Padding(
-        padding: EdgeInsets.all(compact ? AppSpacing.md : AppSpacing.lg),
-        child: Row(
+        padding: EdgeInsets.all(widget.compact ? AppSpacing.md : AppSpacing.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Expanded(child: Text(label)),
-            const SizedBox(width: AppSpacing.sm),
-            const Icon(Icons.send_rounded),
+            Wrap(
+              spacing: AppSpacing.xs,
+              runSpacing: AppSpacing.xs,
+              children: <Widget>[
+                _InfoChip(
+                  label: widget.startsNewSession ? 'New session' : 'Replying',
+                  icon: widget.startsNewSession
+                      ? Icons.add_comment_outlined
+                      : Icons.reply_rounded,
+                  emphasis: true,
+                ),
+                _InfoChip(
+                  label: widget.compact
+                      ? 'Compact composer'
+                      : 'Expanded composer',
+                  icon: Icons.edit_outlined,
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            TextField(
+              controller: _controller,
+              minLines: 1,
+              maxLines: widget.compact ? 3 : 5,
+              onSubmitted: (_) => _submit(),
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: widget.label,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Align(
+              alignment: Alignment.centerRight,
+              child: ElevatedButton.icon(
+                onPressed: widget.submitting ? null : _submit,
+                icon: const Icon(Icons.send_rounded),
+                label: Text(
+                  widget.submitting
+                      ? l10n.shellComposerSending
+                      : widget.startsNewSession
+                      ? l10n.shellComposerCreatingSession
+                      : l10n.shellComposerSendAction,
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -2779,22 +3977,80 @@ class _ComposerCard extends StatelessWidget {
 }
 
 class _InfoChip extends StatelessWidget {
-  const _InfoChip({required this.label});
+  const _InfoChip({required this.label, this.icon, this.emphasis = false});
 
   final String label;
+  final IconData? icon;
+  final bool emphasis;
 
   @override
   Widget build(BuildContext context) {
-    return Chip(label: Text(label));
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final fill = emphasis
+        ? Color.alphaBlend(
+            theme.colorScheme.primary.withValues(alpha: 0.1),
+            surfaces.panelEmphasis.withValues(alpha: 0.92),
+          )
+        : surfaces.panelMuted.withValues(alpha: 0.9);
+    final border = emphasis
+        ? theme.colorScheme.primary.withValues(alpha: 0.2)
+        : surfaces.lineSoft;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: fill,
+        borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
+        border: Border.all(color: border),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            if (icon != null) ...<Widget>[
+              Icon(
+                icon,
+                size: 14,
+                color: emphasis
+                    ? theme.colorScheme.primary
+                    : surfaces.accentSoft,
+              ),
+              const SizedBox(width: AppSpacing.xs),
+            ],
+            Flexible(
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                softWrap: false,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: emphasis ? theme.colorScheme.primary : null,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
-String _statusLabel(AppLocalizations l10n, String status) {
-  return switch (status) {
+String _statusLabel(AppLocalizations l10n, SessionStatusSummary? status) {
+  final type = status?.type ?? 'idle';
+  final base = switch (type) {
     'busy' => l10n.shellStatusActive,
     'retry' => l10n.shellStatusError,
     _ => l10n.shellStatusIdle,
   };
+  if (type == 'retry') {
+    final details = <String>[
+      if (status?.attempt != null) 'attempt ${status!.attempt}',
+      if ((status?.message ?? '').trim().isNotEmpty) status!.message!.trim(),
+    ];
+    if (details.isNotEmpty) {
+      return '$base - ${details.join(' - ')}';
+    }
+  }
+  return base;
 }
 
 int _todoRank(String status) {
@@ -2803,5 +4059,18 @@ int _todoRank(String status) {
     'pending' => 1,
     'completed' => 2,
     _ => 3,
+  };
+}
+
+String _todoStatusLabel(String status) {
+  return status.replaceAll('_', ' ');
+}
+
+IconData _todoIcon(String status) {
+  return switch (status) {
+    'in_progress' => Icons.timelapse_rounded,
+    'pending' => Icons.radio_button_unchecked_rounded,
+    'completed' => Icons.check_circle_rounded,
+    _ => Icons.circle_outlined,
   };
 }

@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import '../connection/connection_models.dart';
 import '../../features/projects/project_models.dart';
+import 'request_headers.dart';
 import 'sse_frame.dart';
 import 'sse_parser.dart';
 
@@ -36,6 +37,8 @@ class EventStreamService {
     required ServerProfile profile,
     required ProjectTarget project,
     required void Function(EventEnvelope event) onEvent,
+    void Function()? onDone,
+    void Function(Object error, StackTrace stackTrace)? onError,
   }) async {
     await disconnect();
 
@@ -55,18 +58,19 @@ class EventStreamService {
           queryParameters: <String, String>{'directory': project.directory},
         );
 
-    final headers = <String, String>{'accept': 'text/event-stream'};
-    final authHeader = profile.basicAuthHeader;
-    if (authHeader != null) {
-      headers['authorization'] = authHeader;
-    }
+    final headers = buildRequestHeaders(profile, accept: 'text/event-stream');
 
     final request = http.Request('GET', uri)..headers.addAll(headers);
     final response = await _client.send(request);
     final stream = const SseParser()
         .bind(response.stream)
         .map(EventEnvelope.fromFrame);
-    _subscription = stream.listen(onEvent);
+    _subscription = stream.listen(
+      onEvent,
+      onDone: onDone,
+      onError: onError,
+      cancelOnError: true,
+    );
   }
 
   Future<void> disconnect() async {

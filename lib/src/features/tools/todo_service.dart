@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../../core/connection/connection_models.dart';
+import '../../core/network/request_headers.dart';
 import '../projects/project_models.dart';
 import 'todo_models.dart';
 
@@ -21,11 +22,7 @@ class TodoService {
       throw const FormatException('Invalid server profile URL.');
     }
 
-    final headers = <String, String>{'accept': 'application/json'};
-    final authHeader = profile.basicAuthHeader;
-    if (authHeader != null) {
-      headers['authorization'] = authHeader;
-    }
+    final headers = buildRequestHeaders(profile, accept: 'application/json');
 
     final basePath = switch (baseUri.path) {
       '' => '/',

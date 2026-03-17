@@ -512,6 +512,27 @@ class AppLocalizationsEn extends AppLocalizations {
       'Message composer stays here without autofocus by default.';
 
   @override
+  String get shellComposerSendAction => 'Send';
+
+  @override
+  String get shellComposerCreatingSession => 'Create session and send';
+
+  @override
+  String get shellComposerSending => 'Sending...';
+
+  @override
+  String get shellRenameSessionTitle => 'Rename session';
+
+  @override
+  String get shellSessionTitleHint => 'Session title';
+
+  @override
+  String get shellCancelAction => 'Cancel';
+
+  @override
+  String get shellSaveAction => 'Save';
+
+  @override
   String get shellContextTitle => 'Context utilities';
 
   @override
@@ -545,6 +566,271 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get shellTerminalSubtitle => 'Quick shell and attach flows land here.';
+
+  @override
+  String get shellInspectorTitle => 'Inspector';
+
+  @override
+  String get shellConfigTitle => 'Config';
+
+  @override
+  String get shellConfigInvalid => 'Invalid config';
+
+  @override
+  String get shellConfigDraftEmpty => 'Config draft is empty.';
+
+  @override
+  String shellConfigChangedKeys(int count) {
+    return 'Changed keys: $count';
+  }
+
+  @override
+  String get shellConfigApplying => 'Applying...';
+
+  @override
+  String get shellConfigApplyAction => 'Apply config';
+
+  @override
+  String get shellIntegrationsTitle => 'Integrations';
+
+  @override
+  String get shellIntegrationsProviders => 'Providers';
+
+  @override
+  String get shellIntegrationsMethods => 'Methods';
+
+  @override
+  String get shellIntegrationsStartProviderAuth => 'Start provider auth';
+
+  @override
+  String get shellIntegrationsMcp => 'MCP';
+
+  @override
+  String get shellIntegrationsStartMcpAuth => 'Start MCP auth';
+
+  @override
+  String get shellIntegrationsLsp => 'LSP';
+
+  @override
+  String get shellIntegrationsFormatter => 'Formatter';
+
+  @override
+  String get shellIntegrationsEnabled => 'enabled';
+
+  @override
+  String get shellIntegrationsDisabled => 'disabled';
+
+  @override
+  String get shellIntegrationsRecentEvents => 'Recent events';
+
+  @override
+  String get shellIntegrationsStreamHealth => 'Stream health';
+
+  @override
+  String get shellIntegrationsRecoveryLog => 'Recovery log';
+
+  @override
+  String get shellWorkspaceEyebrow => 'Workspace';
+
+  @override
+  String get shellSessionsEyebrow => 'Sessions';
+
+  @override
+  String get shellControlsEyebrow => 'Controls';
+
+  @override
+  String get shellActionsTitle => 'Actions';
+
+  @override
+  String get shellActionFork => 'Fork';
+
+  @override
+  String get shellActionShare => 'Share';
+
+  @override
+  String get shellActionUnshare => 'Unshare';
+
+  @override
+  String get shellActionRename => 'Rename';
+
+  @override
+  String get shellActionDelete => 'Delete';
+
+  @override
+  String get shellActionAbort => 'Abort';
+
+  @override
+  String get shellActionRevert => 'Revert';
+
+  @override
+  String get shellActionUnrevert => 'Unrevert';
+
+  @override
+  String get shellActionInit => 'Init';
+
+  @override
+  String get shellActionSummarize => 'Summarize';
+
+  @override
+  String get shellPrimaryEyebrow => 'Primary';
+
+  @override
+  String get shellTimelineEyebrow => 'Timeline';
+
+  @override
+  String get shellFocusedThreadEyebrow => 'Focused thread';
+
+  @override
+  String get shellNewSessionDraft => 'New session draft';
+
+  @override
+  String shellTimelinePartsInFocus(int count) {
+    return '$count timeline parts in focus';
+  }
+
+  @override
+  String get shellReadyToStart => 'Ready to start';
+
+  @override
+  String get shellLiveContext => 'Live context';
+
+  @override
+  String shellPartsCount(int count) {
+    return '$count parts';
+  }
+
+  @override
+  String get shellFocusedThreadSubtitle => 'Focused on the active thread';
+
+  @override
+  String get shellConversationSubtitle =>
+      'Centered for longer-form reading and reply composition';
+
+  @override
+  String get shellConnectionIssueTitle => 'Connection issue';
+
+  @override
+  String get shellUtilitiesEyebrow => 'Utilities';
+
+  @override
+  String get shellFilesSearchHint => 'Search files, text, or symbols';
+
+  @override
+  String get shellPreviewTitle => 'Preview';
+
+  @override
+  String get shellCurrentSelection => 'Current selection';
+
+  @override
+  String get shellMatchesTitle => 'Matches';
+
+  @override
+  String get shellMatchesSubtitle => 'Relevant text results';
+
+  @override
+  String get shellSymbolsTitle => 'Symbols';
+
+  @override
+  String get shellSymbolsSubtitle => 'Quick code landmarks';
+
+  @override
+  String get shellTerminalHint => 'pwd';
+
+  @override
+  String get shellTerminalRunAction => 'Run command';
+
+  @override
+  String get shellTerminalRunning => 'Running...';
+
+  @override
+  String get shellTrackedLabel => 'tracked';
+
+  @override
+  String get shellPendingApprovalsTitle => 'Pending approvals';
+
+  @override
+  String shellPendingApprovalsSubtitle(int count) {
+    return '$count items awaiting input';
+  }
+
+  @override
+  String get shellAllowOnceAction => 'Allow once';
+
+  @override
+  String get shellRejectAction => 'Reject';
+
+  @override
+  String get shellAnswerAction => 'Answer';
+
+  @override
+  String get shellConfigPreviewSubtitle =>
+      'Live preview of editable configuration';
+
+  @override
+  String get shellInspectorSubtitle => 'Session and message metadata snapshot';
+
+  @override
+  String get shellIntegrationsLspSubtitle => 'Language server readiness';
+
+  @override
+  String get shellIntegrationsFormatterSubtitle => 'Formatting availability';
+
+  @override
+  String get shellActionsSubtitle => 'Session controls and lifecycle actions';
+
+  @override
+  String shellActiveCount(int count) {
+    return '$count active';
+  }
+
+  @override
+  String shellThreadsCount(int count) {
+    return '$count threads across the current project';
+  }
+
+  @override
+  String get chatPartAssistant => 'Assistant';
+
+  @override
+  String get chatPartUser => 'User';
+
+  @override
+  String get chatPartThinking => 'Thinking';
+
+  @override
+  String get chatPartTool => 'Tool';
+
+  @override
+  String chatPartToolNamed(String name) {
+    return 'Tool: $name';
+  }
+
+  @override
+  String get chatPartFile => 'File';
+
+  @override
+  String get chatPartStepStart => 'Step start';
+
+  @override
+  String get chatPartStepFinish => 'Step finish';
+
+  @override
+  String get chatPartSnapshot => 'Snapshot';
+
+  @override
+  String get chatPartPatch => 'Patch';
+
+  @override
+  String get chatPartRetry => 'Retry';
+
+  @override
+  String get chatPartAgent => 'Agent';
+
+  @override
+  String get chatPartSubtask => 'Subtask';
+
+  @override
+  String get chatPartCompaction => 'Compaction';
 
   @override
   String get shellUtilitiesToggleTitle => 'Utilities drawer';

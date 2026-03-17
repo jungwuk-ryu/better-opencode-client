@@ -1040,6 +1040,48 @@ abstract class AppLocalizations {
   /// **'Message composer stays here without autofocus by default.'**
   String get shellComposerPlaceholder;
 
+  /// No description provided for @shellComposerSendAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Send'**
+  String get shellComposerSendAction;
+
+  /// No description provided for @shellComposerCreatingSession.
+  ///
+  /// In en, this message translates to:
+  /// **'Create session and send'**
+  String get shellComposerCreatingSession;
+
+  /// No description provided for @shellComposerSending.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending...'**
+  String get shellComposerSending;
+
+  /// No description provided for @shellRenameSessionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Rename session'**
+  String get shellRenameSessionTitle;
+
+  /// No description provided for @shellSessionTitleHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Session title'**
+  String get shellSessionTitleHint;
+
+  /// No description provided for @shellCancelAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get shellCancelAction;
+
+  /// No description provided for @shellSaveAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get shellSaveAction;
+
   /// No description provided for @shellContextTitle.
   ///
   /// In en, this message translates to:
@@ -1105,6 +1147,504 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Quick shell and attach flows land here.'**
   String get shellTerminalSubtitle;
+
+  /// No description provided for @shellInspectorTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Inspector'**
+  String get shellInspectorTitle;
+
+  /// No description provided for @shellConfigTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Config'**
+  String get shellConfigTitle;
+
+  /// No description provided for @shellConfigInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid config'**
+  String get shellConfigInvalid;
+
+  /// No description provided for @shellConfigDraftEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'Config draft is empty.'**
+  String get shellConfigDraftEmpty;
+
+  /// No description provided for @shellConfigChangedKeys.
+  ///
+  /// In en, this message translates to:
+  /// **'Changed keys: {count}'**
+  String shellConfigChangedKeys(int count);
+
+  /// No description provided for @shellConfigApplying.
+  ///
+  /// In en, this message translates to:
+  /// **'Applying...'**
+  String get shellConfigApplying;
+
+  /// No description provided for @shellConfigApplyAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Apply config'**
+  String get shellConfigApplyAction;
+
+  /// No description provided for @shellIntegrationsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Integrations'**
+  String get shellIntegrationsTitle;
+
+  /// No description provided for @shellIntegrationsProviders.
+  ///
+  /// In en, this message translates to:
+  /// **'Providers'**
+  String get shellIntegrationsProviders;
+
+  /// No description provided for @shellIntegrationsMethods.
+  ///
+  /// In en, this message translates to:
+  /// **'Methods'**
+  String get shellIntegrationsMethods;
+
+  /// No description provided for @shellIntegrationsStartProviderAuth.
+  ///
+  /// In en, this message translates to:
+  /// **'Start provider auth'**
+  String get shellIntegrationsStartProviderAuth;
+
+  /// No description provided for @shellIntegrationsMcp.
+  ///
+  /// In en, this message translates to:
+  /// **'MCP'**
+  String get shellIntegrationsMcp;
+
+  /// No description provided for @shellIntegrationsStartMcpAuth.
+  ///
+  /// In en, this message translates to:
+  /// **'Start MCP auth'**
+  String get shellIntegrationsStartMcpAuth;
+
+  /// No description provided for @shellIntegrationsLsp.
+  ///
+  /// In en, this message translates to:
+  /// **'LSP'**
+  String get shellIntegrationsLsp;
+
+  /// No description provided for @shellIntegrationsFormatter.
+  ///
+  /// In en, this message translates to:
+  /// **'Formatter'**
+  String get shellIntegrationsFormatter;
+
+  /// No description provided for @shellIntegrationsEnabled.
+  ///
+  /// In en, this message translates to:
+  /// **'enabled'**
+  String get shellIntegrationsEnabled;
+
+  /// No description provided for @shellIntegrationsDisabled.
+  ///
+  /// In en, this message translates to:
+  /// **'disabled'**
+  String get shellIntegrationsDisabled;
+
+  /// No description provided for @shellIntegrationsRecentEvents.
+  ///
+  /// In en, this message translates to:
+  /// **'Recent events'**
+  String get shellIntegrationsRecentEvents;
+
+  /// No description provided for @shellIntegrationsStreamHealth.
+  ///
+  /// In en, this message translates to:
+  /// **'Stream health'**
+  String get shellIntegrationsStreamHealth;
+
+  /// No description provided for @shellIntegrationsRecoveryLog.
+  ///
+  /// In en, this message translates to:
+  /// **'Recovery log'**
+  String get shellIntegrationsRecoveryLog;
+
+  /// No description provided for @shellWorkspaceEyebrow.
+  ///
+  /// In en, this message translates to:
+  /// **'Workspace'**
+  String get shellWorkspaceEyebrow;
+
+  /// No description provided for @shellSessionsEyebrow.
+  ///
+  /// In en, this message translates to:
+  /// **'Sessions'**
+  String get shellSessionsEyebrow;
+
+  /// No description provided for @shellControlsEyebrow.
+  ///
+  /// In en, this message translates to:
+  /// **'Controls'**
+  String get shellControlsEyebrow;
+
+  /// No description provided for @shellActionsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Actions'**
+  String get shellActionsTitle;
+
+  /// No description provided for @shellActionFork.
+  ///
+  /// In en, this message translates to:
+  /// **'Fork'**
+  String get shellActionFork;
+
+  /// No description provided for @shellActionShare.
+  ///
+  /// In en, this message translates to:
+  /// **'Share'**
+  String get shellActionShare;
+
+  /// No description provided for @shellActionUnshare.
+  ///
+  /// In en, this message translates to:
+  /// **'Unshare'**
+  String get shellActionUnshare;
+
+  /// No description provided for @shellActionRename.
+  ///
+  /// In en, this message translates to:
+  /// **'Rename'**
+  String get shellActionRename;
+
+  /// No description provided for @shellActionDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get shellActionDelete;
+
+  /// No description provided for @shellActionAbort.
+  ///
+  /// In en, this message translates to:
+  /// **'Abort'**
+  String get shellActionAbort;
+
+  /// No description provided for @shellActionRevert.
+  ///
+  /// In en, this message translates to:
+  /// **'Revert'**
+  String get shellActionRevert;
+
+  /// No description provided for @shellActionUnrevert.
+  ///
+  /// In en, this message translates to:
+  /// **'Unrevert'**
+  String get shellActionUnrevert;
+
+  /// No description provided for @shellActionInit.
+  ///
+  /// In en, this message translates to:
+  /// **'Init'**
+  String get shellActionInit;
+
+  /// No description provided for @shellActionSummarize.
+  ///
+  /// In en, this message translates to:
+  /// **'Summarize'**
+  String get shellActionSummarize;
+
+  /// No description provided for @shellPrimaryEyebrow.
+  ///
+  /// In en, this message translates to:
+  /// **'Primary'**
+  String get shellPrimaryEyebrow;
+
+  /// No description provided for @shellTimelineEyebrow.
+  ///
+  /// In en, this message translates to:
+  /// **'Timeline'**
+  String get shellTimelineEyebrow;
+
+  /// No description provided for @shellFocusedThreadEyebrow.
+  ///
+  /// In en, this message translates to:
+  /// **'Focused thread'**
+  String get shellFocusedThreadEyebrow;
+
+  /// No description provided for @shellNewSessionDraft.
+  ///
+  /// In en, this message translates to:
+  /// **'New session draft'**
+  String get shellNewSessionDraft;
+
+  /// No description provided for @shellTimelinePartsInFocus.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} timeline parts in focus'**
+  String shellTimelinePartsInFocus(int count);
+
+  /// No description provided for @shellReadyToStart.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready to start'**
+  String get shellReadyToStart;
+
+  /// No description provided for @shellLiveContext.
+  ///
+  /// In en, this message translates to:
+  /// **'Live context'**
+  String get shellLiveContext;
+
+  /// No description provided for @shellPartsCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} parts'**
+  String shellPartsCount(int count);
+
+  /// No description provided for @shellFocusedThreadSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Focused on the active thread'**
+  String get shellFocusedThreadSubtitle;
+
+  /// No description provided for @shellConversationSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Centered for longer-form reading and reply composition'**
+  String get shellConversationSubtitle;
+
+  /// No description provided for @shellConnectionIssueTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Connection issue'**
+  String get shellConnectionIssueTitle;
+
+  /// No description provided for @shellUtilitiesEyebrow.
+  ///
+  /// In en, this message translates to:
+  /// **'Utilities'**
+  String get shellUtilitiesEyebrow;
+
+  /// No description provided for @shellFilesSearchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Search files, text, or symbols'**
+  String get shellFilesSearchHint;
+
+  /// No description provided for @shellPreviewTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Preview'**
+  String get shellPreviewTitle;
+
+  /// No description provided for @shellCurrentSelection.
+  ///
+  /// In en, this message translates to:
+  /// **'Current selection'**
+  String get shellCurrentSelection;
+
+  /// No description provided for @shellMatchesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Matches'**
+  String get shellMatchesTitle;
+
+  /// No description provided for @shellMatchesSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Relevant text results'**
+  String get shellMatchesSubtitle;
+
+  /// No description provided for @shellSymbolsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Symbols'**
+  String get shellSymbolsTitle;
+
+  /// No description provided for @shellSymbolsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Quick code landmarks'**
+  String get shellSymbolsSubtitle;
+
+  /// No description provided for @shellTerminalHint.
+  ///
+  /// In en, this message translates to:
+  /// **'pwd'**
+  String get shellTerminalHint;
+
+  /// No description provided for @shellTerminalRunAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Run command'**
+  String get shellTerminalRunAction;
+
+  /// No description provided for @shellTerminalRunning.
+  ///
+  /// In en, this message translates to:
+  /// **'Running...'**
+  String get shellTerminalRunning;
+
+  /// No description provided for @shellTrackedLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'tracked'**
+  String get shellTrackedLabel;
+
+  /// No description provided for @shellPendingApprovalsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Pending approvals'**
+  String get shellPendingApprovalsTitle;
+
+  /// No description provided for @shellPendingApprovalsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} items awaiting input'**
+  String shellPendingApprovalsSubtitle(int count);
+
+  /// No description provided for @shellAllowOnceAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow once'**
+  String get shellAllowOnceAction;
+
+  /// No description provided for @shellRejectAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Reject'**
+  String get shellRejectAction;
+
+  /// No description provided for @shellAnswerAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Answer'**
+  String get shellAnswerAction;
+
+  /// No description provided for @shellConfigPreviewSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Live preview of editable configuration'**
+  String get shellConfigPreviewSubtitle;
+
+  /// No description provided for @shellInspectorSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Session and message metadata snapshot'**
+  String get shellInspectorSubtitle;
+
+  /// No description provided for @shellIntegrationsLspSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Language server readiness'**
+  String get shellIntegrationsLspSubtitle;
+
+  /// No description provided for @shellIntegrationsFormatterSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Formatting availability'**
+  String get shellIntegrationsFormatterSubtitle;
+
+  /// No description provided for @shellActionsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Session controls and lifecycle actions'**
+  String get shellActionsSubtitle;
+
+  /// No description provided for @shellActiveCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} active'**
+  String shellActiveCount(int count);
+
+  /// No description provided for @shellThreadsCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} threads across the current project'**
+  String shellThreadsCount(int count);
+
+  /// No description provided for @chatPartAssistant.
+  ///
+  /// In en, this message translates to:
+  /// **'Assistant'**
+  String get chatPartAssistant;
+
+  /// No description provided for @chatPartUser.
+  ///
+  /// In en, this message translates to:
+  /// **'User'**
+  String get chatPartUser;
+
+  /// No description provided for @chatPartThinking.
+  ///
+  /// In en, this message translates to:
+  /// **'Thinking'**
+  String get chatPartThinking;
+
+  /// No description provided for @chatPartTool.
+  ///
+  /// In en, this message translates to:
+  /// **'Tool'**
+  String get chatPartTool;
+
+  /// No description provided for @chatPartToolNamed.
+  ///
+  /// In en, this message translates to:
+  /// **'Tool: {name}'**
+  String chatPartToolNamed(String name);
+
+  /// No description provided for @chatPartFile.
+  ///
+  /// In en, this message translates to:
+  /// **'File'**
+  String get chatPartFile;
+
+  /// No description provided for @chatPartStepStart.
+  ///
+  /// In en, this message translates to:
+  /// **'Step start'**
+  String get chatPartStepStart;
+
+  /// No description provided for @chatPartStepFinish.
+  ///
+  /// In en, this message translates to:
+  /// **'Step finish'**
+  String get chatPartStepFinish;
+
+  /// No description provided for @chatPartSnapshot.
+  ///
+  /// In en, this message translates to:
+  /// **'Snapshot'**
+  String get chatPartSnapshot;
+
+  /// No description provided for @chatPartPatch.
+  ///
+  /// In en, this message translates to:
+  /// **'Patch'**
+  String get chatPartPatch;
+
+  /// No description provided for @chatPartRetry.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get chatPartRetry;
+
+  /// No description provided for @chatPartAgent.
+  ///
+  /// In en, this message translates to:
+  /// **'Agent'**
+  String get chatPartAgent;
+
+  /// No description provided for @chatPartSubtask.
+  ///
+  /// In en, this message translates to:
+  /// **'Subtask'**
+  String get chatPartSubtask;
+
+  /// No description provided for @chatPartCompaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Compaction'**
+  String get chatPartCompaction;
 
   /// No description provided for @shellUtilitiesToggleTitle.
   ///

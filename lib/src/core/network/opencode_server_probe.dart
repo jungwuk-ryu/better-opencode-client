@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../connection/connection_models.dart';
+import 'request_headers.dart';
 import '../spec/capability_registry.dart';
 import '../spec/probe_snapshot.dart';
 
@@ -75,13 +76,10 @@ class OpenCodeServerProbe {
       );
     }
 
-    final headers = <String, String>{
-      'accept': 'application/json, text/plain;q=0.9, */*;q=0.8',
-    };
-    final basicAuthHeader = profile.basicAuthHeader;
-    if (basicAuthHeader != null) {
-      headers['authorization'] = basicAuthHeader;
-    }
+    final headers = buildRequestHeaders(
+      profile,
+      accept: 'application/json, text/plain;q=0.9, */*;q=0.8',
+    );
 
     final endpoints = <String, ProbeEndpointResult>{};
     final healthResult = await _probeEndpoint(uri, '/global/health', headers);

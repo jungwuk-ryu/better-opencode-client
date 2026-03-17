@@ -6,14 +6,31 @@ import 'package:opencode_mobile_remote/src/core/network/opencode_server_probe.da
 Future<void> main(List<String> args) async {
   if (args.isEmpty) {
     throw ArgumentError(
-      'Usage: dart run tool/manual/run_connection_probe.dart <server-url>',
+      'Usage: dart run tool/manual/run_connection_probe.dart <server-url> [--username USER] [--password PASS]',
     );
+  }
+
+  String? username;
+  String? password;
+  for (var index = 1; index < args.length; index += 1) {
+    final arg = args[index];
+    if (arg == '--username' && index + 1 < args.length) {
+      username = args[index + 1];
+      index += 1;
+      continue;
+    }
+    if (arg == '--password' && index + 1 < args.length) {
+      password = args[index + 1];
+      index += 1;
+    }
   }
 
   final profile = ServerProfile(
     id: 'manual',
     label: 'manual',
     baseUrl: args.first,
+    username: username,
+    password: password,
   );
   final probe = OpenCodeServerProbe();
   final report = await probe.probe(profile);

@@ -15,6 +15,13 @@ void main() {
     baseUri = Uri.parse('http://${server.address.address}:${server.port}');
     server.listen((request) async {
       final body = switch (request.uri.path) {
+        '/session' when request.method == 'POST' => {
+          'id': 'ses_2',
+          'directory': '/workspace/demo',
+          'title': 'New session',
+          'version': '1',
+          'time': {'created': 1710000006000, 'updated': 1710000006000},
+        },
         '/session' => [
           {
             'id': 'ses_1',
@@ -49,6 +56,18 @@ void main() {
             ],
           },
         ],
+        '/session/ses_2/message' when request.method == 'POST' => {
+          'info': {
+            'id': 'msg_3',
+            'role': 'assistant',
+            'sessionID': 'ses_2',
+            'providerID': 'openai',
+            'modelID': 'gpt-5',
+          },
+          'parts': [
+            {'id': 'prt_4', 'type': 'text', 'text': 'ok'},
+          ],
+        },
         _ => null,
       };
       if (body == null) {
@@ -88,4 +107,31 @@ void main() {
       service.dispose();
     },
   );
+
+  test('creates a session and sends a prompt message', () async {
+    final service = ChatService();
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'mock',
+      baseUrl: baseUri.toString(),
+    );
+    const project = ProjectTarget(directory: '/workspace/demo', label: 'Demo');
+
+    final session = await service.createSession(
+      profile: profile,
+      project: project,
+      title: 'New session',
+    );
+    final message = await service.sendMessage(
+      profile: profile,
+      project: project,
+      sessionId: session.id,
+      prompt: 'hello',
+    );
+
+    expect(session.id, 'ses_2');
+    expect(message.info.id, 'msg_3');
+    expect(message.parts.single.text, 'ok');
+    service.dispose();
+  });
 }

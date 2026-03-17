@@ -5,21 +5,93 @@ import 'app_spacing.dart';
 
 final class AppTheme {
   static ThemeData dark() {
-    const background = Color(0xFF081019);
-    const panel = Color(0xFF0F1824);
-    const panelRaised = Color(0xFF152131);
-    const line = Color(0xFF22344C);
-    const accent = Color(0xFF9FD4FF);
-    const accentSoft = Color(0xFF78B7F2);
+    const background = Color(0xFF071019);
+    const panel = Color(0xFF0D1722);
+    const panelRaised = Color(0xFF122031);
+    const panelMuted = Color(0xFF0C141E);
+    const panelEmphasis = Color(0xFF16273A);
+    const line = Color(0xFF22344A);
+    const lineSoft = Color(0xFF172433);
+    const accent = Color(0xFFB8D6FF);
+    const accentSoft = Color(0xFF87BDF7);
     const text = Color(0xFFF5F7FB);
-    const muted = Color(0xFF9DAABC);
+    const muted = Color(0xFF95A4B8);
     const success = Color(0xFF8BE39B);
     const warning = Color(0xFFFFD27A);
     const danger = Color(0xFFFF8B8B);
 
-    final textTheme = GoogleFonts.plusJakartaSansTextTheme(
-      Typography.whiteMountainView,
-    ).apply(bodyColor: text, displayColor: text);
+    final textTheme =
+        GoogleFonts.plusJakartaSansTextTheme(Typography.whiteMountainView)
+            .apply(bodyColor: text, displayColor: text)
+            .copyWith(
+              headlineMedium: GoogleFonts.plusJakartaSans(
+                fontSize: 34,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.9,
+                height: 1.05,
+                color: text,
+              ),
+              headlineSmall: GoogleFonts.plusJakartaSans(
+                fontSize: 28,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.7,
+                height: 1.1,
+                color: text,
+              ),
+              titleLarge: GoogleFonts.plusJakartaSans(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.35,
+                height: 1.15,
+                color: text,
+              ),
+              titleMedium: GoogleFonts.plusJakartaSans(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                letterSpacing: -0.15,
+                height: 1.2,
+                color: text,
+              ),
+              titleSmall: GoogleFonts.plusJakartaSans(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                letterSpacing: -0.1,
+                height: 1.25,
+                color: text,
+              ),
+              bodyLarge: GoogleFonts.plusJakartaSans(
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+                height: 1.55,
+                color: text,
+              ),
+              bodyMedium: GoogleFonts.plusJakartaSans(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                height: 1.5,
+                color: text,
+              ),
+              bodySmall: GoogleFonts.plusJakartaSans(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                height: 1.45,
+                color: muted,
+              ),
+              labelLarge: GoogleFonts.plusJakartaSans(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.25,
+                height: 1.2,
+                color: text,
+              ),
+              labelMedium: GoogleFonts.plusJakartaSans(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.4,
+                height: 1.2,
+                color: muted,
+              ),
+            );
 
     final colorScheme = const ColorScheme.dark(
       primary: accent,
@@ -37,22 +109,24 @@ final class AppTheme {
       colorScheme: colorScheme,
       textTheme: textTheme,
       cardTheme: CardThemeData(
-        color: panel.withValues(alpha: 0.92),
+        color: panelRaised.withValues(alpha: 0.82),
         elevation: 0,
+        shadowColor: Colors.transparent,
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
-          side: const BorderSide(color: line),
+          side: const BorderSide(color: lineSoft),
         ),
       ),
-      dividerColor: line,
+      dividerColor: lineSoft,
       chipTheme: ChipThemeData(
-        backgroundColor: panelRaised,
-        disabledColor: panelRaised,
+        backgroundColor: panelMuted.withValues(alpha: 0.96),
+        disabledColor: panelMuted,
         selectedColor: accent.withValues(alpha: 0.16),
         secondarySelectedColor: accent.withValues(alpha: 0.16),
         labelStyle: textTheme.labelMedium?.copyWith(color: text),
-        side: const BorderSide(color: line),
+        side: const BorderSide(color: lineSoft),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppSpacing.md),
         ),
@@ -61,7 +135,10 @@ final class AppTheme {
         style: ElevatedButton.styleFrom(
           backgroundColor: accent,
           foregroundColor: background,
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          elevation: 0,
+          shadowColor: Colors.transparent,
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+          textStyle: textTheme.labelLarge,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppSpacing.formFieldRadius),
           ),
@@ -70,23 +147,31 @@ final class AppTheme {
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: text,
-          side: const BorderSide(color: line),
+          backgroundColor: panelMuted.withValues(alpha: 0.4),
+          side: const BorderSide(color: lineSoft),
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          textStyle: textTheme.labelLarge,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppSpacing.formFieldRadius),
           ),
         ),
       ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: accent,
+          textStyle: textTheme.labelLarge,
+        ),
+      ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: panelRaised.withValues(alpha: 0.88),
+        fillColor: panelMuted.withValues(alpha: 0.88),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppSpacing.formFieldRadius),
-          borderSide: const BorderSide(color: line),
+          borderSide: const BorderSide(color: lineSoft),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppSpacing.formFieldRadius),
-          borderSide: const BorderSide(color: line),
+          borderSide: const BorderSide(color: lineSoft),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppSpacing.formFieldRadius),
@@ -108,12 +193,13 @@ final class AppTheme {
         hintStyle: textTheme.bodyMedium?.copyWith(color: muted),
       ),
       listTileTheme: ListTileThemeData(
-        tileColor: panelRaised.withValues(alpha: 0.64),
+        tileColor: panelMuted.withValues(alpha: 0.68),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppSpacing.md),
-          side: const BorderSide(color: line),
+          side: const BorderSide(color: lineSoft),
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        iconColor: accentSoft,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       ),
       textSelectionTheme: const TextSelectionThemeData(
         cursorColor: accent,
@@ -133,7 +219,10 @@ final class AppTheme {
           background: background,
           panel: panel,
           panelRaised: panelRaised,
+          panelMuted: panelMuted,
+          panelEmphasis: panelEmphasis,
           line: line,
+          lineSoft: lineSoft,
           muted: muted,
           success: success,
           warning: warning,
@@ -151,7 +240,10 @@ class AppSurfaces extends ThemeExtension<AppSurfaces> {
     required this.background,
     required this.panel,
     required this.panelRaised,
+    required this.panelMuted,
+    required this.panelEmphasis,
     required this.line,
+    required this.lineSoft,
     required this.muted,
     required this.success,
     required this.warning,
@@ -162,7 +254,10 @@ class AppSurfaces extends ThemeExtension<AppSurfaces> {
   final Color background;
   final Color panel;
   final Color panelRaised;
+  final Color panelMuted;
+  final Color panelEmphasis;
   final Color line;
+  final Color lineSoft;
   final Color muted;
   final Color success;
   final Color warning;
@@ -174,7 +269,10 @@ class AppSurfaces extends ThemeExtension<AppSurfaces> {
     Color? background,
     Color? panel,
     Color? panelRaised,
+    Color? panelMuted,
+    Color? panelEmphasis,
     Color? line,
+    Color? lineSoft,
     Color? muted,
     Color? success,
     Color? warning,
@@ -185,7 +283,10 @@ class AppSurfaces extends ThemeExtension<AppSurfaces> {
       background: background ?? this.background,
       panel: panel ?? this.panel,
       panelRaised: panelRaised ?? this.panelRaised,
+      panelMuted: panelMuted ?? this.panelMuted,
+      panelEmphasis: panelEmphasis ?? this.panelEmphasis,
       line: line ?? this.line,
+      lineSoft: lineSoft ?? this.lineSoft,
       muted: muted ?? this.muted,
       success: success ?? this.success,
       warning: warning ?? this.warning,
@@ -203,7 +304,11 @@ class AppSurfaces extends ThemeExtension<AppSurfaces> {
       background: Color.lerp(background, other.background, t) ?? background,
       panel: Color.lerp(panel, other.panel, t) ?? panel,
       panelRaised: Color.lerp(panelRaised, other.panelRaised, t) ?? panelRaised,
+      panelMuted: Color.lerp(panelMuted, other.panelMuted, t) ?? panelMuted,
+      panelEmphasis:
+          Color.lerp(panelEmphasis, other.panelEmphasis, t) ?? panelEmphasis,
       line: Color.lerp(line, other.line, t) ?? line,
+      lineSoft: Color.lerp(lineSoft, other.lineSoft, t) ?? lineSoft,
       muted: Color.lerp(muted, other.muted, t) ?? muted,
       success: Color.lerp(success, other.success, t) ?? success,
       warning: Color.lerp(warning, other.warning, t) ?? warning,

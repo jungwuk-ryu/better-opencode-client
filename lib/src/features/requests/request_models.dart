@@ -52,6 +52,18 @@ class QuestionRequestSummary {
   final String sessionId;
   final List<QuestionPromptSummary> questions;
 
+  QuestionRequestSummary copyWith({
+    String? id,
+    String? sessionId,
+    List<QuestionPromptSummary>? questions,
+  }) {
+    return QuestionRequestSummary(
+      id: id ?? this.id,
+      sessionId: sessionId ?? this.sessionId,
+      questions: questions ?? this.questions,
+    );
+  }
+
   factory QuestionRequestSummary.fromJson(Map<String, Object?> json) {
     return QuestionRequestSummary(
       id: (json['id'] as String?) ?? '',
@@ -79,6 +91,20 @@ class PermissionRequestSummary {
   final String sessionId;
   final String permission;
   final List<String> patterns;
+
+  PermissionRequestSummary copyWith({
+    String? id,
+    String? sessionId,
+    String? permission,
+    List<String>? patterns,
+  }) {
+    return PermissionRequestSummary(
+      id: id ?? this.id,
+      sessionId: sessionId ?? this.sessionId,
+      permission: permission ?? this.permission,
+      patterns: patterns ?? this.patterns,
+    );
+  }
 
   factory PermissionRequestSummary.fromJson(Map<String, Object?> json) {
     return PermissionRequestSummary(

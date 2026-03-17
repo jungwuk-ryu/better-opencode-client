@@ -48,6 +48,7 @@ void main() {
   test('parses streamed events into envelopes', () async {
     final service = EventStreamService();
     final seen = <EventEnvelope>[];
+    var didComplete = false;
 
     await service.connect(
       profile: ServerProfile(
@@ -57,6 +58,9 @@ void main() {
       ),
       project: const ProjectTarget(directory: '/workspace/demo', label: 'Demo'),
       onEvent: seen.add,
+      onDone: () {
+        didComplete = true;
+      },
     );
 
     await Future<void>.delayed(const Duration(milliseconds: 80));
@@ -67,5 +71,6 @@ void main() {
     expect(seen.first.type, 'session.status');
     expect(seen.first.properties['sessionID'], 'ses_1');
     expect(seen.last.type, 'permission.asked');
+    expect(didComplete, isTrue);
   });
 }

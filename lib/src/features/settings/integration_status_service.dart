@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../../core/connection/connection_models.dart';
+import '../../core/network/request_headers.dart';
 import '../projects/project_models.dart';
 
 class IntegrationStatusSnapshot {
@@ -145,11 +146,7 @@ class IntegrationStatusService {
     if (baseUri == null) {
       throw const FormatException('Invalid server profile URL.');
     }
-    final headers = <String, String>{'accept': 'application/json'};
-    final authHeader = profile.basicAuthHeader;
-    if (authHeader != null) {
-      headers['authorization'] = authHeader;
-    }
+    final headers = buildRequestHeaders(profile, accept: 'application/json');
     final basePath = switch (baseUri.path) {
       '' => '/',
       final value when value.endsWith('/') => value,
@@ -180,14 +177,11 @@ class IntegrationStatusService {
     if (baseUri == null) {
       throw const FormatException('Invalid server profile URL.');
     }
-    final headers = <String, String>{
-      'accept': 'application/json',
-      'content-type': 'application/json',
-    };
-    final authHeader = profile.basicAuthHeader;
-    if (authHeader != null) {
-      headers['authorization'] = authHeader;
-    }
+    final headers = buildRequestHeaders(
+      profile,
+      accept: 'application/json',
+      jsonBody: true,
+    );
     final basePath = switch (baseUri.path) {
       '' => '/',
       final value when value.endsWith('/') => value,

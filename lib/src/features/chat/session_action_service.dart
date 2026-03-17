@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../../core/connection/connection_models.dart';
+import '../../core/network/request_headers.dart';
 import '../projects/project_models.dart';
 import 'chat_models.dart';
 
@@ -55,6 +56,50 @@ class SessionActionService {
       body: const <String, Object?>{},
     );
     return body is Map;
+  }
+
+  Future<bool> deleteSession({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String sessionId,
+  }) async {
+    final uri = _uri(profile, project, '/session/$sessionId');
+    final response = await _client.delete(uri, headers: _headers(profile));
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw StateError(
+        'Request failed for $uri with status ${response.statusCode}.',
+      );
+    }
+    if (response.body.trim().isEmpty) {
+      return false;
+    }
+    return jsonDecode(response.body) == true;
+  }
+
+  Future<SessionSummary> updateSession({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String sessionId,
+    String? title,
+  }) async {
+    final uri = _uri(profile, project, '/session/$sessionId');
+    final body = <String, Object?>{};
+    if (title != null) {
+      body['title'] = title;
+    }
+    final response = await _client.patch(
+      uri,
+      headers: _headers(profile, jsonBody: true),
+      body: jsonEncode(body),
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw StateError(
+        'Request failed for $uri with status ${response.statusCode}.',
+      );
+    }
+    return SessionSummary.fromJson(
+      (jsonDecode(response.body) as Map).cast<String, Object?>(),
+    );
   }
 
   Future<bool> unshareSession({
@@ -189,15 +234,11 @@ class SessionActionService {
   }
 
   Map<String, String> _headers(ServerProfile profile, {bool jsonBody = false}) {
-    final headers = <String, String>{'accept': 'application/json'};
-    if (jsonBody) {
-      headers['content-type'] = 'application/json';
-    }
-    final authHeader = profile.basicAuthHeader;
-    if (authHeader != null) {
-      headers['authorization'] = authHeader;
-    }
-    return headers;
+    return buildRequestHeaders(
+      profile,
+      accept: 'application/json',
+      jsonBody: jsonBody,
+    );
   }
 
   void dispose() {
