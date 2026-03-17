@@ -159,7 +159,7 @@ class OpenCodeServerProbe {
   ) async {
     try {
       final response = await _client
-          .get(baseUri.resolve(_relativePath(path)), headers: headers)
+          .get(_endpointUri(baseUri, path), headers: headers)
           .timeout(const Duration(seconds: 5));
       return ProbeEndpointResult(
         path: path,
@@ -334,6 +334,17 @@ class OpenCodeServerProbe {
 
   String _relativePath(String path) =>
       path.startsWith('/') ? path.substring(1) : path;
+
+  Uri _endpointUri(Uri baseUri, String path) {
+    final normalizedBasePath = switch (baseUri.path) {
+      '' => '/',
+      final value when value.endsWith('/') => value,
+      final value => '$value/',
+    };
+    return baseUri
+        .replace(path: normalizedBasePath)
+        .resolve(_relativePath(path));
+  }
 
   String _summaryForClassification(
     ConnectionProbeClassification classification,

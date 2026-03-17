@@ -14,8 +14,9 @@ class ServerProfileStore {
     final raw = prefs.getStringList(_profilesKey) ?? const <String>[];
     return raw
         .map(
-          (entry) =>
-              ServerProfile.fromJson(jsonDecode(entry) as Map<String, Object?>),
+          (entry) => ServerProfile.fromJson(
+            (jsonDecode(entry) as Map).cast<String, Object?>(),
+          ),
         )
         .toList(growable: false);
   }

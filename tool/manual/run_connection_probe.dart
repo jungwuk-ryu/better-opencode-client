@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:opencode_mobile_remote/src/core/connection/connection_models.dart';
 import 'package:opencode_mobile_remote/src/core/network/opencode_server_probe.dart';
 
@@ -17,10 +19,10 @@ Future<void> main(List<String> args) async {
   final report = await probe.probe(profile);
   probe.dispose();
 
-  print('classification=${report.classification.name}');
-  print('version=${report.snapshot.version}');
-  print('sseReady=${report.sseReady}');
+  stdout.writeln('classification=${report.classification.name}');
+  stdout.writeln('version=${report.snapshot.version}');
+  stdout.writeln('sseReady=${report.sseReady}');
   for (final entry in report.capabilityRegistry.asMap().entries) {
-    print('${entry.key}=${entry.value}');
+    stdout.writeln('${entry.key}=${entry.value}');
   }
 }
