@@ -65,6 +65,19 @@ void main() {
       endpoints: const <String, ProbeEndpointResult>{},
     ),
   );
+  final sessionCapabilitiesWithoutTodos = CapabilityRegistry.fromSnapshot(
+    ProbeSnapshot(
+      name: 'sessions-no-todos',
+      version: '1.0.0',
+      paths: const <String>{
+        '/project',
+        '/project/current',
+        '/session',
+        '/session/status',
+      },
+      endpoints: const <String, ProbeEndpointResult>{},
+    ),
+  );
 
   Future<void> pumpShellWithCapabilities(
     WidgetTester tester, {
@@ -154,7 +167,7 @@ void main() {
       await pumpShellWithCapabilities(
         tester,
         size: const Size(1440, 1000),
-        capabilitiesToUse: minimalCapabilities,
+        capabilitiesToUse: sessionCapabilitiesWithoutTodos,
         chatService: chatService,
         todoService: todoService,
       );

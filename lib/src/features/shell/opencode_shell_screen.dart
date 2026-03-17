@@ -2023,7 +2023,7 @@ class _LeftRail extends StatelessWidget {
       children: <Widget>[
         _PanelCard(
           tone: _PanelTone.subtle,
-          eyebrow: 'Workspace',
+          eyebrow: l10n.shellWorkspaceEyebrow,
           title: l10n.shellProjectRailTitle,
           subtitle: project.directory,
           child: Column(
@@ -2066,7 +2066,7 @@ class _LeftRail extends StatelessWidget {
         Expanded(
           child: _PanelCard(
             tone: _PanelTone.subtle,
-            eyebrow: 'Sessions',
+            eyebrow: l10n.shellSessionsEyebrow,
             title: l10n.shellSessionsTitle,
             subtitle: l10n.shellThreadsCount(sessions.length),
             fillChild: true,
@@ -2103,8 +2103,9 @@ class _LeftRail extends StatelessWidget {
           const SizedBox(height: AppSpacing.lg),
           _PanelCard(
             tone: _PanelTone.subtle,
-            eyebrow: 'Controls',
-            title: 'Actions',
+            eyebrow: l10n.shellControlsEyebrow,
+            title: l10n.shellActionsTitle,
+            subtitle: l10n.shellActionsSubtitle,
             child: Wrap(
               spacing: AppSpacing.sm,
               runSpacing: AppSpacing.sm,
@@ -2220,11 +2221,11 @@ class _ChatCanvas extends StatelessWidget {
         if (!compact) ...<Widget>[
           _PanelCard(
             tone: _PanelTone.primary,
-            eyebrow: 'Primary',
+            eyebrow: l10n.shellPrimaryEyebrow,
             title: l10n.shellChatHeaderTitle,
             subtitle: selectedSessionId == null
-                ? 'New session draft'
-                : '${parts.length} timeline parts in focus',
+                ? l10n.shellNewSessionDraft
+                : l10n.shellTimelinePartsInFocus(parts.length),
             trailing: Wrap(
               spacing: AppSpacing.xs,
               runSpacing: AppSpacing.xs,
@@ -2487,13 +2488,15 @@ class _ContextRail extends StatelessWidget {
         Expanded(
           child: _PanelCard(
             tone: _PanelTone.subtle,
-            eyebrow: compact ? 'Context' : 'Utilities',
+            eyebrow: compact
+                ? l10n.shellContextEyebrow
+                : l10n.shellUtilitiesEyebrow,
             title: l10n.shellContextTitle,
             subtitle: compact
-                ? 'Secondary context for the active conversation'
-                : 'Support rails for files, tasks, commands, and integrations',
+                ? l10n.shellSecondaryContextSubtitle
+                : l10n.shellSupportRailsSubtitle,
             trailing: _InfoChip(
-              label: '$sectionCount modules',
+              label: l10n.shellModulesCount(sectionCount),
               icon: Icons.dashboard_customize_outlined,
             ),
             fillChild: true,
@@ -2715,7 +2718,7 @@ class _UtilityToggleHint extends StatelessWidget {
     final l10n = AppLocalizations.of(context)!;
     return _PanelCard(
       tone: _PanelTone.subtle,
-      eyebrow: 'Utilities',
+      eyebrow: l10n.shellUtilitiesEyebrow,
       title: l10n.shellUtilitiesToggleTitle,
       subtitle: compact
           ? l10n.shellUtilitiesToggleBodyCompact
@@ -2725,8 +2728,8 @@ class _UtilityToggleHint extends StatelessWidget {
           Expanded(
             child: _InfoChip(
               label: compact
-                  ? 'Swipe utilities into view'
-                  : 'Open the utility rail',
+                  ? l10n.shellSwipeUtilitiesIntoView
+                  : l10n.shellOpenUtilityRail,
               icon: Icons.swipe_up_alt_rounded,
             ),
           ),
@@ -2752,7 +2755,7 @@ class _ShellTopBar extends StatelessWidget {
     final l10n = AppLocalizations.of(context)!;
     return _PanelCard(
       tone: _PanelTone.subtle,
-      eyebrow: 'Workspace',
+      eyebrow: l10n.shellWorkspaceEyebrow,
       title: project.label,
       subtitle: project.directory,
       trailing: Wrap(
@@ -2774,8 +2777,11 @@ class _ShellTopBar extends StatelessWidget {
         spacing: AppSpacing.sm,
         runSpacing: AppSpacing.sm,
         children: <Widget>[
-          _InfoChip(label: 'OpenCode remote', icon: Icons.waves_rounded),
-          _InfoChip(label: 'Context nearby', icon: Icons.layers_outlined),
+          _InfoChip(label: l10n.shellOpenCodeRemote, icon: Icons.waves_rounded),
+          _InfoChip(
+            label: l10n.shellContextNearby,
+            icon: Icons.layers_outlined,
+          ),
         ],
       ),
     );
@@ -3545,7 +3551,7 @@ class _ConfigPreviewPanelState extends State<_ConfigPreviewPanel> {
     final providers = widget.snapshot!.providerConfig.toJson().toString();
     return _UtilitySection(
       title: l10n.shellConfigTitle,
-      subtitle: 'Live preview of editable configuration',
+      subtitle: l10n.shellConfigPreviewSubtitle,
       icon: Icons.settings_suggest_outlined,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3658,7 +3664,7 @@ class _RawInspectorPanel extends StatelessWidget {
 
     return _UtilitySection(
       title: l10n.shellInspectorTitle,
-      subtitle: 'Session and message metadata snapshot',
+      subtitle: l10n.shellInspectorSubtitle,
       icon: Icons.data_object_rounded,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3735,7 +3741,7 @@ class _IntegrationStatusPanel extends StatelessWidget {
           if (snapshot!.lspStatus.isNotEmpty) ...<Widget>[
             _UtilitySection(
               title: l10n.shellIntegrationsLsp,
-              subtitle: 'Language server readiness',
+              subtitle: l10n.shellIntegrationsLspSubtitle,
               icon: Icons.memory_rounded,
               child: Column(
                 children: snapshot!.lspStatus.entries
@@ -3757,7 +3763,7 @@ class _IntegrationStatusPanel extends StatelessWidget {
           if (snapshot!.formatterStatus.isNotEmpty) ...<Widget>[
             _UtilitySection(
               title: l10n.shellIntegrationsFormatter,
-              subtitle: 'Formatting availability',
+              subtitle: l10n.shellIntegrationsFormatterSubtitle,
               icon: Icons.auto_fix_high_rounded,
               child: Column(
                 children: snapshot!.formatterStatus.entries
@@ -3935,7 +3941,9 @@ class _ComposerCardState extends State<_ComposerCard> {
               runSpacing: AppSpacing.xs,
               children: <Widget>[
                 _InfoChip(
-                  label: widget.startsNewSession ? 'New session' : 'Replying',
+                  label: widget.startsNewSession
+                      ? l10n.shellNewSession
+                      : l10n.shellReplying,
                   icon: widget.startsNewSession
                       ? Icons.add_comment_outlined
                       : Icons.reply_rounded,
@@ -3943,8 +3951,8 @@ class _ComposerCardState extends State<_ComposerCard> {
                 ),
                 _InfoChip(
                   label: widget.compact
-                      ? 'Compact composer'
-                      : 'Expanded composer',
+                      ? l10n.shellCompactComposer
+                      : l10n.shellExpandedComposer,
                   icon: Icons.edit_outlined,
                 ),
               ],
