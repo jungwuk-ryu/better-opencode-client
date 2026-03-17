@@ -7,6 +7,7 @@ import '../../design_system/app_theme.dart';
 import '../chat/chat_models.dart';
 import '../chat/chat_part_view.dart';
 import '../chat/chat_service.dart';
+import '../chat/session_action_service.dart';
 import '../files/file_browser_service.dart';
 import '../files/file_models.dart';
 import '../projects/project_models.dart';
@@ -34,6 +35,7 @@ class OpenCodeShellScreen extends StatefulWidget {
 
 class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
   final ChatService _chatService = ChatService();
+  final SessionActionService _sessionActionService = SessionActionService();
   final FileBrowserService _fileBrowserService = FileBrowserService();
   final RequestService _requestService = RequestService();
   final TerminalService _terminalService = TerminalService();
@@ -81,6 +83,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
   @override
   void dispose() {
     _chatService.dispose();
+    _sessionActionService.dispose();
     _fileBrowserService.dispose();
     _requestService.dispose();
     _terminalService.dispose();
@@ -339,6 +342,40 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     await _loadPendingRequests();
   }
 
+  Future<void> _forkSession(String sessionId) async {
+    await _sessionActionService.forkSession(
+      profile: widget.profile,
+      project: widget.project,
+      sessionId: sessionId,
+    );
+    await _loadBundle();
+  }
+
+  Future<void> _abortSession(String sessionId) async {
+    await _sessionActionService.abortSession(
+      profile: widget.profile,
+      project: widget.project,
+      sessionId: sessionId,
+    );
+    await _loadBundle();
+  }
+
+  Future<void> _shareSession(String sessionId) async {
+    await _sessionActionService.shareSession(
+      profile: widget.profile,
+      project: widget.project,
+      sessionId: sessionId,
+    );
+  }
+
+  Future<void> _unshareSession(String sessionId) async {
+    await _sessionActionService.unshareSession(
+      profile: widget.profile,
+      project: widget.project,
+      sessionId: sessionId,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
@@ -368,6 +405,10 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         loading: _loading,
         error: _error,
         onSelectSession: _selectSession,
+        onForkSession: _forkSession,
+        onAbortSession: _abortSession,
+        onShareSession: _shareSession,
+        onUnshareSession: _unshareSession,
         onSelectFile: _selectFile,
         onSearchFiles: (query) => _loadFiles(searchQuery: query),
         onRunShellCommand: _runShellCommand,
@@ -402,6 +443,10 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         loading: _loading,
         error: _error,
         onSelectSession: _selectSession,
+        onForkSession: _forkSession,
+        onAbortSession: _abortSession,
+        onShareSession: _shareSession,
+        onUnshareSession: _unshareSession,
         onSelectFile: _selectFile,
         onSearchFiles: (query) => _loadFiles(searchQuery: query),
         onRunShellCommand: _runShellCommand,
@@ -436,6 +481,10 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         loading: _loading,
         error: _error,
         onSelectSession: _selectSession,
+        onForkSession: _forkSession,
+        onAbortSession: _abortSession,
+        onShareSession: _shareSession,
+        onUnshareSession: _unshareSession,
         onSelectFile: _selectFile,
         onSearchFiles: (query) => _loadFiles(searchQuery: query),
         onRunShellCommand: _runShellCommand,
@@ -475,6 +524,10 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       loading: _loading,
       error: _error,
       onSelectSession: _selectSession,
+      onForkSession: _forkSession,
+      onAbortSession: _abortSession,
+      onShareSession: _shareSession,
+      onUnshareSession: _unshareSession,
       onSelectFile: _selectFile,
       onSearchFiles: (query) => _loadFiles(searchQuery: query),
       onRunShellCommand: _runShellCommand,
@@ -517,6 +570,10 @@ class _DesktopShell extends StatelessWidget {
     required this.loading,
     required this.error,
     required this.onSelectSession,
+    required this.onForkSession,
+    required this.onAbortSession,
+    required this.onShareSession,
+    required this.onUnshareSession,
     required this.onSelectFile,
     required this.onSearchFiles,
     required this.onRunShellCommand,
@@ -549,6 +606,10 @@ class _DesktopShell extends StatelessWidget {
   final bool loading;
   final String? error;
   final ValueChanged<String> onSelectSession;
+  final Future<void> Function(String) onForkSession;
+  final Future<void> Function(String) onAbortSession;
+  final Future<void> Function(String) onShareSession;
+  final Future<void> Function(String) onUnshareSession;
   final ValueChanged<String> onSelectFile;
   final ValueChanged<String> onSearchFiles;
   final ValueChanged<String> onRunShellCommand;
@@ -572,6 +633,10 @@ class _DesktopShell extends StatelessWidget {
               statuses: statuses,
               selectedSessionId: selectedSessionId,
               onSelectSession: onSelectSession,
+              onForkSession: onForkSession,
+              onAbortSession: onAbortSession,
+              onShareSession: onShareSession,
+              onUnshareSession: onUnshareSession,
             ),
           ),
           const SizedBox(width: AppSpacing.lg),
@@ -641,6 +706,10 @@ class _TabletLandscapeShell extends StatelessWidget {
     required this.loading,
     required this.error,
     required this.onSelectSession,
+    required this.onForkSession,
+    required this.onAbortSession,
+    required this.onShareSession,
+    required this.onUnshareSession,
     required this.onSelectFile,
     required this.onSearchFiles,
     required this.onRunShellCommand,
@@ -673,6 +742,10 @@ class _TabletLandscapeShell extends StatelessWidget {
   final bool loading;
   final String? error;
   final ValueChanged<String> onSelectSession;
+  final Future<void> Function(String) onForkSession;
+  final Future<void> Function(String) onAbortSession;
+  final Future<void> Function(String) onShareSession;
+  final Future<void> Function(String) onUnshareSession;
   final ValueChanged<String> onSelectFile;
   final ValueChanged<String> onSearchFiles;
   final ValueChanged<String> onRunShellCommand;
@@ -696,6 +769,10 @@ class _TabletLandscapeShell extends StatelessWidget {
               statuses: statuses,
               selectedSessionId: selectedSessionId,
               onSelectSession: onSelectSession,
+              onForkSession: onForkSession,
+              onAbortSession: onAbortSession,
+              onShareSession: onShareSession,
+              onUnshareSession: onUnshareSession,
             ),
           ),
           const SizedBox(width: AppSpacing.lg),
@@ -765,6 +842,10 @@ class _TabletPortraitShell extends StatelessWidget {
     required this.loading,
     required this.error,
     required this.onSelectSession,
+    required this.onForkSession,
+    required this.onAbortSession,
+    required this.onShareSession,
+    required this.onUnshareSession,
     required this.onSelectFile,
     required this.onSearchFiles,
     required this.onRunShellCommand,
@@ -799,6 +880,10 @@ class _TabletPortraitShell extends StatelessWidget {
   final bool loading;
   final String? error;
   final ValueChanged<String> onSelectSession;
+  final Future<void> Function(String) onForkSession;
+  final Future<void> Function(String) onAbortSession;
+  final Future<void> Function(String) onShareSession;
+  final Future<void> Function(String) onUnshareSession;
   final ValueChanged<String> onSelectFile;
   final ValueChanged<String> onSearchFiles;
   final ValueChanged<String> onRunShellCommand;
@@ -889,6 +974,10 @@ class _MobileShell extends StatelessWidget {
     required this.loading,
     required this.error,
     required this.onSelectSession,
+    required this.onForkSession,
+    required this.onAbortSession,
+    required this.onShareSession,
+    required this.onUnshareSession,
     required this.onSelectFile,
     required this.onSearchFiles,
     required this.onRunShellCommand,
@@ -923,6 +1012,10 @@ class _MobileShell extends StatelessWidget {
   final bool loading;
   final String? error;
   final ValueChanged<String> onSelectSession;
+  final Future<void> Function(String) onForkSession;
+  final Future<void> Function(String) onAbortSession;
+  final Future<void> Function(String) onShareSession;
+  final Future<void> Function(String) onUnshareSession;
   final ValueChanged<String> onSelectFile;
   final ValueChanged<String> onSearchFiles;
   final ValueChanged<String> onRunShellCommand;
@@ -1029,6 +1122,10 @@ class _LeftRail extends StatelessWidget {
     required this.statuses,
     required this.selectedSessionId,
     required this.onSelectSession,
+    required this.onForkSession,
+    required this.onAbortSession,
+    required this.onShareSession,
+    required this.onUnshareSession,
   });
 
   final ServerProfile profile;
@@ -1038,6 +1135,10 @@ class _LeftRail extends StatelessWidget {
   final Map<String, SessionStatusSummary> statuses;
   final String? selectedSessionId;
   final ValueChanged<String> onSelectSession;
+  final Future<void> Function(String) onForkSession;
+  final Future<void> Function(String) onAbortSession;
+  final Future<void> Function(String) onShareSession;
+  final Future<void> Function(String) onUnshareSession;
 
   @override
   Widget build(BuildContext context) {
@@ -1102,6 +1203,34 @@ class _LeftRail extends StatelessWidget {
             ),
           ),
         ),
+        if (selectedSessionId != null) ...<Widget>[
+          const SizedBox(height: AppSpacing.lg),
+          _PanelCard(
+            title: 'Actions',
+            child: Wrap(
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
+              children: <Widget>[
+                OutlinedButton(
+                  onPressed: () => onForkSession(selectedSessionId!),
+                  child: const Text('Fork'),
+                ),
+                OutlinedButton(
+                  onPressed: () => onShareSession(selectedSessionId!),
+                  child: const Text('Share'),
+                ),
+                OutlinedButton(
+                  onPressed: () => onUnshareSession(selectedSessionId!),
+                  child: const Text('Unshare'),
+                ),
+                OutlinedButton(
+                  onPressed: () => onAbortSession(selectedSessionId!),
+                  child: const Text('Abort'),
+                ),
+              ],
+            ),
+          ),
+        ],
       ],
     );
   }
