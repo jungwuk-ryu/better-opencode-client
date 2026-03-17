@@ -1267,6 +1267,7 @@ class _LeftRail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
+    final orderedSessions = _buildSessionTree(sessions);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -1307,22 +1308,28 @@ class _LeftRail extends StatelessWidget {
                       ),
                     ]
                   : sessions
-                        .map(
-                          (session) => Padding(
+                        .map((session) {
+                          final depth = orderedSessions[session.id] ?? 0;
+                          return Padding(
                             padding: const EdgeInsets.only(
                               bottom: AppSpacing.sm,
                             ),
-                            child: _SessionTile(
-                              title: session.title,
-                              status: _statusLabel(
-                                l10n,
-                                statuses[session.id]?.type ?? 'idle',
+                            child: Padding(
+                              padding: EdgeInsets.only(
+                                left: depth * AppSpacing.sm,
                               ),
-                              selected: session.id == selectedSessionId,
-                              onTap: () => onSelectSession(session.id),
+                              child: _SessionTile(
+                                title: session.title,
+                                status: _statusLabel(
+                                  l10n,
+                                  statuses[session.id]?.type ?? 'idle',
+                                ),
+                                selected: session.id == selectedSessionId,
+                                onTap: () => onSelectSession(session.id),
+                              ),
                             ),
-                          ),
-                        )
+                          );
+                        })
                         .toList(growable: false),
             ),
           ),
@@ -1358,6 +1365,30 @@ class _LeftRail extends StatelessWidget {
       ],
     );
   }
+}
+
+Map<String, double> _buildSessionTree(List<SessionSummary> sessions) {
+  final byParent = <String?, List<SessionSummary>>{};
+  for (final session in sessions) {
+    byParent
+        .putIfAbsent(session.parentId, () => <SessionSummary>[])
+        .add(session);
+  }
+
+  final depths = <String, double>{};
+
+  void visit(String? parentId, double depth) {
+    for (final session in byParent[parentId] ?? const <SessionSummary>[]) {
+      depths[session.id] = depth;
+      visit(session.id, depth + 1);
+    }
+  }
+
+  visit(null, 0);
+  for (final session in sessions) {
+    depths.putIfAbsent(session.id, () => 0);
+  }
+  return depths;
 }
 
 class _ChatCanvas extends StatelessWidget {
