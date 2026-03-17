@@ -126,6 +126,27 @@ class SessionActionService {
     return body == true;
   }
 
+  Future<bool> summarizeSession({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String sessionId,
+    required String providerId,
+    required String modelId,
+    bool auto = false,
+  }) async {
+    final body = await _postJson(
+      profile: profile,
+      project: project,
+      path: '/session/$sessionId/summarize',
+      body: <String, Object?>{
+        'providerID': providerId,
+        'modelID': modelId,
+        'auto': auto,
+      },
+    );
+    return body == true;
+  }
+
   Future<Object?> _postJson({
     required ServerProfile profile,
     required ProjectTarget project,

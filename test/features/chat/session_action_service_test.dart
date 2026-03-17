@@ -61,6 +61,10 @@ void main() {
           request.uri.path == '/session/ses_1/init') {
         body = true;
       }
+      if (request.method == 'POST' &&
+          request.uri.path == '/session/ses_1/summarize') {
+        body = true;
+      }
       if (body == null) {
         request.response.statusCode = 404;
       } else {
@@ -137,6 +141,16 @@ void main() {
         project: project,
         sessionId: 'ses_1',
         messageId: 'msg_1',
+        providerId: 'openai',
+        modelId: 'gpt-5',
+      ),
+      isTrue,
+    );
+    expect(
+      await service.summarizeSession(
+        profile: profile,
+        project: project,
+        sessionId: 'ses_1',
         providerId: 'openai',
         modelId: 'gpt-5',
       ),
