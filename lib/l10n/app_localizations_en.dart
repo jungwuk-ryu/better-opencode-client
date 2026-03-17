@@ -447,4 +447,113 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get projectSelectionReadyHint =>
       'This target is ready for the next phase where sessions and chat use the selected project context.';
+
+  @override
+  String get projectOpenAction => 'Open project';
+
+  @override
+  String get shellProjectRailTitle => 'Project and sessions';
+
+  @override
+  String get shellUnknownLabel => 'unknown';
+
+  @override
+  String get shellBackToProjectsAction => 'Back to projects';
+
+  @override
+  String get shellSessionsTitle => 'Sessions';
+
+  @override
+  String get shellSessionCurrent => 'Current session';
+
+  @override
+  String get shellSessionDraft => 'Draft branch';
+
+  @override
+  String get shellSessionReview => 'Review branch';
+
+  @override
+  String get shellStatusActive => 'active';
+
+  @override
+  String get shellStatusIdle => 'idle';
+
+  @override
+  String get shellStatusError => 'error';
+
+  @override
+  String get shellChatHeaderTitle => 'Chat workspace';
+
+  @override
+  String get shellThinkingModeLabel => 'Balanced thinking';
+
+  @override
+  String get shellAgentLabel => 'build agent';
+
+  @override
+  String get shellChatTimelineTitle => 'Conversation';
+
+  @override
+  String get shellUserMessageTitle => 'You';
+
+  @override
+  String get shellUserMessageBody =>
+      'Review the selected project context and continue from the latest session state.';
+
+  @override
+  String get shellAssistantMessageTitle => 'OpenCode';
+
+  @override
+  String get shellAssistantMessageBody =>
+      'Shell layout is ready. Session, message parts, tools, and context panels attach here in the next phase.';
+
+  @override
+  String get shellComposerPlaceholder =>
+      'Message composer stays here without autofocus by default.';
+
+  @override
+  String get shellContextTitle => 'Context utilities';
+
+  @override
+  String get shellFilesTitle => 'Files';
+
+  @override
+  String get shellFilesSubtitle => 'Tree, status, and search live here.';
+
+  @override
+  String get shellDiffTitle => 'Diff';
+
+  @override
+  String get shellDiffSubtitle => 'Patch and snapshot review appear here.';
+
+  @override
+  String get shellTodoTitle => 'Todo';
+
+  @override
+  String get shellTodoSubtitle =>
+      'Task progress and history stay visible here.';
+
+  @override
+  String get shellToolsTitle => 'Tools';
+
+  @override
+  String get shellToolsSubtitle =>
+      'Built-in and experimental tools surface here.';
+
+  @override
+  String get shellTerminalTitle => 'Terminal';
+
+  @override
+  String get shellTerminalSubtitle => 'Quick shell and attach flows land here.';
+
+  @override
+  String get shellUtilitiesToggleTitle => 'Utilities drawer';
+
+  @override
+  String get shellUtilitiesToggleBody =>
+      'Open the bottom utility drawer to inspect files, diff, todo, tools, and terminal panels on portrait layouts.';
+
+  @override
+  String get shellUtilitiesToggleBodyCompact =>
+      'Open utilities to switch between files, diff, todo, tools, and terminal panels.';
 }

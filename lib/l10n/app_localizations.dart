@@ -919,6 +919,210 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'This target is ready for the next phase where sessions and chat use the selected project context.'**
   String get projectSelectionReadyHint;
+
+  /// No description provided for @projectOpenAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Open project'**
+  String get projectOpenAction;
+
+  /// No description provided for @shellProjectRailTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Project and sessions'**
+  String get shellProjectRailTitle;
+
+  /// No description provided for @shellUnknownLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'unknown'**
+  String get shellUnknownLabel;
+
+  /// No description provided for @shellBackToProjectsAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to projects'**
+  String get shellBackToProjectsAction;
+
+  /// No description provided for @shellSessionsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Sessions'**
+  String get shellSessionsTitle;
+
+  /// No description provided for @shellSessionCurrent.
+  ///
+  /// In en, this message translates to:
+  /// **'Current session'**
+  String get shellSessionCurrent;
+
+  /// No description provided for @shellSessionDraft.
+  ///
+  /// In en, this message translates to:
+  /// **'Draft branch'**
+  String get shellSessionDraft;
+
+  /// No description provided for @shellSessionReview.
+  ///
+  /// In en, this message translates to:
+  /// **'Review branch'**
+  String get shellSessionReview;
+
+  /// No description provided for @shellStatusActive.
+  ///
+  /// In en, this message translates to:
+  /// **'active'**
+  String get shellStatusActive;
+
+  /// No description provided for @shellStatusIdle.
+  ///
+  /// In en, this message translates to:
+  /// **'idle'**
+  String get shellStatusIdle;
+
+  /// No description provided for @shellStatusError.
+  ///
+  /// In en, this message translates to:
+  /// **'error'**
+  String get shellStatusError;
+
+  /// No description provided for @shellChatHeaderTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Chat workspace'**
+  String get shellChatHeaderTitle;
+
+  /// No description provided for @shellThinkingModeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Balanced thinking'**
+  String get shellThinkingModeLabel;
+
+  /// No description provided for @shellAgentLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'build agent'**
+  String get shellAgentLabel;
+
+  /// No description provided for @shellChatTimelineTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversation'**
+  String get shellChatTimelineTitle;
+
+  /// No description provided for @shellUserMessageTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'You'**
+  String get shellUserMessageTitle;
+
+  /// No description provided for @shellUserMessageBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Review the selected project context and continue from the latest session state.'**
+  String get shellUserMessageBody;
+
+  /// No description provided for @shellAssistantMessageTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'OpenCode'**
+  String get shellAssistantMessageTitle;
+
+  /// No description provided for @shellAssistantMessageBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Shell layout is ready. Session, message parts, tools, and context panels attach here in the next phase.'**
+  String get shellAssistantMessageBody;
+
+  /// No description provided for @shellComposerPlaceholder.
+  ///
+  /// In en, this message translates to:
+  /// **'Message composer stays here without autofocus by default.'**
+  String get shellComposerPlaceholder;
+
+  /// No description provided for @shellContextTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Context utilities'**
+  String get shellContextTitle;
+
+  /// No description provided for @shellFilesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Files'**
+  String get shellFilesTitle;
+
+  /// No description provided for @shellFilesSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Tree, status, and search live here.'**
+  String get shellFilesSubtitle;
+
+  /// No description provided for @shellDiffTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Diff'**
+  String get shellDiffTitle;
+
+  /// No description provided for @shellDiffSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Patch and snapshot review appear here.'**
+  String get shellDiffSubtitle;
+
+  /// No description provided for @shellTodoTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Todo'**
+  String get shellTodoTitle;
+
+  /// No description provided for @shellTodoSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Task progress and history stay visible here.'**
+  String get shellTodoSubtitle;
+
+  /// No description provided for @shellToolsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Tools'**
+  String get shellToolsTitle;
+
+  /// No description provided for @shellToolsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Built-in and experimental tools surface here.'**
+  String get shellToolsSubtitle;
+
+  /// No description provided for @shellTerminalTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Terminal'**
+  String get shellTerminalTitle;
+
+  /// No description provided for @shellTerminalSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Quick shell and attach flows land here.'**
+  String get shellTerminalSubtitle;
+
+  /// No description provided for @shellUtilitiesToggleTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Utilities drawer'**
+  String get shellUtilitiesToggleTitle;
+
+  /// No description provided for @shellUtilitiesToggleBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Open the bottom utility drawer to inspect files, diff, todo, tools, and terminal panels on portrait layouts.'**
+  String get shellUtilitiesToggleBody;
+
+  /// No description provided for @shellUtilitiesToggleBodyCompact.
+  ///
+  /// In en, this message translates to:
+  /// **'Open utilities to switch between files, diff, todo, tools, and terminal panels.'**
+  String get shellUtilitiesToggleBodyCompact;
 }
 
 class _AppLocalizationsDelegate

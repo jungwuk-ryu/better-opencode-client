@@ -438,4 +438,109 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get projectSelectionReadyHint =>
       '이 대상은 다음 단계에서 세션과 채팅이 선택된 프로젝트 문맥을 사용하도록 연결할 준비가 되었습니다.';
+
+  @override
+  String get projectOpenAction => '프로젝트 열기';
+
+  @override
+  String get shellProjectRailTitle => '프로젝트와 세션';
+
+  @override
+  String get shellUnknownLabel => '알 수 없음';
+
+  @override
+  String get shellBackToProjectsAction => '프로젝트로 돌아가기';
+
+  @override
+  String get shellSessionsTitle => '세션';
+
+  @override
+  String get shellSessionCurrent => '현재 세션';
+
+  @override
+  String get shellSessionDraft => '초안 브랜치';
+
+  @override
+  String get shellSessionReview => '검토 브랜치';
+
+  @override
+  String get shellStatusActive => '활성';
+
+  @override
+  String get shellStatusIdle => '대기';
+
+  @override
+  String get shellStatusError => '오류';
+
+  @override
+  String get shellChatHeaderTitle => '채팅 워크스페이스';
+
+  @override
+  String get shellThinkingModeLabel => '균형 사고';
+
+  @override
+  String get shellAgentLabel => 'build 에이전트';
+
+  @override
+  String get shellChatTimelineTitle => '대화';
+
+  @override
+  String get shellUserMessageTitle => '사용자';
+
+  @override
+  String get shellUserMessageBody => '선택한 프로젝트 문맥을 검토하고 최신 세션 상태에서 이어서 작업합니다.';
+
+  @override
+  String get shellAssistantMessageTitle => 'OpenCode';
+
+  @override
+  String get shellAssistantMessageBody =>
+      'shell 레이아웃 준비가 끝났습니다. 다음 단계에서 세션, 메시지 파트, 도구, 문맥 패널이 여기에 연결됩니다.';
+
+  @override
+  String get shellComposerPlaceholder => '입력창은 기본 자동 포커스 없이 이 위치를 유지합니다.';
+
+  @override
+  String get shellContextTitle => '문맥 유틸리티';
+
+  @override
+  String get shellFilesTitle => '파일';
+
+  @override
+  String get shellFilesSubtitle => '트리, 상태, 검색이 여기에 들어옵니다.';
+
+  @override
+  String get shellDiffTitle => 'diff';
+
+  @override
+  String get shellDiffSubtitle => '패치와 스냅샷 검토가 여기에 나타납니다.';
+
+  @override
+  String get shellTodoTitle => 'todo';
+
+  @override
+  String get shellTodoSubtitle => '작업 진행과 히스토리가 여기에 보입니다.';
+
+  @override
+  String get shellToolsTitle => '도구';
+
+  @override
+  String get shellToolsSubtitle => '기본 도구와 experimental 도구가 여기에 표시됩니다.';
+
+  @override
+  String get shellTerminalTitle => '터미널';
+
+  @override
+  String get shellTerminalSubtitle => '빠른 shell과 attach 흐름이 여기에 배치됩니다.';
+
+  @override
+  String get shellUtilitiesToggleTitle => '유틸리티 서랍';
+
+  @override
+  String get shellUtilitiesToggleBody =>
+      '세로 레이아웃에서는 아래 유틸리티 서랍을 열어 파일, diff, todo, tools, terminal 패널을 확인합니다.';
+
+  @override
+  String get shellUtilitiesToggleBodyCompact =>
+      '유틸리티를 열어 파일, diff, todo, tools, terminal 패널을 전환합니다.';
 }
