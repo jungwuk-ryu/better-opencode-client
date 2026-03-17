@@ -2491,6 +2491,18 @@ class _IntegrationStatusPanel extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
         ),
         const SizedBox(height: AppSpacing.xs),
+        Text(
+          'LSP: ${snapshot!.lspStatus.entries.map((entry) => '${entry.key}:${entry.value}').join(', ')}',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          'Formatter: ${snapshot!.formatterStatus.entries.map((entry) => '${entry.key}:${entry.value ? 'enabled' : 'disabled'}').join(', ')}',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: AppSpacing.xs),
         Wrap(
           spacing: AppSpacing.xs,
           runSpacing: AppSpacing.xs,
