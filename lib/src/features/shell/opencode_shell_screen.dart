@@ -219,11 +219,13 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         project: widget.project,
         sessionId: sessionId,
       );
-      final todos = await _todoService.fetchTodos(
-        profile: widget.profile,
-        project: widget.project,
-        sessionId: sessionId,
-      );
+      final todos = widget.capabilities.hasTodos
+          ? await _todoService.fetchTodos(
+              profile: widget.profile,
+              project: widget.project,
+              sessionId: sessionId,
+            )
+          : const <TodoItem>[];
       if (!mounted) {
         return;
       }
