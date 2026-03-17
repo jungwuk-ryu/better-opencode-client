@@ -193,6 +193,150 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Switch locale'**
   String get switchLocale;
+
+  /// No description provided for @connectionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Server connection manager'**
+  String get connectionTitle;
+
+  /// No description provided for @connectionSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Store trusted OpenCode endpoints, probe capabilities first, then step into project and session workflows.'**
+  String get connectionSubtitle;
+
+  /// No description provided for @serverProfileManager.
+  ///
+  /// In en, this message translates to:
+  /// **'Server profile manager'**
+  String get serverProfileManager;
+
+  /// No description provided for @connectionProfileHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Use saved profiles for trusted hosts and recent attempts for fast retries.'**
+  String get connectionProfileHint;
+
+  /// No description provided for @profileLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Profile label'**
+  String get profileLabel;
+
+  /// No description provided for @serverAddress.
+  ///
+  /// In en, this message translates to:
+  /// **'Server address'**
+  String get serverAddress;
+
+  /// No description provided for @username.
+  ///
+  /// In en, this message translates to:
+  /// **'Username'**
+  String get username;
+
+  /// No description provided for @password.
+  ///
+  /// In en, this message translates to:
+  /// **'Password'**
+  String get password;
+
+  /// No description provided for @testingConnection.
+  ///
+  /// In en, this message translates to:
+  /// **'Testing...'**
+  String get testingConnection;
+
+  /// No description provided for @testConnection.
+  ///
+  /// In en, this message translates to:
+  /// **'Test connection'**
+  String get testConnection;
+
+  /// No description provided for @saveProfile.
+  ///
+  /// In en, this message translates to:
+  /// **'Save profile'**
+  String get saveProfile;
+
+  /// No description provided for @deleteProfile.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete profile'**
+  String get deleteProfile;
+
+  /// No description provided for @connectionGuidance.
+  ///
+  /// In en, this message translates to:
+  /// **'Probe checks health, spec, config, providers, agent availability, and experimental tool support. mDNS and richer network discovery are next in the roadmap.'**
+  String get connectionGuidance;
+
+  /// No description provided for @savedServers.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved servers'**
+  String get savedServers;
+
+  /// No description provided for @recentConnections.
+  ///
+  /// In en, this message translates to:
+  /// **'Recent connections'**
+  String get recentConnections;
+
+  /// No description provided for @noSavedServers.
+  ///
+  /// In en, this message translates to:
+  /// **'No saved servers yet.'**
+  String get noSavedServers;
+
+  /// No description provided for @noRecentConnections.
+  ///
+  /// In en, this message translates to:
+  /// **'No recent attempts yet.'**
+  String get noRecentConnections;
+
+  /// No description provided for @connectionDiagnostics.
+  ///
+  /// In en, this message translates to:
+  /// **'Connection diagnostics'**
+  String get connectionDiagnostics;
+
+  /// No description provided for @connectionDiagnosticsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Run a probe to classify auth, spec, capability, and SSE readiness before opening a workspace.'**
+  String get connectionDiagnosticsHint;
+
+  /// No description provided for @serverVersion.
+  ///
+  /// In en, this message translates to:
+  /// **'Version'**
+  String get serverVersion;
+
+  /// No description provided for @sseStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'SSE'**
+  String get sseStatus;
+
+  /// No description provided for @readyStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'ready'**
+  String get readyStatus;
+
+  /// No description provided for @needsAttentionStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'needs attention'**
+  String get needsAttentionStatus;
+
+  /// No description provided for @connectionEmptyState.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a server profile and run the probe to populate capability diagnostics.'**
+  String get connectionEmptyState;
 }
 
 class _AppLocalizationsDelegate

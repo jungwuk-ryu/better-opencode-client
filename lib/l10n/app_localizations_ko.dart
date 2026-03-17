@@ -56,4 +56,81 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get switchLocale => '언어 전환';
+
+  @override
+  String get connectionTitle => '서버 연결 관리자';
+
+  @override
+  String get connectionSubtitle =>
+      '신뢰할 수 있는 OpenCode 엔드포인트를 저장하고, 먼저 capability를 probe한 뒤 프로젝트와 세션 흐름으로 들어갑니다.';
+
+  @override
+  String get serverProfileManager => '서버 프로필 관리자';
+
+  @override
+  String get connectionProfileHint =>
+      '신뢰하는 호스트는 저장된 프로필로, 빠른 재시도는 최근 연결 목록으로 관리합니다.';
+
+  @override
+  String get profileLabel => '프로필 이름';
+
+  @override
+  String get serverAddress => '서버 주소';
+
+  @override
+  String get username => '사용자 이름';
+
+  @override
+  String get password => '비밀번호';
+
+  @override
+  String get testingConnection => '테스트 중...';
+
+  @override
+  String get testConnection => '연결 테스트';
+
+  @override
+  String get saveProfile => '프로필 저장';
+
+  @override
+  String get deleteProfile => '프로필 삭제';
+
+  @override
+  String get connectionGuidance =>
+      'probe는 health, spec, config, provider, agent, experimental tool 지원을 확인합니다. mDNS와 더 풍부한 네트워크 탐지는 다음 단계에서 이어집니다.';
+
+  @override
+  String get savedServers => '저장된 서버';
+
+  @override
+  String get recentConnections => '최근 연결';
+
+  @override
+  String get noSavedServers => '저장된 서버가 아직 없습니다.';
+
+  @override
+  String get noRecentConnections => '최근 연결 시도가 아직 없습니다.';
+
+  @override
+  String get connectionDiagnostics => '연결 진단';
+
+  @override
+  String get connectionDiagnosticsHint =>
+      'probe를 실행해 auth, spec, capability, SSE 준비 상태를 먼저 분류합니다.';
+
+  @override
+  String get serverVersion => '버전';
+
+  @override
+  String get sseStatus => 'SSE';
+
+  @override
+  String get readyStatus => '준비됨';
+
+  @override
+  String get needsAttentionStatus => '주의 필요';
+
+  @override
+  String get connectionEmptyState =>
+      '서버 프로필을 입력하고 probe를 실행하면 capability 진단이 채워집니다.';
 }
