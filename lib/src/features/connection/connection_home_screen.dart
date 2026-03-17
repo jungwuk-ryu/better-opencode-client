@@ -18,6 +18,8 @@ import '../../design_system/app_spacing.dart';
 import '../../design_system/app_theme.dart';
 import '../../i18n/locale_controller.dart';
 import '../projects/project_workspace_section.dart';
+import '../projects/project_models.dart';
+import '../shell/opencode_shell_screen.dart';
 
 const _contentMaxWidth = 1480.0;
 const _sideColumnWidth = 420.0;
@@ -60,6 +62,7 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
   List<RecentConnection> _recentConnections = const <RecentConnection>[];
   ServerProbeReport? _latestProbe;
   ServerProfile? _readyProfile;
+  ProjectTarget? _openedProject;
   String? _activeProfileId;
   bool _isSaving = false;
   bool _isProbing = false;
@@ -217,6 +220,18 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_openedProject != null && _readyProfile != null) {
+      return OpenCodeShellScreen(
+        profile: _readyProfile!,
+        project: _openedProject!,
+        onExit: () {
+          setState(() {
+            _openedProject = null;
+          });
+        },
+      );
+    }
+
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
 
     return Scaffold(
@@ -325,7 +340,14 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
         _buildProbeResultCard(context),
         if (_latestProbe?.isReady == true && _readyProfile != null) ...<Widget>[
           const SizedBox(height: AppSpacing.lg),
-          ProjectWorkspaceSection(profile: _readyProfile!),
+          ProjectWorkspaceSection(
+            profile: _readyProfile!,
+            onOpenProject: (project) {
+              setState(() {
+                _openedProject = project;
+              });
+            },
+          ),
         ],
       ],
     );

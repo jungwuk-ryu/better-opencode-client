@@ -10,9 +10,14 @@ import 'project_models.dart';
 import 'project_store.dart';
 
 class ProjectWorkspaceSection extends StatefulWidget {
-  const ProjectWorkspaceSection({required this.profile, super.key});
+  const ProjectWorkspaceSection({
+    required this.profile,
+    required this.onOpenProject,
+    super.key,
+  });
 
   final ServerProfile profile;
+  final ValueChanged<ProjectTarget> onOpenProject;
 
   @override
   State<ProjectWorkspaceSection> createState() =>
@@ -378,6 +383,12 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
                   style: Theme.of(
                     context,
                   ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                ElevatedButton.icon(
+                  onPressed: () => widget.onOpenProject(target),
+                  icon: const Icon(Icons.arrow_forward_rounded),
+                  label: Text(l10n.projectOpenAction),
                 ),
               ],
             ),
