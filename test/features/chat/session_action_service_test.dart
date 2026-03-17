@@ -57,6 +57,10 @@ void main() {
           'time': {'updated': 1710000002000},
         };
       }
+      if (request.method == 'POST' &&
+          request.uri.path == '/session/ses_1/init') {
+        body = true;
+      }
       if (body == null) {
         request.response.statusCode = 404;
       } else {
@@ -126,6 +130,17 @@ void main() {
         sessionId: 'ses_1',
       )).title,
       'Restored session',
+    );
+    expect(
+      await service.initSession(
+        profile: profile,
+        project: project,
+        sessionId: 'ses_1',
+        messageId: 'msg_1',
+        providerId: 'openai',
+        modelId: 'gpt-5',
+      ),
+      isTrue,
     );
     service.dispose();
   });

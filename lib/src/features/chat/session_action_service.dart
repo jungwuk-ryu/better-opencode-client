@@ -105,6 +105,27 @@ class SessionActionService {
     return SessionSummary.fromJson((body as Map).cast<String, Object?>());
   }
 
+  Future<bool> initSession({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String sessionId,
+    required String messageId,
+    required String providerId,
+    required String modelId,
+  }) async {
+    final body = await _postJson(
+      profile: profile,
+      project: project,
+      path: '/session/$sessionId/init',
+      body: <String, Object?>{
+        'messageID': messageId,
+        'providerID': providerId,
+        'modelID': modelId,
+      },
+    );
+    return body == true;
+  }
+
   Future<Object?> _postJson({
     required ServerProfile profile,
     required ProjectTarget project,
