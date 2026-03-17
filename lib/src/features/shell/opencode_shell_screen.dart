@@ -1,8 +1,11 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../../../l10n/app_localizations.dart';
 import '../../core/connection/connection_models.dart';
 import '../../core/network/event_stream_service.dart';
+import '../../core/spec/raw_json_document.dart';
 import '../../design_system/app_spacing.dart';
 import '../../design_system/app_theme.dart';
 import '../chat/chat_models.dart';
@@ -349,6 +352,29 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     }
   }
 
+  Future<void> _applyConfigRaw(String raw) async {
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map) {
+      throw const FormatException('Config must be a JSON object.');
+    }
+    final updated = await _configService.updateConfig(
+      profile: widget.profile,
+      project: widget.project,
+      config: decoded.cast<String, Object?>(),
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _configSnapshot = ConfigSnapshot(
+        config: updated,
+        providerConfig:
+            _configSnapshot?.providerConfig ??
+            RawJsonDocument(const <String, Object?>{}),
+      );
+    });
+  }
+
   Future<void> _loadIntegrationStatus() async {
     try {
       final snapshot = await _integrationStatusService.fetch(
@@ -509,6 +535,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         onReplyQuestion: _replyQuestion,
         onRejectQuestion: _rejectQuestion,
         onReplyPermission: _replyPermission,
+        onApplyConfig: _applyConfigRaw,
       );
     }
     if (width >= 960) {
@@ -549,6 +576,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         onReplyQuestion: _replyQuestion,
         onRejectQuestion: _rejectQuestion,
         onReplyPermission: _replyPermission,
+        onApplyConfig: _applyConfigRaw,
       );
     }
     if (width >= 700) {
@@ -589,6 +617,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         onReplyQuestion: _replyQuestion,
         onRejectQuestion: _rejectQuestion,
         onReplyPermission: _replyPermission,
+        onApplyConfig: _applyConfigRaw,
         showContextSheet: _showContextSheet,
         onToggleContextSheet: () {
           setState(() {
@@ -634,6 +663,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       onReplyQuestion: _replyQuestion,
       onRejectQuestion: _rejectQuestion,
       onReplyPermission: _replyPermission,
+      onApplyConfig: _applyConfigRaw,
       showContextSheet: _showContextSheet,
       onToggleContextSheet: () {
         setState(() {
@@ -682,6 +712,7 @@ class _DesktopShell extends StatelessWidget {
     required this.onReplyQuestion,
     required this.onRejectQuestion,
     required this.onReplyPermission,
+    required this.onApplyConfig,
   });
 
   final ServerProfile profile;
@@ -720,6 +751,7 @@ class _DesktopShell extends StatelessWidget {
   final Future<void> Function(String, List<List<String>>) onReplyQuestion;
   final Future<void> Function(String) onRejectQuestion;
   final Future<void> Function(String, String) onReplyPermission;
+  final Future<void> Function(String) onApplyConfig;
 
   @override
   Widget build(BuildContext context) {
@@ -771,6 +803,7 @@ class _DesktopShell extends StatelessWidget {
               permissionRequests: permissionRequests,
               configSnapshot: configSnapshot,
               integrationStatusSnapshot: integrationStatusSnapshot,
+              onApplyConfig: onApplyConfig,
               onSelectFile: onSelectFile,
               onSearchFiles: onSearchFiles,
               onRunShellCommand: onRunShellCommand,
@@ -824,6 +857,7 @@ class _TabletLandscapeShell extends StatelessWidget {
     required this.onReplyQuestion,
     required this.onRejectQuestion,
     required this.onReplyPermission,
+    required this.onApplyConfig,
   });
 
   final ServerProfile profile;
@@ -862,6 +896,7 @@ class _TabletLandscapeShell extends StatelessWidget {
   final Future<void> Function(String, List<List<String>>) onReplyQuestion;
   final Future<void> Function(String) onRejectQuestion;
   final Future<void> Function(String, String) onReplyPermission;
+  final Future<void> Function(String) onApplyConfig;
 
   @override
   Widget build(BuildContext context) {
@@ -913,6 +948,7 @@ class _TabletLandscapeShell extends StatelessWidget {
               permissionRequests: permissionRequests,
               configSnapshot: configSnapshot,
               integrationStatusSnapshot: integrationStatusSnapshot,
+              onApplyConfig: onApplyConfig,
               onSelectFile: onSelectFile,
               onSearchFiles: onSearchFiles,
               onRunShellCommand: onRunShellCommand,
@@ -966,6 +1002,7 @@ class _TabletPortraitShell extends StatelessWidget {
     required this.onReplyQuestion,
     required this.onRejectQuestion,
     required this.onReplyPermission,
+    required this.onApplyConfig,
     required this.showContextSheet,
     required this.onToggleContextSheet,
   });
@@ -1006,6 +1043,7 @@ class _TabletPortraitShell extends StatelessWidget {
   final Future<void> Function(String, List<List<String>>) onReplyQuestion;
   final Future<void> Function(String) onRejectQuestion;
   final Future<void> Function(String, String) onReplyPermission;
+  final Future<void> Function(String) onApplyConfig;
   final bool showContextSheet;
   final VoidCallback onToggleContextSheet;
 
@@ -1049,6 +1087,7 @@ class _TabletPortraitShell extends StatelessWidget {
               permissionRequests: permissionRequests,
               configSnapshot: configSnapshot,
               integrationStatusSnapshot: integrationStatusSnapshot,
+              onApplyConfig: onApplyConfig,
               onSelectFile: onSelectFile,
               onSearchFiles: onSearchFiles,
               onRunShellCommand: onRunShellCommand,
@@ -1104,6 +1143,7 @@ class _MobileShell extends StatelessWidget {
     required this.onReplyQuestion,
     required this.onRejectQuestion,
     required this.onReplyPermission,
+    required this.onApplyConfig,
     required this.showContextSheet,
     required this.onToggleContextSheet,
   });
@@ -1144,6 +1184,7 @@ class _MobileShell extends StatelessWidget {
   final Future<void> Function(String, List<List<String>>) onReplyQuestion;
   final Future<void> Function(String) onRejectQuestion;
   final Future<void> Function(String, String) onReplyPermission;
+  final Future<void> Function(String) onApplyConfig;
   final bool showContextSheet;
   final VoidCallback onToggleContextSheet;
 
@@ -1189,6 +1230,7 @@ class _MobileShell extends StatelessWidget {
               permissionRequests: permissionRequests,
               configSnapshot: configSnapshot,
               integrationStatusSnapshot: integrationStatusSnapshot,
+              onApplyConfig: onApplyConfig,
               onSelectFile: onSelectFile,
               onSearchFiles: onSearchFiles,
               onRunShellCommand: onRunShellCommand,
@@ -1491,6 +1533,7 @@ class _ContextRail extends StatelessWidget {
     required this.permissionRequests,
     required this.configSnapshot,
     required this.integrationStatusSnapshot,
+    required this.onApplyConfig,
     required this.onSelectFile,
     required this.onSearchFiles,
     required this.onRunShellCommand,
@@ -1517,6 +1560,7 @@ class _ContextRail extends StatelessWidget {
   final List<PermissionRequestSummary> permissionRequests;
   final ConfigSnapshot? configSnapshot;
   final IntegrationStatusSnapshot? integrationStatusSnapshot;
+  final Future<void> Function(String) onApplyConfig;
   final ValueChanged<String> onSelectFile;
   final ValueChanged<String> onSearchFiles;
   final ValueChanged<String> onRunShellCommand;
@@ -1577,7 +1621,10 @@ class _ContextRail extends StatelessWidget {
                     onReplyPermission: onReplyPermission,
                   ),
                   const SizedBox(height: AppSpacing.sm),
-                  _ConfigPreviewPanel(snapshot: configSnapshot),
+                  _ConfigPreviewPanel(
+                    snapshot: configSnapshot,
+                    onApply: onApplyConfig,
+                  ),
                   const SizedBox(height: AppSpacing.sm),
                   _IntegrationStatusPanel(snapshot: integrationStatusSnapshot),
                 ],
@@ -1607,6 +1654,7 @@ class _BottomUtilitySheet extends StatelessWidget {
     required this.permissionRequests,
     required this.configSnapshot,
     required this.integrationStatusSnapshot,
+    required this.onApplyConfig,
     required this.onSelectFile,
     required this.onSearchFiles,
     required this.onRunShellCommand,
@@ -1633,6 +1681,7 @@ class _BottomUtilitySheet extends StatelessWidget {
   final List<PermissionRequestSummary> permissionRequests;
   final ConfigSnapshot? configSnapshot;
   final IntegrationStatusSnapshot? integrationStatusSnapshot;
+  final Future<void> Function(String) onApplyConfig;
   final ValueChanged<String> onSelectFile;
   final ValueChanged<String> onSearchFiles;
   final ValueChanged<String> onRunShellCommand;
@@ -1662,6 +1711,7 @@ class _BottomUtilitySheet extends StatelessWidget {
         permissionRequests: permissionRequests,
         configSnapshot: configSnapshot,
         integrationStatusSnapshot: integrationStatusSnapshot,
+        onApplyConfig: onApplyConfig,
         onSelectFile: onSelectFile,
         onSearchFiles: onSearchFiles,
         onRunShellCommand: onRunShellCommand,
@@ -2055,24 +2105,86 @@ class _PendingRequestsPanel extends StatelessWidget {
   }
 }
 
-class _ConfigPreviewPanel extends StatelessWidget {
-  const _ConfigPreviewPanel({required this.snapshot});
+class _ConfigPreviewPanel extends StatefulWidget {
+  const _ConfigPreviewPanel({required this.snapshot, required this.onApply});
 
   final ConfigSnapshot? snapshot;
+  final Future<void> Function(String) onApply;
+
+  @override
+  State<_ConfigPreviewPanel> createState() => _ConfigPreviewPanelState();
+}
+
+class _ConfigPreviewPanelState extends State<_ConfigPreviewPanel> {
+  late final TextEditingController _controller = TextEditingController();
+  bool _applying = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncText();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ConfigPreviewPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.snapshot != widget.snapshot) {
+      _syncText();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _syncText() {
+    final raw = widget.snapshot?.config.toJson();
+    _controller.text = raw == null
+        ? ''
+        : const JsonEncoder.withIndent('  ').convert(raw);
+  }
 
   @override
   Widget build(BuildContext context) {
-    if (snapshot == null) {
+    if (widget.snapshot == null) {
       return const SizedBox.shrink();
     }
-    final config = snapshot!.config.toJson().toString();
-    final providers = snapshot!.providerConfig.toJson().toString();
+    final providers = widget.snapshot!.providerConfig.toJson().toString();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         const Text('Config'),
         const SizedBox(height: AppSpacing.xs),
-        Text(config, maxLines: 3, overflow: TextOverflow.ellipsis),
+        TextField(
+          controller: _controller,
+          maxLines: 8,
+          decoration: const InputDecoration(isDense: true),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: ElevatedButton(
+            onPressed: _applying
+                ? null
+                : () async {
+                    setState(() {
+                      _applying = true;
+                    });
+                    try {
+                      await widget.onApply(_controller.text);
+                    } finally {
+                      if (mounted) {
+                        setState(() {
+                          _applying = false;
+                        });
+                      }
+                    }
+                  },
+            child: Text(_applying ? 'Applying...' : 'Apply config'),
+          ),
+        ),
         const SizedBox(height: AppSpacing.xs),
         Text(providers, maxLines: 3, overflow: TextOverflow.ellipsis),
       ],
