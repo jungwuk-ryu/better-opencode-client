@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'app_spacing.dart';
+
 final class AppTheme {
   static ThemeData dark() {
     const background = Color(0xFF081019);
@@ -8,8 +10,12 @@ final class AppTheme {
     const panelRaised = Color(0xFF152131);
     const line = Color(0xFF22344C);
     const accent = Color(0xFF9FD4FF);
+    const accentSoft = Color(0xFF78B7F2);
     const text = Color(0xFFF5F7FB);
     const muted = Color(0xFF9DAABC);
+    const success = Color(0xFF8BE39B);
+    const warning = Color(0xFFFFD27A);
+    const danger = Color(0xFFFF8B8B);
 
     final textTheme = GoogleFonts.plusJakartaSansTextTheme(
       Typography.whiteMountainView,
@@ -19,9 +25,9 @@ final class AppTheme {
       primary: accent,
       surface: panel,
       onSurface: text,
-      secondary: Color(0xFF78B7F2),
+      secondary: accentSoft,
       onPrimary: background,
-      error: Color(0xFFFF8B8B),
+      error: danger,
     );
 
     return ThemeData(
@@ -35,7 +41,7 @@ final class AppTheme {
         elevation: 0,
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
           side: const BorderSide(color: line),
         ),
       ),
@@ -47,7 +53,9 @@ final class AppTheme {
         secondarySelectedColor: accent.withValues(alpha: 0.16),
         labelStyle: textTheme.labelMedium?.copyWith(color: text),
         side: const BorderSide(color: line),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppSpacing.md),
+        ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
@@ -55,9 +63,57 @@ final class AppTheme {
           foregroundColor: background,
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(AppSpacing.formFieldRadius),
           ),
         ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: text,
+          side: const BorderSide(color: line),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppSpacing.formFieldRadius),
+          ),
+        ),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: panelRaised.withValues(alpha: 0.88),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppSpacing.formFieldRadius),
+          borderSide: const BorderSide(color: line),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppSpacing.formFieldRadius),
+          borderSide: const BorderSide(color: line),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppSpacing.formFieldRadius),
+          borderSide: const BorderSide(color: accent),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppSpacing.formFieldRadius),
+          borderSide: const BorderSide(color: danger),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppSpacing.formFieldRadius),
+          borderSide: const BorderSide(color: danger),
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 18,
+          vertical: 16,
+        ),
+        labelStyle: textTheme.bodyMedium?.copyWith(color: muted),
+        hintStyle: textTheme.bodyMedium?.copyWith(color: muted),
+      ),
+      listTileTheme: ListTileThemeData(
+        tileColor: panelRaised.withValues(alpha: 0.64),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppSpacing.md),
+          side: const BorderSide(color: line),
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       ),
       textSelectionTheme: const TextSelectionThemeData(
         cursorColor: accent,
@@ -79,6 +135,10 @@ final class AppTheme {
           panelRaised: panelRaised,
           line: line,
           muted: muted,
+          success: success,
+          warning: warning,
+          danger: danger,
+          accentSoft: accentSoft,
         ),
       ],
     );
@@ -93,6 +153,10 @@ class AppSurfaces extends ThemeExtension<AppSurfaces> {
     required this.panelRaised,
     required this.line,
     required this.muted,
+    required this.success,
+    required this.warning,
+    required this.danger,
+    required this.accentSoft,
   });
 
   final Color background;
@@ -100,6 +164,10 @@ class AppSurfaces extends ThemeExtension<AppSurfaces> {
   final Color panelRaised;
   final Color line;
   final Color muted;
+  final Color success;
+  final Color warning;
+  final Color danger;
+  final Color accentSoft;
 
   @override
   AppSurfaces copyWith({
@@ -108,6 +176,10 @@ class AppSurfaces extends ThemeExtension<AppSurfaces> {
     Color? panelRaised,
     Color? line,
     Color? muted,
+    Color? success,
+    Color? warning,
+    Color? danger,
+    Color? accentSoft,
   }) {
     return AppSurfaces(
       background: background ?? this.background,
@@ -115,6 +187,10 @@ class AppSurfaces extends ThemeExtension<AppSurfaces> {
       panelRaised: panelRaised ?? this.panelRaised,
       line: line ?? this.line,
       muted: muted ?? this.muted,
+      success: success ?? this.success,
+      warning: warning ?? this.warning,
+      danger: danger ?? this.danger,
+      accentSoft: accentSoft ?? this.accentSoft,
     );
   }
 
@@ -129,6 +205,10 @@ class AppSurfaces extends ThemeExtension<AppSurfaces> {
       panelRaised: Color.lerp(panelRaised, other.panelRaised, t) ?? panelRaised,
       line: Color.lerp(line, other.line, t) ?? line,
       muted: Color.lerp(muted, other.muted, t) ?? muted,
+      success: Color.lerp(success, other.success, t) ?? success,
+      warning: Color.lerp(warning, other.warning, t) ?? warning,
+      danger: Color.lerp(danger, other.danger, t) ?? danger,
+      accentSoft: Color.lerp(accentSoft, other.accentSoft, t) ?? accentSoft,
     );
   }
 }
