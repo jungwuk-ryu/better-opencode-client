@@ -53,8 +53,20 @@ void main() {
       endpoints: const <String, ProbeEndpointResult>{},
     ),
   );
+  final minimalCapabilities = CapabilityRegistry.fromSnapshot(
+    ProbeSnapshot(
+      name: 'minimal',
+      version: '1.0.0',
+      paths: const <String>{'/project', '/project/current'},
+      endpoints: const <String, ProbeEndpointResult>{},
+    ),
+  );
 
-  Future<void> pumpShell(WidgetTester tester, {required Size size}) async {
+  Future<void> pumpShellWithCapabilities(
+    WidgetTester tester, {
+    required Size size,
+    required CapabilityRegistry capabilitiesToUse,
+  }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -68,12 +80,20 @@ void main() {
         home: OpenCodeShellScreen(
           profile: profile,
           project: project,
-          capabilities: capabilities,
+          capabilities: capabilitiesToUse,
           onExit: _noop,
         ),
       ),
     );
     await tester.pumpAndSettle();
+  }
+
+  Future<void> pumpShell(WidgetTester tester, {required Size size}) async {
+    await pumpShellWithCapabilities(
+      tester,
+      size: size,
+      capabilitiesToUse: capabilities,
+    );
   }
 
   testWidgets('desktop shell shows left rail and context utilities', (
@@ -100,6 +120,21 @@ void main() {
 
     expect(find.text('Conversation'), findsOneWidget);
     expect(find.text('Back to projects'), findsOneWidget);
+  });
+
+  testWidgets('minimal capabilities hide unsupported shell controls', (
+    tester,
+  ) async {
+    await pumpShellWithCapabilities(
+      tester,
+      size: const Size(1440, 1000),
+      capabilitiesToUse: minimalCapabilities,
+    );
+
+    expect(find.text('Fork'), findsNothing);
+    expect(find.text('Share'), findsNothing);
+    expect(find.text('Terminal'), findsNothing);
+    expect(find.text('Config'), findsNothing);
   });
 }
 
