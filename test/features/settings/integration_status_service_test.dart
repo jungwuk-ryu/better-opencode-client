@@ -27,6 +27,13 @@ void main() {
           'docs': {'status': 'needs_auth'},
         };
       }
+      if (request.method == 'POST' &&
+          request.uri.path == '/provider/openai/oauth/authorize') {
+        body = {'authorizationUrl': 'https://provider.example/auth'};
+      }
+      if (request.method == 'POST' && request.uri.path == '/mcp/github/auth') {
+        body = {'authorizationUrl': 'https://mcp.example/auth'};
+      }
       if (body == null) {
         request.response.statusCode = 404;
       } else {
@@ -54,6 +61,34 @@ void main() {
 
     expect(snapshot.providerAuth['openai']?.first, 'api_key');
     expect(snapshot.mcpStatus['github'], 'connected');
+    service.dispose();
+  });
+
+  test('starts provider and mcp auth flows', () async {
+    final service = IntegrationStatusService();
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'mock',
+      baseUrl: baseUri.toString(),
+    );
+    const project = ProjectTarget(directory: '/workspace/demo', label: 'Demo');
+
+    expect(
+      await service.startProviderAuth(
+        profile: profile,
+        project: project,
+        providerId: 'openai',
+      ),
+      'https://provider.example/auth',
+    );
+    expect(
+      await service.startMcpAuth(
+        profile: profile,
+        project: project,
+        name: 'github',
+      ),
+      'https://mcp.example/auth',
+    );
     service.dispose();
   });
 }

@@ -63,6 +63,41 @@ class IntegrationStatusService {
     );
   }
 
+  Future<String?> startProviderAuth({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String providerId,
+    int method = 0,
+  }) async {
+    final result = await _postJson(
+      profile: profile,
+      project: project,
+      path: '/provider/$providerId/oauth/authorize',
+      body: <String, Object?>{'method': method},
+    );
+    if (result is! Map) {
+      return null;
+    }
+    return result['authorizationUrl']?.toString();
+  }
+
+  Future<String?> startMcpAuth({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String name,
+  }) async {
+    final result = await _postJson(
+      profile: profile,
+      project: project,
+      path: '/mcp/$name/auth',
+      body: const <String, Object?>{},
+    );
+    if (result is! Map) {
+      return null;
+    }
+    return result['authorizationUrl']?.toString();
+  }
+
   Future<Object?> _getJson({
     required ServerProfile profile,
     required ProjectTarget project,
@@ -89,6 +124,48 @@ class IntegrationStatusService {
           queryParameters: <String, String>{'directory': project.directory},
         );
     final response = await _client.get(uri, headers: headers);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw StateError(
+        'Request failed for $uri with status ${response.statusCode}.',
+      );
+    }
+    return jsonDecode(response.body);
+  }
+
+  Future<Object?> _postJson({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String path,
+    required Map<String, Object?> body,
+  }) async {
+    final baseUri = profile.uriOrNull;
+    if (baseUri == null) {
+      throw const FormatException('Invalid server profile URL.');
+    }
+    final headers = <String, String>{
+      'accept': 'application/json',
+      'content-type': 'application/json',
+    };
+    final authHeader = profile.basicAuthHeader;
+    if (authHeader != null) {
+      headers['authorization'] = authHeader;
+    }
+    final basePath = switch (baseUri.path) {
+      '' => '/',
+      final value when value.endsWith('/') => value,
+      final value => '$value/',
+    };
+    final uri = baseUri
+        .replace(path: basePath)
+        .resolve(path.startsWith('/') ? path.substring(1) : path)
+        .replace(
+          queryParameters: <String, String>{'directory': project.directory},
+        );
+    final response = await _client.post(
+      uri,
+      headers: headers,
+      body: jsonEncode(body),
+    );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw StateError(
         'Request failed for $uri with status ${response.statusCode}.',
