@@ -40,6 +40,49 @@ class ConfigService {
     );
   }
 
+  Future<RawJsonDocument> updateConfig({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required Map<String, Object?> config,
+  }) async {
+    final baseUri = profile.uriOrNull;
+    if (baseUri == null) {
+      throw const FormatException('Invalid server profile URL.');
+    }
+    final headers = <String, String>{
+      'accept': 'application/json',
+      'content-type': 'application/json',
+    };
+    final authHeader = profile.basicAuthHeader;
+    if (authHeader != null) {
+      headers['authorization'] = authHeader;
+    }
+    final basePath = switch (baseUri.path) {
+      '' => '/',
+      final value when value.endsWith('/') => value,
+      final value => '$value/',
+    };
+    final uri = baseUri
+        .replace(path: basePath)
+        .resolve('config')
+        .replace(
+          queryParameters: <String, String>{'directory': project.directory},
+        );
+    final response = await _client.patch(
+      uri,
+      headers: headers,
+      body: jsonEncode(config),
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw StateError(
+        'Request failed for $uri with status ${response.statusCode}.',
+      );
+    }
+    return RawJsonDocument(
+      (jsonDecode(response.body) as Map).cast<String, Object?>(),
+    );
+  }
+
   Future<Object?> _getJson({
     required ServerProfile profile,
     required ProjectTarget project,

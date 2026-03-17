@@ -62,4 +62,23 @@ void main() {
     );
     service.dispose();
   });
+
+  test('updates config through patch endpoint', () async {
+    final service = ConfigService();
+    final updated = await service.updateConfig(
+      profile: ServerProfile(
+        id: 'server',
+        label: 'mock',
+        baseUrl: baseUri.toString(),
+      ),
+      project: const ProjectTarget(directory: '/workspace/demo', label: 'Demo'),
+      config: <String, Object?>{
+        'model': 'anthropic/claude-sonnet-4.5',
+        'x-future': <String, Object?>{'enabled': true},
+      },
+    );
+
+    expect(updated.toJson()['model'], 'openai/gpt-5');
+    service.dispose();
+  });
 }
