@@ -972,6 +972,9 @@ class _DesktopShell extends StatelessWidget {
             width: 340,
             child: _ContextRail(
               fileNodes: fileNodes,
+              sessions: sessions,
+              messages: messages,
+              selectedSessionId: selectedSessionId,
               capabilities: capabilities,
               fileStatuses: fileStatuses,
               fileSearchResults: fileSearchResults,
@@ -1145,6 +1148,9 @@ class _TabletLandscapeShell extends StatelessWidget {
             child: _ContextRail(
               compact: true,
               capabilities: capabilities,
+              sessions: sessions,
+              messages: messages,
+              selectedSessionId: selectedSessionId,
               fileNodes: fileNodes,
               fileStatuses: fileStatuses,
               fileSearchResults: fileSearchResults,
@@ -1307,6 +1313,9 @@ class _TabletPortraitShell extends StatelessWidget {
                 : CrossFadeState.showSecond,
             firstChild: _BottomUtilitySheet(
               fileNodes: fileNodes,
+              sessions: sessions,
+              messages: messages,
+              selectedSessionId: selectedSessionId,
               capabilities: capabilities,
               fileStatuses: fileStatuses,
               fileSearchResults: fileSearchResults,
@@ -1473,6 +1482,9 @@ class _MobileShell extends StatelessWidget {
             firstChild: _BottomUtilitySheet(
               compact: true,
               capabilities: capabilities,
+              sessions: sessions,
+              messages: messages,
+              selectedSessionId: selectedSessionId,
               fileNodes: fileNodes,
               fileStatuses: fileStatuses,
               fileSearchResults: fileSearchResults,
@@ -1815,6 +1827,9 @@ class _ChatCanvas extends StatelessWidget {
 class _ContextRail extends StatelessWidget {
   const _ContextRail({
     required this.capabilities,
+    required this.sessions,
+    required this.messages,
+    required this.selectedSessionId,
     required this.fileNodes,
     required this.fileStatuses,
     required this.fileSearchResults,
@@ -1847,6 +1862,9 @@ class _ContextRail extends StatelessWidget {
 
   final bool compact;
   final CapabilityRegistry capabilities;
+  final List<SessionSummary> sessions;
+  final List<ChatMessage> messages;
+  final String? selectedSessionId;
   final List<FileNodeSummary> fileNodes;
   final List<FileStatusSummary> fileStatuses;
   final List<String> fileSearchResults;
@@ -1884,7 +1902,8 @@ class _ContextRail extends StatelessWidget {
         Expanded(
           child: _PanelCard(
             title: l10n.shellContextTitle,
-            child: Column(
+            fillChild: true,
+            child: ListView(
               children: <Widget>[
                 if (capabilities.hasFiles) ...<Widget>[
                   _FilePanel(
@@ -1942,6 +1961,12 @@ class _ContextRail extends StatelessWidget {
                       snapshot: configSnapshot,
                       onApply: onApplyConfig,
                     ),
+                    const SizedBox(height: AppSpacing.sm),
+                    _RawInspectorPanel(
+                      sessions: sessions,
+                      messages: messages,
+                      selectedSessionId: selectedSessionId,
+                    ),
                   ],
                   if (capabilities.hasProviderOAuth ||
                       capabilities.hasMcpAuth) ...<Widget>[
@@ -1967,6 +1992,9 @@ class _ContextRail extends StatelessWidget {
 class _BottomUtilitySheet extends StatelessWidget {
   const _BottomUtilitySheet({
     required this.capabilities,
+    required this.sessions,
+    required this.messages,
+    required this.selectedSessionId,
     required this.fileNodes,
     required this.fileStatuses,
     required this.fileSearchResults,
@@ -1999,6 +2027,9 @@ class _BottomUtilitySheet extends StatelessWidget {
 
   final bool compact;
   final CapabilityRegistry capabilities;
+  final List<SessionSummary> sessions;
+  final List<ChatMessage> messages;
+  final String? selectedSessionId;
   final List<FileNodeSummary> fileNodes;
   final List<FileStatusSummary> fileStatuses;
   final List<String> fileSearchResults;
@@ -2034,6 +2065,9 @@ class _BottomUtilitySheet extends StatelessWidget {
       child: _ContextRail(
         compact: true,
         capabilities: capabilities,
+        sessions: sessions,
+        messages: messages,
+        selectedSessionId: selectedSessionId,
         fileNodes: fileNodes,
         fileStatuses: fileStatuses,
         fileSearchResults: fileSearchResults,
@@ -2529,6 +2563,62 @@ class _ConfigPreviewPanelState extends State<_ConfigPreviewPanel> {
         ),
         const SizedBox(height: AppSpacing.xs),
         Text(providers, maxLines: 3, overflow: TextOverflow.ellipsis),
+      ],
+    );
+  }
+}
+
+class _RawInspectorPanel extends StatelessWidget {
+  const _RawInspectorPanel({
+    required this.sessions,
+    required this.messages,
+    required this.selectedSessionId,
+  });
+
+  final List<SessionSummary> sessions;
+  final List<ChatMessage> messages;
+  final String? selectedSessionId;
+
+  @override
+  Widget build(BuildContext context) {
+    SessionSummary? selectedSession;
+    for (final session in sessions) {
+      if (session.id == selectedSessionId) {
+        selectedSession = session;
+        break;
+      }
+    }
+    final latestMessage = messages.isEmpty ? null : messages.last;
+
+    final sessionJson = selectedSession == null
+        ? '{}'
+        : const JsonEncoder.withIndent('  ').convert(<String, Object?>{
+            'id': selectedSession.id,
+            'directory': selectedSession.directory,
+            'title': selectedSession.title,
+            'version': selectedSession.version,
+            'parentID': selectedSession.parentId,
+          });
+    final messageJson = latestMessage == null
+        ? '{}'
+        : const JsonEncoder.withIndent('  ').convert(<String, Object?>{
+            'id': latestMessage.info.id,
+            'role': latestMessage.info.role,
+            'providerID': latestMessage.info.providerId,
+            'modelID': latestMessage.info.modelId,
+            'parts': latestMessage.parts
+                .map((part) => part.metadata)
+                .toList(growable: false),
+          });
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        const Text('Inspector'),
+        const SizedBox(height: AppSpacing.xs),
+        Text(sessionJson, maxLines: 5, overflow: TextOverflow.ellipsis),
+        const SizedBox(height: AppSpacing.xs),
+        Text(messageJson, maxLines: 6, overflow: TextOverflow.ellipsis),
       ],
     );
   }
