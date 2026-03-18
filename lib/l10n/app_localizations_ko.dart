@@ -200,6 +200,15 @@ class AppLocalizationsKo extends AppLocalizations {
   String get connectionSaveAction => '프로필 저장';
 
   @override
+  String get connectionDraftRestoredLabel => '저장되지 않은 초안을 복원했습니다';
+
+  @override
+  String get connectionPinProfileAction => '프로필 고정';
+
+  @override
+  String get connectionUnpinProfileAction => '프로필 고정 해제';
+
+  @override
   String get connectionProbeResultTitle => '실시간 capability probe';
 
   @override
@@ -399,6 +408,13 @@ class AppLocalizationsKo extends AppLocalizations {
   String get recentProjectsSubtitle => '서버 목록과 분리된 로컬 최근 프로젝트 대상입니다.';
 
   @override
+  String get pinnedProjectsTitle => '고정한 프로젝트';
+
+  @override
+  String get pinnedProjectsSubtitle =>
+      '모바일에서 빠르게 다시 열 수 있도록 위쪽에 유지하는 로컬 즐겨찾기입니다.';
+
+  @override
   String get recentProjectsEmpty => '최근 프로젝트가 아직 없습니다.';
 
   @override
@@ -441,6 +457,12 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get projectOpenAction => '프로젝트 열기';
+
+  @override
+  String get projectPinAction => '프로젝트 고정';
+
+  @override
+  String get projectUnpinAction => '프로젝트 고정 해제';
 
   @override
   String get shellProjectRailTitle => '프로젝트와 세션';

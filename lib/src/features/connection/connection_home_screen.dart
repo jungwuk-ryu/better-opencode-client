@@ -60,6 +60,7 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
 
   List<ServerProfile> _savedProfiles = const <ServerProfile>[];
   List<RecentConnection> _recentConnections = const <RecentConnection>[];
+  Set<String> _pinnedProfileKeys = const <String>{};
   ServerProbeReport? _latestProbe;
   ServerProfile? _readyProfile;
   CapabilityRegistry? _readyCapabilities;
@@ -68,10 +69,19 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
   bool _isSaving = false;
   bool _isProbing = false;
   bool _showPassword = false;
+  bool _restoredDraft = false;
 
   @override
   void initState() {
     super.initState();
+    for (final controller in <TextEditingController>[
+      _labelController,
+      _baseUrlController,
+      _usernameController,
+      _passwordController,
+    ]) {
+      controller.addListener(_persistDraft);
+    }
     _loadStoredConnections();
   }
 
@@ -88,14 +98,20 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
   Future<void> _loadStoredConnections() async {
     final profiles = await _profileStore.load();
     final recents = await _profileStore.loadRecentConnections();
+    final pinned = await _profileStore.loadPinnedProfiles();
+    final draft = await _profileStore.loadDraftProfile();
     if (!mounted) {
       return;
     }
     setState(() {
       _savedProfiles = profiles;
       _recentConnections = recents;
+      _pinnedProfileKeys = pinned;
+      _restoredDraft = draft != null && _hasMeaningfulProfileData(draft);
     });
-    if (profiles.isNotEmpty) {
+    if (draft != null && _hasMeaningfulProfileData(draft)) {
+      _applyProfile(draft, preferSavedSelection: true);
+    } else if (profiles.isNotEmpty) {
       _applyProfile(profiles.first, preferSavedSelection: true);
     }
   }
@@ -141,6 +157,27 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
 
   String _newProfileId() => DateTime.now().microsecondsSinceEpoch.toString();
 
+  bool _hasMeaningfulProfileData(ServerProfile profile) {
+    return profile.label.trim().isNotEmpty ||
+        profile.baseUrl.trim().isNotEmpty ||
+        (profile.username?.trim().isNotEmpty ?? false) ||
+        (profile.password?.isNotEmpty ?? false);
+  }
+
+  Future<void> _persistDraft() async {
+    final draft = _currentDraftProfile();
+    if (!_hasMeaningfulProfileData(draft)) {
+      await _profileStore.clearDraftProfile();
+      if (mounted && _restoredDraft) {
+        setState(() {
+          _restoredDraft = false;
+        });
+      }
+      return;
+    }
+    await _profileStore.saveDraftProfile(draft);
+  }
+
   String? _normalizedOptional(String value) {
     final trimmed = value.trim();
     return trimmed.isEmpty ? null : trimmed;
@@ -167,14 +204,26 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
 
   Future<void> _deleteProfile(ServerProfile profile) async {
     final savedProfiles = await _profileStore.deleteProfile(profile.id);
+    final pinned = await _profileStore.loadPinnedProfiles();
     if (!mounted) {
       return;
     }
     setState(() {
       _savedProfiles = savedProfiles;
+      _pinnedProfileKeys = pinned;
       if (_activeProfileId == profile.id) {
         _activeProfileId = null;
       }
+    });
+  }
+
+  Future<void> _togglePinnedProfile(ServerProfile profile) async {
+    final pinned = await _profileStore.togglePinnedProfile(profile.storageKey);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _pinnedProfileKeys = pinned;
     });
   }
 
@@ -569,6 +618,13 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
+          if (_restoredDraft) ...<Widget>[
+            _TagChip(
+              icon: Icons.restore_rounded,
+              label: l10n.connectionDraftRestoredLabel,
+            ),
+            const SizedBox(height: AppSpacing.md),
+          ],
           TextFormField(
             controller: _labelController,
             textInputAction: TextInputAction.next,
@@ -865,6 +921,17 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
 
   Widget _buildSavedProfilesCard(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
+    final sortedProfiles = _savedProfiles.toList()
+      ..sort((a, b) {
+        final aPinned = _pinnedProfileKeys.contains(a.storageKey);
+        final bPinned = _pinnedProfileKeys.contains(b.storageKey);
+        if (aPinned != bPinned) {
+          return aPinned ? -1 : 1;
+        }
+        return a.effectiveLabel.toLowerCase().compareTo(
+          b.effectiveLabel.toLowerCase(),
+        );
+      });
 
     return _PanelShell(
       title: l10n.savedProfilesTitle,
@@ -877,7 +944,7 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
                 subtitle: l10n.savedProfilesEmptySubtitle,
               )
             : Column(
-                children: _savedProfiles
+                children: sortedProfiles
                     .map(
                       (profile) => Padding(
                         padding: const EdgeInsets.only(bottom: AppSpacing.sm),
@@ -885,9 +952,30 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
                           label: profile.effectiveLabel,
                           subtitle: profile.normalizedBaseUrl,
                           isSelected: profile.id == _activeProfileId,
-                          trailing: IconButton(
-                            onPressed: () => _deleteProfile(profile),
-                            icon: const Icon(Icons.delete_outline),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              IconButton(
+                                tooltip:
+                                    _pinnedProfileKeys.contains(
+                                      profile.storageKey,
+                                    )
+                                    ? l10n.connectionUnpinProfileAction
+                                    : l10n.connectionPinProfileAction,
+                                onPressed: () => _togglePinnedProfile(profile),
+                                icon: Icon(
+                                  _pinnedProfileKeys.contains(
+                                        profile.storageKey,
+                                      )
+                                      ? Icons.push_pin_rounded
+                                      : Icons.push_pin_outlined,
+                                ),
+                              ),
+                              IconButton(
+                                onPressed: () => _deleteProfile(profile),
+                                icon: const Icon(Icons.delete_outline),
+                              ),
+                            ],
                           ),
                           onTap: () => _applyProfile(
                             profile,

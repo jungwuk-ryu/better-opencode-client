@@ -201,6 +201,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get connectionSaveAction => 'Save profile';
 
   @override
+  String get connectionDraftRestoredLabel => 'Restored unsaved draft';
+
+  @override
+  String get connectionPinProfileAction => 'Pin profile';
+
+  @override
+  String get connectionUnpinProfileAction => 'Unpin profile';
+
+  @override
   String get connectionProbeResultTitle => 'Live capability probe';
 
   @override
@@ -407,6 +416,13 @@ class AppLocalizationsEn extends AppLocalizations {
       'Recent local project targets kept separately from server-listed projects.';
 
   @override
+  String get pinnedProjectsTitle => 'Pinned projects';
+
+  @override
+  String get pinnedProjectsSubtitle =>
+      'Local favorites kept at the top for quick mobile access.';
+
+  @override
   String get recentProjectsEmpty => 'No recent projects yet.';
 
   @override
@@ -450,6 +466,12 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get projectOpenAction => 'Open project';
+
+  @override
+  String get projectPinAction => 'Pin project';
+
+  @override
+  String get projectUnpinAction => 'Unpin project';
 
   @override
   String get shellProjectRailTitle => 'Project and sessions';

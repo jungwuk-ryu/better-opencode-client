@@ -31,6 +31,7 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
 
   ProjectCatalog? _catalog;
   List<ProjectTarget> _recentProjects = const <ProjectTarget>[];
+  Set<String> _pinnedProjectDirectories = const <String>{};
   ProjectTarget? _selectedTarget;
   String? _error;
   bool _loading = true;
@@ -65,6 +66,7 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
     try {
       final catalog = await _catalogService.fetchCatalog(widget.profile);
       final recentProjects = await _projectStore.loadRecentProjects();
+      final pinnedProjects = await _projectStore.loadPinnedProjects();
       final selected = catalog.currentProject == null
           ? null
           : _toTarget(
@@ -78,6 +80,7 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
       setState(() {
         _catalog = catalog;
         _recentProjects = recentProjects;
+        _pinnedProjectDirectories = pinnedProjects;
         _selectedTarget = selected;
         _loading = false;
       });
@@ -115,6 +118,50 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
       _selectedTarget = target;
       _recentProjects = recentProjects;
     });
+  }
+
+  Future<void> _togglePinnedProject(ProjectTarget target) async {
+    final pinnedProjects = await _projectStore.togglePinnedProject(
+      target.directory,
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _pinnedProjectDirectories = pinnedProjects;
+    });
+  }
+
+  List<ProjectTarget> _pinnedProjects(ProjectCatalog? catalog) {
+    final allTargets = <ProjectTarget>[
+      if (catalog?.currentProject != null)
+        _toTarget(
+          catalog!.currentProject!,
+          source: 'current',
+          branch: catalog.vcsInfo?.branch,
+        ),
+      if (catalog != null)
+        ...catalog.projects.map(
+          (project) => _toTarget(
+            project,
+            source: 'server',
+            branch: catalog.vcsInfo?.branch,
+          ),
+        ),
+      ..._recentProjects,
+      ...?_selectedTarget == null ? null : <ProjectTarget>[_selectedTarget!],
+    ];
+    final byDirectory = <String, ProjectTarget>{};
+    for (final target in allTargets) {
+      byDirectory.putIfAbsent(target.directory, () => target);
+    }
+    final pinned = byDirectory.values
+        .where((target) => _pinnedProjectDirectories.contains(target.directory))
+        .toList(growable: false);
+    pinned.sort(
+      (a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()),
+    );
+    return pinned;
   }
 
   Future<void> _inspectManualPath() async {
@@ -213,9 +260,35 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
 
   Widget _buildChooser(BuildContext context, AppLocalizations l10n) {
     final catalog = _catalog;
+    final pinnedProjects = _pinnedProjects(catalog);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
+        if (pinnedProjects.isNotEmpty) ...<Widget>[
+          _Section(
+            title: l10n.pinnedProjectsTitle,
+            subtitle: l10n.pinnedProjectsSubtitle,
+            child: Column(
+              children: pinnedProjects
+                  .map(
+                    (project) => Padding(
+                      padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                      child: _ProjectChoiceTile(
+                        target: project,
+                        selected:
+                            _selectedTarget?.directory == project.directory,
+                        pinned: true,
+                        pinTooltip: l10n.projectUnpinAction,
+                        onPinToggle: () => _togglePinnedProject(project),
+                        onTap: () => _selectTarget(project),
+                      ),
+                    ),
+                  )
+                  .toList(growable: false),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+        ],
         if (catalog?.currentProject != null) ...<Widget>[
           _Section(
             title: l10n.currentProjectTitle,
@@ -229,6 +302,22 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
               selected:
                   _selectedTarget?.directory ==
                   catalog.currentProject!.directory,
+              pinned: _pinnedProjectDirectories.contains(
+                catalog.currentProject!.directory,
+              ),
+              pinTooltip:
+                  _pinnedProjectDirectories.contains(
+                    catalog.currentProject!.directory,
+                  )
+                  ? l10n.projectUnpinAction
+                  : l10n.projectPinAction,
+              onPinToggle: () => _togglePinnedProject(
+                _toTarget(
+                  catalog.currentProject!,
+                  source: 'current',
+                  branch: catalog.vcsInfo?.branch,
+                ),
+              ),
               onTap: () => _selectTarget(
                 _toTarget(
                   catalog.currentProject!,
@@ -258,6 +347,22 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
                             ),
                             selected:
                                 _selectedTarget?.directory == project.directory,
+                            pinned: _pinnedProjectDirectories.contains(
+                              project.directory,
+                            ),
+                            pinTooltip:
+                                _pinnedProjectDirectories.contains(
+                                  project.directory,
+                                )
+                                ? l10n.projectUnpinAction
+                                : l10n.projectPinAction,
+                            onPinToggle: () => _togglePinnedProject(
+                              _toTarget(
+                                project,
+                                source: 'server',
+                                branch: catalog.vcsInfo?.branch,
+                              ),
+                            ),
                             onTap: () => _selectTarget(
                               _toTarget(
                                 project,
@@ -322,6 +427,16 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
                             target: project,
                             selected:
                                 _selectedTarget?.directory == project.directory,
+                            pinned: _pinnedProjectDirectories.contains(
+                              project.directory,
+                            ),
+                            pinTooltip:
+                                _pinnedProjectDirectories.contains(
+                                  project.directory,
+                                )
+                                ? l10n.projectUnpinAction
+                                : l10n.projectPinAction,
+                            onPinToggle: () => _togglePinnedProject(project),
                             onTap: () => _selectTarget(project),
                           ),
                         ),
@@ -442,11 +557,17 @@ class _ProjectChoiceTile extends StatelessWidget {
   const _ProjectChoiceTile({
     required this.target,
     required this.selected,
+    required this.pinned,
+    required this.pinTooltip,
+    required this.onPinToggle,
     required this.onTap,
   });
 
   final ProjectTarget target;
   final bool selected;
+  final bool pinned;
+  final String pinTooltip;
+  final VoidCallback onPinToggle;
   final VoidCallback onTap;
 
   @override
@@ -456,7 +577,19 @@ class _ProjectChoiceTile extends StatelessWidget {
       tileColor: selected ? surfaces.accentSoft.withValues(alpha: 0.12) : null,
       title: Text(target.label),
       subtitle: Text(target.directory),
-      trailing: Text(target.source ?? '-'),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text(target.source ?? '-'),
+          IconButton(
+            tooltip: pinTooltip,
+            onPressed: onPinToggle,
+            icon: Icon(
+              pinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
+            ),
+          ),
+        ],
+      ),
       onTap: onTap,
     );
   }

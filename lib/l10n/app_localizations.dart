@@ -464,6 +464,24 @@ abstract class AppLocalizations {
   /// **'Save profile'**
   String get connectionSaveAction;
 
+  /// No description provided for @connectionDraftRestoredLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Restored unsaved draft'**
+  String get connectionDraftRestoredLabel;
+
+  /// No description provided for @connectionPinProfileAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Pin profile'**
+  String get connectionPinProfileAction;
+
+  /// No description provided for @connectionUnpinProfileAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Unpin profile'**
+  String get connectionUnpinProfileAction;
+
   /// No description provided for @connectionProbeResultTitle.
   ///
   /// In en, this message translates to:
@@ -842,6 +860,18 @@ abstract class AppLocalizations {
   /// **'Recent local project targets kept separately from server-listed projects.'**
   String get recentProjectsSubtitle;
 
+  /// No description provided for @pinnedProjectsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Pinned projects'**
+  String get pinnedProjectsTitle;
+
+  /// No description provided for @pinnedProjectsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Local favorites kept at the top for quick mobile access.'**
+  String get pinnedProjectsSubtitle;
+
   /// No description provided for @recentProjectsEmpty.
   ///
   /// In en, this message translates to:
@@ -925,6 +955,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Open project'**
   String get projectOpenAction;
+
+  /// No description provided for @projectPinAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Pin project'**
+  String get projectPinAction;
+
+  /// No description provided for @projectUnpinAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Unpin project'**
+  String get projectUnpinAction;
 
   /// No description provided for @shellProjectRailTitle.
   ///

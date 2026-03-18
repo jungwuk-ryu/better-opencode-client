@@ -7,6 +7,8 @@ import '../connection/connection_models.dart';
 class ServerProfileStore {
   static const _profilesKey = 'server_profiles';
   static const _recentConnectionsKey = 'recent_server_connections';
+  static const _draftProfileKey = 'draft_server_profile';
+  static const _pinnedProfilesKey = 'pinned_server_profiles';
   static const _recentConnectionLimit = 8;
 
   Future<List<ServerProfile>> load() async {
@@ -27,6 +29,43 @@ class ServerProfileStore {
       _profilesKey,
       profiles.map((profile) => jsonEncode(profile.toJson())).toList(),
     );
+  }
+
+  Future<ServerProfile?> loadDraftProfile() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_draftProfileKey);
+    if (raw == null || raw.isEmpty) {
+      return null;
+    }
+    return ServerProfile.fromJson(
+      (jsonDecode(raw) as Map).cast<String, Object?>(),
+    );
+  }
+
+  Future<void> saveDraftProfile(ServerProfile profile) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_draftProfileKey, jsonEncode(profile.toJson()));
+  }
+
+  Future<void> clearDraftProfile() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_draftProfileKey);
+  }
+
+  Future<Set<String>> loadPinnedProfiles() async {
+    final prefs = await SharedPreferences.getInstance();
+    return (prefs.getStringList(_pinnedProfilesKey) ?? const <String>[])
+        .toSet();
+  }
+
+  Future<Set<String>> togglePinnedProfile(String storageKey) async {
+    final prefs = await SharedPreferences.getInstance();
+    final next = await loadPinnedProfiles();
+    if (!next.add(storageKey)) {
+      next.remove(storageKey);
+    }
+    await prefs.setStringList(_pinnedProfilesKey, next.toList(growable: false));
+    return next;
   }
 
   Future<List<RecentConnection>> loadRecentConnections() async {
@@ -90,6 +129,13 @@ class ServerProfileStore {
         .where((profile) => profile.id != profileId)
         .toList(growable: false);
     await save(profiles);
+    final existing = await loadPinnedProfiles();
+    final nextPinned = profiles.map((profile) => profile.storageKey).toSet();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      _pinnedProfilesKey,
+      existing.where(nextPinned.contains).toList(growable: false),
+    );
     return profiles;
   }
 }
