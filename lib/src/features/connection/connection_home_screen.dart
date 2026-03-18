@@ -23,6 +23,8 @@ import '../shell/opencode_shell_screen.dart';
 
 const _contentMaxWidth = 1480.0;
 const _sideColumnWidth = 420.0;
+const _motionFast = Duration(milliseconds: 220);
+const _motionMedium = Duration(milliseconds: 320);
 const _probeEndpointOrder = <String>[
   '/global/health',
   '/doc',
@@ -33,6 +35,25 @@ const _probeEndpointOrder = <String>[
   '/agent',
   '/experimental/tool/ids',
 ];
+
+Widget _fadeSlideTransition(
+  Widget child,
+  Animation<double> animation, {
+  Offset begin = const Offset(0, 0.04),
+}) {
+  final curved = CurvedAnimation(
+    parent: animation,
+    curve: Curves.easeOutCubic,
+    reverseCurve: Curves.easeInCubic,
+  );
+  return FadeTransition(
+    opacity: curved,
+    child: SlideTransition(
+      position: Tween<Offset>(begin: begin, end: Offset.zero).animate(curved),
+      child: child,
+    ),
+  );
+}
 
 class ConnectionHomeScreen extends StatefulWidget {
   const ConnectionHomeScreen({
@@ -394,17 +415,27 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
         _buildHeroCard(context),
         const SizedBox(height: AppSpacing.lg),
         _buildProbeResultCard(context),
-        if (_latestProbe?.isReady == true && _readyProfile != null) ...<Widget>[
-          const SizedBox(height: AppSpacing.lg),
-          ProjectWorkspaceSection(
-            profile: _readyProfile!,
-            onOpenProject: (project) {
-              setState(() {
-                _openedProject = project;
-              });
-            },
-          ),
-        ],
+        AnimatedSwitcher(
+          duration: _motionMedium,
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          transitionBuilder: (child, animation) =>
+              _fadeSlideTransition(child, animation),
+          child: _latestProbe?.isReady == true && _readyProfile != null
+              ? Padding(
+                  key: ValueKey<String>(_readyProfile!.storageKey),
+                  padding: const EdgeInsets.only(top: AppSpacing.lg),
+                  child: ProjectWorkspaceSection(
+                    profile: _readyProfile!,
+                    onOpenProject: (project) {
+                      setState(() {
+                        _openedProject = project;
+                      });
+                    },
+                  ),
+                )
+              : const SizedBox.shrink(key: ValueKey<String>('no-projects')),
+        ),
       ],
     );
   }
@@ -722,7 +753,11 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
       title: l10n.connectionProbeResultTitle,
       subtitle: l10n.connectionProbeResultSubtitle,
       child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 240),
+        duration: _motionMedium,
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeInCubic,
+        transitionBuilder: (child, animation) =>
+            _fadeSlideTransition(child, animation),
         child: _latestProbe == null
             ? Padding(
                 key: const ValueKey<String>('empty-probe'),
@@ -1315,7 +1350,9 @@ class _StatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
-    return DecoratedBox(
+    return AnimatedContainer(
+      duration: _motionFast,
+      curve: Curves.easeOutCubic,
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
@@ -1323,19 +1360,27 @@ class _StatusBadge extends StatelessWidget {
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(icon, size: 16, color: color),
-            const SizedBox(width: AppSpacing.xs),
-            Text(
-              label,
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: surfaces.onColor(color),
-                fontWeight: FontWeight.w600,
-              ),
+        child: AnimatedSwitcher(
+          duration: _motionFast,
+          transitionBuilder: (child, animation) =>
+              _fadeSlideTransition(child, animation),
+          child: Row(
+            key: ValueKey<String>(
+              '${icon.codePoint}-$label-${color.toARGB32()}',
             ),
-          ],
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(icon, size: 16, color: color),
+              const SizedBox(width: AppSpacing.xs),
+              Text(
+                label,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: surfaces.onColor(color),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1565,7 +1610,9 @@ class _ProfileTile extends StatelessWidget {
     return InkWell(
       borderRadius: BorderRadius.circular(AppSpacing.md),
       onTap: onTap,
-      child: DecoratedBox(
+      child: AnimatedContainer(
+        duration: _motionFast,
+        curve: Curves.easeOutCubic,
         decoration: BoxDecoration(
           color: isSelected
               ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.12)
@@ -1627,7 +1674,9 @@ class _RecentConnectionTile extends StatelessWidget {
     return InkWell(
       borderRadius: BorderRadius.circular(AppSpacing.md),
       onTap: onTap,
-      child: DecoratedBox(
+      child: AnimatedContainer(
+        duration: _motionFast,
+        curve: Curves.easeOutCubic,
         decoration: BoxDecoration(
           color: surfaces.panelRaised.withValues(alpha: 0.54),
           borderRadius: BorderRadius.circular(AppSpacing.md),

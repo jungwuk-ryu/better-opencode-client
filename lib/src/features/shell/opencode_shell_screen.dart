@@ -31,6 +31,29 @@ import '../terminal/terminal_service.dart';
 import '../tools/todo_models.dart';
 import '../tools/todo_service.dart';
 
+const _motionFast = Duration(milliseconds: 220);
+const _motionMedium = Duration(milliseconds: 320);
+const _activityCycle = Duration(milliseconds: 1400);
+
+Widget _fadeSlideTransition(
+  Widget child,
+  Animation<double> animation, {
+  Offset begin = const Offset(0, 0.04),
+}) {
+  final curved = CurvedAnimation(
+    parent: animation,
+    curve: Curves.easeOutCubic,
+    reverseCurve: Curves.easeInCubic,
+  );
+  return FadeTransition(
+    opacity: curved,
+    child: SlideTransition(
+      position: Tween<Offset>(begin: begin, end: Offset.zero).animate(curved),
+      child: child,
+    ),
+  );
+}
+
 class OpenCodeShellScreen extends StatefulWidget {
   const OpenCodeShellScreen({
     required this.profile,
@@ -2147,6 +2170,8 @@ class _LeftRail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
     final orderedSessions = _buildSessionTree(sessions);
     final activeSessions = statuses.values.where(
       (status) => status.type == 'busy',
@@ -2182,7 +2207,14 @@ class _LeftRail extends StatelessWidget {
                   ),
                   _InfoChip(
                     label: l10n.shellActiveCount(activeSessions.length),
-                    icon: Icons.bolt_rounded,
+                    emphasis: activeSessions.isNotEmpty,
+                    iconChild: _AnimatedActivityGlyph(
+                      active: activeSessions.isNotEmpty,
+                      icon: Icons.bolt_rounded,
+                      color: activeSessions.isNotEmpty
+                          ? theme.colorScheme.primary
+                          : surfaces.accentSoft,
+                    ),
                   ),
                 ],
               ),
@@ -2210,6 +2242,7 @@ class _LeftRail extends StatelessWidget {
                       _SessionTile(
                         title: l10n.shellSessionCurrent,
                         status: l10n.shellStatusIdle,
+                        statusType: 'idle',
                       ),
                     ]
                   : sessions
@@ -2223,6 +2256,7 @@ class _LeftRail extends StatelessWidget {
                             child: _SessionTile(
                               title: session.title,
                               status: _statusLabel(l10n, statuses[session.id]),
+                              statusType: statuses[session.id]?.type ?? 'idle',
                               selected: session.id == selectedSessionId,
                               onTap: () => onSelectSession(session.id),
                             ),
@@ -2422,78 +2456,98 @@ class _ChatCanvasState extends State<_ChatCanvas> {
             title: l10n.shellChatTimelineTitle,
             subtitle: widget.compact ? null : l10n.shellConversationSubtitle,
             fillChild: true,
-            child: widget.loading
-                ? const Center(child: CircularProgressIndicator())
-                : widget.error != null
-                ? _MessageBubble(
-                    title: l10n.shellConnectionIssueTitle,
-                    body: widget.error!,
-                  )
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Expanded(
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: <Color>[
-                                Theme.of(context)
-                                    .extension<AppSurfaces>()!
-                                    .panelMuted
-                                    .withValues(alpha: 0.84),
-                                Theme.of(context)
-                                    .extension<AppSurfaces>()!
-                                    .panel
-                                    .withValues(alpha: 0.96),
-                              ],
+            child: AnimatedSwitcher(
+              duration: _motionMedium,
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (child, animation) =>
+                  _fadeSlideTransition(child, animation),
+              child: widget.loading
+                  ? Center(
+                      key: ValueKey<String>(
+                        'chat-loading-${widget.selectedSessionId ?? 'draft'}',
+                      ),
+                      child: const CircularProgressIndicator(),
+                    )
+                  : widget.error != null
+                  ? KeyedSubtree(
+                      key: ValueKey<String>(
+                        'chat-error-${widget.selectedSessionId ?? 'draft'}',
+                      ),
+                      child: _MessageBubble(
+                        title: l10n.shellConnectionIssueTitle,
+                        body: widget.error!,
+                      ),
+                    )
+                  : Column(
+                      key: ValueKey<String>(
+                        'chat-content-${widget.selectedSessionId ?? 'draft'}',
+                      ),
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Expanded(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: <Color>[
+                                  Theme.of(context)
+                                      .extension<AppSurfaces>()!
+                                      .panelMuted
+                                      .withValues(alpha: 0.84),
+                                  Theme.of(context)
+                                      .extension<AppSurfaces>()!
+                                      .panel
+                                      .withValues(alpha: 0.96),
+                                ],
+                              ),
+                              borderRadius: BorderRadius.circular(
+                                AppSpacing.cardRadius,
+                              ),
+                              border: Border.all(
+                                color: Theme.of(
+                                  context,
+                                ).extension<AppSurfaces>()!.lineSoft,
+                              ),
                             ),
-                            borderRadius: BorderRadius.circular(
-                              AppSpacing.cardRadius,
-                            ),
-                            border: Border.all(
-                              color: Theme.of(
-                                context,
-                              ).extension<AppSurfaces>()!.lineSoft,
-                            ),
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(
-                              AppSpacing.cardRadius,
-                            ),
-                            child: Align(
-                              alignment: Alignment.topCenter,
-                              child: ConstrainedBox(
-                                constraints: BoxConstraints(
-                                  maxWidth: maxContentWidth,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(
+                                AppSpacing.cardRadius,
+                              ),
+                              child: Align(
+                                alignment: Alignment.topCenter,
+                                child: ConstrainedBox(
+                                  constraints: BoxConstraints(
+                                    maxWidth: maxContentWidth,
+                                  ),
+                                  child: _buildMessageList(l10n, _parts),
                                 ),
-                                child: _buildMessageList(l10n, _parts),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      Align(
-                        alignment: Alignment.center,
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(
-                            maxWidth: maxContentWidth,
-                          ),
-                          child: _ComposerCard(
-                            compact: widget.compact,
-                            label: l10n.shellComposerPlaceholder,
-                            submitting: widget.submittingPrompt,
-                            startsNewSession:
-                                widget.selectedSessionId == null ||
-                                widget.selectedSessionId!.isEmpty,
-                            onSubmit: widget.onSubmitPrompt,
+                        const SizedBox(height: AppSpacing.md),
+                        Align(
+                          alignment: Alignment.center,
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: maxContentWidth,
+                            ),
+                            child: _ComposerCard(
+                              compact: widget.compact,
+                              label: l10n.shellComposerPlaceholder,
+                              submitting: widget.submittingPrompt,
+                              startsNewSession:
+                                  widget.selectedSessionId == null ||
+                                  widget.selectedSessionId!.isEmpty,
+                              onSubmit: widget.onSubmitPrompt,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
+            ),
           ),
         ),
       ],
@@ -3071,27 +3125,177 @@ class _SessionTile extends StatelessWidget {
   const _SessionTile({
     required this.title,
     required this.status,
+    required this.statusType,
     this.selected = false,
     this.onTap,
   });
 
   final String title;
   final String status;
+  final String statusType;
   final bool selected;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     return _UtilityListRow(
       title: title,
       subtitle: status,
       selected: selected,
-      icon: selected ? Icons.bolt_rounded : Icons.chat_bubble_outline_rounded,
+      leading: _SessionStateGlyph(statusType: statusType, selected: selected),
       trailing: Icon(
         Icons.chevron_right_rounded,
-        color: Theme.of(context).extension<AppSurfaces>()!.muted,
+        color: selected
+            ? Theme.of(context).colorScheme.primary
+            : surfaces.muted,
       ),
       onTap: onTap,
+    );
+  }
+}
+
+class _SessionStateGlyph extends StatelessWidget {
+  const _SessionStateGlyph({required this.statusType, required this.selected});
+
+  final String statusType;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final isBusy = statusType == 'busy';
+    final isRetry = statusType == 'retry';
+    final fill = isBusy || selected
+        ? theme.colorScheme.primary.withValues(alpha: 0.16)
+        : isRetry
+        ? surfaces.warning.withValues(alpha: 0.14)
+        : surfaces.panelMuted.withValues(alpha: 0.96);
+    final border = isBusy || selected
+        ? theme.colorScheme.primary.withValues(alpha: 0.2)
+        : isRetry
+        ? surfaces.warning.withValues(alpha: 0.2)
+        : surfaces.lineSoft;
+    final iconColor = isBusy || selected
+        ? theme.colorScheme.primary
+        : isRetry
+        ? surfaces.warning
+        : surfaces.accentSoft;
+    final icon = isRetry
+        ? Icons.sync_problem_rounded
+        : selected
+        ? Icons.bolt_rounded
+        : Icons.chat_bubble_outline_rounded;
+    return AnimatedContainer(
+      duration: _motionFast,
+      curve: Curves.easeOutCubic,
+      decoration: BoxDecoration(
+        color: fill,
+        borderRadius: BorderRadius.circular(AppSpacing.xs),
+        border: Border.all(color: border),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.xs),
+        child: isBusy
+            ? _AnimatedActivityGlyph(
+                active: true,
+                icon: Icons.bolt_rounded,
+                color: iconColor,
+              )
+            : Icon(icon, size: 16, color: iconColor),
+      ),
+    );
+  }
+}
+
+class _AnimatedActivityGlyph extends StatefulWidget {
+  const _AnimatedActivityGlyph({
+    required this.active,
+    required this.icon,
+    required this.color,
+  });
+
+  final bool active;
+  final IconData icon;
+  final Color color;
+
+  @override
+  State<_AnimatedActivityGlyph> createState() => _AnimatedActivityGlyphState();
+}
+
+class _AnimatedActivityGlyphState extends State<_AnimatedActivityGlyph>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: _activityCycle,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _syncAnimation();
+  }
+
+  @override
+  void didUpdateWidget(covariant _AnimatedActivityGlyph oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.active != widget.active) {
+      _syncAnimation();
+    }
+  }
+
+  void _syncAnimation() {
+    if (widget.active) {
+      _controller.repeat();
+    } else {
+      _controller
+        ..stop()
+        ..value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.active) {
+      return Icon(widget.icon, size: 14, color: widget.color);
+    }
+    return SizedBox(
+      width: 14,
+      height: 14,
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          final value = Curves.easeInOut.transform(_controller.value);
+          return Stack(
+            alignment: Alignment.center,
+            children: <Widget>[
+              Transform.scale(
+                scale: 0.82 + (value * 0.34),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: widget.color.withValues(
+                        alpha: 0.26 - (value * 0.18),
+                      ),
+                    ),
+                  ),
+                  child: const SizedBox(width: 14, height: 14),
+                ),
+              ),
+              Transform.scale(scale: 0.94 + (value * 0.12), child: child),
+            ],
+          );
+        },
+        child: Icon(widget.icon, size: 14, color: widget.color),
+      ),
     );
   }
 }
@@ -3170,23 +3374,31 @@ class _TodoTileListState extends State<_TodoTileList> {
       title: l10n.shellTodoTitle,
       subtitle: l10n.shellTodoSubtitle,
       icon: Icons.checklist_rounded,
-      child: Column(
-        children: <Widget>[
-          for (final todo in _sortedTodos)
-            Padding(
-              padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-              child: _UtilityListRow(
-                title: todo.content,
-                subtitle: todo.priority,
-                icon: _todoIcon(todo.status),
-                emphasis: todo.status == 'in_progress',
-                trailing: _InfoChip(
-                  label: _todoStatusLabel(l10n, todo.status),
+      child: AnimatedSize(
+        duration: _motionMedium,
+        curve: Curves.easeOutCubic,
+        alignment: Alignment.topCenter,
+        child: Column(
+          children: <Widget>[
+            for (final todo in _sortedTodos)
+              Padding(
+                key: ValueKey<String>(
+                  '${todo.content}-${todo.status}-${todo.priority}',
+                ),
+                padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                child: _UtilityListRow(
+                  title: todo.content,
+                  subtitle: todo.priority,
+                  icon: _todoIcon(todo.status),
                   emphasis: todo.status == 'in_progress',
+                  trailing: _InfoChip(
+                    label: _todoStatusLabel(l10n, todo.status),
+                    emphasis: todo.status == 'in_progress',
+                  ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -3281,6 +3493,7 @@ class _UtilityListRow extends StatelessWidget {
     required this.title,
     required this.subtitle,
     this.icon,
+    this.leading,
     this.selected = false,
     this.emphasis = false,
     this.onTap,
@@ -3290,6 +3503,7 @@ class _UtilityListRow extends StatelessWidget {
   final String title;
   final String subtitle;
   final IconData? icon;
+  final Widget? leading;
   final bool selected;
   final bool emphasis;
   final VoidCallback? onTap;
@@ -3312,7 +3526,9 @@ class _UtilityListRow extends StatelessWidget {
     return InkWell(
       borderRadius: BorderRadius.circular(AppSpacing.md),
       onTap: onTap,
-      child: DecoratedBox(
+      child: AnimatedContainer(
+        duration: _motionFast,
+        curve: Curves.easeOutCubic,
         decoration: BoxDecoration(
           color: fill,
           borderRadius: BorderRadius.circular(AppSpacing.md),
@@ -3326,7 +3542,10 @@ class _UtilityListRow extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              if (icon != null) ...<Widget>[
+              if (leading != null) ...<Widget>[
+                leading!,
+                const SizedBox(width: AppSpacing.sm),
+              ] else if (icon != null) ...<Widget>[
                 DecoratedBox(
                   decoration: BoxDecoration(
                     color: highlighted
@@ -4231,10 +4450,16 @@ class _ComposerCardState extends State<_ComposerCard> {
 }
 
 class _InfoChip extends StatelessWidget {
-  const _InfoChip({required this.label, this.icon, this.emphasis = false});
+  const _InfoChip({
+    required this.label,
+    this.icon,
+    this.iconChild,
+    this.emphasis = false,
+  });
 
   final String label;
   final IconData? icon;
+  final Widget? iconChild;
   final bool emphasis;
 
   @override
@@ -4250,7 +4475,9 @@ class _InfoChip extends StatelessWidget {
     final border = emphasis
         ? theme.colorScheme.primary.withValues(alpha: 0.2)
         : surfaces.lineSoft;
-    return DecoratedBox(
+    return AnimatedContainer(
+      duration: _motionFast,
+      curve: Curves.easeOutCubic,
       decoration: BoxDecoration(
         color: fill,
         borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
@@ -4261,23 +4488,43 @@ class _InfoChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            if (icon != null) ...<Widget>[
-              Icon(
-                icon,
-                size: 14,
-                color: emphasis
-                    ? theme.colorScheme.primary
-                    : surfaces.accentSoft,
+            if (iconChild != null || icon != null) ...<Widget>[
+              AnimatedSwitcher(
+                duration: _motionFast,
+                transitionBuilder: (child, animation) =>
+                    _fadeSlideTransition(child, animation),
+                child: SizedBox(
+                  key: ValueKey<String>(
+                    '${iconChild?.runtimeType}-${icon?.codePoint ?? 0}-$emphasis',
+                  ),
+                  width: 14,
+                  height: 14,
+                  child:
+                      iconChild ??
+                      Icon(
+                        icon,
+                        size: 14,
+                        color: emphasis
+                            ? theme.colorScheme.primary
+                            : surfaces.accentSoft,
+                      ),
+                ),
               ),
               const SizedBox(width: AppSpacing.xs),
             ],
             Flexible(
-              child: Text(
-                label,
-                overflow: TextOverflow.ellipsis,
-                softWrap: false,
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: emphasis ? theme.colorScheme.primary : null,
+              child: AnimatedSwitcher(
+                duration: _motionFast,
+                transitionBuilder: (child, animation) =>
+                    _fadeSlideTransition(child, animation),
+                child: Text(
+                  label,
+                  key: ValueKey<String>(label),
+                  overflow: TextOverflow.ellipsis,
+                  softWrap: false,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: emphasis ? theme.colorScheme.primary : null,
+                  ),
                 ),
               ),
             ),
