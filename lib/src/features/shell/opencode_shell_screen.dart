@@ -307,17 +307,19 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
   }
 
   Future<void> _selectFile(String path) async {
-    final preview = await _fileBrowserService.fetchFileContent(
-      profile: widget.profile,
-      project: widget.project,
-      path: path,
-    );
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _selectedFilePath = path;
-      _filePreview = preview;
+    await _runGuardedAction(() async {
+      final preview = await _fileBrowserService.fetchFileContent(
+        profile: widget.profile,
+        project: widget.project,
+        path: path,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _selectedFilePath = path;
+        _filePreview = preview;
+      });
     });
   }
 
@@ -417,10 +419,23 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
   }
 
   Future<void> _loadPendingRequests() async {
+    if (!widget.capabilities.hasQuestions &&
+        !widget.capabilities.hasPermissions) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _questionRequests = const <QuestionRequestSummary>[];
+        _permissionRequests = const <PermissionRequestSummary>[];
+      });
+      return;
+    }
     try {
       final bundle = await _requestService.fetchPending(
         profile: widget.profile,
         project: widget.project,
+        supportsQuestions: widget.capabilities.hasQuestions,
+        supportsPermissions: widget.capabilities.hasPermissions,
       );
       if (!mounted) {
         return;
@@ -436,6 +451,24 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       setState(() {
         _questionRequests = const <QuestionRequestSummary>[];
         _permissionRequests = const <PermissionRequestSummary>[];
+      });
+    }
+  }
+
+  Future<void> _runGuardedAction(Future<void> Function() action) async {
+    if (mounted && _error != null) {
+      setState(() {
+        _error = null;
+      });
+    }
+    try {
+      await action();
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _error = error.toString();
       });
     }
   }
@@ -508,106 +541,126 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
   }
 
   Future<void> _startProviderAuth(String providerId) async {
-    final url = await _integrationStatusService.startProviderAuth(
-      profile: widget.profile,
-      project: widget.project,
-      providerId: providerId,
-    );
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _lastIntegrationAuthUrl = url;
+    await _runGuardedAction(() async {
+      final url = await _integrationStatusService.startProviderAuth(
+        profile: widget.profile,
+        project: widget.project,
+        providerId: providerId,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _lastIntegrationAuthUrl = url;
+      });
     });
   }
 
   Future<void> _startMcpAuth(String name) async {
-    final url = await _integrationStatusService.startMcpAuth(
-      profile: widget.profile,
-      project: widget.project,
-      name: name,
-    );
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _lastIntegrationAuthUrl = url;
+    await _runGuardedAction(() async {
+      final url = await _integrationStatusService.startMcpAuth(
+        profile: widget.profile,
+        project: widget.project,
+        name: name,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _lastIntegrationAuthUrl = url;
+      });
     });
   }
 
   Future<void> _replyPermission(String requestId, String reply) async {
-    await _requestService.replyToPermission(
-      profile: widget.profile,
-      project: widget.project,
-      requestId: requestId,
-      reply: reply,
-    );
-    await _loadPendingRequests();
+    await _runGuardedAction(() async {
+      await _requestService.replyToPermission(
+        profile: widget.profile,
+        project: widget.project,
+        requestId: requestId,
+        reply: reply,
+      );
+      await _loadPendingRequests();
+    });
   }
 
   Future<void> _replyQuestion(
     String requestId,
     List<List<String>> answers,
   ) async {
-    await _requestService.replyToQuestion(
-      profile: widget.profile,
-      project: widget.project,
-      requestId: requestId,
-      answers: answers,
-    );
-    await _loadPendingRequests();
+    await _runGuardedAction(() async {
+      await _requestService.replyToQuestion(
+        profile: widget.profile,
+        project: widget.project,
+        requestId: requestId,
+        answers: answers,
+      );
+      await _loadPendingRequests();
+    });
   }
 
   Future<void> _rejectQuestion(String requestId) async {
-    await _requestService.rejectQuestion(
-      profile: widget.profile,
-      project: widget.project,
-      requestId: requestId,
-    );
-    await _loadPendingRequests();
+    await _runGuardedAction(() async {
+      await _requestService.rejectQuestion(
+        profile: widget.profile,
+        project: widget.project,
+        requestId: requestId,
+      );
+      await _loadPendingRequests();
+    });
   }
 
   Future<void> _forkSession(String sessionId) async {
-    await _sessionActionService.forkSession(
-      profile: widget.profile,
-      project: widget.project,
-      sessionId: sessionId,
-    );
-    await _loadBundle();
+    await _runGuardedAction(() async {
+      await _sessionActionService.forkSession(
+        profile: widget.profile,
+        project: widget.project,
+        sessionId: sessionId,
+      );
+      await _loadBundle();
+    });
   }
 
   Future<void> _abortSession(String sessionId) async {
-    await _sessionActionService.abortSession(
-      profile: widget.profile,
-      project: widget.project,
-      sessionId: sessionId,
-    );
-    await _loadBundle();
+    await _runGuardedAction(() async {
+      await _sessionActionService.abortSession(
+        profile: widget.profile,
+        project: widget.project,
+        sessionId: sessionId,
+      );
+      await _loadBundle();
+    });
   }
 
   Future<void> _shareSession(String sessionId) async {
-    await _sessionActionService.shareSession(
-      profile: widget.profile,
-      project: widget.project,
-      sessionId: sessionId,
-    );
+    await _runGuardedAction(() async {
+      await _sessionActionService.shareSession(
+        profile: widget.profile,
+        project: widget.project,
+        sessionId: sessionId,
+      );
+    });
   }
 
   Future<void> _unshareSession(String sessionId) async {
-    await _sessionActionService.unshareSession(
-      profile: widget.profile,
-      project: widget.project,
-      sessionId: sessionId,
-    );
+    await _runGuardedAction(() async {
+      await _sessionActionService.unshareSession(
+        profile: widget.profile,
+        project: widget.project,
+        sessionId: sessionId,
+      );
+    });
   }
 
   Future<void> _deleteSession(String sessionId) async {
-    await _sessionActionService.deleteSession(
-      profile: widget.profile,
-      project: widget.project,
-      sessionId: sessionId,
-    );
-    await _loadBundle();
+    await _runGuardedAction(() async {
+      await _sessionActionService.deleteSession(
+        profile: widget.profile,
+        project: widget.project,
+        sessionId: sessionId,
+      );
+      await _loadBundle();
+    });
   }
 
   Future<void> _renameSession(String sessionId) async {
@@ -644,35 +697,41 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     if (nextTitle == null || nextTitle.isEmpty) {
       return;
     }
-    await _sessionActionService.updateSession(
-      profile: widget.profile,
-      project: widget.project,
-      sessionId: sessionId,
-      title: nextTitle,
-    );
-    await _loadBundle();
+    await _runGuardedAction(() async {
+      await _sessionActionService.updateSession(
+        profile: widget.profile,
+        project: widget.project,
+        sessionId: sessionId,
+        title: nextTitle,
+      );
+      await _loadBundle();
+    });
   }
 
   Future<void> _revertSession(String sessionId) async {
     if (_messages.isEmpty) {
       return;
     }
-    await _sessionActionService.revertSession(
-      profile: widget.profile,
-      project: widget.project,
-      sessionId: sessionId,
-      messageId: _messages.last.info.id,
-    );
-    await _loadBundle();
+    await _runGuardedAction(() async {
+      await _sessionActionService.revertSession(
+        profile: widget.profile,
+        project: widget.project,
+        sessionId: sessionId,
+        messageId: _messages.last.info.id,
+      );
+      await _loadBundle();
+    });
   }
 
   Future<void> _unrevertSession(String sessionId) async {
-    await _sessionActionService.unrevertSession(
-      profile: widget.profile,
-      project: widget.project,
-      sessionId: sessionId,
-    );
-    await _loadBundle();
+    await _runGuardedAction(() async {
+      await _sessionActionService.unrevertSession(
+        profile: widget.profile,
+        project: widget.project,
+        sessionId: sessionId,
+      );
+      await _loadBundle();
+    });
   }
 
   Future<void> _initSession(String sessionId) async {
@@ -685,15 +744,17 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     if (providerId == null || modelId == null) {
       return;
     }
-    await _sessionActionService.initSession(
-      profile: widget.profile,
-      project: widget.project,
-      sessionId: sessionId,
-      messageId: info.id,
-      providerId: providerId,
-      modelId: modelId,
-    );
-    await _loadBundle();
+    await _runGuardedAction(() async {
+      await _sessionActionService.initSession(
+        profile: widget.profile,
+        project: widget.project,
+        sessionId: sessionId,
+        messageId: info.id,
+        providerId: providerId,
+        modelId: modelId,
+      );
+      await _loadBundle();
+    });
   }
 
   Future<void> _summarizeSession(String sessionId) async {
@@ -706,14 +767,16 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     if (providerId == null || modelId == null) {
       return;
     }
-    await _sessionActionService.summarizeSession(
-      profile: widget.profile,
-      project: widget.project,
-      sessionId: sessionId,
-      providerId: providerId,
-      modelId: modelId,
-    );
-    await _loadBundle();
+    await _runGuardedAction(() async {
+      await _sessionActionService.summarizeSession(
+        profile: widget.profile,
+        project: widget.project,
+        sessionId: sessionId,
+        providerId: providerId,
+        modelId: modelId,
+      );
+      await _loadBundle();
+    });
   }
 
   Future<void> _connectEvents() async {

@@ -89,6 +89,31 @@ void main() {
     service.dispose();
   });
 
+  test(
+    'skips unsupported pending endpoints when capability is absent',
+    () async {
+      final service = RequestService();
+      final result = await service.fetchPending(
+        profile: ServerProfile(
+          id: 'server',
+          label: 'mock',
+          baseUrl: baseUri.toString(),
+        ),
+        project: const ProjectTarget(
+          directory: '/workspace/demo',
+          label: 'Demo',
+        ),
+        supportsQuestions: false,
+        supportsPermissions: true,
+      );
+
+      expect(result.questions, isEmpty);
+      expect(result.permissions.length, 1);
+      expect(result.permissions.first.permission, 'bash');
+      service.dispose();
+    },
+  );
+
   test('replies to permission and question requests', () async {
     final service = RequestService();
     final profile = ServerProfile(

@@ -15,17 +15,19 @@ class RequestService {
   Future<PendingRequestBundle> fetchPending({
     required ServerProfile profile,
     required ProjectTarget project,
+    bool supportsQuestions = true,
+    bool supportsPermissions = true,
   }) async {
-    final questionsBody = await _getJson(
-      profile: profile,
-      project: project,
-      path: '/question',
-    );
-    final permissionsBody = await _getJson(
-      profile: profile,
-      project: project,
-      path: '/permission',
-    );
+    final questionsBody = supportsQuestions
+        ? await _getJson(profile: profile, project: project, path: '/question')
+        : null;
+    final permissionsBody = supportsPermissions
+        ? await _getJson(
+            profile: profile,
+            project: project,
+            path: '/permission',
+          )
+        : null;
 
     final questions = questionsBody is List
         ? questionsBody
