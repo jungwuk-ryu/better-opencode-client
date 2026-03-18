@@ -26,6 +26,7 @@ import '../requests/request_service.dart';
 import '../settings/config_service.dart';
 import '../settings/config_edit_preview.dart';
 import '../settings/integration_status_service.dart';
+import 'shell_derived_data.dart';
 import '../terminal/terminal_service.dart';
 import '../tools/todo_models.dart';
 import '../tools/todo_service.dart';
@@ -729,77 +730,106 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         if (event.type == 'server.connected') {
           _sseConnectionMonitor.recordHeartbeat(now);
         }
-        setState(() {
-          _eventStreamHealth = _sseConnectionMonitor.healthAt(now);
-          _recentEvents = <EventEnvelope>[
-            event,
-            ..._recentEvents,
-          ].take(12).toList(growable: false);
-        });
+        var nextStatuses = _statuses;
+        var nextMessages = _messages;
+        var nextTodos = _todos;
+        var nextQuestions = _questionRequests;
+        var nextPermissions = _permissionRequests;
+        PendingRequestAlert? alert;
+        var shouldReloadPendingRequests = false;
+        var shouldReloadTodos = false;
+        final nextEventHealth = _sseConnectionMonitor.healthAt(now);
+        final nextRecentEvents = <EventEnvelope>[
+          event,
+          ..._recentEvents,
+        ].take(12).toList(growable: false);
         switch (event.type) {
           case 'session.status':
-            setState(() {
-              _statuses = applySessionStatusEvent(_statuses, event.properties);
-            });
+            nextStatuses = applySessionStatusEvent(_statuses, event.properties);
           case 'message.updated':
-            setState(() {
-              _messages = applyMessageUpdatedEvent(
-                _messages,
-                event.properties,
-                selectedSessionId: _selectedSessionId,
-              );
-            });
+            nextMessages = applyMessageUpdatedEvent(
+              _messages,
+              event.properties,
+              selectedSessionId: _selectedSessionId,
+            );
           case 'message.removed':
-            setState(() {
-              _messages = applyMessageRemovedEvent(
-                _messages,
-                event.properties,
-                selectedSessionId: _selectedSessionId,
-              );
-            });
+            nextMessages = applyMessageRemovedEvent(
+              _messages,
+              event.properties,
+              selectedSessionId: _selectedSessionId,
+            );
           case 'message.part.updated':
-            setState(() {
-              _messages = applyMessagePartUpdatedEvent(
-                _messages,
-                event.properties,
-                selectedSessionId: _selectedSessionId,
-              );
-            });
+            nextMessages = applyMessagePartUpdatedEvent(
+              _messages,
+              event.properties,
+              selectedSessionId: _selectedSessionId,
+            );
           case 'todo.updated':
-            setState(() {
-              _todos = applyTodoUpdatedEvent(
-                _todos,
-                event.properties,
-                selectedSessionId: _selectedSessionId,
-              );
-            });
+            nextTodos = applyTodoUpdatedEvent(
+              _todos,
+              event.properties,
+              selectedSessionId: _selectedSessionId,
+            );
             final sessionId = _selectedSessionId;
             final hasSnapshot = event.properties['todos'] is List;
             if (!hasSnapshot && sessionId != null && sessionId.isNotEmpty) {
-              _loadTodos(sessionId);
+              shouldReloadTodos = true;
             }
           case 'question.asked':
-            _handleQuestionAsked(event.properties);
+            nextQuestions = applyQuestionAskedEvent(
+              _questionRequests,
+              event.properties,
+              selectedSessionId: _selectedSessionId,
+            );
+            alert = buildQuestionAskedAlert(
+              previous: _questionRequests,
+              next: nextQuestions,
+            );
           case 'permission.asked':
-            _handlePermissionAsked(event.properties);
+            nextPermissions = applyPermissionAskedEvent(
+              _permissionRequests,
+              event.properties,
+              selectedSessionId: _selectedSessionId,
+            );
+            alert = buildPermissionAskedAlert(
+              previous: _permissionRequests,
+              next: nextPermissions,
+            );
           case 'question.rejected':
           case 'question.replied':
-            setState(() {
-              _questionRequests = applyQuestionResolvedEvent(
-                _questionRequests,
-                event.properties,
-                selectedSessionId: _selectedSessionId,
-              );
-            });
+            nextQuestions = applyQuestionResolvedEvent(
+              _questionRequests,
+              event.properties,
+              selectedSessionId: _selectedSessionId,
+            );
           case 'permission.replied':
-            setState(() {
-              _permissionRequests = applyPermissionResolvedEvent(
-                _permissionRequests,
-                event.properties,
-                selectedSessionId: _selectedSessionId,
-              );
-            });
-            _loadPendingRequests();
+            nextPermissions = applyPermissionResolvedEvent(
+              _permissionRequests,
+              event.properties,
+              selectedSessionId: _selectedSessionId,
+            );
+            shouldReloadPendingRequests = true;
+        }
+        setState(() {
+          _eventStreamHealth = nextEventHealth;
+          _recentEvents = nextRecentEvents;
+          _statuses = nextStatuses;
+          _messages = nextMessages;
+          _todos = nextTodos;
+          _questionRequests = nextQuestions;
+          _permissionRequests = nextPermissions;
+        });
+        if (shouldReloadTodos) {
+          final sessionId = _selectedSessionId;
+          if (sessionId != null && sessionId.isNotEmpty) {
+            _loadTodos(sessionId);
+          }
+        }
+        if (shouldReloadPendingRequests) {
+          _loadPendingRequests();
+        }
+        if (alert != null) {
+          _showPendingRequestAlert(alert);
         }
       },
       onDone: _handleEventStreamDropped,
@@ -855,42 +885,6 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       });
     } finally {
       _recoveringEventStream = false;
-    }
-  }
-
-  void _handleQuestionAsked(Map<String, Object?> properties) {
-    final next = applyQuestionAskedEvent(
-      _questionRequests,
-      properties,
-      selectedSessionId: _selectedSessionId,
-    );
-    final alert = buildQuestionAskedAlert(
-      previous: _questionRequests,
-      next: next,
-    );
-    setState(() {
-      _questionRequests = next;
-    });
-    if (alert != null) {
-      _showPendingRequestAlert(alert);
-    }
-  }
-
-  void _handlePermissionAsked(Map<String, Object?> properties) {
-    final next = applyPermissionAskedEvent(
-      _permissionRequests,
-      properties,
-      selectedSessionId: _selectedSessionId,
-    );
-    final alert = buildPermissionAskedAlert(
-      previous: _permissionRequests,
-      next: next,
-    );
-    setState(() {
-      _permissionRequests = next;
-    });
-    if (alert != null) {
-      _showPendingRequestAlert(alert);
     }
   }
 
@@ -2267,7 +2261,7 @@ Map<String, double> _buildSessionTree(List<SessionSummary> sessions) {
   return depths;
 }
 
-class _ChatCanvas extends StatelessWidget {
+class _ChatCanvas extends StatefulWidget {
   const _ChatCanvas({
     required this.messages,
     required this.loading,
@@ -2287,21 +2281,41 @@ class _ChatCanvas extends StatelessWidget {
   final Future<bool> Function(String) onSubmitPrompt;
 
   @override
+  State<_ChatCanvas> createState() => _ChatCanvasState();
+}
+
+class _ChatCanvasState extends State<_ChatCanvas> {
+  late List<({ChatMessageInfo message, ChatPart part})> _parts;
+
+  @override
+  void initState() {
+    super.initState();
+    _parts = _flattenedParts(widget.messages);
+  }
+
+  @override
+  void didUpdateWidget(covariant _ChatCanvas oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.messages, widget.messages)) {
+      _parts = _flattenedParts(widget.messages);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    final parts = _flattenedParts();
-    final maxContentWidth = compact ? double.infinity : 840.0;
+    final maxContentWidth = widget.compact ? double.infinity : 840.0;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        if (!compact) ...<Widget>[
+        if (!widget.compact) ...<Widget>[
           _PanelCard(
             tone: _PanelTone.primary,
             eyebrow: l10n.shellPrimaryEyebrow,
             title: l10n.shellChatHeaderTitle,
-            subtitle: selectedSessionId == null
+            subtitle: widget.selectedSessionId == null
                 ? l10n.shellNewSessionDraft
-                : l10n.shellTimelinePartsInFocus(parts.length),
+                : l10n.shellTimelinePartsInFocus(_parts.length),
             trailing: Wrap(
               spacing: AppSpacing.xs,
               runSpacing: AppSpacing.xs,
@@ -2322,13 +2336,13 @@ class _ChatCanvas extends StatelessWidget {
               runSpacing: AppSpacing.sm,
               children: <Widget>[
                 _InfoChip(
-                  label: selectedSessionId == null
+                  label: widget.selectedSessionId == null
                       ? l10n.shellReadyToStart
                       : l10n.shellLiveContext,
                   icon: Icons.forum_outlined,
                 ),
                 _InfoChip(
-                  label: l10n.shellPartsCount(parts.length),
+                  label: l10n.shellPartsCount(_parts.length),
                   icon: Icons.layers_outlined,
                 ),
               ],
@@ -2339,18 +2353,18 @@ class _ChatCanvas extends StatelessWidget {
         Expanded(
           child: _PanelCard(
             tone: _PanelTone.primary,
-            eyebrow: compact
+            eyebrow: widget.compact
                 ? l10n.shellFocusedThreadEyebrow
                 : l10n.shellTimelineEyebrow,
             title: l10n.shellChatTimelineTitle,
-            subtitle: compact ? null : l10n.shellConversationSubtitle,
+            subtitle: widget.compact ? null : l10n.shellConversationSubtitle,
             fillChild: true,
-            child: loading
+            child: widget.loading
                 ? const Center(child: CircularProgressIndicator())
-                : error != null
+                : widget.error != null
                 ? _MessageBubble(
                     title: l10n.shellConnectionIssueTitle,
-                    body: error!,
+                    body: widget.error!,
                   )
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -2391,7 +2405,7 @@ class _ChatCanvas extends StatelessWidget {
                                 constraints: BoxConstraints(
                                   maxWidth: maxContentWidth,
                                 ),
-                                child: _buildMessageList(l10n, parts),
+                                child: _buildMessageList(l10n, _parts),
                               ),
                             ),
                           ),
@@ -2405,13 +2419,13 @@ class _ChatCanvas extends StatelessWidget {
                             maxWidth: maxContentWidth,
                           ),
                           child: _ComposerCard(
-                            compact: compact,
+                            compact: widget.compact,
                             label: l10n.shellComposerPlaceholder,
-                            submitting: submittingPrompt,
+                            submitting: widget.submittingPrompt,
                             startsNewSession:
-                                selectedSessionId == null ||
-                                selectedSessionId!.isEmpty,
-                            onSubmit: onSubmitPrompt,
+                                widget.selectedSessionId == null ||
+                                widget.selectedSessionId!.isEmpty,
+                            onSubmit: widget.onSubmitPrompt,
                           ),
                         ),
                       ),
@@ -2461,7 +2475,9 @@ class _ChatCanvas extends StatelessWidget {
     );
   }
 
-  List<({ChatMessageInfo message, ChatPart part})> _flattenedParts() {
+  List<({ChatMessageInfo message, ChatPart part})> _flattenedParts(
+    List<ChatMessage> messages,
+  ) {
     if (messages.isEmpty) {
       return const <({ChatMessageInfo message, ChatPart part})>[];
     }
@@ -3047,30 +3063,53 @@ class _UtilityTile extends StatelessWidget {
   }
 }
 
-class _TodoTileList extends StatelessWidget {
+class _TodoTileList extends StatefulWidget {
   const _TodoTileList({required this.todos});
 
   final List<TodoItem> todos;
 
   @override
+  State<_TodoTileList> createState() => _TodoTileListState();
+}
+
+class _TodoTileListState extends State<_TodoTileList> {
+  late List<TodoItem> _sortedTodos;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncSortedTodos();
+  }
+
+  @override
+  void didUpdateWidget(covariant _TodoTileList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.todos, widget.todos)) {
+      _syncSortedTodos();
+    }
+  }
+
+  void _syncSortedTodos() {
+    _sortedTodos = sortTodosForDisplay(widget.todos);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    if (todos.isEmpty) {
+    if (widget.todos.isEmpty) {
       return _UtilityTile(
         title: l10n.shellTodoTitle,
         subtitle: l10n.shellTodoSubtitle,
         icon: Icons.checklist_rounded,
       );
     }
-    final sorted = todos.toList()
-      ..sort((a, b) => _todoRank(a.status).compareTo(_todoRank(b.status)));
     return _UtilitySection(
       title: l10n.shellTodoTitle,
       subtitle: l10n.shellTodoSubtitle,
       icon: Icons.checklist_rounded,
       child: Column(
         children: <Widget>[
-          for (final todo in sorted)
+          for (final todo in _sortedTodos)
             Padding(
               padding: const EdgeInsets.only(bottom: AppSpacing.xs),
               child: _UtilityListRow(
@@ -3305,6 +3344,7 @@ class _FilePanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
+    final statusByPath = indexFileStatuses(fileStatuses);
     final visiblePaths = fileSearchResults.isNotEmpty
         ? fileSearchResults
         : fileNodes.map((item) => item.path).take(5).toList(growable: false);
@@ -3319,8 +3359,8 @@ class _FilePanel extends StatelessWidget {
       ),
       child: Column(
         children: <Widget>[
-          TextField(
-            controller: TextEditingController(text: fileSearchQuery),
+          _SyncedTextField(
+            value: fileSearchQuery,
             onSubmitted: onSearchFiles,
             decoration: InputDecoration(
               hintText: l10n.shellFilesSearchHint,
@@ -3334,7 +3374,7 @@ class _FilePanel extends StatelessWidget {
               padding: const EdgeInsets.only(bottom: AppSpacing.xs),
               child: _UtilityListRow(
                 title: path,
-                subtitle: _statusFor(path, l10n),
+                subtitle: _statusFor(path, l10n, statusByPath[path]),
                 selected: path == selectedFilePath,
                 icon: Icons.description_outlined,
                 trailing: Icon(
@@ -3410,13 +3450,19 @@ class _FilePanel extends StatelessWidget {
     );
   }
 
-  String _statusFor(String path, AppLocalizations l10n) {
-    final matches = fileStatuses.where((item) => item.path == path);
-    if (matches.isEmpty) {
+  String _statusFor(
+    String path,
+    AppLocalizations l10n,
+    FileStatusSummary? status,
+  ) {
+    if (status == null) {
       return l10n.shellTrackedLabel;
     }
-    final match = matches.first;
-    return '${match.status} +${match.added} -${match.removed}';
+    return l10n.shellFileStatusSummary(
+      status.status,
+      status.added,
+      status.removed,
+    );
   }
 }
 
@@ -3442,8 +3488,8 @@ class _TerminalPanel extends StatelessWidget {
       icon: Icons.terminal_rounded,
       child: Column(
         children: <Widget>[
-          TextField(
-            controller: TextEditingController(text: command),
+          _SyncedTextField(
+            value: command,
             onSubmitted: onRun,
             decoration: InputDecoration(
               hintText: l10n.shellTerminalHint,
@@ -3481,6 +3527,53 @@ class _TerminalPanel extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+class _SyncedTextField extends StatefulWidget {
+  const _SyncedTextField({
+    required this.value,
+    required this.onSubmitted,
+    required this.decoration,
+  });
+
+  final String value;
+  final ValueChanged<String> onSubmitted;
+  final InputDecoration decoration;
+
+  @override
+  State<_SyncedTextField> createState() => _SyncedTextFieldState();
+}
+
+class _SyncedTextFieldState extends State<_SyncedTextField> {
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.value,
+  );
+
+  @override
+  void didUpdateWidget(covariant _SyncedTextField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.value != widget.value && _controller.text != widget.value) {
+      _controller.value = TextEditingValue(
+        text: widget.value,
+        selection: TextSelection.collapsed(offset: widget.value.length),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: _controller,
+      onSubmitted: widget.onSubmitted,
+      decoration: widget.decoration,
     );
   }
 }
@@ -3694,7 +3787,7 @@ class _ConfigPreviewPanelState extends State<_ConfigPreviewPanel> {
   }
 }
 
-class _RawInspectorPanel extends StatelessWidget {
+class _RawInspectorPanel extends StatefulWidget {
   const _RawInspectorPanel({
     required this.sessions,
     required this.messages,
@@ -3706,37 +3799,45 @@ class _RawInspectorPanel extends StatelessWidget {
   final String? selectedSessionId;
 
   @override
-  Widget build(BuildContext context) {
+  State<_RawInspectorPanel> createState() => _RawInspectorPanelState();
+}
+
+class _RawInspectorPanelState extends State<_RawInspectorPanel> {
+  String _sessionJson = '{}';
+  String _messageJson = '{}';
+
+  @override
+  void initState() {
+    super.initState();
+    _syncInspectorJson();
+  }
+
+  @override
+  void didUpdateWidget(covariant _RawInspectorPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.sessions, widget.sessions) ||
+        !identical(oldWidget.messages, widget.messages) ||
+        oldWidget.selectedSessionId != widget.selectedSessionId) {
+      _syncInspectorJson();
+    }
+  }
+
+  void _syncInspectorJson() {
     SessionSummary? selectedSession;
-    final l10n = AppLocalizations.of(context)!;
-    for (final session in sessions) {
-      if (session.id == selectedSessionId) {
+    for (final session in widget.sessions) {
+      if (session.id == widget.selectedSessionId) {
         selectedSession = session;
         break;
       }
     }
-    final latestMessage = messages.isEmpty ? null : messages.last;
+    final latestMessage = widget.messages.isEmpty ? null : widget.messages.last;
+    _sessionJson = buildInspectorSessionJson(selectedSession);
+    _messageJson = buildInspectorMessageJson(latestMessage);
+  }
 
-    final sessionJson = selectedSession == null
-        ? '{}'
-        : const JsonEncoder.withIndent('  ').convert(<String, Object?>{
-            'id': selectedSession.id,
-            'directory': selectedSession.directory,
-            'title': selectedSession.title,
-            'version': selectedSession.version,
-            'parentID': selectedSession.parentId,
-          });
-    final messageJson = latestMessage == null
-        ? '{}'
-        : const JsonEncoder.withIndent('  ').convert(<String, Object?>{
-            'id': latestMessage.info.id,
-            'role': latestMessage.info.role,
-            'providerID': latestMessage.info.providerId,
-            'modelID': latestMessage.info.modelId,
-            'parts': latestMessage.parts
-                .map((part) => part.metadata)
-                .toList(growable: false),
-          });
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
 
     return _UtilitySection(
       title: l10n.shellInspectorTitle,
@@ -3745,9 +3846,9 @@ class _RawInspectorPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text(sessionJson, maxLines: 5, overflow: TextOverflow.ellipsis),
+          Text(_sessionJson, maxLines: 5, overflow: TextOverflow.ellipsis),
           const SizedBox(height: AppSpacing.sm),
-          Text(messageJson, maxLines: 6, overflow: TextOverflow.ellipsis),
+          Text(_messageJson, maxLines: 6, overflow: TextOverflow.ellipsis),
         ],
       ),
     );
@@ -4141,15 +4242,6 @@ String _statusLabel(AppLocalizations l10n, SessionStatusSummary? status) {
     }
   }
   return base;
-}
-
-int _todoRank(String status) {
-  return switch (status) {
-    'in_progress' => 0,
-    'pending' => 1,
-    'completed' => 2,
-    _ => 3,
-  };
 }
 
 String _todoStatusLabel(AppLocalizations l10n, String status) {
