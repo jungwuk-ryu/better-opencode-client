@@ -19,6 +19,7 @@ import '../chat/session_action_service.dart';
 import '../files/file_browser_service.dart';
 import '../files/file_models.dart';
 import '../projects/project_models.dart';
+import '../requests/request_alerts.dart';
 import '../requests/request_models.dart';
 import '../requests/request_event_applier.dart';
 import '../requests/request_service.dart';
@@ -778,21 +779,9 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
               _loadTodos(sessionId);
             }
           case 'question.asked':
-            setState(() {
-              _questionRequests = applyQuestionAskedEvent(
-                _questionRequests,
-                event.properties,
-                selectedSessionId: _selectedSessionId,
-              );
-            });
+            _handleQuestionAsked(event.properties);
           case 'permission.asked':
-            setState(() {
-              _permissionRequests = applyPermissionAskedEvent(
-                _permissionRequests,
-                event.properties,
-                selectedSessionId: _selectedSessionId,
-              );
-            });
+            _handlePermissionAsked(event.properties);
           case 'question.rejected':
           case 'question.replied':
             setState(() {
@@ -867,6 +856,91 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     } finally {
       _recoveringEventStream = false;
     }
+  }
+
+  void _handleQuestionAsked(Map<String, Object?> properties) {
+    final next = applyQuestionAskedEvent(
+      _questionRequests,
+      properties,
+      selectedSessionId: _selectedSessionId,
+    );
+    final alert = buildQuestionAskedAlert(
+      previous: _questionRequests,
+      next: next,
+    );
+    setState(() {
+      _questionRequests = next;
+    });
+    if (alert != null) {
+      _showPendingRequestAlert(alert);
+    }
+  }
+
+  void _handlePermissionAsked(Map<String, Object?> properties) {
+    final next = applyPermissionAskedEvent(
+      _permissionRequests,
+      properties,
+      selectedSessionId: _selectedSessionId,
+    );
+    final alert = buildPermissionAskedAlert(
+      previous: _permissionRequests,
+      next: next,
+    );
+    setState(() {
+      _permissionRequests = next;
+    });
+    if (alert != null) {
+      _showPendingRequestAlert(alert);
+    }
+  }
+
+  void _showPendingRequestAlert(PendingRequestAlert alert) {
+    if (!mounted) {
+      return;
+    }
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final l10n = AppLocalizations.of(context);
+    if (messenger == null || l10n == null) {
+      return;
+    }
+    final compact = MediaQuery.sizeOf(context).width < 960;
+    final message = _pendingRequestAlertMessage(l10n, alert);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(message, maxLines: 3, overflow: TextOverflow.ellipsis),
+        duration: const Duration(seconds: 6),
+        action: compact
+            ? SnackBarAction(
+                label: l10n.shellNotificationOpenAction,
+                onPressed: () {
+                  if (!mounted) {
+                    return;
+                  }
+                  setState(() {
+                    _showContextSheet = true;
+                  });
+                },
+              )
+            : null,
+      ),
+    );
+  }
+
+  String _pendingRequestAlertMessage(
+    AppLocalizations l10n,
+    PendingRequestAlert alert,
+  ) {
+    final title = switch (alert.kind) {
+      PendingRequestAlertKind.question => l10n.shellQuestionAskedNotification,
+      PendingRequestAlertKind.permission =>
+        l10n.shellPermissionAskedNotification,
+    };
+    final detail = alert.detail?.trim();
+    if (detail == null || detail.isEmpty || detail == alert.summary) {
+      return '$title: ${alert.summary}';
+    }
+    return '$title: ${alert.summary} - $detail';
   }
 
   @override
@@ -4059,11 +4133,11 @@ String _statusLabel(AppLocalizations l10n, SessionStatusSummary? status) {
   };
   if (type == 'retry') {
     final details = <String>[
-      if (status?.attempt != null) 'attempt ${status!.attempt}',
+      if (status?.attempt != null) l10n.shellRetryAttempt(status!.attempt!),
       if ((status?.message ?? '').trim().isNotEmpty) status!.message!.trim(),
     ];
     if (details.isNotEmpty) {
-      return '$base - ${details.join(' - ')}';
+      return l10n.shellStatusWithDetails(base, details.join(' · '));
     }
   }
   return base;

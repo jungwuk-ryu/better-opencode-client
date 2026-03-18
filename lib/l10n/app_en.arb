@@ -298,10 +298,15 @@
   "shellExpandedComposer": "Expanded composer",
   "shellRetryAttempt": "attempt {count}",
   "@shellRetryAttempt": {"placeholders": {"count": {"type": "int"}}},
+  "shellStatusWithDetails": "{status} - {details}",
+  "@shellStatusWithDetails": {"placeholders": {"status": {"type": "String"}, "details": {"type": "String"}}},
   "shellTodoStatusInProgress": "in progress",
   "shellTodoStatusPending": "pending",
   "shellTodoStatusCompleted": "completed",
   "shellTodoStatusUnknown": "unknown",
+  "shellQuestionAskedNotification": "Question requested",
+  "shellPermissionAskedNotification": "Permission requested",
+  "shellNotificationOpenAction": "Open",
   "chatPartUnknown": "Unknown part: {type}",
   "@chatPartUnknown": {"placeholders": {"type": {"type": "String"}}}
 }

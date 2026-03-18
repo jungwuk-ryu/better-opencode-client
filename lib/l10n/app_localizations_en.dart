@@ -902,6 +902,11 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String shellStatusWithDetails(String status, String details) {
+    return '$status - $details';
+  }
+
+  @override
   String get shellTodoStatusInProgress => 'in progress';
 
   @override
@@ -912,6 +917,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get shellTodoStatusUnknown => 'unknown';
+
+  @override
+  String get shellQuestionAskedNotification => 'Question requested';
+
+  @override
+  String get shellPermissionAskedNotification => 'Permission requested';
+
+  @override
+  String get shellNotificationOpenAction => 'Open';
 
   @override
   String chatPartUnknown(String type) {

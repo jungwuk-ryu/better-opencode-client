@@ -885,6 +885,11 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String shellStatusWithDetails(String status, String details) {
+    return '$status - $details';
+  }
+
+  @override
   String get shellTodoStatusInProgress => '진행 중';
 
   @override
@@ -895,6 +900,15 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get shellTodoStatusUnknown => '알 수 없음';
+
+  @override
+  String get shellQuestionAskedNotification => '질문 요청 도착';
+
+  @override
+  String get shellPermissionAskedNotification => '권한 요청 도착';
+
+  @override
+  String get shellNotificationOpenAction => '열기';
 
   @override
   String chatPartUnknown(String type) {

@@ -211,9 +211,7 @@ String? _secondaryPartLabel({
   if (part.type == 'text' || !accent) {
     return null;
   }
-  return _chatPartRenderers.containsKey(part.type)
-      ? rendered.title
-      : l10n.chatPartUnknown(part.type);
+  return rendered.title;
 }
 
 String _defaultBody(ChatPart part) {

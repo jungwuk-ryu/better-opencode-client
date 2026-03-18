@@ -1760,6 +1760,12 @@ abstract class AppLocalizations {
   /// **'attempt {count}'**
   String shellRetryAttempt(int count);
 
+  /// No description provided for @shellStatusWithDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'{status} - {details}'**
+  String shellStatusWithDetails(String status, String details);
+
   /// No description provided for @shellTodoStatusInProgress.
   ///
   /// In en, this message translates to:
@@ -1783,6 +1789,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'unknown'**
   String get shellTodoStatusUnknown;
+
+  /// No description provided for @shellQuestionAskedNotification.
+  ///
+  /// In en, this message translates to:
+  /// **'Question requested'**
+  String get shellQuestionAskedNotification;
+
+  /// No description provided for @shellPermissionAskedNotification.
+  ///
+  /// In en, this message translates to:
+  /// **'Permission requested'**
+  String get shellPermissionAskedNotification;
+
+  /// No description provided for @shellNotificationOpenAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Open'**
+  String get shellNotificationOpenAction;
 
   /// No description provided for @chatPartUnknown.
   ///
