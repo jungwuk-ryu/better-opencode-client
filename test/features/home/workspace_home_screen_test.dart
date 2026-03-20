@@ -101,6 +101,48 @@ void main() {
     expect(find.text('Live capability probe'), findsNothing);
   });
 
+  testWidgets('workspace header can return to the server selection state', (
+    tester,
+  ) async {
+    final localeController = LocaleController();
+    addTearDown(localeController.dispose);
+
+    const profile = ServerProfile(
+      id: 'alpha',
+      label: 'Studio',
+      baseUrl: 'https://studio.example.com',
+    );
+
+    await tester.pumpWidget(
+      _TestApp(
+        child: WorkspaceHomeScreen(
+          flavor: AppFlavor.debug,
+          localeController: localeController,
+          snapshot: WorkspaceHomeSnapshot(
+            savedProfiles: const <ServerProfile>[profile],
+            cachedReports: <String, ServerProbeReport>{
+              profile.storageKey: _readyReport(),
+            },
+            selectedProfile: profile,
+          ),
+          workspaceSectionBuilder: (context, selectedProfile, onOpenProject) {
+            return const Placeholder(key: Key('workspace-section-seam'));
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Back to servers'), findsOneWidget);
+    expect(find.byKey(const Key('workspace-section-seam')), findsOneWidget);
+
+    await tester.tap(find.text('Back to servers'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('workspace-section-seam')), findsNothing);
+    expect(find.text('Choose a server'), findsWidgets);
+  });
+
   testWidgets(
     'unsupported server can still open the workspace chooser surface',
     (tester) async {

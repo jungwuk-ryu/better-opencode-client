@@ -1040,6 +1040,12 @@ abstract class AppLocalizations {
   /// **'Add server'**
   String get homeAddServerAction;
 
+  /// No description provided for @homeBackToServersAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to servers'**
+  String get homeBackToServersAction;
+
   /// No description provided for @homeEditSelectedServerAction.
   ///
   /// In en, this message translates to:
@@ -1573,6 +1579,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Add server'**
   String get homeA11yAddServerAction;
+
+  /// No description provided for @homeA11yBackToServersAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to server selection'**
+  String get homeA11yBackToServersAction;
 
   /// No description provided for @homeA11yEditSelectedServerAction.
   ///

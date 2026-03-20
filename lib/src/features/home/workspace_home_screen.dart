@@ -413,6 +413,18 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
     }
   }
 
+  void _returnToServerSelection() {
+    setState(() {
+      _resumeWorkspaceRequestToken += 1;
+      _selectedProfile = null;
+      _recentWorkspace = null;
+      _openedProject = null;
+      _resumingWorkspace = false;
+      _connectingProfileKey = null;
+      _workspaceNotice = null;
+    });
+  }
+
   void _openProject(ProjectTarget project) {
     setState(() {
       _workspaceNotice = null;
@@ -684,6 +696,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
   Widget _buildHeader(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final l10n = AppLocalizations.of(context)!;
+    final selectedProfile = _selectedProfile;
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -716,15 +729,33 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
           ),
         ),
         const SizedBox(width: AppSpacing.md),
-        Semantics(
-          container: true,
-          label: l10n.homeA11yAddServerAction,
-          button: true,
-          child: TextButton.icon(
-            onPressed: () => _openAddServerEditor(),
-            icon: const Icon(Icons.add_link_rounded),
-            label: Text(l10n.homeAddServerAction),
-          ),
+        Wrap(
+          spacing: AppSpacing.sm,
+          runSpacing: AppSpacing.sm,
+          alignment: WrapAlignment.end,
+          children: <Widget>[
+            if (selectedProfile != null)
+              Semantics(
+                container: true,
+                label: l10n.homeA11yBackToServersAction,
+                button: true,
+                child: OutlinedButton.icon(
+                  onPressed: _returnToServerSelection,
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  label: Text(l10n.homeBackToServersAction),
+                ),
+              ),
+            Semantics(
+              container: true,
+              label: l10n.homeA11yAddServerAction,
+              button: true,
+              child: TextButton.icon(
+                onPressed: () => _openAddServerEditor(),
+                icon: const Icon(Icons.add_link_rounded),
+                label: Text(l10n.homeAddServerAction),
+              ),
+            ),
+          ],
         ),
       ],
     );

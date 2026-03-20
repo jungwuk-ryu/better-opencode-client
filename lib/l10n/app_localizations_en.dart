@@ -514,6 +514,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeAddServerAction => 'Add server';
 
   @override
+  String get homeBackToServersAction => 'Back to servers';
+
+  @override
   String get homeEditSelectedServerAction => 'Edit selected server';
 
   @override
@@ -827,6 +830,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get homeA11yAddServerAction => 'Add server';
+
+  @override
+  String get homeA11yBackToServersAction => 'Back to server selection';
 
   @override
   String get homeA11yEditSelectedServerAction => 'Edit selected server';

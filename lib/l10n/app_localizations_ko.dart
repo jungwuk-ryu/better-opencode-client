@@ -498,6 +498,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get homeAddServerAction => '서버 추가';
 
   @override
+  String get homeBackToServersAction => '서버 선택으로 돌아가기';
+
+  @override
   String get homeEditSelectedServerAction => '선택한 서버 편집';
 
   @override
@@ -790,6 +793,9 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get homeA11yAddServerAction => '서버 추가';
+
+  @override
+  String get homeA11yBackToServersAction => '서버 선택으로 돌아가기';
 
   @override
   String get homeA11yEditSelectedServerAction => '선택한 서버 편집';
