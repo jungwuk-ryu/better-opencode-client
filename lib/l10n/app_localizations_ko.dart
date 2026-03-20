@@ -1008,6 +1008,27 @@ class AppLocalizationsKo extends AppLocalizations {
   String get shellComposerSending => '전송 중...';
 
   @override
+  String get shellComposerModelLabel => '모델';
+
+  @override
+  String get shellComposerModelDefault => '서버 기본값';
+
+  @override
+  String get shellComposerThinkingLabel => 'Thinking';
+
+  @override
+  String get shellComposerThinkingLow => '가볍게';
+
+  @override
+  String get shellComposerThinkingBalanced => '균형';
+
+  @override
+  String get shellComposerThinkingDeep => '깊게';
+
+  @override
+  String get shellComposerThinkingMax => '최대로';
+
+  @override
   String get shellRenameSessionTitle => '세션 이름 변경';
 
   @override

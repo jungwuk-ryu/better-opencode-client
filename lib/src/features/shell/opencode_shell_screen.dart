@@ -38,6 +38,33 @@ import '../tools/todo_service.dart';
 const _motionFast = Duration(milliseconds: 220);
 const _motionMedium = Duration(milliseconds: 320);
 const _activityCycle = Duration(milliseconds: 1400);
+const _defaultComposerReasoning = 'medium';
+
+class _ComposerSubmissionOptions {
+  const _ComposerSubmissionOptions({
+    this.providerId,
+    this.modelId,
+    required this.reasoning,
+  });
+
+  final String? providerId;
+  final String? modelId;
+  final String reasoning;
+}
+
+class _ComposerModelOption {
+  const _ComposerModelOption({
+    required this.key,
+    required this.label,
+    required this.modelId,
+    this.providerId,
+  });
+
+  final String key;
+  final String label;
+  final String modelId;
+  final String? providerId;
+}
 
 enum _ShellPrimaryDestination { sessions, chat, context, settings }
 
@@ -1288,7 +1315,10 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     }
   }
 
-  Future<bool> _submitPrompt(String prompt) async {
+  Future<bool> _submitPrompt(
+    String prompt,
+    _ComposerSubmissionOptions options,
+  ) async {
     final trimmed = prompt.trim();
     if (trimmed.isEmpty) {
       return false;
@@ -1336,6 +1366,9 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         project: widget.project,
         sessionId: sessionId,
         prompt: trimmed,
+        providerId: options.providerId,
+        modelId: options.modelId,
+        reasoning: options.reasoning,
       );
       if (!_isActivePromptSubmission(
         requestToken,
@@ -2402,7 +2435,8 @@ class _DesktopShell extends StatelessWidget {
   final ValueChanged<_ShellPrimaryDestination> onSelectPrimaryDestination;
   final Future<void> Function() onOpenCacheSettings;
   final bool submittingPrompt;
-  final Future<bool> Function(String) onSubmitPrompt;
+  final Future<bool> Function(String, _ComposerSubmissionOptions)
+  onSubmitPrompt;
 
   @override
   Widget build(BuildContext context) {
@@ -2450,6 +2484,7 @@ class _DesktopShell extends StatelessWidget {
                   flex: 9,
                   child: _ChatCanvas(
                     messages: messages,
+                    configSnapshot: configSnapshot,
                     loading: loading,
                     error: error,
                     submittingPrompt: submittingPrompt,
@@ -2648,7 +2683,8 @@ class _TabletLandscapeShell extends StatelessWidget {
   final ValueChanged<_ShellPrimaryDestination> onSelectPrimaryDestination;
   final Future<void> Function() onOpenCacheSettings;
   final bool submittingPrompt;
-  final Future<bool> Function(String) onSubmitPrompt;
+  final Future<bool> Function(String, _ComposerSubmissionOptions)
+  onSubmitPrompt;
 
   @override
   Widget build(BuildContext context) {
@@ -2695,6 +2731,7 @@ class _TabletLandscapeShell extends StatelessWidget {
                 Expanded(
                   child: _ChatCanvas(
                     messages: messages,
+                    configSnapshot: configSnapshot,
                     loading: loading,
                     error: error,
                     submittingPrompt: submittingPrompt,
@@ -2894,7 +2931,8 @@ class _TabletPortraitShell extends StatelessWidget {
   final ValueChanged<_ShellPrimaryDestination> onSelectPrimaryDestination;
   final Future<void> Function() onOpenCacheSettings;
   final bool submittingPrompt;
-  final Future<bool> Function(String) onSubmitPrompt;
+  final Future<bool> Function(String, _ComposerSubmissionOptions)
+  onSubmitPrompt;
 
   @override
   Widget build(BuildContext context) {
@@ -3031,6 +3069,7 @@ class _TabletPortraitShell extends StatelessWidget {
                   ),
                   _ShellPrimaryDestination.chat => _ChatCanvas(
                     messages: messages,
+                    configSnapshot: configSnapshot,
                     loading: loading,
                     error: error,
                     submittingPrompt: submittingPrompt,
@@ -3168,7 +3207,8 @@ class _MobileShell extends StatelessWidget {
   final ValueChanged<_ShellPrimaryDestination> onSelectPrimaryDestination;
   final Future<void> Function() onOpenCacheSettings;
   final bool submittingPrompt;
-  final Future<bool> Function(String) onSubmitPrompt;
+  final Future<bool> Function(String, _ComposerSubmissionOptions)
+  onSubmitPrompt;
 
   @override
   Widget build(BuildContext context) {
@@ -3307,6 +3347,7 @@ class _MobileShell extends StatelessWidget {
                   _ShellPrimaryDestination.chat => _ChatCanvas(
                     compact: true,
                     messages: messages,
+                    configSnapshot: configSnapshot,
                     loading: loading,
                     error: error,
                     submittingPrompt: submittingPrompt,
@@ -4472,9 +4513,183 @@ Map<String, double> _buildSessionTree(List<SessionSummary> sessions) {
   return depths;
 }
 
+List<_ComposerModelOption> _composerModelOptions(
+  ConfigSnapshot? snapshot,
+  List<ChatMessage> messages,
+) {
+  final options = <String, _ComposerModelOption>{};
+
+  void addOption(String? providerId, String? modelId, {String? label}) {
+    final normalizedModel = modelId?.trim();
+    if (normalizedModel == null || normalizedModel.isEmpty) {
+      return;
+    }
+    final normalizedProvider = providerId?.trim();
+    final key = normalizedProvider == null || normalizedProvider.isEmpty
+        ? normalizedModel
+        : '$normalizedProvider/$normalizedModel';
+    options.putIfAbsent(
+      key,
+      () => _ComposerModelOption(
+        key: key,
+        label: label?.trim().isNotEmpty == true
+            ? label!.trim()
+            : normalizedProvider == null || normalizedProvider.isEmpty
+            ? normalizedModel
+            : '$normalizedProvider / $normalizedModel',
+        modelId: normalizedModel,
+        providerId: normalizedProvider,
+      ),
+    );
+  }
+
+  void scanNode(Object? node, {String? providerHint}) {
+    if (node is List) {
+      for (final item in node) {
+        scanNode(item, providerHint: providerHint);
+      }
+      return;
+    }
+    if (node is! Map) {
+      return;
+    }
+    final map = node.cast<Object?, Object?>();
+    final explicitProvider =
+        map['providerID']?.toString() ??
+        map['providerId']?.toString() ??
+        map['provider']?.toString();
+    final providerId = (explicitProvider?.trim().isNotEmpty == true)
+        ? explicitProvider!.trim()
+        : providerHint;
+
+    final models = map['models'];
+    if (models is List) {
+      for (final item in models) {
+        if (item is String) {
+          addOption(providerId, item);
+          continue;
+        }
+        if (item is Map) {
+          final modelMap = item.cast<Object?, Object?>();
+          addOption(
+            modelMap['providerID']?.toString() ??
+                modelMap['providerId']?.toString() ??
+                providerId,
+            modelMap['modelID']?.toString() ??
+                modelMap['modelId']?.toString() ??
+                modelMap['id']?.toString() ??
+                modelMap['name']?.toString(),
+            label:
+                modelMap['label']?.toString() ?? modelMap['name']?.toString(),
+          );
+        }
+      }
+    }
+
+    final inlineModel = map['model']?.toString();
+    if (inlineModel != null && inlineModel.trim().isNotEmpty) {
+      final normalizedInlineModel = inlineModel.trim();
+      if (normalizedInlineModel.contains('/')) {
+        final parts = normalizedInlineModel.split('/');
+        if (parts.length >= 2) {
+          addOption(parts.first, parts.sublist(1).join('/'));
+        }
+      } else {
+        addOption(providerId, normalizedInlineModel);
+      }
+    }
+
+    for (final entry in map.entries) {
+      final key = entry.key?.toString();
+      if (key == null) {
+        continue;
+      }
+      final value = entry.value;
+      final nestedProviderHint = value is Map && !key.startsWith('x-')
+          ? key
+          : providerId;
+      scanNode(value, providerHint: nestedProviderHint);
+    }
+  }
+
+  if (snapshot != null) {
+    final config = snapshot.config.toJson();
+    final configuredModel = config['model']?.toString();
+    if (configuredModel != null && configuredModel.trim().isNotEmpty) {
+      if (configuredModel.contains('/')) {
+        final parts = configuredModel.split('/');
+        if (parts.length >= 2) {
+          addOption(parts.first, parts.sublist(1).join('/'));
+        }
+      } else {
+        addOption(null, configuredModel);
+      }
+    }
+    scanNode(snapshot.providerConfig.toJson());
+  }
+
+  for (final message in messages.reversed) {
+    addOption(message.info.providerId, message.info.modelId);
+  }
+
+  final values = options.values.toList(growable: false);
+  values.sort((left, right) => left.label.compareTo(right.label));
+  return values;
+}
+
+String? _defaultComposerModelKey(
+  ConfigSnapshot? snapshot,
+  List<_ComposerModelOption> options,
+  List<ChatMessage> messages,
+) {
+  if (options.isEmpty) {
+    return null;
+  }
+  final configModel = snapshot?.config.toJson()['model']?.toString();
+  if (configModel != null && configModel.trim().isNotEmpty) {
+    final normalized = configModel.trim();
+    for (final option in options) {
+      if (option.key == normalized ||
+          option.modelId == normalized ||
+          (option.providerId != null &&
+              '${option.providerId}/${option.modelId}' == normalized)) {
+        return option.key;
+      }
+    }
+  }
+  for (final message in messages.reversed) {
+    final providerId = message.info.providerId;
+    final modelId = message.info.modelId;
+    if (modelId == null || modelId.isEmpty) {
+      continue;
+    }
+    final key = providerId == null || providerId.isEmpty
+        ? modelId
+        : '$providerId/$modelId';
+    for (final option in options) {
+      if (option.key == key) {
+        return option.key;
+      }
+    }
+  }
+  return options.first.key;
+}
+
+String _resolveDefaultComposerReasoning(ConfigSnapshot? snapshot) {
+  final reasoning = snapshot?.config.toJson()['reasoning']?.toString();
+  if (reasoning == null || reasoning.trim().isEmpty) {
+    return _defaultComposerReasoning;
+  }
+  return switch (reasoning.trim()) {
+    'low' || 'medium' || 'high' || 'xhigh' => reasoning.trim(),
+    _ => _defaultComposerReasoning,
+  };
+}
+
 class _ChatCanvas extends StatefulWidget {
   const _ChatCanvas({
     required this.messages,
+    required this.configSnapshot,
     required this.loading,
     required this.error,
     required this.submittingPrompt,
@@ -4485,11 +4700,13 @@ class _ChatCanvas extends StatefulWidget {
 
   final bool compact;
   final List<ChatMessage> messages;
+  final ConfigSnapshot? configSnapshot;
   final bool loading;
   final String? error;
   final bool submittingPrompt;
   final String? selectedSessionId;
-  final Future<bool> Function(String) onSubmitPrompt;
+  final Future<bool> Function(String, _ComposerSubmissionOptions)
+  onSubmitPrompt;
 
   @override
   State<_ChatCanvas> createState() => _ChatCanvasState();
@@ -4674,6 +4891,18 @@ class _ChatCanvasState extends State<_ChatCanvas> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final maxContentWidth = widget.compact ? double.infinity : 840.0;
+    final composerModels = _composerModelOptions(
+      widget.configSnapshot,
+      widget.messages,
+    );
+    final defaultComposerModelKey = _defaultComposerModelKey(
+      widget.configSnapshot,
+      composerModels,
+      widget.messages,
+    );
+    final defaultComposerReasoning = _resolveDefaultComposerReasoning(
+      widget.configSnapshot,
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -4813,6 +5042,9 @@ class _ChatCanvasState extends State<_ChatCanvas> {
                               startsNewSession:
                                   widget.selectedSessionId == null ||
                                   widget.selectedSessionId!.isEmpty,
+                              modelOptions: composerModels,
+                              initialModelKey: defaultComposerModelKey,
+                              initialReasoning: defaultComposerReasoning,
                               onSubmit: widget.onSubmitPrompt,
                             ),
                           ),
@@ -6516,6 +6748,9 @@ class _ComposerCard extends StatefulWidget {
     required this.label,
     required this.submitting,
     required this.startsNewSession,
+    required this.modelOptions,
+    required this.initialModelKey,
+    required this.initialReasoning,
     required this.onSubmit,
   });
 
@@ -6523,7 +6758,10 @@ class _ComposerCard extends StatefulWidget {
   final String label;
   final bool submitting;
   final bool startsNewSession;
-  final Future<bool> Function(String) onSubmit;
+  final List<_ComposerModelOption> modelOptions;
+  final String? initialModelKey;
+  final String initialReasoning;
+  final Future<bool> Function(String, _ComposerSubmissionOptions) onSubmit;
 
   @override
   State<_ComposerCard> createState() => _ComposerCardState();
@@ -6531,6 +6769,25 @@ class _ComposerCard extends StatefulWidget {
 
 class _ComposerCardState extends State<_ComposerCard> {
   late final TextEditingController _controller = TextEditingController();
+  late String? _selectedModelKey = widget.initialModelKey;
+  late String _selectedReasoning = widget.initialReasoning;
+
+  @override
+  void didUpdateWidget(covariant _ComposerCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final currentModelStillAvailable =
+        _selectedModelKey == null ||
+        widget.modelOptions.any((option) => option.key == _selectedModelKey);
+    if (!currentModelStillAvailable) {
+      _selectedModelKey = widget.initialModelKey;
+    } else if (_selectedModelKey == null && widget.initialModelKey != null) {
+      _selectedModelKey = widget.initialModelKey;
+    }
+    const reasoningValues = <String>{'low', 'medium', 'high', 'xhigh'};
+    if (!reasoningValues.contains(_selectedReasoning)) {
+      _selectedReasoning = widget.initialReasoning;
+    }
+  }
 
   @override
   void dispose() {
@@ -6540,7 +6797,21 @@ class _ComposerCardState extends State<_ComposerCard> {
 
   Future<void> _submit() async {
     final text = _controller.text;
-    final success = await widget.onSubmit(text);
+    _ComposerModelOption? selectedModel;
+    for (final option in widget.modelOptions) {
+      if (option.key == _selectedModelKey) {
+        selectedModel = option;
+        break;
+      }
+    }
+    final success = await widget.onSubmit(
+      text,
+      _ComposerSubmissionOptions(
+        providerId: selectedModel?.providerId,
+        modelId: selectedModel?.modelId,
+        reasoning: _selectedReasoning,
+      ),
+    );
     if (success && mounted) {
       _controller.clear();
     }
@@ -6551,6 +6822,12 @@ class _ComposerCardState extends State<_ComposerCard> {
     final l10n = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final reasoningOptions = <({String value, String label})>[
+      (value: 'low', label: l10n.shellComposerThinkingLow),
+      (value: 'medium', label: l10n.shellComposerThinkingBalanced),
+      (value: 'high', label: l10n.shellComposerThinkingDeep),
+      (value: 'xhigh', label: l10n.shellComposerThinkingMax),
+    ];
     return DecoratedBox(
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -6617,6 +6894,77 @@ class _ComposerCardState extends State<_ComposerCard> {
                   hintText: widget.label,
                 ),
               ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Wrap(
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
+              children: <Widget>[
+                SizedBox(
+                  width: widget.compact ? 220 : 240,
+                  child: DropdownButtonFormField<String?>(
+                    key: const ValueKey<String>('composer-model-select'),
+                    value: _selectedModelKey,
+                    isExpanded: true,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      labelText: l10n.shellComposerModelLabel,
+                    ),
+                    items: <DropdownMenuItem<String?>>[
+                      DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text(l10n.shellComposerModelDefault),
+                      ),
+                      ...widget.modelOptions.map(
+                        (option) => DropdownMenuItem<String?>(
+                          value: option.key,
+                          child: Text(
+                            option.label,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                    ],
+                    onChanged: widget.submitting
+                        ? null
+                        : (value) {
+                            setState(() {
+                              _selectedModelKey = value;
+                            });
+                          },
+                  ),
+                ),
+                SizedBox(
+                  width: widget.compact ? 180 : 200,
+                  child: DropdownButtonFormField<String>(
+                    key: const ValueKey<String>('composer-reasoning-select'),
+                    value: _selectedReasoning,
+                    isExpanded: true,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      labelText: l10n.shellComposerThinkingLabel,
+                    ),
+                    items: reasoningOptions
+                        .map(
+                          (option) => DropdownMenuItem<String>(
+                            value: option.value,
+                            child: Text(option.label),
+                          ),
+                        )
+                        .toList(growable: false),
+                    onChanged: widget.submitting
+                        ? null
+                        : (value) {
+                            if (value == null) {
+                              return;
+                            }
+                            setState(() {
+                              _selectedReasoning = value;
+                            });
+                          },
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: AppSpacing.sm),
             Align(

@@ -1053,6 +1053,27 @@ class AppLocalizationsEn extends AppLocalizations {
   String get shellComposerSending => 'Sending...';
 
   @override
+  String get shellComposerModelLabel => 'Model';
+
+  @override
+  String get shellComposerModelDefault => 'Server default';
+
+  @override
+  String get shellComposerThinkingLabel => 'Thinking';
+
+  @override
+  String get shellComposerThinkingLow => 'Light';
+
+  @override
+  String get shellComposerThinkingBalanced => 'Balanced';
+
+  @override
+  String get shellComposerThinkingDeep => 'Deep';
+
+  @override
+  String get shellComposerThinkingMax => 'Max';
+
+  @override
   String get shellRenameSessionTitle => 'Rename session';
 
   @override

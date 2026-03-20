@@ -62,6 +62,9 @@ class ChatService {
     required ProjectTarget project,
     required String sessionId,
     required String prompt,
+    String? providerId,
+    String? modelId,
+    String? reasoning,
   }) async {
     final baseUri = profile.uriOrNull;
     if (baseUri == null) {
@@ -84,14 +87,24 @@ class ChatService {
         .replace(
           queryParameters: <String, String>{'directory': project.directory},
         );
+    final body = <String, Object?>{
+      'parts': <Map<String, Object?>>[
+        <String, Object?>{'type': 'text', 'text': prompt},
+      ],
+    };
+    if (providerId != null && providerId.isNotEmpty) {
+      body['providerID'] = providerId;
+    }
+    if (modelId != null && modelId.isNotEmpty) {
+      body['modelID'] = modelId;
+    }
+    if (reasoning != null && reasoning.isNotEmpty) {
+      body['reasoning'] = reasoning;
+    }
     final response = await _client.post(
       uri,
       headers: headers,
-      body: jsonEncode(<String, Object?>{
-        'parts': <Map<String, Object?>>[
-          <String, Object?>{'type': 'text', 'text': prompt},
-        ],
-      }),
+      body: jsonEncode(body),
     );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw StateError(

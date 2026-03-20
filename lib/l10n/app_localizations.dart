@@ -1994,6 +1994,48 @@ abstract class AppLocalizations {
   /// **'Sending...'**
   String get shellComposerSending;
 
+  /// No description provided for @shellComposerModelLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Model'**
+  String get shellComposerModelLabel;
+
+  /// No description provided for @shellComposerModelDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'Server default'**
+  String get shellComposerModelDefault;
+
+  /// No description provided for @shellComposerThinkingLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Thinking'**
+  String get shellComposerThinkingLabel;
+
+  /// No description provided for @shellComposerThinkingLow.
+  ///
+  /// In en, this message translates to:
+  /// **'Light'**
+  String get shellComposerThinkingLow;
+
+  /// No description provided for @shellComposerThinkingBalanced.
+  ///
+  /// In en, this message translates to:
+  /// **'Balanced'**
+  String get shellComposerThinkingBalanced;
+
+  /// No description provided for @shellComposerThinkingDeep.
+  ///
+  /// In en, this message translates to:
+  /// **'Deep'**
+  String get shellComposerThinkingDeep;
+
+  /// No description provided for @shellComposerThinkingMax.
+  ///
+  /// In en, this message translates to:
+  /// **'Max'**
+  String get shellComposerThinkingMax;
+
   /// No description provided for @shellRenameSessionTitle.
   ///
   /// In en, this message translates to:

@@ -1553,7 +1553,7 @@ void main() {
 
     await pumpShellWithCapabilities(
       tester,
-      size: const Size(1440, 1400),
+      size: const Size(1440, 1600),
       capabilitiesToUse: capabilities,
       chatService: chatService,
       todoService: _RecordingTodoService(),
@@ -1584,6 +1584,75 @@ void main() {
       chatService.selectedMessagesSessionIds,
       isNot(contains('session-1')),
     );
+  });
+
+  testWidgets('composer forwards the selected model and thinking mode', (
+    tester,
+  ) async {
+    final chatService = _ControlledChatService(
+      bundlesByScopeKey: <String, ChatSessionBundle>{
+        _scopeKeyFor(profile, project): ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _testSession(
+              'session-1',
+              'First session',
+              directory: project.directory,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{},
+          messages: <ChatMessage>[
+            _testMessage('session-1', text: 'First message'),
+          ],
+          selectedSessionId: 'session-1',
+        ),
+      },
+      messagesBySessionId: <String, List<ChatMessage>>{
+        'session-1': <ChatMessage>[
+          _testMessage('session-1', text: 'Updated message'),
+        ],
+      },
+    );
+    final configService = _ControlledConfigService(
+      snapshotsByScopeKey: <String, ConfigSnapshot>{
+        _scopeKeyFor(profile, project): _configSnapshotWithModelChoices(),
+      },
+    );
+
+    await pumpShellWithCapabilities(
+      tester,
+      size: const Size(1440, 1400),
+      capabilitiesToUse: capabilities,
+      chatService: chatService,
+      todoService: _RecordingTodoService(),
+      fileBrowserService: _ControlledFileBrowserService.empty(),
+      requestService: _ControlledRequestService.empty(),
+      configService: configService,
+      integrationStatusService: _ControlledIntegrationStatusService.empty(),
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('composer-model-select')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('anthropic / claude-sonnet-4.5').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('composer-reasoning-select')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Max').last);
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField).first, 'ship it');
+    await tester.tap(find.text('Send'));
+    await _pumpShellFrames(tester);
+
+    expect(chatService.sentPrompts, hasLength(1));
+    expect(chatService.sentPrompts.single.prompt, 'ship it');
+    expect(chatService.sentPrompts.single.providerId, 'anthropic');
+    expect(chatService.sentPrompts.single.modelId, 'claude-sonnet-4.5');
+    expect(chatService.sentPrompts.single.reasoning, 'xhigh');
   });
 
   testWidgets('uncached project swap clears stale shell state immediately', (
@@ -2422,6 +2491,24 @@ ConfigSnapshot _configSnapshot(String mode) {
   );
 }
 
+ConfigSnapshot _configSnapshotWithModelChoices() {
+  return ConfigSnapshot(
+    config: RawJsonDocument(<String, Object?>{
+      'mode': 'demo-mode',
+      'model': 'openai/gpt-5',
+      'reasoning': 'medium',
+    }),
+    providerConfig: RawJsonDocument(<String, Object?>{
+      'openai': <String, Object?>{
+        'models': <String>['gpt-5', 'gpt-5-mini'],
+      },
+      'anthropic': <String, Object?>{
+        'models': <String>['claude-sonnet-4.5'],
+      },
+    }),
+  );
+}
+
 ConfigSnapshot _emptyConfigSnapshot() {
   return ConfigSnapshot(
     config: RawJsonDocument(<String, Object?>{}),
@@ -2840,6 +2927,25 @@ class _ControlledChatService extends ChatService {
   final Map<String, Completer<void>> sendMessageGateByScopeSessionKey;
   final Map<String, Completer<void>> sendMessageStartedByScopeSessionKey;
   final List<String> selectedMessagesSessionIds = <String>[];
+  final List<
+    ({
+      String prompt,
+      String? providerId,
+      String? modelId,
+      String? reasoning,
+      String scopeSessionKey,
+    })
+  >
+  sentPrompts =
+      <
+        ({
+          String prompt,
+          String? providerId,
+          String? modelId,
+          String? reasoning,
+          String scopeSessionKey,
+        })
+      >[];
   final Map<String, int> fetchBundleCountByScopeKey = <String, int>{};
 
   @override
@@ -2900,8 +3006,18 @@ class _ControlledChatService extends ChatService {
     required ProjectTarget project,
     required String sessionId,
     required String prompt,
+    String? providerId,
+    String? modelId,
+    String? reasoning,
   }) async {
     final scopeSessionKey = _scopeSessionKey(profile, project, sessionId);
+    sentPrompts.add((
+      prompt: prompt,
+      providerId: providerId,
+      modelId: modelId,
+      reasoning: reasoning,
+      scopeSessionKey: scopeSessionKey,
+    ));
     _completeIfPending(sendMessageStartedByScopeSessionKey[scopeSessionKey]);
     final gate = sendMessageGateByScopeSessionKey[scopeSessionKey];
     if (gate != null) {
