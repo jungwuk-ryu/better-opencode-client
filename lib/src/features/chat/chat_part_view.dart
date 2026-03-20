@@ -72,6 +72,20 @@ class ChatPartView extends StatelessWidget {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context)!;
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final rendered =
+        _chatPartRenderers[part.type]?.call(l10n, message, part) ??
+        _RenderedChatPart(
+          title: l10n.chatPartUnknown(part.type),
+          body: _defaultBody(part),
+        );
+    if (_isActivityPart(part)) {
+      return _ActivityPartCard(
+        key: ValueKey<String>('chat-part-activity-${part.id}'),
+        message: message,
+        part: part,
+        rendered: rendered,
+      );
+    }
     final isUserMessage = message.role == 'user';
     final accent = !isUserMessage;
     final bubbleAlignment = isUserMessage
@@ -93,12 +107,6 @@ class ChatPartView extends StatelessWidget {
     final secondary = accent
         ? surfaces.panel.withValues(alpha: 0.98)
         : surfaces.panelMuted.withValues(alpha: 0.94);
-    final rendered =
-        _chatPartRenderers[part.type]?.call(l10n, message, part) ??
-        _RenderedChatPart(
-          title: l10n.chatPartUnknown(part.type),
-          body: _defaultBody(part),
-        );
     final secondaryLabel = _secondaryPartLabel(
       l10n: l10n,
       part: part,
@@ -177,6 +185,363 @@ class ChatPartView extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+bool _isActivityPart(ChatPart part) => part.type != 'text';
+
+class _ActivityPartCard extends StatelessWidget {
+  const _ActivityPartCard({
+    required this.message,
+    required this.part,
+    required this.rendered,
+    super.key,
+  });
+
+  final ChatMessageInfo message;
+  final ChatPart part;
+  final _RenderedChatPart rendered;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final palette = _activityPalette(context, part.type);
+    final secondaryLabel = _activitySecondaryLabel(part);
+    final shimmer = _shouldShimmerLabel(part.type);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxCardWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth * 0.92
+            : 820.0;
+        return Align(
+          alignment: Alignment.centerLeft,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: maxCardWidth.clamp(0, 820)),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: <Color>[palette.primary, palette.secondary],
+                ),
+                borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
+                border: Border.all(color: palette.border),
+                boxShadow: <BoxShadow>[
+                  BoxShadow(
+                    color: palette.shadow,
+                    blurRadius: 28,
+                    offset: const Offset(0, 16),
+                  ),
+                ],
+              ),
+              child: Stack(
+                children: <Widget>[
+                  Positioned(
+                    left: 0,
+                    top: 18,
+                    bottom: 18,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: palette.accent,
+                        borderRadius: BorderRadius.circular(
+                          AppSpacing.pillRadius,
+                        ),
+                      ),
+                      child: const SizedBox(width: 4),
+                    ),
+                  ),
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: <Color>[
+                              Colors.white.withValues(alpha: 0.06),
+                              Colors.transparent,
+                              palette.accent.withValues(alpha: 0.04),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.lg,
+                      AppSpacing.md,
+                      AppSpacing.md,
+                      AppSpacing.md,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: palette.accent.withValues(alpha: 0.14),
+                                borderRadius: BorderRadius.circular(
+                                  AppSpacing.pillRadius,
+                                ),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.all(AppSpacing.sm),
+                                child: Icon(
+                                  _activityIcon(part.type),
+                                  size: 18,
+                                  color: palette.accent,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.sm),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: <Widget>[
+                                  if (shimmer)
+                                    _ShimmerLabel(
+                                      key: ValueKey<String>(
+                                        'chat-part-shimmer-${part.id}',
+                                      ),
+                                      text: rendered.title,
+                                      baseColor:
+                                          theme.textTheme.titleMedium?.color ??
+                                          Colors.white,
+                                      highlightColor: palette.accent,
+                                    )
+                                  else
+                                    Text(
+                                      rendered.title,
+                                      style: theme.textTheme.titleMedium
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
+                                  const SizedBox(height: AppSpacing.xxs),
+                                  Text(
+                                    _activityCaption(message, part),
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: surfaces.muted,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            _MessagePill(
+                              label: part.type,
+                              icon: Icons.memory_rounded,
+                              emphasis: shimmer,
+                            ),
+                          ],
+                        ),
+                        if (secondaryLabel != null) ...<Widget>[
+                          const SizedBox(height: AppSpacing.sm),
+                          Wrap(
+                            spacing: AppSpacing.xs,
+                            runSpacing: AppSpacing.xs,
+                            children: <Widget>[
+                              _MessagePill(
+                                label: secondaryLabel,
+                                icon: Icons.layers_outlined,
+                              ),
+                            ],
+                          ),
+                        ],
+                        const SizedBox(height: AppSpacing.md),
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(
+                              AppSpacing.formFieldRadius,
+                            ),
+                            border: Border.all(
+                              color: palette.accent.withValues(alpha: 0.12),
+                            ),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(AppSpacing.md),
+                            child: Text(
+                              rendered.body,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                height: 1.65,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _ActivityPalette {
+  const _ActivityPalette({
+    required this.primary,
+    required this.secondary,
+    required this.border,
+    required this.accent,
+    required this.shadow,
+  });
+
+  final Color primary;
+  final Color secondary;
+  final Color border;
+  final Color accent;
+  final Color shadow;
+}
+
+_ActivityPalette _activityPalette(BuildContext context, String type) {
+  final theme = Theme.of(context);
+  final surfaces = theme.extension<AppSurfaces>()!;
+  return switch (type) {
+    'reasoning' || 'agent' || 'subtask' => _ActivityPalette(
+      primary: Color.alphaBlend(
+        theme.colorScheme.primary.withValues(alpha: 0.12),
+        surfaces.panelEmphasis.withValues(alpha: 0.96),
+      ),
+      secondary: surfaces.panel.withValues(alpha: 0.96),
+      border: theme.colorScheme.primary.withValues(alpha: 0.22),
+      accent: theme.colorScheme.primary,
+      shadow: theme.colorScheme.primary.withValues(alpha: 0.08),
+    ),
+    'tool' || 'patch' || 'file' => _ActivityPalette(
+      primary: Color.alphaBlend(
+        theme.colorScheme.tertiary.withValues(alpha: 0.12),
+        surfaces.panelRaised.withValues(alpha: 0.94),
+      ),
+      secondary: surfaces.panelMuted.withValues(alpha: 0.94),
+      border: theme.colorScheme.tertiary.withValues(alpha: 0.2),
+      accent: theme.colorScheme.tertiary,
+      shadow: theme.colorScheme.tertiary.withValues(alpha: 0.08),
+    ),
+    _ => _ActivityPalette(
+      primary: surfaces.panelRaised.withValues(alpha: 0.94),
+      secondary: surfaces.panel.withValues(alpha: 0.94),
+      border: surfaces.lineSoft,
+      accent: surfaces.accentSoft,
+      shadow: Colors.black.withValues(alpha: 0.12),
+    ),
+  };
+}
+
+IconData _activityIcon(String type) {
+  return switch (type) {
+    'reasoning' => Icons.psychology_alt_outlined,
+    'tool' => Icons.build_circle_outlined,
+    'agent' => Icons.auto_awesome_rounded,
+    'subtask' => Icons.account_tree_outlined,
+    'file' => Icons.insert_drive_file_outlined,
+    'patch' => Icons.auto_fix_high_outlined,
+    'step-start' => Icons.play_circle_outline_rounded,
+    'step-finish' => Icons.task_alt_rounded,
+    'snapshot' => Icons.camera_outlined,
+    'retry' => Icons.refresh_rounded,
+    'compaction' => Icons.compress_rounded,
+    _ => Icons.bolt_rounded,
+  };
+}
+
+bool _shouldShimmerLabel(String type) {
+  return switch (type) {
+    'reasoning' || 'tool' || 'agent' || 'subtask' || 'step-start' => true,
+    _ => false,
+  };
+}
+
+String _activityCaption(ChatMessageInfo message, ChatPart part) {
+  final roleLabel = message.role == 'user' ? 'User' : 'Agent';
+  final toolLabel = part.tool?.trim();
+  if (toolLabel != null && toolLabel.isNotEmpty) {
+    return '$roleLabel activity · $toolLabel';
+  }
+  return '$roleLabel activity · ${part.type}';
+}
+
+String? _activitySecondaryLabel(ChatPart part) {
+  if ((part.filename ?? '').trim().isNotEmpty) {
+    return part.filename!.trim();
+  }
+  if ((part.tool ?? '').trim().isNotEmpty) {
+    return part.tool!.trim();
+  }
+  return null;
+}
+
+class _ShimmerLabel extends StatefulWidget {
+  const _ShimmerLabel({
+    required this.text,
+    required this.baseColor,
+    required this.highlightColor,
+    super.key,
+  });
+
+  final String text;
+  final Color baseColor;
+  final Color highlightColor;
+
+  @override
+  State<_ShimmerLabel> createState() => _ShimmerLabelState();
+}
+
+class _ShimmerLabelState extends State<_ShimmerLabel>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 2200),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final textStyle = Theme.of(
+      context,
+    ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700);
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final center = _controller.value;
+        final stops = <double>[
+          (center - 0.35).clamp(0.0, 1.0),
+          (center - 0.15).clamp(0.0, 1.0),
+          center.clamp(0.0, 1.0),
+          (center + 0.15).clamp(0.0, 1.0),
+          (center + 0.35).clamp(0.0, 1.0),
+        ];
+        return ShaderMask(
+          blendMode: BlendMode.srcIn,
+          shaderCallback: (bounds) => LinearGradient(
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+            colors: <Color>[
+              widget.baseColor.withValues(alpha: 0.76),
+              widget.baseColor,
+              widget.highlightColor.withValues(alpha: 0.96),
+              widget.baseColor,
+              widget.baseColor.withValues(alpha: 0.76),
+            ],
+            stops: stops,
+          ).createShader(bounds),
+          child: child,
+        );
+      },
+      child: Text(widget.text, style: textStyle),
     );
   }
 }

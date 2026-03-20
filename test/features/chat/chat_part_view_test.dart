@@ -9,6 +9,12 @@ void main() {
   Future<void> pumpPart(
     WidgetTester tester, {
     required ChatMessageInfo message,
+    bool settle = true,
+    ChatPart part = const ChatPart(
+      id: 'part-1',
+      type: 'text',
+      text: 'Hello from the chat panel.',
+    ),
   }) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -18,19 +24,16 @@ void main() {
         home: Scaffold(
           body: SizedBox(
             width: 800,
-            child: ChatPartView(
-              message: message,
-              part: const ChatPart(
-                id: 'part-1',
-                type: 'text',
-                text: 'Hello from the chat panel.',
-              ),
-            ),
+            child: ChatPartView(message: message, part: part),
           ),
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    if (settle) {
+      await tester.pumpAndSettle();
+    } else {
+      await tester.pump();
+    }
   }
 
   testWidgets('assistant messages align to the left', (tester) async {
@@ -61,5 +64,38 @@ void main() {
       find.byKey(const ValueKey<String>('chat-part-bubble-user-message')),
     );
     expect(align.alignment, Alignment.centerRight);
+  });
+
+  testWidgets('tool parts render as standalone activity cards', (tester) async {
+    const message = ChatMessageInfo(
+      id: 'assistant-tool-message',
+      role: 'assistant',
+      sessionId: 'session-1',
+    );
+
+    await pumpPart(
+      tester,
+      message: message,
+      settle: false,
+      part: const ChatPart(
+        id: 'tool-part',
+        type: 'tool',
+        tool: 'search',
+        text: 'Searching the workspace for matching files.',
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('chat-part-activity-tool-part')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('chat-part-shimmer-tool-part')),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Searching the workspace for matching files.'),
+      findsOneWidget,
+    );
   });
 }
