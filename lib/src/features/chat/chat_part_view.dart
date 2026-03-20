@@ -72,13 +72,24 @@ class ChatPartView extends StatelessWidget {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context)!;
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
-    final accent = message.role == 'assistant';
+    final isUserMessage = message.role == 'user';
+    final accent = !isUserMessage;
+    final bubbleAlignment = isUserMessage
+        ? Alignment.centerRight
+        : Alignment.centerLeft;
+    final bubbleCrossAxisAlignment = isUserMessage
+        ? CrossAxisAlignment.end
+        : CrossAxisAlignment.start;
+    final bubbleTextAlign = isUserMessage ? TextAlign.right : TextAlign.left;
     final primary = accent
         ? Color.alphaBlend(
             theme.colorScheme.primary.withValues(alpha: 0.08),
             surfaces.panelEmphasis.withValues(alpha: 0.92),
           )
-        : surfaces.panelRaised.withValues(alpha: 0.82);
+        : Color.alphaBlend(
+            theme.colorScheme.secondary.withValues(alpha: 0.08),
+            surfaces.panelRaised.withValues(alpha: 0.92),
+          );
     final secondary = accent
         ? surfaces.panel.withValues(alpha: 0.98)
         : surfaces.panelMuted.withValues(alpha: 0.94);
@@ -94,59 +105,78 @@ class ChatPartView extends StatelessWidget {
       rendered: rendered,
       accent: accent,
     );
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: <Color>[primary, secondary],
-        ),
-        borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
-        border: Border.all(
-          color: accent
-              ? theme.colorScheme.primary.withValues(alpha: 0.22)
-              : surfaces.lineSoft,
-        ),
-        boxShadow: <BoxShadow>[
-          BoxShadow(
-            color: accent
-                ? theme.colorScheme.primary.withValues(alpha: 0.06)
-                : Colors.black.withValues(alpha: 0.12),
-            blurRadius: 24,
-            offset: const Offset(0, 14),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                _MessagePill(
-                  label: accent ? l10n.chatPartAssistant : rendered.title,
-                  icon: accent
-                      ? Icons.auto_awesome_rounded
-                      : Icons.person_outline_rounded,
-                  emphasis: accent,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxBubbleWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth * 0.84
+            : 760.0;
+        return Align(
+          key: ValueKey<String>('chat-part-bubble-${message.id}'),
+          alignment: bubbleAlignment,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: maxBubbleWidth.clamp(0, 760)),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: <Color>[primary, secondary],
                 ),
-                const SizedBox(width: AppSpacing.xs),
-                if (secondaryLabel != null)
-                  _MessagePill(
-                    label: secondaryLabel,
-                    icon: Icons.layers_outlined,
+                borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
+                border: Border.all(
+                  color: accent
+                      ? theme.colorScheme.primary.withValues(alpha: 0.22)
+                      : theme.colorScheme.secondary.withValues(alpha: 0.14),
+                ),
+                boxShadow: <BoxShadow>[
+                  BoxShadow(
+                    color: accent
+                        ? theme.colorScheme.primary.withValues(alpha: 0.06)
+                        : Colors.black.withValues(alpha: 0.12),
+                    blurRadius: 24,
+                    offset: const Offset(0, 14),
                   ),
-              ],
+                ],
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: Column(
+                  crossAxisAlignment: bubbleCrossAxisAlignment,
+                  children: <Widget>[
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        _MessagePill(
+                          label: accent
+                              ? l10n.chatPartAssistant
+                              : rendered.title,
+                          icon: accent
+                              ? Icons.auto_awesome_rounded
+                              : Icons.person_outline_rounded,
+                          emphasis: accent,
+                        ),
+                        if (secondaryLabel != null) ...<Widget>[
+                          const SizedBox(width: AppSpacing.xs),
+                          _MessagePill(
+                            label: secondaryLabel,
+                            icon: Icons.layers_outlined,
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(
+                      rendered.body,
+                      textAlign: bubbleTextAlign,
+                      style: theme.textTheme.bodyMedium?.copyWith(height: 1.6),
+                    ),
+                  ],
+                ),
+              ),
             ),
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              rendered.body,
-              style: theme.textTheme.bodyMedium?.copyWith(height: 1.6),
-            ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }
