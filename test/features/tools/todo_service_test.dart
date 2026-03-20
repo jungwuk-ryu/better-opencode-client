@@ -29,6 +29,7 @@ void main() {
               'status': 'in_progress',
               'priority': 'high',
             },
+            {'id': null, 'content': 'Broken todo', 'status': 'pending'},
             {
               'id': 'todo-2',
               'content': 'Render parts',
@@ -59,6 +60,7 @@ void main() {
     );
 
     expect(todos.length, 2);
+    expect(todos.map((item) => item.id), <String>['todo-1', 'todo-2']);
     expect(todos.first.status, 'in_progress');
     service.dispose();
   });

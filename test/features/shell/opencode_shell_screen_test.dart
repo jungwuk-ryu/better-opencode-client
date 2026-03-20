@@ -547,17 +547,13 @@ void main() {
 
       await pumpShellWithCapabilities(
         tester,
-        size: const Size(390, 1000),
+        size: const Size(1440, 1600),
         capabilitiesToUse: sessionCapabilitiesWithoutTodos,
         chatService: chatService,
         todoService: todoService,
       );
 
       expect(todoService.fetchCount, 0);
-
-      await tester.tap(find.text('Sessions').first);
-      await _pumpShellFrames(tester);
-
       final secondSessionLabel = find.text('Second session').last;
       await tester.ensureVisible(secondSessionLabel);
       await tester.tap(secondSessionLabel);
@@ -588,20 +584,46 @@ void main() {
 
       await pumpShellWithCapabilities(
         tester,
-        size: const Size(390, 1000),
+        size: const Size(1440, 1600),
         capabilitiesToUse: capabilities,
         chatService: chatService,
         todoService: todoService,
       );
       expect(todoService.fetchCountBySessionId['session-1'] ?? 0, 1);
 
-      await tester.tap(find.text('Sessions').first);
-      await _pumpShellFrames(tester);
-
       final secondSessionLabel = find.text('Second session').last;
       await tester.ensureVisible(secondSessionLabel);
       await tester.tap(secondSessionLabel);
       await tester.pump();
+      expect(todoService.fetchCountBySessionId['session-2'] ?? 0, 1);
+    },
+  );
+
+  testWidgets(
+    'selecting a session keeps the chat visible when todo loading fails',
+    (tester) async {
+      final chatService = _FakeChatService();
+      final todoService = _RecordingTodoService(
+        errorsBySessionId: <String, Object>{
+          'session-2': StateError('Null check operator used on a null value'),
+        },
+      );
+
+      await pumpShellWithCapabilities(
+        tester,
+        size: const Size(1440, 1600),
+        capabilitiesToUse: capabilities,
+        chatService: chatService,
+        todoService: todoService,
+      );
+
+      final secondSessionLabel = find.text('Second session').last;
+      await tester.ensureVisible(secondSessionLabel);
+      await tester.tap(secondSessionLabel);
+      await _pumpShellFrames(tester);
+
+      expect(find.text('Connection issue'), findsNothing);
+      expect(find.text('hello'), findsAtLeastNWidgets(1));
       expect(todoService.fetchCountBySessionId['session-2'] ?? 0, 1);
     },
   );
@@ -2721,11 +2743,16 @@ class _RecordingTodoService extends TodoService {
   _RecordingTodoService({
     Map<String, List<TodoItem>>? todosBySessionId,
     Map<String, List<TodoItem>>? todosByScopeSessionKey,
+    Map<String, Object>? errorsBySessionId,
+    Map<String, Object>? errorsByScopeSessionKey,
     Map<String, Completer<void>>? gateBySessionId,
     Map<String, Completer<void>>? gateByScopeSessionKey,
   }) : todosBySessionId = todosBySessionId ?? const <String, List<TodoItem>>{},
        todosByScopeSessionKey =
            todosByScopeSessionKey ?? const <String, List<TodoItem>>{},
+       errorsBySessionId = errorsBySessionId ?? const <String, Object>{},
+       errorsByScopeSessionKey =
+           errorsByScopeSessionKey ?? const <String, Object>{},
        gateBySessionId = gateBySessionId ?? const <String, Completer<void>>{},
        gateByScopeSessionKey =
            gateByScopeSessionKey ?? const <String, Completer<void>>{};
@@ -2734,6 +2761,8 @@ class _RecordingTodoService extends TodoService {
   final Map<String, int> fetchCountBySessionId = <String, int>{};
   final Map<String, List<TodoItem>> todosBySessionId;
   final Map<String, List<TodoItem>> todosByScopeSessionKey;
+  final Map<String, Object> errorsBySessionId;
+  final Map<String, Object> errorsByScopeSessionKey;
   final Map<String, Completer<void>> gateBySessionId;
   final Map<String, Completer<void>> gateByScopeSessionKey;
 
@@ -2751,6 +2780,12 @@ class _RecordingTodoService extends TodoService {
         gateByScopeSessionKey[scopeSessionKey] ?? gateBySessionId[sessionId];
     if (gate != null) {
       await gate.future;
+    }
+    final error =
+        errorsByScopeSessionKey[scopeSessionKey] ??
+        errorsBySessionId[sessionId];
+    if (error != null) {
+      throw error;
     }
     return todosByScopeSessionKey[scopeSessionKey] ??
         todosBySessionId[sessionId] ??

@@ -118,7 +118,7 @@ class ChatService {
       baseUri,
       '/session',
       headers: headers,
-      query: <String, String>{'directory': project.directory, 'roots': 'true'},
+      query: <String, String>{'directory': project.directory},
     );
     final statusesBody = await _getJson(
       baseUri,
@@ -130,18 +130,16 @@ class ChatService {
     final sessions = sessionsBody is List
         ? sessionsBody
               .whereType<Map>()
-              .map(
-                (item) => SessionSummary.fromJson(item.cast<String, Object?>()),
-              )
+              .map((item) => _safeParseSession(item.cast<String, Object?>()))
+              .whereType<SessionSummary>()
               .toList(growable: false)
         : const <SessionSummary>[];
     final statuses = statusesBody is Map
         ? statusesBody.map(
             (key, value) => MapEntry(
               key.toString(),
-              SessionStatusSummary.fromJson(
-                (value as Map).cast<String, Object?>(),
-              ),
+              _safeParseStatus((value as Map).cast<String, Object?>()) ??
+                  const SessionStatusSummary(type: 'idle'),
             ),
           )
         : const <String, SessionStatusSummary>{};
@@ -185,9 +183,34 @@ class ChatService {
     return messagesBody is List
         ? messagesBody
               .whereType<Map>()
-              .map((item) => ChatMessage.fromJson(item.cast<String, Object?>()))
+              .map((item) => _safeParseMessage(item.cast<String, Object?>()))
+              .whereType<ChatMessage>()
               .toList(growable: false)
         : const <ChatMessage>[];
+  }
+
+  SessionSummary? _safeParseSession(Map<String, Object?> json) {
+    try {
+      return SessionSummary.fromJson(json);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  SessionStatusSummary? _safeParseStatus(Map<String, Object?> json) {
+    try {
+      return SessionStatusSummary.fromJson(json);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  ChatMessage? _safeParseMessage(Map<String, Object?> json) {
+    try {
+      return ChatMessage.fromJson(json);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<Object?> _getJson(

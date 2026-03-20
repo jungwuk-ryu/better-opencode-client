@@ -49,8 +49,17 @@ class TodoService {
 
     return decoded
         .whereType<Map>()
-        .map((item) => TodoItem.fromJson(item.cast<String, Object?>()))
+        .map((item) => _safeParseTodo(item.cast<String, Object?>()))
+        .whereType<TodoItem>()
         .toList(growable: false);
+  }
+
+  TodoItem? _safeParseTodo(Map<String, Object?> json) {
+    try {
+      return TodoItem.fromJson(json);
+    } catch (_) {
+      return null;
+    }
   }
 
   void dispose() {

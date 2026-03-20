@@ -32,6 +32,17 @@ void main() {
             'version': '1',
             'time': {'created': 1710000000000, 'updated': 1710000005000},
           },
+          if (request.uri.queryParameters['roots'] != 'true')
+            {
+              'id': 'ses_2',
+              'slug': 'child',
+              'projectID': 'proj_1',
+              'directory': '/workspace/demo',
+              'title': 'Nested session',
+              'version': '1',
+              'parentID': 'ses_1',
+              'time': {'created': 1710000002000, 'updated': 1710000007000},
+            },
         ],
         '/session/status' => {
           'ses_1': {'type': 'busy'},
@@ -68,6 +79,20 @@ void main() {
             {'id': 'prt_4', 'type': 'text', 'text': 'ok'},
           ],
         },
+        '/session/ses_bad/message' => [
+          {
+            'info': {'id': 'msg_good', 'role': 'assistant'},
+            'parts': [
+              {'id': 'prt_good', 'type': 'text', 'text': 'kept message'},
+            ],
+          },
+          {
+            'info': null,
+            'parts': [
+              {'id': 'prt_bad', 'type': 'text', 'text': 'broken message'},
+            ],
+          },
+        ],
         _ => null,
       };
       if (body == null) {
@@ -84,29 +109,44 @@ void main() {
     await server.close(force: true);
   });
 
-  test(
-    'fetches sessions, statuses, and messages for selected project',
-    () async {
-      final service = ChatService();
-      final bundle = await service.fetchBundle(
-        profile: ServerProfile(
-          id: 'server',
-          label: 'mock',
-          baseUrl: baseUri.toString(),
-        ),
-        project: const ProjectTarget(
-          directory: '/workspace/demo',
-          label: 'Demo',
-        ),
-      );
+  test('fetches the full session list for the selected project', () async {
+    final service = ChatService();
+    final bundle = await service.fetchBundle(
+      profile: ServerProfile(
+        id: 'server',
+        label: 'mock',
+        baseUrl: baseUri.toString(),
+      ),
+      project: const ProjectTarget(directory: '/workspace/demo', label: 'Demo'),
+    );
 
-      expect(bundle.sessions.length, 1);
-      expect(bundle.statuses['ses_1']?.type, 'busy');
-      expect(bundle.messages.length, 2);
-      expect(bundle.messages.last.parts.last.text, 'done');
-      service.dispose();
-    },
-  );
+    expect(bundle.sessions.length, 2);
+    expect(bundle.sessions.map((session) => session.id), <String>[
+      'ses_1',
+      'ses_2',
+    ]);
+    expect(bundle.statuses['ses_1']?.type, 'busy');
+    expect(bundle.messages.length, 2);
+    expect(bundle.messages.last.parts.last.text, 'done');
+    service.dispose();
+  });
+
+  test('skips malformed messages when loading a session timeline', () async {
+    final service = ChatService();
+    final messages = await service.fetchMessages(
+      profile: ServerProfile(
+        id: 'server',
+        label: 'mock',
+        baseUrl: baseUri.toString(),
+      ),
+      project: const ProjectTarget(directory: '/workspace/demo', label: 'Demo'),
+      sessionId: 'ses_bad',
+    );
+
+    expect(messages, hasLength(1));
+    expect(messages.single.parts.single.text, 'kept message');
+    service.dispose();
+  });
 
   test('creates a session and sends a prompt message', () async {
     final service = ChatService();

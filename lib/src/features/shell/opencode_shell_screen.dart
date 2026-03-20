@@ -1004,8 +1004,12 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       }
       final messagesFresh = cachedMessages.isFresh(ttl, DateTime.now());
       final todosFresh =
-          cachedTodos != null && cachedTodos.isFresh(ttl, DateTime.now());
-      if (messagesFresh && todosFresh) {
+          !widget.capabilities.hasTodos ||
+          (cachedTodos != null && cachedTodos.isFresh(ttl, DateTime.now()));
+      if (widget.capabilities.hasTodos && !todosFresh) {
+        unawaited(_loadTodos(sessionId));
+      }
+      if (messagesFresh) {
         return;
       }
     } else {
@@ -1028,30 +1032,10 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       )) {
         return;
       }
-      final todos = widget.capabilities.hasTodos
-          ? await _todoService.fetchTodos(
-              profile: widget.profile,
-              project: widget.project,
-              sessionId: sessionId,
-            )
-          : const <TodoItem>[];
-      if (!_isActiveSessionSelection(
-        requestToken,
-        scopeKey,
-        sessionId: sessionId,
-      )) {
-        return;
-      }
       await _cacheStore.save(
         messagesKey,
         messages.map((item) => item.toJson()).toList(growable: false),
       );
-      if (widget.capabilities.hasTodos) {
-        await _cacheStore.save(
-          todosKey,
-          todos.map((item) => item.toJson()).toList(growable: false),
-        );
-      }
       if (!_isActiveSessionSelection(
         requestToken,
         scopeKey,
@@ -1061,8 +1045,11 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       }
       setState(() {
         _messages = messages;
-        _todos = todos;
+        if (!widget.capabilities.hasTodos) {
+          _todos = const <TodoItem>[];
+        }
         _loading = false;
+        _error = null;
       });
       await _persistWorkspaceHint(sessionId, _sessions, _statuses);
       if (!_isActiveSessionSelection(
@@ -1071,6 +1058,9 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         sessionId: sessionId,
       )) {
         return;
+      }
+      if (widget.capabilities.hasTodos) {
+        unawaited(_loadTodos(sessionId));
       }
     } catch (error) {
       if (!_isActiveSessionSelection(
