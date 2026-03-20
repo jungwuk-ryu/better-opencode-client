@@ -9,10 +9,19 @@ import 'package:opencode_mobile_remote/src/core/spec/capability_registry.dart';
 import 'package:opencode_mobile_remote/src/core/spec/probe_snapshot.dart';
 import 'package:opencode_mobile_remote/src/design_system/app_theme.dart';
 import 'package:opencode_mobile_remote/src/features/home/workspace_home_screen.dart';
+import 'package:opencode_mobile_remote/src/features/projects/project_catalog_service.dart';
+import 'package:opencode_mobile_remote/src/features/projects/project_models.dart';
+import 'package:opencode_mobile_remote/src/features/shell/opencode_shell_screen.dart';
+import 'package:opencode_mobile_remote/src/features/shell/server_workspace_shell_screen.dart';
 import 'package:opencode_mobile_remote/src/i18n/locale_controller.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+  });
 
   testWidgets('first run shows branded home scaffold without probe jargon', (
     tester,
@@ -88,6 +97,53 @@ void main() {
     expect(find.text('Studio'), findsWidgets);
     expect(find.text('Back to servers'), findsOneWidget);
     expect(find.byKey(const Key('workspace-section-seam')), findsOneWidget);
+  });
+
+  testWidgets('saved ready server can continue straight into the chat shell', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1440, 2200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final localeController = LocaleController();
+    addTearDown(localeController.dispose);
+
+    const profile = ServerProfile(
+      id: 'alpha',
+      label: 'Studio',
+      baseUrl: 'https://studio.example.com',
+    );
+
+    await tester.pumpWidget(
+      _TestApp(
+        child: WorkspaceHomeScreen(
+          flavor: AppFlavor.debug,
+          localeController: localeController,
+          projectCatalogService: _FakeProjectCatalogService(
+            catalog: _catalogWithCurrentProject(),
+          ),
+          snapshot: WorkspaceHomeSnapshot(
+            savedProfiles: const <ServerProfile>[profile],
+            cachedReports: <String, ServerProbeReport>{
+              profile.storageKey: _readyReport(),
+            },
+            selectedProfile: profile,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Continue'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('Continue'));
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ServerWorkspaceShellScreen), findsOneWidget);
+    expect(find.byType(OpenCodeShellScreen), findsOneWidget);
   });
 
   testWidgets('workspace header can return to the server selection state', (
@@ -261,6 +317,37 @@ class _TestApp extends StatelessWidget {
       home: child,
     );
   }
+}
+
+class _FakeProjectCatalogService extends ProjectCatalogService {
+  _FakeProjectCatalogService({required this.catalog});
+
+  final ProjectCatalog catalog;
+
+  @override
+  Future<ProjectCatalog> fetchCatalog(ServerProfile profile) async => catalog;
+}
+
+ProjectCatalog _catalogWithCurrentProject() {
+  return const ProjectCatalog(
+    currentProject: ProjectSummary(
+      id: 'demo',
+      directory: '/workspace/demo',
+      worktree: '/workspace/demo',
+      name: 'Demo workspace',
+      vcs: 'git',
+      updatedAt: null,
+    ),
+    projects: <ProjectSummary>[],
+    pathInfo: PathInfo(
+      home: '/home/tester',
+      state: '/state',
+      config: '/config',
+      worktree: '/workspace/demo',
+      directory: '/workspace/demo',
+    ),
+    vcsInfo: VcsInfo(branch: 'main'),
+  );
 }
 
 ServerProbeReport _readyReport() {

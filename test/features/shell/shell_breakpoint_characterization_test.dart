@@ -82,7 +82,7 @@ void main() {
 
     expect(find.text('Conversation'), findsOneWidget);
     expect(find.text('Sessions'), findsOneWidget);
-    expect(find.text('Back to projects'), findsOneWidget);
+    expect(find.text('Back to servers'), findsOneWidget);
     expect(find.text('Project and sessions'), findsNothing);
     expect(find.text('Terminal'), findsNothing);
   });
@@ -104,7 +104,7 @@ void main() {
     expect(find.text('Demo'), findsOneWidget);
     expect(find.text('Conversation'), findsOneWidget);
     expect(find.text('Sessions'), findsOneWidget);
-    expect(find.text('Back to projects'), findsOneWidget);
+    expect(find.text('Back to servers'), findsOneWidget);
     expect(find.text('Project and sessions'), findsNothing);
     expect(find.text('Terminal'), findsNothing);
   });
@@ -129,7 +129,7 @@ void main() {
     expect(find.text('Context'), findsAtLeastNWidgets(1));
     expect(find.text('Conversation'), findsOneWidget);
     expect(find.text('Terminal'), findsNothing);
-    expect(find.text('Back to projects'), findsOneWidget);
+    expect(find.text('Back to servers'), findsOneWidget);
   });
 
   testWidgets('width 1366 keeps stable destinations on desktop shell', (

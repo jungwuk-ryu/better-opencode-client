@@ -132,6 +132,8 @@ void main() {
     required CapabilityRegistry capabilitiesToUse,
     ServerProfile profileToUse = profile,
     ProjectTarget projectToUse = project,
+    List<ProjectTarget> availableProjects = const <ProjectTarget>[],
+    ValueChanged<ProjectTarget>? onSelectProject,
     ChatService? chatService,
     TodoService? todoService,
     FileBrowserService? fileBrowserService,
@@ -151,6 +153,8 @@ void main() {
         capabilitiesToUse: capabilitiesToUse,
         profileToUse: profileToUse,
         projectToUse: projectToUse,
+        availableProjects: availableProjects,
+        onSelectProject: onSelectProject,
         chatService: chatService,
         todoService: todoService,
         fileBrowserService: fileBrowserService,
@@ -199,7 +203,43 @@ void main() {
 
     expect(find.text('Chat'), findsOneWidget);
     expect(find.text('Conversation'), findsOneWidget);
-    expect(find.text('Back to projects'), findsOneWidget);
+    expect(find.text('Back to servers'), findsOneWidget);
+  });
+
+  testWidgets('mobile shell opens a drawer with project and session picks', (
+    tester,
+  ) async {
+    ProjectTarget? selectedProject;
+
+    await pumpShellWithCapabilities(
+      tester,
+      size: const Size(430, 932),
+      capabilitiesToUse: capabilities,
+      availableProjects: const <ProjectTarget>[
+        project,
+        ProjectTarget(
+          directory: '/workspace/sidequest',
+          label: 'Sidequest',
+          source: 'server',
+          vcs: 'git',
+          branch: 'develop',
+        ),
+      ],
+      onSelectProject: (project) {
+        selectedProject = project;
+      },
+    );
+
+    await tester.tap(find.byIcon(Icons.menu_open_rounded));
+    await _pumpShellFrames(tester);
+
+    expect(find.text('Project and sessions'), findsOneWidget);
+    expect(find.text('Sidequest'), findsOneWidget);
+
+    await tester.tap(find.text('Sidequest'));
+    await _pumpShellFrames(tester);
+
+    expect(selectedProject?.directory, '/workspace/sidequest');
   });
 
   testWidgets('minimal capabilities hide unsupported shell controls', (
@@ -1936,6 +1976,8 @@ Widget _buildShell({
   required CapabilityRegistry capabilitiesToUse,
   required ServerProfile profileToUse,
   required ProjectTarget projectToUse,
+  List<ProjectTarget> availableProjects = const <ProjectTarget>[],
+  ValueChanged<ProjectTarget>? onSelectProject,
   ChatService? chatService,
   TodoService? todoService,
   FileBrowserService? fileBrowserService,
@@ -1954,6 +1996,8 @@ Widget _buildShell({
       project: projectToUse,
       capabilities: capabilitiesToUse,
       onExit: _noop,
+      availableProjects: availableProjects,
+      onSelectProject: onSelectProject,
       chatService: chatService,
       todoService: todoService,
       fileBrowserService: fileBrowserService,

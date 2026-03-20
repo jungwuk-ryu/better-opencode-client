@@ -65,7 +65,7 @@ void main() {
         await tester.pump(const Duration(milliseconds: 200));
       }
 
-      expect(find.bySemanticsLabel('Back to projects'), findsWidgets);
+      expect(find.bySemanticsLabel('Back to servers'), findsWidgets);
       expect(find.bySemanticsLabel('Message field'), findsOneWidget);
       expect(find.bySemanticsLabel('Send message'), findsOneWidget);
     } finally {

@@ -65,6 +65,10 @@ class OpenCodeShellScreen extends StatefulWidget {
     required this.project,
     required this.capabilities,
     required this.onExit,
+    this.availableProjects = const <ProjectTarget>[],
+    this.projectPanelError,
+    this.onSelectProject,
+    this.onReloadProjects,
     this.chatService,
     this.todoService,
     this.projectStore,
@@ -81,6 +85,10 @@ class OpenCodeShellScreen extends StatefulWidget {
   final ProjectTarget project;
   final CapabilityRegistry capabilities;
   final VoidCallback onExit;
+  final List<ProjectTarget> availableProjects;
+  final String? projectPanelError;
+  final ValueChanged<ProjectTarget>? onSelectProject;
+  final Future<void> Function()? onReloadProjects;
   final ChatService? chatService;
   final TodoService? todoService;
   final ProjectStore? projectStore;
@@ -2035,6 +2043,10 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         project: widget.project,
         capabilities: widget.capabilities,
         onExit: widget.onExit,
+        availableProjects: widget.availableProjects,
+        projectPanelError: widget.projectPanelError,
+        onSelectProject: widget.onSelectProject,
+        onReloadProjects: widget.onReloadProjects,
         sessions: _sessions,
         statuses: _statuses,
         messages: _messages,
@@ -2094,6 +2106,10 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         project: widget.project,
         capabilities: widget.capabilities,
         onExit: widget.onExit,
+        availableProjects: widget.availableProjects,
+        projectPanelError: widget.projectPanelError,
+        onSelectProject: widget.onSelectProject,
+        onReloadProjects: widget.onReloadProjects,
         sessions: _sessions,
         statuses: _statuses,
         messages: _messages,
@@ -2153,6 +2169,10 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         project: widget.project,
         capabilities: widget.capabilities,
         onExit: widget.onExit,
+        availableProjects: widget.availableProjects,
+        projectPanelError: widget.projectPanelError,
+        onSelectProject: widget.onSelectProject,
+        onReloadProjects: widget.onReloadProjects,
         sessions: _sessions,
         statuses: _statuses,
         messages: _messages,
@@ -2211,6 +2231,10 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       project: widget.project,
       capabilities: widget.capabilities,
       onExit: widget.onExit,
+      availableProjects: widget.availableProjects,
+      projectPanelError: widget.projectPanelError,
+      onSelectProject: widget.onSelectProject,
+      onReloadProjects: widget.onReloadProjects,
       sessions: _sessions,
       statuses: _statuses,
       messages: _messages,
@@ -2272,6 +2296,10 @@ class _DesktopShell extends StatelessWidget {
     required this.project,
     required this.capabilities,
     required this.onExit,
+    required this.availableProjects,
+    required this.projectPanelError,
+    required this.onSelectProject,
+    required this.onReloadProjects,
     required this.sessions,
     required this.statuses,
     required this.messages,
@@ -2329,6 +2357,10 @@ class _DesktopShell extends StatelessWidget {
   final ProjectTarget project;
   final CapabilityRegistry capabilities;
   final VoidCallback onExit;
+  final List<ProjectTarget> availableProjects;
+  final String? projectPanelError;
+  final ValueChanged<ProjectTarget>? onSelectProject;
+  final Future<void> Function()? onReloadProjects;
   final List<SessionSummary> sessions;
   final Map<String, SessionStatusSummary> statuses;
   final List<ChatMessage> messages;
@@ -2402,6 +2434,10 @@ class _DesktopShell extends StatelessWidget {
                     project: project,
                     capabilities: capabilities,
                     onExit: onExit,
+                    availableProjects: availableProjects,
+                    projectPanelError: projectPanelError,
+                    onSelectProject: onSelectProject,
+                    onReloadProjects: onReloadProjects,
                     sessions: sessions,
                     statuses: statuses,
                     selectedSessionId: selectedSessionId,
@@ -2506,6 +2542,10 @@ class _TabletLandscapeShell extends StatelessWidget {
     required this.project,
     required this.capabilities,
     required this.onExit,
+    required this.availableProjects,
+    required this.projectPanelError,
+    required this.onSelectProject,
+    required this.onReloadProjects,
     required this.sessions,
     required this.statuses,
     required this.messages,
@@ -2563,6 +2603,10 @@ class _TabletLandscapeShell extends StatelessWidget {
   final ProjectTarget project;
   final CapabilityRegistry capabilities;
   final VoidCallback onExit;
+  final List<ProjectTarget> availableProjects;
+  final String? projectPanelError;
+  final ValueChanged<ProjectTarget>? onSelectProject;
+  final Future<void> Function()? onReloadProjects;
   final List<SessionSummary> sessions;
   final Map<String, SessionStatusSummary> statuses;
   final List<ChatMessage> messages;
@@ -2636,6 +2680,10 @@ class _TabletLandscapeShell extends StatelessWidget {
                     project: project,
                     capabilities: capabilities,
                     onExit: onExit,
+                    availableProjects: availableProjects,
+                    projectPanelError: projectPanelError,
+                    onSelectProject: onSelectProject,
+                    onReloadProjects: onReloadProjects,
                     sessions: sessions,
                     statuses: statuses,
                     selectedSessionId: selectedSessionId,
@@ -2740,6 +2788,10 @@ class _TabletPortraitShell extends StatelessWidget {
     required this.project,
     required this.capabilities,
     required this.onExit,
+    required this.availableProjects,
+    required this.projectPanelError,
+    required this.onSelectProject,
+    required this.onReloadProjects,
     required this.sessions,
     required this.statuses,
     required this.messages,
@@ -2797,6 +2849,10 @@ class _TabletPortraitShell extends StatelessWidget {
   final ProjectTarget project;
   final CapabilityRegistry capabilities;
   final VoidCallback onExit;
+  final List<ProjectTarget> availableProjects;
+  final String? projectPanelError;
+  final ValueChanged<ProjectTarget>? onSelectProject;
+  final Future<void> Function()? onReloadProjects;
   final List<SessionSummary> sessions;
   final Map<String, SessionStatusSummary> statuses;
   final List<ChatMessage> messages;
@@ -2851,10 +2907,41 @@ class _TabletPortraitShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final workspaceDrawer = _WorkspaceDrawer(
+      project: project,
+      profile: profile,
+      availableProjects: availableProjects,
+      projectPanelError: projectPanelError,
+      onSelectProject: onSelectProject,
+      onReloadProjects: onReloadProjects,
+      sessions: sessions,
+      statuses: statuses,
+      capabilities: capabilities,
+      selectedSessionId: selectedSessionId,
+      onSelectSession: onSelectSession,
+      onForkSession: onForkSession,
+      onAbortSession: onAbortSession,
+      onShareSession: onShareSession,
+      onUnshareSession: onUnshareSession,
+      onDeleteSession: onDeleteSession,
+      onRenameSession: onRenameSession,
+      onRevertSession: onRevertSession,
+      onUnrevertSession: onUnrevertSession,
+      onInitSession: onInitSession,
+      onSummarizeSession: onSummarizeSession,
+    );
     return _ShellScaffold(
+      drawer: workspaceDrawer,
       child: Column(
         children: <Widget>[
-          _ShellTopBar(project: project, onExit: onExit),
+          Builder(
+            builder: (innerContext) => _ShellTopBar(
+              project: project,
+              onExit: onExit,
+              onOpenWorkspacePanel: () =>
+                  Scaffold.of(innerContext).openDrawer(),
+            ),
+          ),
           const SizedBox(height: AppSpacing.lg),
           _ShellPrimaryDestinationStrip(
             compact: true,
@@ -2873,6 +2960,12 @@ class _TabletPortraitShell extends StatelessWidget {
                 key: ValueKey<_ShellPrimaryDestination>(primaryDestination),
                 child: switch (primaryDestination) {
                   _ShellPrimaryDestination.sessions => _CompactSessionsPanel(
+                    project: project,
+                    profile: profile,
+                    availableProjects: availableProjects,
+                    projectPanelError: projectPanelError,
+                    onSelectProject: onSelectProject,
+                    onReloadProjects: onReloadProjects,
                     statuses: statuses,
                     sessions: sessions,
                     capabilities: capabilities,
@@ -2969,6 +3062,10 @@ class _MobileShell extends StatelessWidget {
     required this.project,
     required this.capabilities,
     required this.onExit,
+    required this.availableProjects,
+    required this.projectPanelError,
+    required this.onSelectProject,
+    required this.onReloadProjects,
     required this.sessions,
     required this.statuses,
     required this.messages,
@@ -3026,6 +3123,10 @@ class _MobileShell extends StatelessWidget {
   final ProjectTarget project;
   final CapabilityRegistry capabilities;
   final VoidCallback onExit;
+  final List<ProjectTarget> availableProjects;
+  final String? projectPanelError;
+  final ValueChanged<ProjectTarget>? onSelectProject;
+  final Future<void> Function()? onReloadProjects;
   final List<SessionSummary> sessions;
   final Map<String, SessionStatusSummary> statuses;
   final List<ChatMessage> messages;
@@ -3080,10 +3181,41 @@ class _MobileShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final workspaceDrawer = _WorkspaceDrawer(
+      project: project,
+      profile: profile,
+      availableProjects: availableProjects,
+      projectPanelError: projectPanelError,
+      onSelectProject: onSelectProject,
+      onReloadProjects: onReloadProjects,
+      sessions: sessions,
+      statuses: statuses,
+      capabilities: capabilities,
+      selectedSessionId: selectedSessionId,
+      onSelectSession: onSelectSession,
+      onForkSession: onForkSession,
+      onAbortSession: onAbortSession,
+      onShareSession: onShareSession,
+      onUnshareSession: onUnshareSession,
+      onDeleteSession: onDeleteSession,
+      onRenameSession: onRenameSession,
+      onRevertSession: onRevertSession,
+      onUnrevertSession: onUnrevertSession,
+      onInitSession: onInitSession,
+      onSummarizeSession: onSummarizeSession,
+    );
     return _ShellScaffold(
+      drawer: workspaceDrawer,
       child: Column(
         children: <Widget>[
-          _ShellTopBar(project: project, onExit: onExit),
+          Builder(
+            builder: (innerContext) => _ShellTopBar(
+              project: project,
+              onExit: onExit,
+              onOpenWorkspacePanel: () =>
+                  Scaffold.of(innerContext).openDrawer(),
+            ),
+          ),
           const SizedBox(height: AppSpacing.xs),
           _ShellPrimaryDestinationStrip(
             compact: true,
@@ -3102,6 +3234,12 @@ class _MobileShell extends StatelessWidget {
                 key: ValueKey<_ShellPrimaryDestination>(primaryDestination),
                 child: switch (primaryDestination) {
                   _ShellPrimaryDestination.sessions => _CompactSessionsPanel(
+                    project: project,
+                    profile: profile,
+                    availableProjects: availableProjects,
+                    projectPanelError: projectPanelError,
+                    onSelectProject: onSelectProject,
+                    onReloadProjects: onReloadProjects,
                     compact: true,
                     statuses: statuses,
                     sessions: sessions,
@@ -3195,9 +3333,10 @@ class _MobileShell extends StatelessWidget {
 }
 
 class _ShellScaffold extends StatelessWidget {
-  const _ShellScaffold({required this.child});
+  const _ShellScaffold({required this.child, this.drawer});
 
   final Widget child;
+  final Widget? drawer;
 
   @override
   Widget build(BuildContext context) {
@@ -3205,6 +3344,7 @@ class _ShellScaffold extends StatelessWidget {
     final theme = Theme.of(context);
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     return Scaffold(
+      drawer: drawer,
       body: Stack(
         children: <Widget>[
           DecoratedBox(
@@ -3436,8 +3576,307 @@ class _ShellPrimaryDestinationButton extends StatelessWidget {
   }
 }
 
+List<ProjectTarget> _projectOptions(
+  ProjectTarget currentProject,
+  List<ProjectTarget> availableProjects,
+) {
+  final byDirectory = <String, ProjectTarget>{};
+
+  void add(ProjectTarget target) {
+    byDirectory[target.directory] = target;
+  }
+
+  add(currentProject);
+  for (final project in availableProjects) {
+    add(project);
+  }
+  return byDirectory.values.toList(growable: false);
+}
+
+class _ProjectSwitcherPanel extends StatelessWidget {
+  const _ProjectSwitcherPanel({
+    required this.project,
+    required this.profile,
+    required this.availableProjects,
+    required this.projectPanelError,
+    required this.onSelectProject,
+    required this.onReloadProjects,
+    this.activeSessionsLabel,
+    this.activeSessionsIndicator,
+    this.onExit,
+    this.compact = false,
+  });
+
+  final ProjectTarget project;
+  final ServerProfile profile;
+  final List<ProjectTarget> availableProjects;
+  final String? projectPanelError;
+  final ValueChanged<ProjectTarget>? onSelectProject;
+  final Future<void> Function()? onReloadProjects;
+  final String? activeSessionsLabel;
+  final Widget? activeSessionsIndicator;
+  final VoidCallback? onExit;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final projects = _projectOptions(project, availableProjects);
+    return _PanelCard(
+      tone: _PanelTone.subtle,
+      eyebrow: l10n.shellWorkspaceEyebrow,
+      title: l10n.shellProjectRailTitle,
+      subtitle: project.directory,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(project.label, style: Theme.of(context).textTheme.headlineSmall),
+          const SizedBox(height: AppSpacing.md),
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
+            children: <Widget>[
+              _InfoChip(
+                label: project.branch ?? l10n.shellUnknownLabel,
+                icon: Icons.account_tree_outlined,
+                emphasis: true,
+              ),
+              _InfoChip(
+                label: profile.effectiveLabel,
+                icon: Icons.cloud_outlined,
+              ),
+              if (activeSessionsLabel != null)
+                _InfoChip(
+                  label: activeSessionsLabel!,
+                  emphasis: activeSessionsIndicator != null,
+                  iconChild: activeSessionsIndicator,
+                ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          for (var index = 0; index < projects.length; index += 1) ...<Widget>[
+            if (index > 0) const SizedBox(height: AppSpacing.sm),
+            _ProjectTile(
+              project: projects[index],
+              selected: projects[index].directory == project.directory,
+              onTap: onSelectProject == null
+                  ? null
+                  : () => onSelectProject!(projects[index]),
+            ),
+          ],
+          if (projectPanelError != null) ...<Widget>[
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              l10n.projectCatalogUnavailableBody,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+          if (projectPanelError != null &&
+              onReloadProjects != null) ...<Widget>[
+            const SizedBox(height: AppSpacing.md),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                onPressed: () => onReloadProjects!(),
+                icon: const Icon(Icons.refresh_rounded),
+                label: Text(l10n.homeActionRetry),
+              ),
+            ),
+          ],
+          if (onExit != null) ...<Widget>[
+            SizedBox(height: compact ? AppSpacing.md : AppSpacing.lg),
+            Semantics(
+              label: l10n.homeBackToServersAction,
+              button: true,
+              child: OutlinedButton.icon(
+                onPressed: onExit,
+                icon: const Icon(Icons.arrow_back_rounded),
+                label: Text(l10n.homeBackToServersAction),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ProjectTile extends StatelessWidget {
+  const _ProjectTile({
+    required this.project,
+    required this.selected,
+    this.onTap,
+  });
+
+  final ProjectTarget project;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final fill = selected
+        ? Color.alphaBlend(
+            theme.colorScheme.primary.withValues(alpha: 0.12),
+            surfaces.panelEmphasis.withValues(alpha: 0.9),
+          )
+        : surfaces.panelMuted.withValues(alpha: 0.66);
+    final border = selected
+        ? theme.colorScheme.primary.withValues(alpha: 0.28)
+        : surfaces.lineSoft;
+    return Semantics(
+      button: onTap != null,
+      selected: selected,
+      label: project.label,
+      child: InkWell(
+        key: ValueKey<String>('project-tile-${project.directory}'),
+        borderRadius: BorderRadius.circular(AppSpacing.md),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: _motionFast,
+          curve: Curves.easeOutCubic,
+          decoration: BoxDecoration(
+            color: fill,
+            borderRadius: BorderRadius.circular(AppSpacing.md),
+            border: Border.all(color: border),
+          ),
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      project.label,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(project.directory, style: theme.textTheme.bodySmall),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              _InfoChip(
+                label: project.branch ?? project.vcs ?? project.source ?? 'dir',
+                icon: selected
+                    ? Icons.radio_button_checked_rounded
+                    : Icons.folder_open_rounded,
+                emphasis: selected,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WorkspaceDrawer extends StatelessWidget {
+  const _WorkspaceDrawer({
+    required this.project,
+    required this.profile,
+    required this.availableProjects,
+    required this.projectPanelError,
+    required this.onSelectProject,
+    required this.onReloadProjects,
+    required this.sessions,
+    required this.statuses,
+    required this.capabilities,
+    required this.selectedSessionId,
+    required this.onSelectSession,
+    required this.onForkSession,
+    required this.onAbortSession,
+    required this.onShareSession,
+    required this.onUnshareSession,
+    required this.onDeleteSession,
+    required this.onRenameSession,
+    required this.onRevertSession,
+    required this.onUnrevertSession,
+    required this.onInitSession,
+    required this.onSummarizeSession,
+  });
+
+  final ProjectTarget project;
+  final ServerProfile profile;
+  final List<ProjectTarget> availableProjects;
+  final String? projectPanelError;
+  final ValueChanged<ProjectTarget>? onSelectProject;
+  final Future<void> Function()? onReloadProjects;
+  final List<SessionSummary> sessions;
+  final Map<String, SessionStatusSummary> statuses;
+  final CapabilityRegistry capabilities;
+  final String? selectedSessionId;
+  final ValueChanged<String> onSelectSession;
+  final Future<void> Function(String) onForkSession;
+  final Future<void> Function(String) onAbortSession;
+  final Future<void> Function(String) onShareSession;
+  final Future<void> Function(String) onUnshareSession;
+  final Future<void> Function(String) onDeleteSession;
+  final Future<void> Function(String) onRenameSession;
+  final Future<void> Function(String) onRevertSession;
+  final Future<void> Function(String) onUnrevertSession;
+  final Future<void> Function(String) onInitSession;
+  final Future<void> Function(String) onSummarizeSession;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return Drawer(
+      child: DecoratedBox(
+        decoration: BoxDecoration(color: surfaces.background),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: _CompactSessionsPanel(
+              compact: true,
+              project: project,
+              profile: profile,
+              availableProjects: availableProjects,
+              projectPanelError: projectPanelError,
+              onSelectProject: (nextProject) {
+                Navigator.of(context).maybePop();
+                onSelectProject?.call(nextProject);
+              },
+              onReloadProjects: onReloadProjects,
+              statuses: statuses,
+              sessions: sessions,
+              capabilities: capabilities,
+              selectedSessionId: selectedSessionId,
+              onSelectSession: (sessionId) {
+                Navigator.of(context).maybePop();
+                onSelectSession(sessionId);
+              },
+              onForkSession: onForkSession,
+              onAbortSession: onAbortSession,
+              onShareSession: onShareSession,
+              onUnshareSession: onUnshareSession,
+              onDeleteSession: onDeleteSession,
+              onRenameSession: onRenameSession,
+              onRevertSession: onRevertSession,
+              onUnrevertSession: onUnrevertSession,
+              onInitSession: onInitSession,
+              onSummarizeSession: onSummarizeSession,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _CompactSessionsPanel extends StatelessWidget {
   const _CompactSessionsPanel({
+    required this.project,
+    required this.profile,
+    required this.availableProjects,
+    required this.projectPanelError,
+    required this.onSelectProject,
+    required this.onReloadProjects,
     required this.statuses,
     required this.sessions,
     required this.capabilities,
@@ -3457,6 +3896,12 @@ class _CompactSessionsPanel extends StatelessWidget {
   });
 
   final bool compact;
+  final ProjectTarget project;
+  final ServerProfile profile;
+  final List<ProjectTarget> availableProjects;
+  final String? projectPanelError;
+  final ValueChanged<ProjectTarget>? onSelectProject;
+  final Future<void> Function()? onReloadProjects;
   final Map<String, SessionStatusSummary> statuses;
   final List<SessionSummary> sessions;
   final CapabilityRegistry capabilities;
@@ -3480,6 +3925,16 @@ class _CompactSessionsPanel extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
+        _ProjectSwitcherPanel(
+          project: project,
+          profile: profile,
+          availableProjects: availableProjects,
+          projectPanelError: projectPanelError,
+          onSelectProject: onSelectProject,
+          onReloadProjects: onReloadProjects,
+          compact: compact,
+        ),
+        SizedBox(height: compact ? AppSpacing.sm : AppSpacing.lg),
         Expanded(
           child: _PanelCard(
             tone: _PanelTone.subtle,
@@ -3823,6 +4278,10 @@ class _LeftRail extends StatelessWidget {
     required this.project,
     required this.capabilities,
     required this.onExit,
+    required this.availableProjects,
+    required this.projectPanelError,
+    required this.onSelectProject,
+    required this.onReloadProjects,
     required this.sessions,
     required this.statuses,
     required this.selectedSessionId,
@@ -3843,6 +4302,10 @@ class _LeftRail extends StatelessWidget {
   final ProjectTarget project;
   final CapabilityRegistry capabilities;
   final VoidCallback onExit;
+  final List<ProjectTarget> availableProjects;
+  final String? projectPanelError;
+  final ValueChanged<ProjectTarget>? onSelectProject;
+  final Future<void> Function()? onReloadProjects;
   final List<SessionSummary> sessions;
   final Map<String, SessionStatusSummary> statuses;
   final String? selectedSessionId;
@@ -3870,57 +4333,22 @@ class _LeftRail extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        _PanelCard(
-          tone: _PanelTone.subtle,
-          eyebrow: l10n.shellWorkspaceEyebrow,
-          title: l10n.shellProjectRailTitle,
-          subtitle: project.directory,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(
-                project.label,
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Wrap(
-                spacing: AppSpacing.sm,
-                runSpacing: AppSpacing.sm,
-                children: <Widget>[
-                  _InfoChip(
-                    label: project.branch ?? l10n.shellUnknownLabel,
-                    icon: Icons.account_tree_outlined,
-                    emphasis: true,
-                  ),
-                  _InfoChip(
-                    label: profile.effectiveLabel,
-                    icon: Icons.cloud_outlined,
-                  ),
-                  _InfoChip(
-                    label: l10n.shellActiveCount(activeSessions.length),
-                    emphasis: activeSessions.isNotEmpty,
-                    iconChild: _AnimatedActivityGlyph(
-                      active: activeSessions.isNotEmpty,
-                      icon: Icons.bolt_rounded,
-                      color: activeSessions.isNotEmpty
-                          ? theme.colorScheme.primary
-                          : surfaces.accentSoft,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Semantics(
-                label: l10n.shellA11yBackToProjectsAction,
-                button: true,
-                child: OutlinedButton.icon(
-                  onPressed: onExit,
-                  icon: const Icon(Icons.arrow_back_rounded),
-                  label: Text(l10n.shellBackToProjectsAction),
-                ),
-              ),
-            ],
+        _ProjectSwitcherPanel(
+          project: project,
+          profile: profile,
+          availableProjects: availableProjects,
+          projectPanelError: projectPanelError,
+          onSelectProject: onSelectProject,
+          onReloadProjects: onReloadProjects,
+          activeSessionsLabel: l10n.shellActiveCount(activeSessions.length),
+          activeSessionsIndicator: _AnimatedActivityGlyph(
+            active: activeSessions.isNotEmpty,
+            icon: Icons.bolt_rounded,
+            color: activeSessions.isNotEmpty
+                ? theme.colorScheme.primary
+                : surfaces.accentSoft,
           ),
+          onExit: onExit,
         ),
         const SizedBox(height: AppSpacing.lg),
         Expanded(
@@ -4455,27 +4883,56 @@ class _ContextRail extends StatelessWidget {
 }
 
 class _ShellTopBar extends StatelessWidget {
-  const _ShellTopBar({required this.project, required this.onExit});
+  const _ShellTopBar({
+    required this.project,
+    required this.onExit,
+    this.onOpenWorkspacePanel,
+  });
 
   final ProjectTarget project;
   final VoidCallback onExit;
+  final VoidCallback? onOpenWorkspacePanel;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
+    final compact = MediaQuery.sizeOf(context).width < 700;
     return _PanelCard(
       tone: _PanelTone.subtle,
       eyebrow: l10n.shellWorkspaceEyebrow,
       title: project.label,
       subtitle: project.directory,
-      trailing: Semantics(
-        label: l10n.shellA11yBackToProjectsAction,
-        button: true,
-        child: OutlinedButton.icon(
-          onPressed: onExit,
-          icon: const Icon(Icons.arrow_back_rounded),
-          label: Text(l10n.shellBackToProjectsAction),
-        ),
+      trailing: Wrap(
+        spacing: AppSpacing.sm,
+        runSpacing: AppSpacing.sm,
+        alignment: WrapAlignment.end,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: <Widget>[
+          if (onOpenWorkspacePanel != null)
+            Semantics(
+              button: true,
+              label: l10n.shellProjectRailTitle,
+              child: IconButton(
+                tooltip: l10n.shellProjectRailTitle,
+                onPressed: onOpenWorkspacePanel,
+                icon: const Icon(Icons.menu_open_rounded),
+              ),
+            ),
+          Semantics(
+            label: l10n.homeBackToServersAction,
+            button: true,
+            child: compact
+                ? OutlinedButton(
+                    onPressed: onExit,
+                    child: Text(l10n.homeBackToServersAction),
+                  )
+                : OutlinedButton.icon(
+                    onPressed: onExit,
+                    icon: const Icon(Icons.arrow_back_rounded),
+                    label: Text(l10n.homeBackToServersAction),
+                  ),
+          ),
+        ],
       ),
       child: Wrap(
         spacing: AppSpacing.sm,

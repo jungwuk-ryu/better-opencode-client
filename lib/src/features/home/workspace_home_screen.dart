@@ -21,6 +21,7 @@ import '../projects/project_models.dart';
 import '../projects/project_store.dart';
 import '../projects/project_workspace_section.dart';
 import '../shell/opencode_shell_screen.dart';
+import '../shell/server_workspace_shell_screen.dart';
 
 const _contentMaxWidth = 1480.0;
 const _sideColumnWidth = 420.0;
@@ -102,6 +103,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
   ServerProfile? _selectedProfile;
   ProjectTarget? _recentWorkspace;
   ProjectTarget? _openedProject;
+  bool _workspaceShellOpen = false;
   String? _editingProfileId;
   bool _loading = true;
   bool _isSaving = false;
@@ -367,6 +369,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
       _selectedProfile = selectedProfile;
       _workspaceNotice = null;
       _openedProject = null;
+      _workspaceShellOpen = false;
       _connectingProfileKey = selectedProfile.storageKey;
     });
 
@@ -403,6 +406,12 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
           l10n,
           selectedProfile.effectiveLabel,
         );
+        if (widget.workspaceSectionBuilder == null &&
+            (report.classification == ConnectionProbeClassification.ready ||
+                report.classification ==
+                    ConnectionProbeClassification.unsupportedCapabilities)) {
+          _workspaceShellOpen = true;
+        }
         if (_connectingProfileKey == selectedProfile.storageKey) {
           _connectingProfileKey = null;
         }
@@ -444,6 +453,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
       _selectedProfile = profile;
       _recentWorkspace = null;
       _openedProject = null;
+      _workspaceShellOpen = false;
       _resumingWorkspace = false;
       _workspaceNotice = null;
     });
@@ -459,6 +469,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
       _selectedProfile = null;
       _recentWorkspace = null;
       _openedProject = null;
+      _workspaceShellOpen = false;
       _resumingWorkspace = false;
       _connectingProfileKey = null;
       _workspaceNotice = null;
@@ -553,6 +564,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
       _selectedProfile = nextSelected;
       _recentWorkspace = null;
       _workspaceNotice = null;
+      _workspaceShellOpen = false;
     });
     _loadEditorFromProfile(nextSelected);
   }
@@ -562,6 +574,14 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
       _workspaceNotice = null;
       _recentWorkspace = project;
       _openedProject = project;
+      _workspaceShellOpen = widget.workspaceSectionBuilder == null;
+    });
+  }
+
+  void _openWorkspaceShell() {
+    setState(() {
+      _workspaceNotice = null;
+      _workspaceShellOpen = true;
     });
   }
 
@@ -683,6 +703,24 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
   @override
   Widget build(BuildContext context) {
     final selectedReport = _selectedReport;
+    if (_workspaceShellOpen &&
+        widget.workspaceSectionBuilder == null &&
+        _selectedProfile != null &&
+        selectedReport != null) {
+      return ServerWorkspaceShellScreen(
+        profile: _selectedProfile!,
+        capabilities: selectedReport.capabilityRegistry,
+        initialProject: _openedProject,
+        projectCatalogService: _projectCatalogService,
+        projectStore: _projectStore,
+        onExit: () {
+          setState(() {
+            _workspaceShellOpen = false;
+            _openedProject = null;
+          });
+        },
+      );
+    }
     if (_openedProject != null &&
         _selectedProfile != null &&
         selectedReport != null) {
@@ -992,6 +1030,46 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
     }
 
     if (_canProceedToProjectSelection(selectedProfile)) {
+      if (widget.workspaceSectionBuilder == null) {
+        final resumePanel = _buildResumePanel(context, _launchState);
+        return _wrapWorkspaceSurface(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              if (resumePanel != null) ...<Widget>[
+                resumePanel,
+                const SizedBox(height: AppSpacing.lg),
+              ],
+              _SectionCard(
+                title: selectedProfile.effectiveLabel,
+                subtitle: l10n.homeWorkspaceTitleContinueFromHome,
+                child: Padding(
+                  padding: const EdgeInsets.all(AppSpacing.lg),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      _EmptyStateBlock(
+                        title: l10n.shellChatHeaderTitle,
+                        subtitle: l10n.homeWorkspaceSubtitleReady,
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      Semantics(
+                        button: true,
+                        label: l10n.homeActionContinue,
+                        child: ElevatedButton.icon(
+                          onPressed: _openWorkspaceShell,
+                          icon: const Icon(Icons.chat_bubble_outline_rounded),
+                          label: Text(l10n.homeActionContinue),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
       final resumePanel = _buildResumePanel(context, _launchState);
       final builder =
           widget.workspaceSectionBuilder ??
@@ -1509,6 +1587,46 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
     if (selectedProfile != null &&
         _canProceedToProjectSelection(selectedProfile) &&
         !isConnecting) {
+      if (widget.workspaceSectionBuilder == null) {
+        final resumePanel = _buildResumePanel(context, _launchState);
+        return _wrapWorkspaceSurface(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              if (resumePanel != null) ...<Widget>[
+                resumePanel,
+                const SizedBox(height: AppSpacing.lg),
+              ],
+              _SectionCard(
+                title: selectedProfile.effectiveLabel,
+                subtitle: l10n.homeWorkspaceTitleContinueFromHome,
+                child: Padding(
+                  padding: const EdgeInsets.all(AppSpacing.lg),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      _EmptyStateBlock(
+                        title: l10n.shellChatHeaderTitle,
+                        subtitle: l10n.homeWorkspaceSubtitleReady,
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      Semantics(
+                        button: true,
+                        label: l10n.homeActionContinue,
+                        child: ElevatedButton.icon(
+                          onPressed: _openWorkspaceShell,
+                          icon: const Icon(Icons.chat_bubble_outline_rounded),
+                          label: Text(l10n.homeActionContinue),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
       final builder =
           widget.workspaceSectionBuilder ??
           (
