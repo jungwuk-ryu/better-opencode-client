@@ -359,6 +359,91 @@ void main() {
   });
 
   testWidgets(
+    'chat timeline does not fight an active manual scroll when messages update',
+    (tester) async {
+      final initialService = _ControlledChatService(
+        bundlesByScopeKey: <String, ChatSessionBundle>{
+          _scopeKeyFor(profile, project): ChatSessionBundle(
+            sessions: <SessionSummary>[
+              _testSession(
+                'session-1',
+                'First session',
+                directory: project.directory,
+              ),
+            ],
+            statuses: const <String, SessionStatusSummary>{},
+            messages: _manyMessages('session-1', 24),
+            selectedSessionId: 'session-1',
+          ),
+        },
+      );
+      final updatedService = _ControlledChatService(
+        bundlesByScopeKey: <String, ChatSessionBundle>{
+          _scopeKeyFor(profile, project): ChatSessionBundle(
+            sessions: <SessionSummary>[
+              _testSession(
+                'session-1',
+                'First session',
+                directory: project.directory,
+              ),
+            ],
+            statuses: const <String, SessionStatusSummary>{},
+            messages: _manyMessages('session-1', 36),
+            selectedSessionId: 'session-1',
+          ),
+        },
+      );
+
+      await pumpShellWithCapabilities(
+        tester,
+        size: const Size(430, 932),
+        capabilitiesToUse: capabilities,
+        chatService: initialService,
+        todoService: _RecordingTodoService(),
+      );
+
+      final listFinder = find.byKey(
+        const ValueKey<String>('chat-message-list'),
+      );
+      final gesture = await tester.startGesture(tester.getCenter(listFinder));
+      await gesture.moveBy(const Offset(0, 220));
+      await tester.pump();
+
+      final scrolledPosition = tester
+          .widget<ListView>(listFinder)
+          .controller!
+          .position;
+      final scrolledPixels = scrolledPosition.pixels;
+
+      await tester.pumpWidget(
+        _buildShell(
+          capabilitiesToUse: capabilities,
+          profileToUse: profile,
+          projectToUse: project,
+          chatService: updatedService,
+          todoService: _RecordingTodoService(),
+        ),
+      );
+      await _pumpShellFrames(tester);
+
+      final updatedPosition = tester
+          .widget<ListView>(listFinder)
+          .controller!
+          .position;
+
+      expect(updatedPosition.maxScrollExtent, greaterThan(scrolledPixels));
+      expect(
+        updatedPosition.pixels,
+        lessThan(updatedPosition.maxScrollExtent - 72),
+      );
+      expect(updatedPosition.pixels, closeTo(scrolledPixels, 24));
+
+      await gesture.up();
+      await _pumpShellFrames(tester);
+    },
+  );
+
+  testWidgets(
     'chat timeline does not auto-scroll when the user is reading older messages',
     (tester) async {
       final initialService = _ControlledChatService(

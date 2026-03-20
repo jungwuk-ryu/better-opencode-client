@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 
 import '../../../l10n/app_localizations.dart';
 import '../../core/connection/connection_models.dart';
@@ -4510,7 +4511,10 @@ class _ChatCanvasState extends State<_ChatCanvas> {
   late List<({ChatMessageInfo message, ChatPart part})> _parts;
   final ScrollController _scrollController = ScrollController();
   bool _shouldStickToBottom = true;
+  bool _manualScrollInProgress = false;
+  bool _deferredAutoScrollToBottom = false;
   double _lastKnownOffset = 0;
+  int _programmaticScrollDepth = 0;
 
   @override
   void initState() {
@@ -4548,7 +4552,11 @@ class _ChatCanvasState extends State<_ChatCanvas> {
       return;
     }
     if (partCountChanged && _shouldStickToBottom) {
-      _scheduleScrollToBottom(animated: true);
+      if (_manualScrollInProgress) {
+        _deferredAutoScrollToBottom = true;
+      } else {
+        _scheduleScrollToBottom(animated: true);
+      }
     }
   }
 
@@ -4561,22 +4569,78 @@ class _ChatCanvasState extends State<_ChatCanvas> {
   }
 
   void _handleScroll() {
-    if (!_scrollController.hasClients) {
+    final position = _activeScrollPosition();
+    if (position == null) {
       return;
     }
-    _lastKnownOffset = _scrollController.positions.last.pixels;
+    _lastKnownOffset = position.pixels;
     _shouldStickToBottom = _isNearBottom();
   }
 
   bool _isNearBottom() {
-    if (!_scrollController.hasClients) {
+    final position = _activeScrollPosition();
+    if (position == null) {
       return true;
     }
-    final position = _scrollController.positions.last;
     if (!position.hasContentDimensions) {
       return true;
     }
     return position.maxScrollExtent - position.pixels <= _bottomSnapThreshold;
+  }
+
+  ScrollPosition? _activeScrollPosition() {
+    if (!_scrollController.hasClients) {
+      return null;
+    }
+    final positions = _scrollController.positions
+        .where((position) => position.hasContentDimensions)
+        .toList(growable: false);
+    if (positions.isEmpty) {
+      return null;
+    }
+    final position = positions.last;
+    if (!position.hasContentDimensions) {
+      return null;
+    }
+    return position;
+  }
+
+  bool _handleScrollNotification(ScrollNotification notification) {
+    if (notification.metrics.axis != Axis.vertical ||
+        _programmaticScrollDepth > 0) {
+      return false;
+    }
+    if (notification is ScrollStartNotification &&
+        notification.dragDetails != null) {
+      _manualScrollInProgress = true;
+      return false;
+    }
+    if (notification is ScrollUpdateNotification &&
+        notification.dragDetails != null) {
+      _manualScrollInProgress = true;
+      return false;
+    }
+    if (notification is UserScrollNotification &&
+        notification.direction == ScrollDirection.idle) {
+      _manualScrollInProgress = false;
+      _flushDeferredAutoScroll();
+      return false;
+    }
+    if (notification is ScrollEndNotification) {
+      _manualScrollInProgress = false;
+      _flushDeferredAutoScroll();
+    }
+    return false;
+  }
+
+  void _flushDeferredAutoScroll() {
+    if (!_deferredAutoScrollToBottom ||
+        _manualScrollInProgress ||
+        !_shouldStickToBottom) {
+      return;
+    }
+    _deferredAutoScrollToBottom = false;
+    _scheduleScrollToBottom(animated: true);
   }
 
   void _scheduleScrollToBottom({bool animated = false}) {
@@ -4584,23 +4648,14 @@ class _ChatCanvasState extends State<_ChatCanvas> {
       if (!mounted || !_scrollController.hasClients) {
         return;
       }
-      final positions = _scrollController.positions
-          .where((position) => position.hasContentDimensions)
-          .toList(growable: false);
-      for (final position in positions) {
-        final target = position.maxScrollExtent;
-        if (animated) {
-          unawaited(
-            position.animateTo(
-              target,
-              duration: const Duration(milliseconds: 220),
-              curve: Curves.easeOutCubic,
-            ),
-          );
-        } else {
-          position.jumpTo(target);
-        }
+      final position = _activeScrollPosition();
+      if (position == null) {
+        return;
       }
+      _programmaticScrollDepth += 1;
+      final target = position.maxScrollExtent;
+      position.jumpTo(target);
+      _completeProgrammaticScroll();
     });
   }
 
@@ -4609,13 +4664,20 @@ class _ChatCanvasState extends State<_ChatCanvas> {
       if (!mounted || !_scrollController.hasClients) {
         return;
       }
-      final positions = _scrollController.positions
-          .where((position) => position.hasContentDimensions)
-          .toList(growable: false);
-      for (final position in positions) {
-        position.jumpTo(_lastKnownOffset.clamp(0, position.maxScrollExtent));
+      final position = _activeScrollPosition();
+      if (position == null) {
+        return;
       }
+      _programmaticScrollDepth += 1;
+      position.jumpTo(_lastKnownOffset.clamp(0, position.maxScrollExtent));
+      _completeProgrammaticScroll();
     });
+  }
+
+  void _completeProgrammaticScroll() {
+    if (_programmaticScrollDepth > 0) {
+      _programmaticScrollDepth -= 1;
+    }
   }
 
   @override
@@ -4779,40 +4841,52 @@ class _ChatCanvasState extends State<_ChatCanvas> {
     List<({ChatMessageInfo message, ChatPart part})> parts,
   ) {
     if (parts.isEmpty) {
-      return ListView(
-        key: const ValueKey<String>('chat-message-list'),
-        controller: _scrollController,
-        padding: const EdgeInsets.fromLTRB(
-          AppSpacing.md,
-          AppSpacing.xl,
-          AppSpacing.md,
-          AppSpacing.lg,
-        ),
-        children: <Widget>[
-          _MessageBubble(
-            title: l10n.shellAssistantMessageTitle,
-            body: l10n.shellAssistantMessageBody,
-            accent: true,
+      return Listener(
+        onPointerSignal: (_) => _manualScrollInProgress = true,
+        child: NotificationListener<ScrollNotification>(
+          onNotification: _handleScrollNotification,
+          child: ListView(
+            key: const ValueKey<String>('chat-message-list'),
+            controller: _scrollController,
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.md,
+              AppSpacing.xl,
+              AppSpacing.md,
+              AppSpacing.lg,
+            ),
+            children: <Widget>[
+              _MessageBubble(
+                title: l10n.shellAssistantMessageTitle,
+                body: l10n.shellAssistantMessageBody,
+                accent: true,
+              ),
+            ],
           ),
-        ],
+        ),
       );
     }
-    return ListView.separated(
-      key: const ValueKey<String>('chat-message-list'),
-      controller: _scrollController,
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.md,
-        AppSpacing.md,
-        AppSpacing.md,
-        AppSpacing.lg,
+    return Listener(
+      onPointerSignal: (_) => _manualScrollInProgress = true,
+      child: NotificationListener<ScrollNotification>(
+        onNotification: _handleScrollNotification,
+        child: ListView.separated(
+          key: const ValueKey<String>('chat-message-list'),
+          controller: _scrollController,
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.md,
+            AppSpacing.md,
+            AppSpacing.md,
+            AppSpacing.lg,
+          ),
+          itemCount: parts.length,
+          separatorBuilder: (context, index) =>
+              const SizedBox(height: AppSpacing.md),
+          itemBuilder: (context, index) {
+            final item = parts[index];
+            return ChatPartView(message: item.message, part: item.part);
+          },
+        ),
       ),
-      itemCount: parts.length,
-      separatorBuilder: (context, index) =>
-          const SizedBox(height: AppSpacing.md),
-      itemBuilder: (context, index) {
-        final item = parts[index];
-        return ChatPartView(message: item.message, part: item.part);
-      },
     );
   }
 
