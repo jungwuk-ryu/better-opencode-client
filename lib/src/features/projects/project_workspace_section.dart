@@ -1,8 +1,11 @@
+import 'dart:convert';
+
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 import '../../../l10n/app_localizations.dart';
 import '../../core/connection/connection_models.dart';
+import '../../core/persistence/stale_cache_store.dart';
 import '../../design_system/app_spacing.dart';
 import '../../design_system/app_theme.dart';
 import 'project_catalog_service.dart';
@@ -13,11 +16,17 @@ class ProjectWorkspaceSection extends StatefulWidget {
   const ProjectWorkspaceSection({
     required this.profile,
     required this.onOpenProject,
+    this.projectCatalogService,
+    this.projectStore,
+    this.cacheStore,
     super.key,
   });
 
   final ServerProfile profile;
   final ValueChanged<ProjectTarget> onOpenProject;
+  final ProjectCatalogService? projectCatalogService;
+  final ProjectStore? projectStore;
+  final StaleCacheStore? cacheStore;
 
   @override
   State<ProjectWorkspaceSection> createState() =>
@@ -25,8 +34,10 @@ class ProjectWorkspaceSection extends StatefulWidget {
 }
 
 class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
-  final ProjectCatalogService _catalogService = ProjectCatalogService();
-  final ProjectStore _projectStore = ProjectStore();
+  late final ProjectCatalogService _catalogService;
+  late final bool _ownsCatalogService;
+  late final ProjectStore _projectStore;
+  late final StaleCacheStore _cacheStore;
   final TextEditingController _manualPathController = TextEditingController();
 
   ProjectCatalog? _catalog;
@@ -36,10 +47,15 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
   String? _error;
   bool _loading = true;
   bool _inspecting = false;
+  String _catalogSignature = 'catalog-empty';
 
   @override
   void initState() {
     super.initState();
+    _catalogService = widget.projectCatalogService ?? ProjectCatalogService();
+    _ownsCatalogService = widget.projectCatalogService == null;
+    _projectStore = widget.projectStore ?? ProjectStore();
+    _cacheStore = widget.cacheStore ?? StaleCacheStore();
     _refresh();
   }
 
@@ -53,18 +69,69 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
 
   @override
   void dispose() {
-    _catalogService.dispose();
+    if (_ownsCatalogService) {
+      _catalogService.dispose();
+    }
     _manualPathController.dispose();
     super.dispose();
   }
 
   Future<void> _refresh() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    final cacheKey = 'projectCatalog::${widget.profile.storageKey}';
+    final recentProjects = await _projectStore.loadRecentProjects();
+    final pinnedProjects = await _projectStore.loadPinnedProjects();
+    final cached = await _cacheStore.load(cacheKey);
+    if (cached != null) {
+      try {
+        final catalog = ProjectCatalog.fromJson(
+          (jsonDecode(cached.payloadJson) as Map).cast<String, Object?>(),
+        );
+        final selected = catalog.currentProject == null
+            ? null
+            : _toTarget(
+                catalog.currentProject!,
+                source: 'current',
+                branch: catalog.vcsInfo?.branch,
+              );
+        if (mounted) {
+          setState(() {
+            _catalog = catalog;
+            _recentProjects = recentProjects;
+            _pinnedProjectDirectories = pinnedProjects;
+            _selectedTarget = selected;
+            _catalogSignature = cached.signature;
+            _loading = false;
+            _error = null;
+          });
+        }
+        final ttl = await _cacheStore.loadTtl();
+        if (cached.isFresh(ttl, DateTime.now())) {
+          return;
+        }
+      } catch (_) {
+        if (mounted) {
+          setState(() {
+            _catalog = null;
+            _recentProjects = recentProjects;
+            _pinnedProjectDirectories = pinnedProjects;
+            _selectedTarget = null;
+            _catalogSignature = 'catalog-empty';
+            _loading = true;
+            _error = null;
+          });
+        }
+      }
+    } else {
+      setState(() {
+        _recentProjects = recentProjects;
+        _pinnedProjectDirectories = pinnedProjects;
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
       final catalog = await _catalogService.fetchCatalog(widget.profile);
+      await _cacheStore.save(cacheKey, catalog.toJson());
       final recentProjects = await _projectStore.loadRecentProjects();
       final pinnedProjects = await _projectStore.loadPinnedProjects();
       final selected = catalog.currentProject == null
@@ -82,14 +149,18 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
         _recentProjects = recentProjects;
         _pinnedProjectDirectories = pinnedProjects;
         _selectedTarget = selected;
+        _catalogSignature = jsonEncode(catalog.toJson());
         _loading = false;
+        _error = null;
       });
-    } catch (error) {
+    } catch (_) {
       if (!mounted) {
         return;
       }
       setState(() {
-        _error = error.toString();
+        _recentProjects = recentProjects;
+        _pinnedProjectDirectories = pinnedProjects;
+        _error = 'catalog-unavailable';
         _loading = false;
       });
     }
@@ -109,15 +180,57 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
     );
   }
 
+  ProjectTarget _mergeSavedSessionHint(ProjectTarget target) {
+    if (target.lastSession != null) {
+      return target;
+    }
+    for (final recentProject in _recentProjects) {
+      if (recentProject.directory != target.directory) {
+        continue;
+      }
+      return ProjectTarget(
+        directory: target.directory,
+        label: target.label,
+        source: target.source,
+        vcs: target.vcs,
+        branch: target.branch,
+        lastSession: recentProject.lastSession,
+      );
+    }
+    return target;
+  }
+
   Future<void> _selectTarget(ProjectTarget target) async {
-    final recentProjects = await _projectStore.recordRecentProject(target);
+    final resolvedTarget = _mergeSavedSessionHint(target);
+    final recentProjects = await _projectStore.recordRecentProject(
+      resolvedTarget,
+    );
     if (!mounted) {
       return;
     }
     setState(() {
-      _selectedTarget = target;
+      _selectedTarget = resolvedTarget;
       _recentProjects = recentProjects;
     });
+  }
+
+  Future<void> _openTarget(ProjectTarget target) async {
+    final resolvedTarget = _mergeSavedSessionHint(target);
+    final recentProjects = await _projectStore.recordRecentProject(
+      resolvedTarget,
+    );
+    await _projectStore.saveLastWorkspace(
+      serverStorageKey: widget.profile.storageKey,
+      target: resolvedTarget,
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _selectedTarget = resolvedTarget;
+      _recentProjects = recentProjects;
+    });
+    widget.onOpenProject(resolvedTarget);
   }
 
   Future<void> _togglePinnedProject(ProjectTarget target) async {
@@ -224,33 +337,50 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
                 padding: EdgeInsets.all(AppSpacing.lg),
                 child: Center(child: CircularProgressIndicator()),
               )
-            else if (_error != null)
-              Text(_error!, style: TextStyle(color: surfaces.danger))
             else
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final stacked = constraints.maxWidth < 900;
-                  final chooser = _buildChooser(context, l10n);
-                  final preview = _buildPreview(context, l10n);
-                  if (stacked) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        chooser,
-                        const SizedBox(height: AppSpacing.lg),
-                        preview,
-                      ],
-                    );
-                  }
-                  return Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Expanded(flex: 6, child: chooser),
-                      const SizedBox(width: AppSpacing.lg),
-                      Expanded(flex: 4, child: preview),
-                    ],
-                  );
-                },
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  if (_error != null) ...<Widget>[
+                    _CatalogNoticeBanner(
+                      title: l10n.projectCatalogUnavailableTitle,
+                      body: l10n.projectCatalogUnavailableBody,
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                  ],
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    transitionBuilder: (child, animation) {
+                      return FadeTransition(opacity: animation, child: child);
+                    },
+                    child: LayoutBuilder(
+                      key: ValueKey<String>(_catalogSignature),
+                      builder: (context, constraints) {
+                        final stacked = constraints.maxWidth < 900;
+                        final chooser = _buildChooser(context, l10n);
+                        final preview = _buildPreview(context, l10n);
+                        if (stacked) {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              chooser,
+                              const SizedBox(height: AppSpacing.lg),
+                              preview,
+                            ],
+                          );
+                        }
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Expanded(flex: 6, child: chooser),
+                            const SizedBox(width: AppSpacing.lg),
+                            Expanded(flex: 4, child: preview),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ),
           ],
         ),
@@ -501,7 +631,7 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
                 ),
                 const SizedBox(height: AppSpacing.md),
                 ElevatedButton.icon(
-                  onPressed: () => widget.onOpenProject(target),
+                  onPressed: () => _openTarget(target),
                   icon: const Icon(Icons.arrow_forward_rounded),
                   label: Text(l10n.projectOpenAction),
                 ),
@@ -546,6 +676,50 @@ class _Section extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.md),
             child,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CatalogNoticeBanner extends StatelessWidget {
+  const _CatalogNoticeBanner({required this.title, required this.body});
+
+  final String title;
+  final String body;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: surfaces.warning.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(AppSpacing.md),
+        border: Border.all(color: surfaces.warning.withValues(alpha: 0.4)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Icon(Icons.info_outline_rounded, color: surfaces.warning),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(title, style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    body,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       ),

@@ -19,6 +19,13 @@ class FileNodeSummary {
       ignored: (json['ignored'] as bool?) ?? false,
     );
   }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'name': name,
+    'path': path,
+    'type': type,
+    'ignored': ignored,
+  };
 }
 
 class FileStatusSummary {
@@ -42,6 +49,13 @@ class FileStatusSummary {
       removed: (json['removed'] as num?)?.toInt() ?? 0,
     );
   }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'path': path,
+    'status': status,
+    'added': added,
+    'removed': removed,
+  };
 }
 
 class FileContentSummary {
@@ -56,6 +70,11 @@ class FileContentSummary {
       content: (json['content'] as String?) ?? '',
     );
   }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'type': type,
+    'content': content,
+  };
 }
 
 class TextMatchSummary {
@@ -70,6 +89,11 @@ class TextMatchSummary {
       lines: (json['lines'] as String?) ?? (json['text'] as String?) ?? '',
     );
   }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'path': path,
+    'lines': lines,
+  };
 }
 
 class SymbolSummary {
@@ -87,6 +111,12 @@ class SymbolSummary {
       path: location?['path']?.toString() ?? json['path']?.toString(),
     );
   }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'name': name,
+    'kind': kind,
+    'path': path,
+  };
 }
 
 class FileBrowserBundle {
@@ -107,4 +137,50 @@ class FileBrowserBundle {
   final List<FileStatusSummary> statuses;
   final FileContentSummary? preview;
   final String? selectedPath;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'nodes': nodes.map((item) => item.toJson()).toList(growable: false),
+    'searchResults': searchResults,
+    'textMatches': textMatches
+        .map((item) => item.toJson())
+        .toList(growable: false),
+    'symbols': symbols.map((item) => item.toJson()).toList(growable: false),
+    'statuses': statuses.map((item) => item.toJson()).toList(growable: false),
+    'preview': preview?.toJson(),
+    'selectedPath': selectedPath,
+  };
+
+  factory FileBrowserBundle.fromJson(Map<String, Object?> json) {
+    return FileBrowserBundle(
+      nodes: ((json['nodes'] as List?) ?? const <Object?>[])
+          .whereType<Map>()
+          .map((item) => FileNodeSummary.fromJson(item.cast<String, Object?>()))
+          .toList(growable: false),
+      searchResults: ((json['searchResults'] as List?) ?? const <Object?>[])
+          .map((item) => item.toString())
+          .toList(growable: false),
+      textMatches: ((json['textMatches'] as List?) ?? const <Object?>[])
+          .whereType<Map>()
+          .map(
+            (item) => TextMatchSummary.fromJson(item.cast<String, Object?>()),
+          )
+          .toList(growable: false),
+      symbols: ((json['symbols'] as List?) ?? const <Object?>[])
+          .whereType<Map>()
+          .map((item) => SymbolSummary.fromJson(item.cast<String, Object?>()))
+          .toList(growable: false),
+      statuses: ((json['statuses'] as List?) ?? const <Object?>[])
+          .whereType<Map>()
+          .map(
+            (item) => FileStatusSummary.fromJson(item.cast<String, Object?>()),
+          )
+          .toList(growable: false),
+      preview: json['preview'] is Map
+          ? FileContentSummary.fromJson(
+              (json['preview'] as Map).cast<String, Object?>(),
+            )
+          : null,
+      selectedPath: json['selectedPath'] as String?,
+    );
+  }
 }

@@ -53,6 +53,7 @@ static void my_application_activate(GApplication* application) {
   }
 
   gtk_window_set_default_size(window, 1280, 720);
+  gtk_widget_show(GTK_WIDGET(window));
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(
@@ -142,7 +143,6 @@ MyApplication* my_application_new() {
   // the application to be recognized beyond its binary name.
   g_set_prgname(APPLICATION_ID);
 
-  return MY_APPLICATION(g_object_new(my_application_get_type(),
-                                     "application-id", APPLICATION_ID, "flags",
+  return MY_APPLICATION(g_object_new(my_application_get_type(), "flags",
                                      G_APPLICATION_NON_UNIQUE, nullptr));
 }

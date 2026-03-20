@@ -29,6 +29,15 @@ class SessionSummary {
       parentId: json['parentID'] as String?,
     );
   }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'id': id,
+    'directory': directory,
+    'title': title,
+    'version': version,
+    'parentID': parentId,
+    'time': <String, Object?>{'updated': updatedAt.millisecondsSinceEpoch},
+  };
 }
 
 class SessionStatusSummary {
@@ -45,6 +54,12 @@ class SessionStatusSummary {
       attempt: (json['attempt'] as num?)?.toInt(),
     );
   }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'type': type,
+    'message': message,
+    'attempt': attempt,
+  };
 }
 
 class ChatMessage {
@@ -68,6 +83,11 @@ class ChatMessage {
           .toList(growable: false),
     );
   }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'info': info.toJson(),
+    'parts': parts.map((part) => part.toJson()).toList(growable: false),
+  };
 }
 
 class ChatMessageInfo {
@@ -110,6 +130,14 @@ class ChatMessageInfo {
       providerId: json['providerID'] as String?,
     );
   }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'id': id,
+    'role': role,
+    'sessionID': sessionId,
+    'modelID': modelId,
+    'providerID': providerId,
+  };
 }
 
 class ChatPart {
@@ -167,6 +195,15 @@ class ChatPart {
       metadata: json,
     );
   }
+
+  Map<String, Object?> toJson() => Map<String, Object?>.from(metadata)
+    ..putIfAbsent('id', () => id)
+    ..putIfAbsent('type', () => type)
+    ..putIfAbsent('text', () => text)
+    ..putIfAbsent('tool', () => tool)
+    ..putIfAbsent('filename', () => filename)
+    ..putIfAbsent('messageID', () => messageId)
+    ..putIfAbsent('sessionID', () => sessionId);
 }
 
 class ChatSessionBundle {
@@ -181,4 +218,36 @@ class ChatSessionBundle {
   final Map<String, SessionStatusSummary> statuses;
   final List<ChatMessage> messages;
   final String? selectedSessionId;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'sessions': sessions.map((item) => item.toJson()).toList(growable: false),
+    'statuses': statuses.map((key, value) => MapEntry(key, value.toJson())),
+    'messages': messages.map((item) => item.toJson()).toList(growable: false),
+    'selectedSessionId': selectedSessionId,
+  };
+
+  factory ChatSessionBundle.fromJson(Map<String, Object?> json) {
+    final statusesMap = (json['statuses'] as Map?)?.cast<String, Object?>();
+    return ChatSessionBundle(
+      sessions: ((json['sessions'] as List?) ?? const <Object?>[])
+          .whereType<Map>()
+          .map((item) => SessionSummary.fromJson(item.cast<String, Object?>()))
+          .toList(growable: false),
+      statuses: statusesMap == null
+          ? const <String, SessionStatusSummary>{}
+          : statusesMap.map(
+              (key, value) => MapEntry(
+                key,
+                SessionStatusSummary.fromJson(
+                  (value as Map).cast<String, Object?>(),
+                ),
+              ),
+            ),
+      messages: ((json['messages'] as List?) ?? const <Object?>[])
+          .whereType<Map>()
+          .map((item) => ChatMessage.fromJson(item.cast<String, Object?>()))
+          .toList(growable: false),
+      selectedSessionId: json['selectedSessionId'] as String?,
+    );
+  }
 }

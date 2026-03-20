@@ -19,4 +19,11 @@ class TodoItem {
       priority: (json['priority'] as String?) ?? 'medium',
     );
   }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'id': id,
+    'content': content,
+    'status': status,
+    'priority': priority,
+  };
 }

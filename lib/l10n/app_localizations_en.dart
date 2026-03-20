@@ -12,11 +12,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get appTitle => 'OpenCode Remote';
 
   @override
-  String get foundationTitle => 'Foundation debug workspace';
+  String get foundationTitle => 'Foundation workspace';
 
   @override
   String get foundationSubtitle =>
-      'Capability, fixture, and stream foundations are wired before UI parity work.';
+      'Built-in checks and live updates are ready before you connect a server.';
 
   @override
   String get currentFlavor => 'Flavor';
@@ -25,13 +25,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get currentLocale => 'Locale';
 
   @override
-  String get fullCapabilityProbe => 'Full capability probe';
+  String get fullCapabilityProbe => 'Full server check';
 
   @override
-  String get legacyCapabilityProbe => 'Legacy capability probe';
+  String get legacyCapabilityProbe => 'Compatibility check';
 
   @override
-  String get probeErrorCapability => 'Probe error handling';
+  String get probeErrorCapability => 'Check error handling';
 
   @override
   String get healthyStream => 'Healthy stream';
@@ -58,11 +58,42 @@ class AppLocalizationsEn extends AppLocalizations {
   String get switchLocale => 'Switch locale';
 
   @override
+  String get cacheSettingsAction => 'Cache settings';
+
+  @override
+  String get cacheSettingsTitle => 'Cache settings';
+
+  @override
+  String get cacheSettingsSubtitle =>
+      'Adjust cache freshness and clear stored connection checks and workspace snapshots.';
+
+  @override
+  String get cacheTtlLabel => 'Cache freshness';
+
+  @override
+  String get cacheClearAction => 'Clear cached data';
+
+  @override
+  String get cacheClearingAction => 'Clearing cache...';
+
+  @override
+  String get cacheTtl15Seconds => '15 seconds';
+
+  @override
+  String get cacheTtl1Minute => '1 minute';
+
+  @override
+  String get cacheTtl5Minutes => '5 minutes';
+
+  @override
+  String get cacheTtl15Minutes => '15 minutes';
+
+  @override
   String get connectionTitle => 'Server connection manager';
 
   @override
   String get connectionSubtitle =>
-      'Store trusted OpenCode endpoints, probe capabilities first, then step into project and session workflows.';
+      'Store trusted OpenCode servers, run a server check when needed, and return to home to choose projects.';
 
   @override
   String get serverProfileManager => 'Server profile manager';
@@ -97,7 +128,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get connectionGuidance =>
-      'Probe checks health, spec, config, providers, agent availability, and experimental tool support. mDNS and richer network discovery are next in the roadmap.';
+      'Server check confirms health, compatibility, sign-in, provider access, and tool availability. More network discovery options are coming.';
 
   @override
   String get savedServers => 'Saved servers';
@@ -116,13 +147,13 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get connectionDiagnosticsHint =>
-      'Run a probe to classify auth, spec, capability, and SSE readiness before opening a workspace.';
+      'Run a server check to confirm sign-in and compatibility before opening a workspace.';
 
   @override
   String get serverVersion => 'Version';
 
   @override
-  String get sseStatus => 'SSE';
+  String get sseStatus => 'Live updates';
 
   @override
   String get readyStatus => 'ready';
@@ -132,27 +163,27 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get connectionEmptyState =>
-      'Enter a server profile and run the probe to populate capability diagnostics.';
+      'Enter a server profile and run a server check to populate diagnostics.';
 
   @override
-  String get connectionHeaderEyebrow => 'Phase 2 · Live server connection';
+  String get connectionHeaderEyebrow => 'Live server connection';
 
   @override
   String get connectionHeaderTitle => 'Connect a real OpenCode server';
 
   @override
   String get connectionHeaderSubtitle =>
-      'Probe the live spec, verify auth, and keep the next handoff grounded in actual server capability.';
+      'Review saved server details, verify sign-in, and return to workspace home once this server is ready.';
 
   @override
-  String get connectionStatusAwaiting => 'Awaiting first probe';
+  String get connectionStatusAwaiting => 'Awaiting first check';
 
   @override
   String get connectionFormTitle => 'Server profile manager';
 
   @override
   String get connectionFormSubtitle =>
-      'Save known endpoints, retry recent attempts, and verify whether the server is actually ready for this client.';
+      'Update saved server details, retry a check, and keep this profile ready for home.';
 
   @override
   String get savedProfilesCountLabel => 'saved';
@@ -161,10 +192,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get recentConnectionsCountLabel => 'recent';
 
   @override
-  String get sseReadyLabel => 'SSE-ready';
+  String get sseReadyLabel => 'Live updates ready';
 
   @override
-  String get ssePendingLabel => 'Probe pending';
+  String get ssePendingLabel => 'Check pending';
 
   @override
   String get connectionProfileLabel => 'Profile name';
@@ -195,7 +226,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get connectionAddressValidation => 'Enter a valid server address.';
 
   @override
-  String get connectionProbeAction => 'Probe server';
+  String get connectionBackHomeAction => 'Back to home';
+
+  @override
+  String get connectionProbeAction => 'Check server';
 
   @override
   String get connectionSaveAction => 'Save profile';
@@ -210,18 +244,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get connectionUnpinProfileAction => 'Unpin profile';
 
   @override
-  String get connectionProbeResultTitle => 'Live capability probe';
+  String get connectionProbeResultTitle => 'Server check';
 
   @override
   String get connectionProbeResultSubtitle =>
-      'Each run checks health, spec, config, providers, agents, and experimental tools when the spec exposes them.';
+      'Use this detail view to confirm whether the saved server still responds. Project selection happens from workspace home.';
 
   @override
-  String get connectionProbeEmptyTitle => 'No live probe yet';
+  String get connectionProbeEmptyTitle => 'No recent check yet';
 
   @override
   String get connectionProbeEmptySubtitle =>
-      'Run a probe to classify auth failures, spec fetch issues, unsupported capability gaps, or readiness for the SSE/connectivity layer.';
+      'Run a server check to confirm sign-in and compatibility before returning to workspace home.';
 
   @override
   String get connectionVersionLabel => 'Version';
@@ -236,23 +270,23 @@ class AppLocalizationsEn extends AppLocalizations {
   String get connectionReadinessLabel => 'Readiness';
 
   @override
-  String get connectionMissingCapabilitiesLabel => 'Missing required endpoints';
+  String get connectionMissingCapabilitiesLabel => 'Missing required features';
 
   @override
-  String get connectionExperimentalPathsLabel => 'Experimental tool endpoints';
+  String get connectionExperimentalPathsLabel => 'Advanced tools';
 
   @override
-  String get connectionEndpointSectionTitle => 'Endpoint outcomes';
+  String get connectionEndpointSectionTitle => 'Check results';
 
   @override
-  String get connectionCapabilitySectionTitle => 'Capability registry';
+  String get connectionCapabilitySectionTitle => 'Capabilities';
 
   @override
   String get savedProfilesTitle => 'Saved profiles';
 
   @override
   String get savedProfilesSubtitle =>
-      'Pinned connections stay ready for repeat probe cycles.';
+      'Pinned servers stay ready for quick checks.';
 
   @override
   String get savedProfilesEmptyTitle => 'No saved profiles yet';
@@ -266,14 +300,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get recentConnectionsSubtitle =>
-      'Last live probes, kept separate from pinned server profiles.';
+      'Recent server checks, kept separate from pinned servers.';
 
   @override
   String get recentConnectionsEmptyTitle => 'No recent attempts yet';
 
   @override
   String get recentConnectionsEmptySubtitle =>
-      'Probe a server and the latest outcome will stay here for quick retry.';
+      'Check a server and the latest outcome will stay here for quick retry.';
 
   @override
   String get connectionOutcomeReady => 'Ready for connection';
@@ -292,11 +326,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get connectionDetailReady =>
-      'Core endpoints responded and the server looks ready for SSE handoff.';
+      'Core services responded and home can now offer project choices.';
 
   @override
   String get connectionDetailAuthFailure =>
-      'The server responded, but at least one core endpoint rejected the supplied credentials.';
+      'The server responded, but the provided sign-in details were rejected.';
+
+  @override
+  String get connectionDetailBasicAuthFailure =>
+      'This server is protected by Basic auth. Add or update the username and password, then try again.';
 
   @override
   String get connectionDetailSpecFailure =>
@@ -304,11 +342,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get connectionDetailUnsupported =>
-      'The server spec is readable, but required endpoints for this client are still missing.';
+      'The server is reachable, but required features for this app are still missing.';
 
   @override
   String get connectionDetailConnectivityFailure =>
-      'The server could not be reached reliably enough to complete probing.';
+      'The server could not be reached reliably enough to complete the check.';
 
   @override
   String get endpointReadyStatus => 'ready';
@@ -326,11 +364,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get endpointUnknownStatus => 'unknown';
 
   @override
-  String get fixtureDiagnosticsTitle => 'Fixture diagnostics';
+  String get fixtureDiagnosticsTitle => 'Diagnostics';
 
   @override
   String get fixtureDiagnosticsSubtitle =>
-      'The phase 1 manual QA surfaces stay visible here while live connection work comes online.';
+      'Connection checks and status details live here.';
 
   @override
   String get capabilityCanShareSession => 'Share session';
@@ -351,7 +389,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get capabilityHasPermissions => 'Permissions';
 
   @override
-  String get capabilityHasExperimentalTools => 'Experimental tools';
+  String get capabilityHasExperimentalTools => 'Advanced tools';
 
   @override
   String get capabilityHasProviderOAuth => 'Provider OAuth';
@@ -363,35 +401,36 @@ class AppLocalizationsEn extends AppLocalizations {
   String get capabilityHasTuiControl => 'TUI control';
 
   @override
-  String get projectSelectionTitle => 'Project selection';
+  String get projectSelectionTitle => 'Choose a project';
 
   @override
   String get projectSelectionSubtitle =>
-      'Choose the active project context from the server\'s current project, server-listed projects, a manual path, or a folder browser.';
+      'Open a project from this server, your recent work, or a folder path.';
 
   @override
   String get currentProjectTitle => 'Current project';
 
   @override
   String get currentProjectSubtitle =>
-      'The project currently scoped by the connected server instance.';
+      'If the server is already inside a project, it appears here first.';
 
   @override
-  String get serverProjectsTitle => 'Server-listed projects';
+  String get serverProjectsTitle => 'Projects on this server';
 
   @override
   String get serverProjectsSubtitle =>
-      'Projects OpenCode already knows about on this server.';
+      'Other projects the server can open right now.';
 
   @override
-  String get serverProjectsEmpty => 'No server-listed projects yet.';
+  String get serverProjectsEmpty =>
+      'No server projects are available right now. You can still open a recent project or folder path.';
 
   @override
-  String get manualProjectTitle => 'Manual path or folder browser';
+  String get manualProjectTitle => 'Open a folder path';
 
   @override
   String get manualProjectSubtitle =>
-      'Use this when search misses a folder or you need to open an exact path.';
+      'Use this when the server list is empty or you know exactly which folder you want.';
 
   @override
   String get manualProjectPathLabel => 'Project directory';
@@ -413,7 +452,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get recentProjectsSubtitle =>
-      'Recent local project targets kept separately from server-listed projects.';
+      'Projects you\'ve opened recently, with last session hints when we have them.';
 
   @override
   String get pinnedProjectsTitle => 'Pinned projects';
@@ -426,15 +465,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get recentProjectsEmpty => 'No recent projects yet.';
 
   @override
-  String get projectPreviewTitle => 'Project preview';
+  String get projectPreviewTitle => 'Project details';
 
   @override
   String get projectPreviewSubtitle =>
-      'Metadata for the next project context before sessions and chat bind to it.';
+      'Review the next workspace before you open it.';
 
   @override
   String get projectPreviewEmpty =>
-      'Select a project from one of the four entry points to preview it here.';
+      'Select a project, recent workspace, or folder path to see details here.';
 
   @override
   String get projectDirectoryLabel => 'Directory';
@@ -462,7 +501,369 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get projectSelectionReadyHint =>
-      'This target is ready for the next phase where sessions and chat use the selected project context.';
+      'Open this project to continue into its sessions.';
+
+  @override
+  String get homeHeaderEyebrow => 'Workspace';
+
+  @override
+  String get homeHeaderSubtitle =>
+      'Connect a server, then open a project and continue your sessions.';
+
+  @override
+  String get homeAddServerAction => 'Add server';
+
+  @override
+  String get homeEditSelectedServerAction => 'Edit selected server';
+
+  @override
+  String get homeEditServerAction => 'Edit server';
+
+  @override
+  String get homeSwitchServerAction => 'Switch server';
+
+  @override
+  String get homeNextStepsTitle => 'Next steps';
+
+  @override
+  String get homeNextStepsPinnedServers =>
+      'Pin the servers you use most, so they stay at the top.';
+
+  @override
+  String get homeNextStepsProjects =>
+      'Once a server is ready, open a project and jump into sessions.';
+
+  @override
+  String get homeNextStepsRetryEdit =>
+      'Retry or edit a server without leaving home.';
+
+  @override
+  String get homeMetricSavedServers => 'Saved servers';
+
+  @override
+  String get homeMetricRecentActivity => 'Recent activity';
+
+  @override
+  String get homeMetricCurrentFocus => 'Current server';
+
+  @override
+  String get homeChooseServerLabel => 'Choose a server';
+
+  @override
+  String get homeResumeLastWorkspaceTitle => 'Resume last workspace';
+
+  @override
+  String get homeOpenLastProjectTitle => 'Open last project';
+
+  @override
+  String homeResumeLastWorkspaceBody(String project) {
+    return 'Continue in $project and pick up where you left off.';
+  }
+
+  @override
+  String homeOpenLastProjectBody(String project) {
+    return 'Open $project, then choose a session or start a new one.';
+  }
+
+  @override
+  String get homeResumeLastWorkspaceAction => 'Resume workspace';
+
+  @override
+  String get homeOpenLastProjectAction => 'Open project';
+
+  @override
+  String get homeResumeMetricProject => 'Project';
+
+  @override
+  String get homeResumeMetricLastSession => 'Last session';
+
+  @override
+  String get homeResumeMetricStatus => 'Status';
+
+  @override
+  String get homeActionCheckingWorkspace => 'Checking workspace...';
+
+  @override
+  String get homeActionContinue => 'Continue';
+
+  @override
+  String get homeActionRetry => 'Retry';
+
+  @override
+  String get homeActionCheckingServer => 'Checking server...';
+
+  @override
+  String get homeThisServerLabel => 'This server';
+
+  @override
+  String get homeWorkspaceSectionTitle => 'Projects and sessions';
+
+  @override
+  String get homeWorkspaceLoadingSubtitle =>
+      'Loading your saved servers and recent activity.';
+
+  @override
+  String get homeWorkspaceEmptySubtitle =>
+      'Add a server to start opening projects and sessions here.';
+
+  @override
+  String get homeWorkspaceFeatureSaveTitle => 'Save a server once';
+
+  @override
+  String get homeWorkspaceFeatureSaveBody =>
+      'Keep servers in one place, ready when you come back.';
+
+  @override
+  String get homeWorkspaceFeatureChooseTitle => 'Open a project next';
+
+  @override
+  String get homeWorkspaceFeatureChooseBody =>
+      'When the server is ready, choose a project and continue.';
+
+  @override
+  String get homeWorkspaceFeatureRecentTitle => 'Keep recents in view';
+
+  @override
+  String get homeWorkspaceFeatureRecentBody =>
+      'Saved servers and recent checks stay together on one screen.';
+
+  @override
+  String get homeWorkspaceSubtitleReady => 'Choose a project to continue.';
+
+  @override
+  String get homeWorkspaceSubtitleSignIn =>
+      'Update sign-in details or retry before projects can load.';
+
+  @override
+  String get homeWorkspaceSubtitleOffline =>
+      'Retry this server or confirm the saved address.';
+
+  @override
+  String get homeWorkspaceSubtitleUpdate =>
+      'Update the server before projects can load.';
+
+  @override
+  String get homeWorkspaceSubtitleUnknown =>
+      'Run a quick check before loading projects.';
+
+  @override
+  String get homeWorkspaceTitleChooseServer => 'Choose a saved server';
+
+  @override
+  String homeWorkspaceTitleChecking(String server) {
+    return 'Checking $server';
+  }
+
+  @override
+  String get homeWorkspaceTitleReady => 'Ready for projects';
+
+  @override
+  String get homeWorkspaceTitleSignInRequired => 'Sign-in required';
+
+  @override
+  String get homeWorkspaceTitleOffline => 'Offline';
+
+  @override
+  String get homeWorkspaceTitleUpdate => 'Update required';
+
+  @override
+  String get homeWorkspaceTitleContinueFromHome => 'Continue from home';
+
+  @override
+  String get homeWorkspaceBodyChecking =>
+      'Checking sign-in and compatibility before loading projects and sessions.';
+
+  @override
+  String homeWorkspaceBodyReady(String server) {
+    return '$server is ready, but the project list is still loading.';
+  }
+
+  @override
+  String homeWorkspaceBodySignInRequired(String server) {
+    return '$server responded, but sign-in details need attention before projects can load.';
+  }
+
+  @override
+  String homeWorkspaceBodyBasicAuthRequired(String server) {
+    return '$server is protected by Basic auth. Edit this server and add the username and password before loading projects.';
+  }
+
+  @override
+  String homeWorkspaceBodyOffline(String server) {
+    return 'Couldn\'t reach $server just now. Retry, or edit the saved address if it changed.';
+  }
+
+  @override
+  String homeWorkspaceBodyUpdateRequired(String server) {
+    return '$server responded, but it needs an update before projects can load.';
+  }
+
+  @override
+  String get homeWorkspaceBodyUnknown =>
+      'Run a quick check, then edit details only if sign-in or the address needs attention.';
+
+  @override
+  String get homeNoticeWorkspaceUnavailable =>
+      'Your last workspace is no longer available. Choose a project to continue.';
+
+  @override
+  String get homeNoticeWorkspaceResumeFailed =>
+      'Couldn\'t reopen your last workspace right now. Choose a project below or retry this server.';
+
+  @override
+  String get homeSavedServersTitle => 'Saved servers';
+
+  @override
+  String get homeSavedServersSubtitle =>
+      'Pick a server, then continue into projects and sessions.';
+
+  @override
+  String get homeSavedServersEmptyTitle => 'No saved servers yet';
+
+  @override
+  String get homeSavedServersEmptySubtitle =>
+      'Add your first server to start opening projects and sessions.';
+
+  @override
+  String get homeRecentActivityTitle => 'Recent activity';
+
+  @override
+  String get homeRecentActivitySubtitle =>
+      'A quick record of the servers you checked most recently.';
+
+  @override
+  String get homeRecentActivityEmptyTitle => 'No recent activity yet';
+
+  @override
+  String get homeRecentActivityEmptySubtitle =>
+      'Recent checks show up here after you connect or retry a server.';
+
+  @override
+  String get homeRecentActivityNotUsed => 'Not used yet';
+
+  @override
+  String homeRecentActivityLastUsed(String timestamp) {
+    return 'Last used $timestamp';
+  }
+
+  @override
+  String get homeCredentialsSaved => 'Credentials saved';
+
+  @override
+  String get homeCredentialsMissing => 'No credentials saved';
+
+  @override
+  String get homeServerCardBodyReady =>
+      'Ready to open projects and sessions from home.';
+
+  @override
+  String get homeServerCardBodySignIn =>
+      'Retry, or update sign-in details before projects can load.';
+
+  @override
+  String get homeServerCardBodyBasicAuthRequired =>
+      'Basic auth is required before this server can load projects.';
+
+  @override
+  String get homeServerCardBodyOffline =>
+      'Retry, or edit the saved address before continuing.';
+
+  @override
+  String get homeServerCardBodyUpdate =>
+      'Update the server before continuing into projects and sessions.';
+
+  @override
+  String get homeServerCardBodyUnknownWithAuth =>
+      'Run a quick check before loading projects.';
+
+  @override
+  String get homeServerCardBodyUnknown =>
+      'Run a quick check, then edit details only if sign-in is needed.';
+
+  @override
+  String get homeStatusNewHome => 'New home';
+
+  @override
+  String get homeStatusChooseServer => 'Choose a server';
+
+  @override
+  String get homeStatusCheckingServer => 'Checking server';
+
+  @override
+  String get homeStatusReadyForProjects => 'Ready for projects';
+
+  @override
+  String get homeStatusSignInRequired => 'Sign-in required';
+
+  @override
+  String get homeStatusServerOffline => 'Server offline';
+
+  @override
+  String get homeStatusNeedsAttention => 'Needs attention';
+
+  @override
+  String get homeStatusAwaitingSetup => 'Awaiting setup';
+
+  @override
+  String get homeHeroTitleNoServers => 'Start with a server';
+
+  @override
+  String get homeHeroTitleOneServer => 'Your server, ready to go';
+
+  @override
+  String get homeHeroTitleManyServers => 'All your servers in one place';
+
+  @override
+  String get homeHeroBodyNoServers =>
+      'Add a server once, then return here to open projects and continue sessions.';
+
+  @override
+  String get homeHeroBodyOneServer =>
+      'Continue from home, and only open server details when something changes.';
+
+  @override
+  String get homeHeroBodyManyServers =>
+      'Pick a server, keep recents in view, and run a quick check when needed.';
+
+  @override
+  String get homeA11yAddServerAction => 'Add server';
+
+  @override
+  String get homeA11yEditSelectedServerAction => 'Edit selected server';
+
+  @override
+  String get homeA11yWorkspacePrimaryAction => 'Workspace primary action';
+
+  @override
+  String get homeA11yEditServerAction => 'Edit server';
+
+  @override
+  String get homeA11ySwitchServerAction => 'Switch server';
+
+  @override
+  String get homeA11yResumeWorkspaceAction => 'Resume workspace';
+
+  @override
+  String get homeStatusShortReady => 'Ready';
+
+  @override
+  String get homeStatusShortSignInRequired => 'Sign-in required';
+
+  @override
+  String get homeStatusShortOffline => 'Offline';
+
+  @override
+  String get homeStatusShortNeedsAttention => 'Needs attention';
+
+  @override
+  String get homeStatusShortNotCheckedYet => 'Not checked yet';
+
+  @override
+  String get projectCatalogUnavailableTitle => 'Project list unavailable';
+
+  @override
+  String get projectCatalogUnavailableBody =>
+      'We couldn\'t load this server\'s project list just now. You can still open a recent workspace or enter a folder path.';
 
   @override
   String get projectOpenAction => 'Open project';
@@ -475,6 +876,86 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get shellProjectRailTitle => 'Project and sessions';
+
+  @override
+  String get shellDestinationSessions => 'Sessions';
+
+  @override
+  String get shellDestinationChat => 'Chat';
+
+  @override
+  String get shellDestinationContext => 'Context';
+
+  @override
+  String get shellDestinationSettings => 'Settings';
+
+  @override
+  String get shellAdvancedLabel => 'Advanced';
+
+  @override
+  String get shellAdvancedSubtitle =>
+      'Advanced settings and troubleshooting tools.';
+
+  @override
+  String get shellAdvancedOverviewSubtitle =>
+      'Technical options kept out of the main flow.';
+
+  @override
+  String get shellOpenAdvancedAction => 'Open advanced';
+
+  @override
+  String get shellBackToSettingsAction => 'Back to settings';
+
+  @override
+  String get shellA11yOpenCacheSettings => 'Open cache settings';
+
+  @override
+  String get shellA11yOpenAdvanced => 'Open advanced settings';
+
+  @override
+  String get shellA11yBackToSettings => 'Back to settings';
+
+  @override
+  String get shellA11yBackToProjectsAction => 'Back to projects';
+
+  @override
+  String get shellA11yComposerField => 'Message field';
+
+  @override
+  String get shellA11ySendMessageAction => 'Send message';
+
+  @override
+  String get shellIntegrationsLastAuthUrlTitle => 'Last authorization URL';
+
+  @override
+  String get shellIntegrationsEventsSubtitle =>
+      'Event stream status and recovery details.';
+
+  @override
+  String get shellStreamHealthConnected => 'Connected';
+
+  @override
+  String get shellStreamHealthStale => 'Stale';
+
+  @override
+  String get shellStreamHealthReconnecting => 'Reconnecting';
+
+  @override
+  String get shellConfigPreviewUnavailable =>
+      'Configuration view is unavailable right now.';
+
+  @override
+  String get shellNoticeLastSessionUnavailable =>
+      'Your last session is no longer available. Choose another session or start a new one.';
+
+  @override
+  String get shellConfigJsonObjectError => 'Config must be a JSON object.';
+
+  @override
+  String get shellRecoveryLogReconnectRequested => 'Reconnect requested';
+
+  @override
+  String get shellRecoveryLogReconnectCompleted => 'Reconnect completed';
 
   @override
   String get shellUnknownLabel => 'unknown';
@@ -510,7 +991,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get shellThinkingModeLabel => 'Balanced thinking';
 
   @override
-  String get shellAgentLabel => 'build agent';
+  String get shellAgentLabel => 'Agent';
 
   @override
   String get shellChatTimelineTitle => 'Conversation';
@@ -520,18 +1001,17 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get shellUserMessageBody =>
-      'Review the selected project context and continue from the latest session state.';
+      'Pick a session, then send a message to get started.';
 
   @override
   String get shellAssistantMessageTitle => 'OpenCode';
 
   @override
   String get shellAssistantMessageBody =>
-      'Shell layout is ready. Session, message parts, tools, and context panels attach here in the next phase.';
+      'You\'re in the workspace. Review context, pick a session, and keep work moving.';
 
   @override
-  String get shellComposerPlaceholder =>
-      'Message composer stays here without autofocus by default.';
+  String get shellComposerPlaceholder => 'Write a message';
 
   @override
   String get shellComposerSendAction => 'Send';
@@ -580,8 +1060,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get shellToolsTitle => 'Tools';
 
   @override
-  String get shellToolsSubtitle =>
-      'Built-in and experimental tools surface here.';
+  String get shellToolsSubtitle => 'Helpful tools for this workspace.';
 
   @override
   String get shellTerminalTitle => 'Terminal';
@@ -688,7 +1167,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get shellActionUnrevert => 'Unrevert';
 
   @override
-  String get shellActionInit => 'Init';
+  String get shellActionInit => 'Initialize';
 
   @override
   String get shellActionSummarize => 'Summarize';
@@ -785,8 +1264,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get shellAnswerAction => 'Answer';
 
   @override
-  String get shellConfigPreviewSubtitle =>
-      'Live preview of editable configuration';
+  String get shellConfigPreviewSubtitle => 'Review and edit configuration';
 
   @override
   String get shellInspectorSubtitle => 'Session and message metadata snapshot';

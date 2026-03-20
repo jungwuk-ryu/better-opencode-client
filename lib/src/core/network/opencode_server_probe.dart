@@ -18,6 +18,7 @@ class ServerProbeReport {
     required this.missingCapabilities,
     required this.discoveredExperimentalPaths,
     required this.sseReady,
+    this.authScheme,
   });
 
   final ProbeSnapshot snapshot;
@@ -28,8 +29,48 @@ class ServerProbeReport {
   final List<String> missingCapabilities;
   final List<String> discoveredExperimentalPaths;
   final bool sseReady;
+  final String? authScheme;
 
   bool get isReady => classification == ConnectionProbeClassification.ready;
+  bool get requiresBasicAuth => authScheme?.toLowerCase() == 'basic';
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'snapshot': snapshot.toJson(),
+    'classification': classification.name,
+    'summary': summary,
+    'checkedAtMs': checkedAt.millisecondsSinceEpoch,
+    'missingCapabilities': missingCapabilities,
+    'discoveredExperimentalPaths': discoveredExperimentalPaths,
+    'sseReady': sseReady,
+    'authScheme': authScheme,
+  };
+
+  factory ServerProbeReport.fromJson(Map<String, Object?> json) {
+    final snapshot = ProbeSnapshot.fromJson(
+      (json['snapshot'] as Map).cast<String, Object?>(),
+    );
+    return ServerProbeReport(
+      snapshot: snapshot,
+      capabilityRegistry: CapabilityRegistry.fromSnapshot(snapshot),
+      classification: ConnectionProbeClassification.values.byName(
+        (json['classification'] as String?) ?? 'connectivityFailure',
+      ),
+      summary: (json['summary'] as String?) ?? '',
+      checkedAt: DateTime.fromMillisecondsSinceEpoch(
+        (json['checkedAtMs'] as num?)?.toInt() ?? 0,
+      ),
+      missingCapabilities:
+          ((json['missingCapabilities'] as List?) ?? const <Object?>[])
+              .map((item) => item.toString())
+              .toList(growable: false),
+      discoveredExperimentalPaths:
+          ((json['discoveredExperimentalPaths'] as List?) ?? const <Object?>[])
+              .map((item) => item.toString())
+              .toList(growable: false),
+      sseReady: (json['sseReady'] as bool?) ?? false,
+      authScheme: json['authScheme'] as String?,
+    );
+  }
 }
 
 class OpenCodeServerProbe {
@@ -48,7 +89,6 @@ class OpenCodeServerProbe {
   ];
   static const _requiredPaths = <String>[
     '/global/health',
-    '/doc',
     '/config',
     '/config/providers',
     '/provider',
@@ -88,6 +128,14 @@ class OpenCodeServerProbe {
     final docResult = await _probeEndpoint(uri, '/doc', headers);
     endpoints[docResult.path] = docResult;
 
+    if (_hasAuthChallenge(endpoints)) {
+      return _buildReport(
+        profile: profile,
+        checkedAt: checkedAt,
+        endpoints: endpoints,
+      );
+    }
+
     final docBody = _asMap(docResult.body);
     final discoveredPaths = _extractPaths(docBody);
     final experimentalPaths = discoveredPaths
@@ -105,12 +153,39 @@ class OpenCodeServerProbe {
         continue;
       }
       endpoints[path] = await _probeEndpoint(uri, path, headers);
+      if (_hasAuthChallenge(endpoints)) {
+        break;
+      }
     }
+
+    return _buildReport(
+      profile: profile,
+      checkedAt: checkedAt,
+      endpoints: endpoints,
+    );
+  }
+
+  ServerProbeReport _buildReport({
+    required ServerProfile profile,
+    required DateTime checkedAt,
+    required Map<String, ProbeEndpointResult> endpoints,
+  }) {
+    final docBody = _asMap(endpoints['/doc']?.body);
+    final discoveredPaths = _extractPaths(docBody);
+    final experimentalPaths = discoveredPaths
+        .where(
+          (path) =>
+              path.startsWith('/experimental/tool/') &&
+              !path.contains('{') &&
+              !_corePaths.contains(path),
+        )
+        .toList(growable: false);
 
     final configBody = _asMap(endpoints['/config']?.body);
     final providerConfigBody = _asMap(endpoints['/config/providers']?.body);
-    final version = _extractVersion(docBody, healthResult.body, configBody);
-    final name = _extractName(profile, docBody, healthResult.body);
+    final healthBody = endpoints['/global/health']?.body;
+    final version = _extractVersion(docBody, healthBody, configBody);
+    final name = _extractName(profile, docBody, healthBody);
 
     final snapshot = ProbeSnapshot(
       name: name,
@@ -146,7 +221,8 @@ class OpenCodeServerProbe {
       discoveredExperimentalPaths: experimentalPaths,
       sseReady:
           classification == ConnectionProbeClassification.ready &&
-          healthResult.status == ProbeStatus.success,
+          endpoints['/global/health']?.status == ProbeStatus.success,
+      authScheme: _detectAuthScheme(endpoints),
     );
   }
 
@@ -164,6 +240,7 @@ class OpenCodeServerProbe {
         status: _statusFromCode(response.statusCode),
         statusCode: response.statusCode,
         body: _decodeBody(response.body),
+        authScheme: _parseAuthScheme(response.headers['www-authenticate']),
       );
     } on TimeoutException {
       return ProbeEndpointResult(
@@ -215,11 +292,7 @@ class OpenCodeServerProbe {
     if (healthResult == null || healthResult.status == ProbeStatus.failure) {
       return ConnectionProbeClassification.connectivityFailure;
     }
-    final hasAuthFailure = endpoints.entries.any(
-      (entry) =>
-          _authSensitivePaths.contains(entry.key) &&
-          entry.value.status == ProbeStatus.unauthorized,
-    );
+    final hasAuthFailure = _hasAuthFailure(endpoints);
     if (hasAuthFailure) {
       return ConnectionProbeClassification.authFailure;
     }
@@ -232,17 +305,36 @@ class OpenCodeServerProbe {
     if (docResult.status == ProbeStatus.unknown || docBody.isEmpty) {
       return ConnectionProbeClassification.specFetchFailure;
     }
-    if (missingCapabilities.isNotEmpty || !_supportsDocPaths(discoveredPaths)) {
+    if (missingCapabilities.isNotEmpty) {
       return ConnectionProbeClassification.unsupportedCapabilities;
     }
     return ConnectionProbeClassification.ready;
   }
 
-  bool _supportsDocPaths(Set<String> discoveredPaths) {
-    if (discoveredPaths.isEmpty) {
-      return false;
+  bool _hasAuthFailure(Map<String, ProbeEndpointResult> endpoints) {
+    return endpoints.entries.any(
+      (entry) =>
+          _authSensitivePaths.contains(entry.key) &&
+          entry.value.status == ProbeStatus.unauthorized,
+    );
+  }
+
+  bool _hasAuthChallenge(Map<String, ProbeEndpointResult> endpoints) {
+    return endpoints.entries.any(
+      (entry) =>
+          _authSensitivePaths.contains(entry.key) &&
+          entry.value.statusCode == 401,
+    );
+  }
+
+  String? _detectAuthScheme(Map<String, ProbeEndpointResult> endpoints) {
+    for (final entry in endpoints.entries) {
+      if (_authSensitivePaths.contains(entry.key) &&
+          entry.value.authScheme != null) {
+        return entry.value.authScheme;
+      }
     }
-    return _requiredPaths.every(discoveredPaths.contains);
+    return endpoints['/global/health']?.authScheme;
   }
 
   bool _isEndpointOperational(ProbeEndpointResult? result) {
@@ -312,8 +404,8 @@ class OpenCodeServerProbe {
     final info = _asMap(docBody['info']);
     final health = _asMap(healthBody);
     final configVersion = configBody['version'];
-    return (info['version'] as String?) ??
-        (health['version'] as String?) ??
+    return (health['version'] as String?) ??
+        (info['version'] as String?) ??
         (configVersion as String?) ??
         'unknown';
   }
@@ -332,6 +424,19 @@ class OpenCodeServerProbe {
 
   String _relativePath(String path) =>
       path.startsWith('/') ? path.substring(1) : path;
+
+  String? _parseAuthScheme(String? headerValue) {
+    final trimmed = headerValue?.trim();
+    if (trimmed == null || trimmed.isEmpty) {
+      return null;
+    }
+    final firstChallenge = trimmed.split(',').first.trim();
+    final spaceIndex = firstChallenge.indexOf(' ');
+    final scheme = spaceIndex == -1
+        ? firstChallenge
+        : firstChallenge.substring(0, spaceIndex);
+    return scheme.isEmpty ? null : scheme;
+  }
 
   Uri _endpointUri(Uri baseUri, String path) {
     final normalizedBasePath = switch (baseUri.path) {

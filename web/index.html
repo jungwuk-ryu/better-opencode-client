@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <!--
     If you are serving your web app in a path other than the root, change the
@@ -19,6 +19,7 @@
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="Spec-driven adaptive OpenCode Flutter client">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
@@ -31,8 +32,386 @@
 
   <title>opencode_mobile_remote</title>
   <link rel="manifest" href="manifest.json">
+  <style>
+    :root {
+      color-scheme: dark;
+      --background: #071019;
+      --panel: rgba(18, 32, 49, 0.92);
+      --panel-muted: rgba(12, 20, 30, 0.82);
+      --line: #22344a;
+      --line-soft: #172433;
+      --accent: #b8d6ff;
+      --accent-soft: #87bdf7;
+      --text: #f5f7fb;
+      --muted: #95a4b8;
+      --success: #8be39b;
+      --shadow: 0 28px 70px rgba(0, 0, 0, 0.34);
+    }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      background:
+        radial-gradient(circle at top left, rgba(184, 214, 255, 0.14), transparent 28%),
+        radial-gradient(circle at 85% 18%, rgba(135, 189, 247, 0.12), transparent 24%),
+        linear-gradient(135deg, #071019 0%, #0d1722 48%, #071019 100%);
+      color: var(--text);
+      font-family: "Plus Jakarta Sans", "Segoe UI", sans-serif;
+    }
+
+    body {
+      overflow-x: hidden;
+    }
+
+    #app-bootstrap-shell {
+      min-height: 100vh;
+      box-sizing: border-box;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    #app-bootstrap-shell.is-hidden {
+      display: none;
+    }
+
+    .boot-shell-inner {
+      width: min(1480px, 100%);
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 24px;
+    }
+
+    .boot-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+    }
+
+    .boot-eyebrow {
+      margin: 0 0 8px;
+      color: var(--accent-soft);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .boot-title {
+      margin: 0;
+      font-size: clamp(2rem, 3vw, 3rem);
+      line-height: 1.02;
+      letter-spacing: -0.04em;
+    }
+
+    .boot-copy {
+      margin: 12px 0 0;
+      max-width: 760px;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.6;
+    }
+
+    .boot-header-action {
+      padding: 14px 18px;
+      border: 1px solid var(--line-soft);
+      border-radius: 18px;
+      background: rgba(12, 20, 30, 0.4);
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .boot-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 24px;
+    }
+
+    .boot-card,
+    .boot-hero {
+      border: 1px solid var(--line-soft);
+      border-radius: 24px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .boot-hero {
+      padding: 24px;
+      background:
+        linear-gradient(145deg, rgba(184, 214, 255, 0.16), rgba(18, 32, 49, 0.96) 38%, rgba(13, 23, 34, 0.96));
+    }
+
+    .boot-hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 24px;
+    }
+
+    .boot-pill,
+    .boot-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      width: fit-content;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(139, 227, 155, 0.28);
+      background: rgba(139, 227, 155, 0.12);
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .boot-chip-row,
+    .boot-action-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .boot-chip {
+      border-color: var(--line);
+      background: rgba(18, 32, 49, 0.78);
+      font-weight: 600;
+    }
+
+    .boot-hero-heading {
+      margin: 16px 0 12px;
+      font-size: clamp(1.75rem, 2.4vw, 2.6rem);
+      line-height: 1.05;
+      letter-spacing: -0.04em;
+    }
+
+    .boot-hero-body {
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.6;
+    }
+
+    .boot-button {
+      padding: 14px 18px;
+      border-radius: 18px;
+      border: 1px solid var(--line-soft);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .boot-button-primary {
+      background: var(--accent);
+      color: #071019;
+      border-color: transparent;
+    }
+
+    .boot-button-secondary {
+      background: rgba(12, 20, 30, 0.4);
+      color: var(--text);
+    }
+
+    .boot-note {
+      margin-top: 24px;
+      padding: 16px;
+      border: 1px solid var(--line-soft);
+      border-radius: 18px;
+      background: rgba(12, 20, 30, 0.58);
+    }
+
+    .boot-note-title {
+      margin: 0 0 10px;
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .boot-note-list {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .boot-card-header {
+      padding: 24px 24px 16px;
+      border-bottom: 1px solid var(--line-soft);
+    }
+
+    .boot-card-title {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .boot-card-copy {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .boot-card-body {
+      padding: 24px;
+    }
+
+    .boot-empty,
+    .boot-item {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(18, 32, 49, 0.54);
+      padding: 16px;
+    }
+
+    .boot-empty-title,
+    .boot-item-title {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .boot-empty-copy,
+    .boot-item-copy,
+    .boot-item-meta {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .boot-stack {
+      display: grid;
+      gap: 12px;
+    }
+
+    @media (min-width: 1100px) {
+      .boot-layout {
+        grid-template-columns: minmax(0, 1fr) 420px;
+      }
+
+      .boot-hero-grid {
+        grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+      }
+    }
+
+    @media (max-width: 720px) {
+      #app-bootstrap-shell {
+        padding: 16px;
+      }
+
+      .boot-header {
+        flex-direction: column;
+      }
+
+      .boot-header-action {
+        white-space: normal;
+      }
+    }
+  </style>
 </head>
 <body>
+  <div id="app-bootstrap-shell" aria-label="OpenCode Remote workspace boot shell">
+    <div class="boot-shell-inner">
+      <div class="boot-header">
+        <div>
+          <p class="boot-eyebrow">Workspace home</p>
+          <h1 class="boot-title">OpenCode Remote</h1>
+          <p class="boot-copy">A calmer starting point for servers, workspaces, and the sessions that follow.</p>
+        </div>
+        <div class="boot-header-action">Manage servers</div>
+      </div>
+
+      <div class="boot-layout">
+        <div>
+          <section class="boot-hero">
+            <div class="boot-hero-grid">
+              <div>
+                <div class="boot-pill">Ready for workspace setup</div>
+                <h2 class="boot-hero-heading">Start with a server, then move into work</h2>
+                <p class="boot-hero-body">Add a server once, then return here to open workspaces and sessions from a calmer home base.</p>
+                <div class="boot-chip-row" style="margin-top: 16px;">
+                  <div class="boot-chip">Saved servers: 0</div>
+                  <div class="boot-chip">Recent activity: 0</div>
+                  <div class="boot-chip">Current focus: Choose a server</div>
+                </div>
+              </div>
+
+              <div>
+                <div class="boot-action-row">
+                  <div class="boot-button boot-button-primary">Add a server</div>
+                  <div class="boot-button boot-button-secondary">Server settings</div>
+                </div>
+                <div class="boot-note">
+                  <h3 class="boot-note-title">From here</h3>
+                  <ul class="boot-note-list">
+                    <li>Keep the servers you return to most in one visible rail.</li>
+                    <li>Move into projects and sessions once a server is ready.</li>
+                    <li>Keep server details available without taking over the home experience.</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="boot-card" style="margin-top: 24px;">
+            <div class="boot-card-header">
+              <h2 class="boot-card-title">Projects and sessions</h2>
+              <p class="boot-card-copy">Your workspace flow starts here once a server is saved.</p>
+            </div>
+            <div class="boot-card-body">
+              <div class="boot-stack">
+                <div class="boot-empty">
+                  <h3 class="boot-empty-title">Save your server once</h3>
+                  <p class="boot-empty-copy">Keep a stable list of servers without dropping into setup jargon first.</p>
+                </div>
+                <div class="boot-empty">
+                  <h3 class="boot-empty-title">Choose a workspace next</h3>
+                  <p class="boot-empty-copy">When a server is ready, this home becomes the place to move into projects.</p>
+                </div>
+                <div class="boot-empty">
+                  <h3 class="boot-empty-title">Return to recent activity</h3>
+                  <p class="boot-empty-copy">Saved servers and recent attempts will stay visible together in one scaffold.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div class="boot-stack">
+          <section class="boot-card">
+            <div class="boot-card-header">
+              <h2 class="boot-card-title">Saved servers</h2>
+              <p class="boot-card-copy">Pick the server you want this home to focus on.</p>
+            </div>
+            <div class="boot-card-body">
+              <div class="boot-empty">
+                <h3 class="boot-empty-title">No saved servers yet</h3>
+                <p class="boot-empty-copy">Add your first OpenCode server to start filling this home with workspace context.</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="boot-card">
+            <div class="boot-card-header">
+              <h2 class="boot-card-title">Recent activity</h2>
+              <p class="boot-card-copy">A quick memory of the servers you touched most recently.</p>
+            </div>
+            <div class="boot-card-body">
+              <div class="boot-empty">
+                <h3 class="boot-empty-title">No recent activity yet</h3>
+                <p class="boot-empty-copy">Recent connections will land here after you open server details and continue setup.</p>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!--
     You can customize the "flutter_bootstrap.js" script.
     This is useful to provide a custom configuration to the Flutter loader
@@ -41,6 +420,14 @@
     For more details:
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
+  <script>
+    window.addEventListener('flutter-first-frame', () => {
+      var shell = document.getElementById('app-bootstrap-shell');
+      if (shell) {
+        shell.classList.add('is-hidden');
+      }
+    });
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../connection/connection_models.dart';
@@ -13,8 +15,15 @@ abstract interface class SecureKeyValueStore {
 }
 
 class FlutterSecureKeyValueStore implements SecureKeyValueStore {
+  static const _macOsOptions = MacOsOptions(
+    accountName: 'ai.opencode.opencodeMobileRemote.credentials',
+    accessibility: KeychainAccessibility.first_unlock,
+    useDataProtectionKeyChain: false,
+  );
+
   const FlutterSecureKeyValueStore([FlutterSecureStorage? storage])
-    : _storage = storage ?? const FlutterSecureStorage();
+    : _storage =
+          storage ?? const FlutterSecureStorage(mOptions: _macOsOptions);
 
   final FlutterSecureStorage _storage;
 
@@ -38,10 +47,20 @@ class SecureServerProfileStore {
   static const draftCredentialsKey = 'draft_server_profile_credentials';
   static const savedCredentialsPrefix = 'server_profile_credentials::';
 
-  SecureServerProfileStore({SecureKeyValueStore? storage})
-    : _storage = storage ?? const FlutterSecureKeyValueStore();
+  SecureServerProfileStore({
+    SecureKeyValueStore? storage,
+    Duration readTimeout = const Duration(seconds: 2),
+    Duration writeTimeout = const Duration(seconds: 4),
+    Duration deleteTimeout = const Duration(seconds: 2),
+  }) : _storage = storage ?? const FlutterSecureKeyValueStore(),
+       _readTimeout = readTimeout,
+       _writeTimeout = writeTimeout,
+       _deleteTimeout = deleteTimeout;
 
   final SecureKeyValueStore _storage;
+  final Duration _readTimeout;
+  final Duration _writeTimeout;
+  final Duration _deleteTimeout;
 
   Future<List<ServerProfile>> hydrateSavedProfiles(
     Iterable<ServerProfile> profiles,
@@ -85,14 +104,17 @@ class SecureServerProfileStore {
     ServerProfile profile,
     String key,
   ) async {
-    final raw = await _storage.read(key);
+    final raw = await _safeRead(key);
     if (raw == null || raw.isEmpty) {
       return profile.copyWith(clearUsername: true, clearPassword: true);
     }
 
-    final credentials = _StoredProfileCredentials.fromJson(
-      (jsonDecode(raw) as Map).cast<String, Object?>(),
-    );
+    final credentials = _StoredProfileCredentials.tryParse(raw);
+    if (credentials == null) {
+      await _safeDelete(key);
+      return profile.copyWith(clearUsername: true, clearPassword: true);
+    }
+
     return profile.copyWith(
       username: credentials.username,
       password: credentials.password,
@@ -107,11 +129,62 @@ class SecureServerProfileStore {
       password: profile.password,
     );
     if (credentials.isEmpty) {
-      await _storage.delete(key);
+      await _safeDelete(key);
       return;
     }
 
-    await _storage.write(key, jsonEncode(credentials.toJson()));
+    await _safeWrite(key, jsonEncode(credentials.toJson()));
+  }
+
+  Future<String?> _safeRead(String key) async {
+    return _runWithRetry<String?>(
+      action: 'read',
+      key: key,
+      timeout: _readTimeout,
+      operation: () => _storage.read(key),
+    );
+  }
+
+  Future<void> _safeWrite(String key, String value) async {
+    await _runWithRetry<void>(
+      action: 'write',
+      key: key,
+      timeout: _writeTimeout,
+      operation: () => _storage.write(key, value),
+    );
+  }
+
+  Future<void> _safeDelete(String key) async {
+    await _runWithRetry<void>(
+      action: 'delete',
+      key: key,
+      timeout: _deleteTimeout,
+      operation: () => _storage.delete(key),
+    );
+  }
+
+  Future<T?> _runWithRetry<T>({
+    required String action,
+    required String key,
+    required Duration timeout,
+    required Future<T> Function() operation,
+  }) async {
+    for (var attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        return await operation().timeout(timeout);
+      } on TimeoutException catch (error) {
+        if (attempt == 2) {
+          debugPrint(
+            'SecureServerProfileStore $action timed out for $key: $error',
+          );
+          return null;
+        }
+      } catch (error) {
+        debugPrint('SecureServerProfileStore $action failed for $key: $error');
+        return null;
+      }
+    }
+    return null;
   }
 
   static String savedCredentialsKeyForProfile(String profileId) {
@@ -138,5 +211,36 @@ class _StoredProfileCredentials {
       username: json['username'] as String?,
       password: json['password'] as String?,
     );
+  }
+
+  static _StoredProfileCredentials? tryParse(String raw) {
+    final decoded = _decodeObject(raw);
+    if (decoded == null) {
+      return null;
+    }
+
+    if (_hasInvalidCredentialType(decoded, 'username') ||
+        _hasInvalidCredentialType(decoded, 'password')) {
+      return null;
+    }
+
+    return _StoredProfileCredentials.fromJson(decoded);
+  }
+
+  static Map<String, Object?>? _decodeObject(String raw) {
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) {
+        return null;
+      }
+      return decoded.cast<String, Object?>();
+    } on FormatException {
+      return null;
+    }
+  }
+
+  static bool _hasInvalidCredentialType(Map<String, Object?> json, String key) {
+    final value = json[key];
+    return value != null && value is! String;
   }
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -11,15 +12,14 @@ import '../../core/network/live_event_reducer.dart';
 import '../../core/network/opencode_server_probe.dart';
 import '../../core/network/sse_parser.dart';
 import '../../core/persistence/server_profile_store.dart';
+import '../../core/persistence/stale_cache_store.dart';
 import '../../core/spec/capability_registry.dart';
 import '../../core/spec/probe_snapshot.dart';
 import '../../core/spec/raw_json_document.dart';
 import '../../design_system/app_spacing.dart';
 import '../../design_system/app_theme.dart';
 import '../../i18n/locale_controller.dart';
-import '../projects/project_workspace_section.dart';
-import '../projects/project_models.dart';
-import '../shell/opencode_shell_screen.dart';
+import '../settings/cache_settings_sheet.dart';
 
 const _contentMaxWidth = 1480.0;
 const _sideColumnWidth = 420.0;
@@ -59,11 +59,15 @@ class ConnectionHomeScreen extends StatefulWidget {
   const ConnectionHomeScreen({
     required this.flavor,
     required this.localeController,
+    this.initialProfile,
+    this.startInAddMode = false,
     super.key,
   });
 
   final AppFlavor flavor;
   final LocaleController localeController;
+  final ServerProfile? initialProfile;
+  final bool startInAddMode;
 
   @override
   State<ConnectionHomeScreen> createState() => _ConnectionHomeScreenState();
@@ -72,6 +76,7 @@ class ConnectionHomeScreen extends StatefulWidget {
 class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final ServerProfileStore _profileStore = ServerProfileStore();
+  final StaleCacheStore _cacheStore = StaleCacheStore();
   final OpenCodeServerProbe _probeService = OpenCodeServerProbe();
   final TextEditingController _labelController = TextEditingController();
   final TextEditingController _baseUrlController = TextEditingController();
@@ -83,14 +88,12 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
   List<RecentConnection> _recentConnections = const <RecentConnection>[];
   Set<String> _pinnedProfileKeys = const <String>{};
   ServerProbeReport? _latestProbe;
-  ServerProfile? _readyProfile;
-  CapabilityRegistry? _readyCapabilities;
-  ProjectTarget? _openedProject;
   String? _activeProfileId;
   bool _isSaving = false;
   bool _isProbing = false;
   bool _showPassword = false;
   bool _restoredDraft = false;
+  String _probeSignature = 'probe-empty';
 
   @override
   void initState() {
@@ -121,6 +124,7 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
     final recents = await _profileStore.loadRecentConnections();
     final pinned = await _profileStore.loadPinnedProfiles();
     final draft = await _profileStore.loadDraftProfile();
+    final hasDraft = draft != null && _hasMeaningfulProfileData(draft);
     if (!mounted) {
       return;
     }
@@ -128,11 +132,32 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
       _savedProfiles = profiles;
       _recentConnections = recents;
       _pinnedProfileKeys = pinned;
-      _restoredDraft = draft != null && _hasMeaningfulProfileData(draft);
+      _restoredDraft = widget.initialProfile == null && hasDraft;
     });
-    if (draft != null && _hasMeaningfulProfileData(draft)) {
+    final explicitProfile = widget.initialProfile;
+    if (explicitProfile != null) {
+      ServerProfile? matchedProfile;
+      for (final profile in profiles) {
+        if (profile.id == explicitProfile.id ||
+            profile.storageKey == explicitProfile.storageKey) {
+          matchedProfile = profile;
+          break;
+        }
+      }
+      _applyProfile(
+        matchedProfile ?? explicitProfile,
+        preferSavedSelection: true,
+      );
+      return;
+    }
+    if (hasDraft) {
       _applyProfile(draft, preferSavedSelection: true);
-    } else if (profiles.isNotEmpty) {
+      return;
+    }
+    if (widget.startInAddMode) {
+      return;
+    }
+    if (profiles.isNotEmpty) {
       _applyProfile(profiles.first, preferSavedSelection: true);
     }
   }
@@ -149,6 +174,28 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
     setState(() {
       _activeProfileId = preferSavedSelection ? matchedSavedProfile?.id : null;
     });
+    unawaited(_loadCachedProbe(profile));
+  }
+
+  String _probeCacheKey(ServerProfile profile) =>
+      'probe::${profile.storageKey}';
+
+  Future<void> _loadCachedProbe(ServerProfile profile) async {
+    final entry = await _cacheStore.load(_probeCacheKey(profile));
+    if (entry == null || !mounted) {
+      return;
+    }
+    final report = ServerProbeReport.fromJson(
+      (jsonDecode(entry.payloadJson) as Map).cast<String, Object?>(),
+    );
+    setState(() {
+      _latestProbe = report;
+      _probeSignature = entry.signature;
+    });
+    final ttl = await _cacheStore.loadTtl();
+    if (!entry.isFresh(ttl, DateTime.now())) {
+      unawaited(_runProbe(useLoadingState: false));
+    }
   }
 
   ServerProfile? _matchSavedProfile(ServerProfile profile) {
@@ -248,16 +295,19 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
     });
   }
 
-  Future<void> _runProbe() async {
+  Future<void> _runProbe({bool useLoadingState = true}) async {
     if (!_formKey.currentState!.validate()) {
       return;
     }
     FocusScope.of(context).unfocus();
     final draft = _currentDraftProfile();
     setState(() {
-      _isProbing = true;
+      if (useLoadingState) {
+        _isProbing = true;
+      }
     });
     final report = await _probeService.probe(draft);
+    await _cacheStore.save(_probeCacheKey(draft), report.toJson());
     final recents = await _profileStore.recordRecentConnection(
       RecentConnection(
         id: draft.id,
@@ -275,12 +325,24 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
     setState(() {
       _latestProbe = report;
       _recentConnections = recents;
-      _readyProfile = report.isReady ? draft : _readyProfile;
-      _readyCapabilities = report.isReady
-          ? report.capabilityRegistry
-          : _readyCapabilities;
+      _probeSignature = jsonEncode(report.toJson());
       _isProbing = false;
     });
+  }
+
+  Future<void> _openCacheSettings() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => CacheSettingsSheet(
+        onChanged: () {
+          final draft = _currentDraftProfile();
+          if (_hasMeaningfulProfileData(draft)) {
+            unawaited(_loadCachedProbe(draft));
+          }
+        },
+      ),
+    );
   }
 
   String? _validateAddress(String? value) {
@@ -294,21 +356,6 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_openedProject != null &&
-        _readyProfile != null &&
-        _readyCapabilities != null) {
-      return OpenCodeShellScreen(
-        profile: _readyProfile!,
-        project: _openedProject!,
-        capabilities: _readyCapabilities!,
-        onExit: () {
-          setState(() {
-            _openedProject = null;
-          });
-        },
-      );
-    }
-
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
 
     return Scaffold(
@@ -415,27 +462,6 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
         _buildHeroCard(context),
         const SizedBox(height: AppSpacing.lg),
         _buildProbeResultCard(context),
-        AnimatedSwitcher(
-          duration: _motionMedium,
-          switchInCurve: Curves.easeOutCubic,
-          switchOutCurve: Curves.easeInCubic,
-          transitionBuilder: (child, animation) =>
-              _fadeSlideTransition(child, animation),
-          child: _latestProbe?.isReady == true && _readyProfile != null
-              ? Padding(
-                  key: ValueKey<String>(_readyProfile!.storageKey),
-                  padding: const EdgeInsets.only(top: AppSpacing.lg),
-                  child: ProjectWorkspaceSection(
-                    profile: _readyProfile!,
-                    onOpenProject: (project) {
-                      setState(() {
-                        _openedProject = project;
-                      });
-                    },
-                  ),
-                )
-              : const SizedBox.shrink(key: ValueKey<String>('no-projects')),
-        ),
       ],
     );
   }
@@ -475,57 +501,84 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
   Widget _buildHeader(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
-    return Row(
+    final copy = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(
-                l10n.connectionHeaderEyebrow,
-                style: Theme.of(context).textTheme.labelLarge,
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                l10n.connectionHeaderTitle,
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                l10n.connectionHeaderSubtitle,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyLarge?.copyWith(color: surfaces.muted),
-              ),
-            ],
-          ),
+        Text(
+          l10n.connectionHeaderEyebrow,
+          style: Theme.of(context).textTheme.labelLarge,
         ),
-        const SizedBox(width: AppSpacing.md),
-        Wrap(
-          spacing: AppSpacing.sm,
-          runSpacing: AppSpacing.sm,
-          alignment: WrapAlignment.end,
-          children: <Widget>[
-            _TagChip(
-              icon: Icons.tune,
-              label: '${l10n.currentFlavor}: ${widget.flavor.label}',
-            ),
-            _TagChip(
-              icon: Icons.language,
-              label:
-                  '${l10n.currentLocale}: ${widget.localeController.locale.languageCode}',
-            ),
-            OutlinedButton.icon(
-              onPressed: widget.localeController.toggle,
-              icon: const Icon(Icons.translate),
-              label: Text(l10n.switchLocale),
-            ),
-          ],
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          l10n.connectionHeaderTitle,
+          style: Theme.of(
+            context,
+          ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          l10n.connectionHeaderSubtitle,
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge?.copyWith(color: surfaces.muted),
         ),
       ],
+    );
+    final actions = Wrap(
+      spacing: AppSpacing.sm,
+      runSpacing: AppSpacing.sm,
+      alignment: WrapAlignment.end,
+      children: <Widget>[
+        if (Navigator.canPop(context))
+          OutlinedButton.icon(
+            onPressed: () => Navigator.of(context).maybePop(),
+            icon: const Icon(Icons.home_outlined),
+            label: Text(l10n.connectionBackHomeAction),
+          ),
+        _TagChip(
+          icon: Icons.tune,
+          label: '${l10n.currentFlavor}: ${widget.flavor.label}',
+        ),
+        _TagChip(
+          icon: Icons.language,
+          label:
+              '${l10n.currentLocale}: ${widget.localeController.locale.languageCode}',
+        ),
+        OutlinedButton.icon(
+          onPressed: _openCacheSettings,
+          icon: const Icon(Icons.cleaning_services_outlined),
+          label: Text(l10n.cacheSettingsAction),
+        ),
+        OutlinedButton.icon(
+          onPressed: widget.localeController.toggle,
+          icon: const Icon(Icons.translate),
+          label: Text(l10n.switchLocale),
+        ),
+      ],
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 1120) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              copy,
+              const SizedBox(height: AppSpacing.md),
+              actions,
+            ],
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Expanded(child: copy),
+            const SizedBox(width: AppSpacing.md),
+            Flexible(child: actions),
+          ],
+        );
+      },
     );
   }
 
@@ -780,7 +833,7 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
                 ),
               )
             : Padding(
-                key: const ValueKey<String>('probe-report'),
+                key: ValueKey<String>(_probeSignature),
                 padding: const EdgeInsets.all(AppSpacing.lg),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -814,10 +867,7 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
                               ),
                               const SizedBox(height: AppSpacing.xs),
                               Text(
-                                _classificationDetail(
-                                  l10n,
-                                  _latestProbe!.classification,
-                                ),
+                                _classificationDetail(l10n, _latestProbe!),
                                 style: theme.textTheme.bodyLarge?.copyWith(
                                   color: surfaces.muted,
                                 ),
@@ -1090,9 +1140,13 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
 
   String _classificationDetail(
     AppLocalizations l10n,
-    ConnectionProbeClassification classification,
+    ServerProbeReport report,
   ) {
-    return switch (classification) {
+    if (report.classification == ConnectionProbeClassification.authFailure &&
+        report.requiresBasicAuth) {
+      return l10n.connectionDetailBasicAuthFailure;
+    }
+    return switch (report.classification) {
       ConnectionProbeClassification.ready => l10n.connectionDetailReady,
       ConnectionProbeClassification.authFailure =>
         l10n.connectionDetailAuthFailure,

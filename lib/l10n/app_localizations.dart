@@ -107,13 +107,13 @@ abstract class AppLocalizations {
   /// No description provided for @foundationTitle.
   ///
   /// In en, this message translates to:
-  /// **'Foundation debug workspace'**
+  /// **'Foundation workspace'**
   String get foundationTitle;
 
   /// No description provided for @foundationSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Capability, fixture, and stream foundations are wired before UI parity work.'**
+  /// **'Built-in checks and live updates are ready before you connect a server.'**
   String get foundationSubtitle;
 
   /// No description provided for @currentFlavor.
@@ -131,19 +131,19 @@ abstract class AppLocalizations {
   /// No description provided for @fullCapabilityProbe.
   ///
   /// In en, this message translates to:
-  /// **'Full capability probe'**
+  /// **'Full server check'**
   String get fullCapabilityProbe;
 
   /// No description provided for @legacyCapabilityProbe.
   ///
   /// In en, this message translates to:
-  /// **'Legacy capability probe'**
+  /// **'Compatibility check'**
   String get legacyCapabilityProbe;
 
   /// No description provided for @probeErrorCapability.
   ///
   /// In en, this message translates to:
-  /// **'Probe error handling'**
+  /// **'Check error handling'**
   String get probeErrorCapability;
 
   /// No description provided for @healthyStream.
@@ -194,6 +194,66 @@ abstract class AppLocalizations {
   /// **'Switch locale'**
   String get switchLocale;
 
+  /// No description provided for @cacheSettingsAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Cache settings'**
+  String get cacheSettingsAction;
+
+  /// No description provided for @cacheSettingsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Cache settings'**
+  String get cacheSettingsTitle;
+
+  /// No description provided for @cacheSettingsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Adjust cache freshness and clear stored connection checks and workspace snapshots.'**
+  String get cacheSettingsSubtitle;
+
+  /// No description provided for @cacheTtlLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cache freshness'**
+  String get cacheTtlLabel;
+
+  /// No description provided for @cacheClearAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear cached data'**
+  String get cacheClearAction;
+
+  /// No description provided for @cacheClearingAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Clearing cache...'**
+  String get cacheClearingAction;
+
+  /// No description provided for @cacheTtl15Seconds.
+  ///
+  /// In en, this message translates to:
+  /// **'15 seconds'**
+  String get cacheTtl15Seconds;
+
+  /// No description provided for @cacheTtl1Minute.
+  ///
+  /// In en, this message translates to:
+  /// **'1 minute'**
+  String get cacheTtl1Minute;
+
+  /// No description provided for @cacheTtl5Minutes.
+  ///
+  /// In en, this message translates to:
+  /// **'5 minutes'**
+  String get cacheTtl5Minutes;
+
+  /// No description provided for @cacheTtl15Minutes.
+  ///
+  /// In en, this message translates to:
+  /// **'15 minutes'**
+  String get cacheTtl15Minutes;
+
   /// No description provided for @connectionTitle.
   ///
   /// In en, this message translates to:
@@ -203,7 +263,7 @@ abstract class AppLocalizations {
   /// No description provided for @connectionSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Store trusted OpenCode endpoints, probe capabilities first, then step into project and session workflows.'**
+  /// **'Store trusted OpenCode servers, run a server check when needed, and return to home to choose projects.'**
   String get connectionSubtitle;
 
   /// No description provided for @serverProfileManager.
@@ -269,7 +329,7 @@ abstract class AppLocalizations {
   /// No description provided for @connectionGuidance.
   ///
   /// In en, this message translates to:
-  /// **'Probe checks health, spec, config, providers, agent availability, and experimental tool support. mDNS and richer network discovery are next in the roadmap.'**
+  /// **'Server check confirms health, compatibility, sign-in, provider access, and tool availability. More network discovery options are coming.'**
   String get connectionGuidance;
 
   /// No description provided for @savedServers.
@@ -305,7 +365,7 @@ abstract class AppLocalizations {
   /// No description provided for @connectionDiagnosticsHint.
   ///
   /// In en, this message translates to:
-  /// **'Run a probe to classify auth, spec, capability, and SSE readiness before opening a workspace.'**
+  /// **'Run a server check to confirm sign-in and compatibility before opening a workspace.'**
   String get connectionDiagnosticsHint;
 
   /// No description provided for @serverVersion.
@@ -317,7 +377,7 @@ abstract class AppLocalizations {
   /// No description provided for @sseStatus.
   ///
   /// In en, this message translates to:
-  /// **'SSE'**
+  /// **'Live updates'**
   String get sseStatus;
 
   /// No description provided for @readyStatus.
@@ -335,13 +395,13 @@ abstract class AppLocalizations {
   /// No description provided for @connectionEmptyState.
   ///
   /// In en, this message translates to:
-  /// **'Enter a server profile and run the probe to populate capability diagnostics.'**
+  /// **'Enter a server profile and run a server check to populate diagnostics.'**
   String get connectionEmptyState;
 
   /// No description provided for @connectionHeaderEyebrow.
   ///
   /// In en, this message translates to:
-  /// **'Phase 2 · Live server connection'**
+  /// **'Live server connection'**
   String get connectionHeaderEyebrow;
 
   /// No description provided for @connectionHeaderTitle.
@@ -353,13 +413,13 @@ abstract class AppLocalizations {
   /// No description provided for @connectionHeaderSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Probe the live spec, verify auth, and keep the next handoff grounded in actual server capability.'**
+  /// **'Review saved server details, verify sign-in, and return to workspace home once this server is ready.'**
   String get connectionHeaderSubtitle;
 
   /// No description provided for @connectionStatusAwaiting.
   ///
   /// In en, this message translates to:
-  /// **'Awaiting first probe'**
+  /// **'Awaiting first check'**
   String get connectionStatusAwaiting;
 
   /// No description provided for @connectionFormTitle.
@@ -371,7 +431,7 @@ abstract class AppLocalizations {
   /// No description provided for @connectionFormSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Save known endpoints, retry recent attempts, and verify whether the server is actually ready for this client.'**
+  /// **'Update saved server details, retry a check, and keep this profile ready for home.'**
   String get connectionFormSubtitle;
 
   /// No description provided for @savedProfilesCountLabel.
@@ -389,13 +449,13 @@ abstract class AppLocalizations {
   /// No description provided for @sseReadyLabel.
   ///
   /// In en, this message translates to:
-  /// **'SSE-ready'**
+  /// **'Live updates ready'**
   String get sseReadyLabel;
 
   /// No description provided for @ssePendingLabel.
   ///
   /// In en, this message translates to:
-  /// **'Probe pending'**
+  /// **'Check pending'**
   String get ssePendingLabel;
 
   /// No description provided for @connectionProfileLabel.
@@ -452,10 +512,16 @@ abstract class AppLocalizations {
   /// **'Enter a valid server address.'**
   String get connectionAddressValidation;
 
+  /// No description provided for @connectionBackHomeAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to home'**
+  String get connectionBackHomeAction;
+
   /// No description provided for @connectionProbeAction.
   ///
   /// In en, this message translates to:
-  /// **'Probe server'**
+  /// **'Check server'**
   String get connectionProbeAction;
 
   /// No description provided for @connectionSaveAction.
@@ -485,25 +551,25 @@ abstract class AppLocalizations {
   /// No description provided for @connectionProbeResultTitle.
   ///
   /// In en, this message translates to:
-  /// **'Live capability probe'**
+  /// **'Server check'**
   String get connectionProbeResultTitle;
 
   /// No description provided for @connectionProbeResultSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Each run checks health, spec, config, providers, agents, and experimental tools when the spec exposes them.'**
+  /// **'Use this detail view to confirm whether the saved server still responds. Project selection happens from workspace home.'**
   String get connectionProbeResultSubtitle;
 
   /// No description provided for @connectionProbeEmptyTitle.
   ///
   /// In en, this message translates to:
-  /// **'No live probe yet'**
+  /// **'No recent check yet'**
   String get connectionProbeEmptyTitle;
 
   /// No description provided for @connectionProbeEmptySubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Run a probe to classify auth failures, spec fetch issues, unsupported capability gaps, or readiness for the SSE/connectivity layer.'**
+  /// **'Run a server check to confirm sign-in and compatibility before returning to workspace home.'**
   String get connectionProbeEmptySubtitle;
 
   /// No description provided for @connectionVersionLabel.
@@ -533,25 +599,25 @@ abstract class AppLocalizations {
   /// No description provided for @connectionMissingCapabilitiesLabel.
   ///
   /// In en, this message translates to:
-  /// **'Missing required endpoints'**
+  /// **'Missing required features'**
   String get connectionMissingCapabilitiesLabel;
 
   /// No description provided for @connectionExperimentalPathsLabel.
   ///
   /// In en, this message translates to:
-  /// **'Experimental tool endpoints'**
+  /// **'Advanced tools'**
   String get connectionExperimentalPathsLabel;
 
   /// No description provided for @connectionEndpointSectionTitle.
   ///
   /// In en, this message translates to:
-  /// **'Endpoint outcomes'**
+  /// **'Check results'**
   String get connectionEndpointSectionTitle;
 
   /// No description provided for @connectionCapabilitySectionTitle.
   ///
   /// In en, this message translates to:
-  /// **'Capability registry'**
+  /// **'Capabilities'**
   String get connectionCapabilitySectionTitle;
 
   /// No description provided for @savedProfilesTitle.
@@ -563,7 +629,7 @@ abstract class AppLocalizations {
   /// No description provided for @savedProfilesSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Pinned connections stay ready for repeat probe cycles.'**
+  /// **'Pinned servers stay ready for quick checks.'**
   String get savedProfilesSubtitle;
 
   /// No description provided for @savedProfilesEmptyTitle.
@@ -587,7 +653,7 @@ abstract class AppLocalizations {
   /// No description provided for @recentConnectionsSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Last live probes, kept separate from pinned server profiles.'**
+  /// **'Recent server checks, kept separate from pinned servers.'**
   String get recentConnectionsSubtitle;
 
   /// No description provided for @recentConnectionsEmptyTitle.
@@ -599,7 +665,7 @@ abstract class AppLocalizations {
   /// No description provided for @recentConnectionsEmptySubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Probe a server and the latest outcome will stay here for quick retry.'**
+  /// **'Check a server and the latest outcome will stay here for quick retry.'**
   String get recentConnectionsEmptySubtitle;
 
   /// No description provided for @connectionOutcomeReady.
@@ -635,14 +701,20 @@ abstract class AppLocalizations {
   /// No description provided for @connectionDetailReady.
   ///
   /// In en, this message translates to:
-  /// **'Core endpoints responded and the server looks ready for SSE handoff.'**
+  /// **'Core services responded and home can now offer project choices.'**
   String get connectionDetailReady;
 
   /// No description provided for @connectionDetailAuthFailure.
   ///
   /// In en, this message translates to:
-  /// **'The server responded, but at least one core endpoint rejected the supplied credentials.'**
+  /// **'The server responded, but the provided sign-in details were rejected.'**
   String get connectionDetailAuthFailure;
+
+  /// No description provided for @connectionDetailBasicAuthFailure.
+  ///
+  /// In en, this message translates to:
+  /// **'This server is protected by Basic auth. Add or update the username and password, then try again.'**
+  String get connectionDetailBasicAuthFailure;
 
   /// No description provided for @connectionDetailSpecFailure.
   ///
@@ -653,13 +725,13 @@ abstract class AppLocalizations {
   /// No description provided for @connectionDetailUnsupported.
   ///
   /// In en, this message translates to:
-  /// **'The server spec is readable, but required endpoints for this client are still missing.'**
+  /// **'The server is reachable, but required features for this app are still missing.'**
   String get connectionDetailUnsupported;
 
   /// No description provided for @connectionDetailConnectivityFailure.
   ///
   /// In en, this message translates to:
-  /// **'The server could not be reached reliably enough to complete probing.'**
+  /// **'The server could not be reached reliably enough to complete the check.'**
   String get connectionDetailConnectivityFailure;
 
   /// No description provided for @endpointReadyStatus.
@@ -695,13 +767,13 @@ abstract class AppLocalizations {
   /// No description provided for @fixtureDiagnosticsTitle.
   ///
   /// In en, this message translates to:
-  /// **'Fixture diagnostics'**
+  /// **'Diagnostics'**
   String get fixtureDiagnosticsTitle;
 
   /// No description provided for @fixtureDiagnosticsSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'The phase 1 manual QA surfaces stay visible here while live connection work comes online.'**
+  /// **'Connection checks and status details live here.'**
   String get fixtureDiagnosticsSubtitle;
 
   /// No description provided for @capabilityCanShareSession.
@@ -743,7 +815,7 @@ abstract class AppLocalizations {
   /// No description provided for @capabilityHasExperimentalTools.
   ///
   /// In en, this message translates to:
-  /// **'Experimental tools'**
+  /// **'Advanced tools'**
   String get capabilityHasExperimentalTools;
 
   /// No description provided for @capabilityHasProviderOAuth.
@@ -767,13 +839,13 @@ abstract class AppLocalizations {
   /// No description provided for @projectSelectionTitle.
   ///
   /// In en, this message translates to:
-  /// **'Project selection'**
+  /// **'Choose a project'**
   String get projectSelectionTitle;
 
   /// No description provided for @projectSelectionSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Choose the active project context from the server\'s current project, server-listed projects, a manual path, or a folder browser.'**
+  /// **'Open a project from this server, your recent work, or a folder path.'**
   String get projectSelectionSubtitle;
 
   /// No description provided for @currentProjectTitle.
@@ -785,37 +857,37 @@ abstract class AppLocalizations {
   /// No description provided for @currentProjectSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'The project currently scoped by the connected server instance.'**
+  /// **'If the server is already inside a project, it appears here first.'**
   String get currentProjectSubtitle;
 
   /// No description provided for @serverProjectsTitle.
   ///
   /// In en, this message translates to:
-  /// **'Server-listed projects'**
+  /// **'Projects on this server'**
   String get serverProjectsTitle;
 
   /// No description provided for @serverProjectsSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Projects OpenCode already knows about on this server.'**
+  /// **'Other projects the server can open right now.'**
   String get serverProjectsSubtitle;
 
   /// No description provided for @serverProjectsEmpty.
   ///
   /// In en, this message translates to:
-  /// **'No server-listed projects yet.'**
+  /// **'No server projects are available right now. You can still open a recent project or folder path.'**
   String get serverProjectsEmpty;
 
   /// No description provided for @manualProjectTitle.
   ///
   /// In en, this message translates to:
-  /// **'Manual path or folder browser'**
+  /// **'Open a folder path'**
   String get manualProjectTitle;
 
   /// No description provided for @manualProjectSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Use this when search misses a folder or you need to open an exact path.'**
+  /// **'Use this when the server list is empty or you know exactly which folder you want.'**
   String get manualProjectSubtitle;
 
   /// No description provided for @manualProjectPathLabel.
@@ -857,7 +929,7 @@ abstract class AppLocalizations {
   /// No description provided for @recentProjectsSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Recent local project targets kept separately from server-listed projects.'**
+  /// **'Projects you\'ve opened recently, with last session hints when we have them.'**
   String get recentProjectsSubtitle;
 
   /// No description provided for @pinnedProjectsTitle.
@@ -881,19 +953,19 @@ abstract class AppLocalizations {
   /// No description provided for @projectPreviewTitle.
   ///
   /// In en, this message translates to:
-  /// **'Project preview'**
+  /// **'Project details'**
   String get projectPreviewTitle;
 
   /// No description provided for @projectPreviewSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Metadata for the next project context before sessions and chat bind to it.'**
+  /// **'Review the next workspace before you open it.'**
   String get projectPreviewSubtitle;
 
   /// No description provided for @projectPreviewEmpty.
   ///
   /// In en, this message translates to:
-  /// **'Select a project from one of the four entry points to preview it here.'**
+  /// **'Select a project, recent workspace, or folder path to see details here.'**
   String get projectPreviewEmpty;
 
   /// No description provided for @projectDirectoryLabel.
@@ -947,8 +1019,632 @@ abstract class AppLocalizations {
   /// No description provided for @projectSelectionReadyHint.
   ///
   /// In en, this message translates to:
-  /// **'This target is ready for the next phase where sessions and chat use the selected project context.'**
+  /// **'Open this project to continue into its sessions.'**
   String get projectSelectionReadyHint;
+
+  /// No description provided for @homeHeaderEyebrow.
+  ///
+  /// In en, this message translates to:
+  /// **'Workspace'**
+  String get homeHeaderEyebrow;
+
+  /// No description provided for @homeHeaderSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect a server, then open a project and continue your sessions.'**
+  String get homeHeaderSubtitle;
+
+  /// No description provided for @homeAddServerAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Add server'**
+  String get homeAddServerAction;
+
+  /// No description provided for @homeEditSelectedServerAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit selected server'**
+  String get homeEditSelectedServerAction;
+
+  /// No description provided for @homeEditServerAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit server'**
+  String get homeEditServerAction;
+
+  /// No description provided for @homeSwitchServerAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Switch server'**
+  String get homeSwitchServerAction;
+
+  /// No description provided for @homeNextStepsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Next steps'**
+  String get homeNextStepsTitle;
+
+  /// No description provided for @homeNextStepsPinnedServers.
+  ///
+  /// In en, this message translates to:
+  /// **'Pin the servers you use most, so they stay at the top.'**
+  String get homeNextStepsPinnedServers;
+
+  /// No description provided for @homeNextStepsProjects.
+  ///
+  /// In en, this message translates to:
+  /// **'Once a server is ready, open a project and jump into sessions.'**
+  String get homeNextStepsProjects;
+
+  /// No description provided for @homeNextStepsRetryEdit.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry or edit a server without leaving home.'**
+  String get homeNextStepsRetryEdit;
+
+  /// No description provided for @homeMetricSavedServers.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved servers'**
+  String get homeMetricSavedServers;
+
+  /// No description provided for @homeMetricRecentActivity.
+  ///
+  /// In en, this message translates to:
+  /// **'Recent activity'**
+  String get homeMetricRecentActivity;
+
+  /// No description provided for @homeMetricCurrentFocus.
+  ///
+  /// In en, this message translates to:
+  /// **'Current server'**
+  String get homeMetricCurrentFocus;
+
+  /// No description provided for @homeChooseServerLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a server'**
+  String get homeChooseServerLabel;
+
+  /// No description provided for @homeResumeLastWorkspaceTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Resume last workspace'**
+  String get homeResumeLastWorkspaceTitle;
+
+  /// No description provided for @homeOpenLastProjectTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Open last project'**
+  String get homeOpenLastProjectTitle;
+
+  /// No description provided for @homeResumeLastWorkspaceBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue in {project} and pick up where you left off.'**
+  String homeResumeLastWorkspaceBody(String project);
+
+  /// No description provided for @homeOpenLastProjectBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Open {project}, then choose a session or start a new one.'**
+  String homeOpenLastProjectBody(String project);
+
+  /// No description provided for @homeResumeLastWorkspaceAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Resume workspace'**
+  String get homeResumeLastWorkspaceAction;
+
+  /// No description provided for @homeOpenLastProjectAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Open project'**
+  String get homeOpenLastProjectAction;
+
+  /// No description provided for @homeResumeMetricProject.
+  ///
+  /// In en, this message translates to:
+  /// **'Project'**
+  String get homeResumeMetricProject;
+
+  /// No description provided for @homeResumeMetricLastSession.
+  ///
+  /// In en, this message translates to:
+  /// **'Last session'**
+  String get homeResumeMetricLastSession;
+
+  /// No description provided for @homeResumeMetricStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'Status'**
+  String get homeResumeMetricStatus;
+
+  /// No description provided for @homeActionCheckingWorkspace.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking workspace...'**
+  String get homeActionCheckingWorkspace;
+
+  /// No description provided for @homeActionContinue.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue'**
+  String get homeActionContinue;
+
+  /// No description provided for @homeActionRetry.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get homeActionRetry;
+
+  /// No description provided for @homeActionCheckingServer.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking server...'**
+  String get homeActionCheckingServer;
+
+  /// No description provided for @homeThisServerLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'This server'**
+  String get homeThisServerLabel;
+
+  /// No description provided for @homeWorkspaceSectionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Projects and sessions'**
+  String get homeWorkspaceSectionTitle;
+
+  /// No description provided for @homeWorkspaceLoadingSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading your saved servers and recent activity.'**
+  String get homeWorkspaceLoadingSubtitle;
+
+  /// No description provided for @homeWorkspaceEmptySubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a server to start opening projects and sessions here.'**
+  String get homeWorkspaceEmptySubtitle;
+
+  /// No description provided for @homeWorkspaceFeatureSaveTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Save a server once'**
+  String get homeWorkspaceFeatureSaveTitle;
+
+  /// No description provided for @homeWorkspaceFeatureSaveBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep servers in one place, ready when you come back.'**
+  String get homeWorkspaceFeatureSaveBody;
+
+  /// No description provided for @homeWorkspaceFeatureChooseTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Open a project next'**
+  String get homeWorkspaceFeatureChooseTitle;
+
+  /// No description provided for @homeWorkspaceFeatureChooseBody.
+  ///
+  /// In en, this message translates to:
+  /// **'When the server is ready, choose a project and continue.'**
+  String get homeWorkspaceFeatureChooseBody;
+
+  /// No description provided for @homeWorkspaceFeatureRecentTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep recents in view'**
+  String get homeWorkspaceFeatureRecentTitle;
+
+  /// No description provided for @homeWorkspaceFeatureRecentBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved servers and recent checks stay together on one screen.'**
+  String get homeWorkspaceFeatureRecentBody;
+
+  /// No description provided for @homeWorkspaceSubtitleReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a project to continue.'**
+  String get homeWorkspaceSubtitleReady;
+
+  /// No description provided for @homeWorkspaceSubtitleSignIn.
+  ///
+  /// In en, this message translates to:
+  /// **'Update sign-in details or retry before projects can load.'**
+  String get homeWorkspaceSubtitleSignIn;
+
+  /// No description provided for @homeWorkspaceSubtitleOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry this server or confirm the saved address.'**
+  String get homeWorkspaceSubtitleOffline;
+
+  /// No description provided for @homeWorkspaceSubtitleUpdate.
+  ///
+  /// In en, this message translates to:
+  /// **'Update the server before projects can load.'**
+  String get homeWorkspaceSubtitleUpdate;
+
+  /// No description provided for @homeWorkspaceSubtitleUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Run a quick check before loading projects.'**
+  String get homeWorkspaceSubtitleUnknown;
+
+  /// No description provided for @homeWorkspaceTitleChooseServer.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a saved server'**
+  String get homeWorkspaceTitleChooseServer;
+
+  /// No description provided for @homeWorkspaceTitleChecking.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking {server}'**
+  String homeWorkspaceTitleChecking(String server);
+
+  /// No description provided for @homeWorkspaceTitleReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready for projects'**
+  String get homeWorkspaceTitleReady;
+
+  /// No description provided for @homeWorkspaceTitleSignInRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign-in required'**
+  String get homeWorkspaceTitleSignInRequired;
+
+  /// No description provided for @homeWorkspaceTitleOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'Offline'**
+  String get homeWorkspaceTitleOffline;
+
+  /// No description provided for @homeWorkspaceTitleUpdate.
+  ///
+  /// In en, this message translates to:
+  /// **'Update required'**
+  String get homeWorkspaceTitleUpdate;
+
+  /// No description provided for @homeWorkspaceTitleContinueFromHome.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue from home'**
+  String get homeWorkspaceTitleContinueFromHome;
+
+  /// No description provided for @homeWorkspaceBodyChecking.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking sign-in and compatibility before loading projects and sessions.'**
+  String get homeWorkspaceBodyChecking;
+
+  /// No description provided for @homeWorkspaceBodyReady.
+  ///
+  /// In en, this message translates to:
+  /// **'{server} is ready, but the project list is still loading.'**
+  String homeWorkspaceBodyReady(String server);
+
+  /// No description provided for @homeWorkspaceBodySignInRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'{server} responded, but sign-in details need attention before projects can load.'**
+  String homeWorkspaceBodySignInRequired(String server);
+
+  /// No description provided for @homeWorkspaceBodyBasicAuthRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'{server} is protected by Basic auth. Edit this server and add the username and password before loading projects.'**
+  String homeWorkspaceBodyBasicAuthRequired(String server);
+
+  /// No description provided for @homeWorkspaceBodyOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t reach {server} just now. Retry, or edit the saved address if it changed.'**
+  String homeWorkspaceBodyOffline(String server);
+
+  /// No description provided for @homeWorkspaceBodyUpdateRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'{server} responded, but it needs an update before projects can load.'**
+  String homeWorkspaceBodyUpdateRequired(String server);
+
+  /// No description provided for @homeWorkspaceBodyUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Run a quick check, then edit details only if sign-in or the address needs attention.'**
+  String get homeWorkspaceBodyUnknown;
+
+  /// No description provided for @homeNoticeWorkspaceUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Your last workspace is no longer available. Choose a project to continue.'**
+  String get homeNoticeWorkspaceUnavailable;
+
+  /// No description provided for @homeNoticeWorkspaceResumeFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t reopen your last workspace right now. Choose a project below or retry this server.'**
+  String get homeNoticeWorkspaceResumeFailed;
+
+  /// No description provided for @homeSavedServersTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved servers'**
+  String get homeSavedServersTitle;
+
+  /// No description provided for @homeSavedServersSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick a server, then continue into projects and sessions.'**
+  String get homeSavedServersSubtitle;
+
+  /// No description provided for @homeSavedServersEmptyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'No saved servers yet'**
+  String get homeSavedServersEmptyTitle;
+
+  /// No description provided for @homeSavedServersEmptySubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Add your first server to start opening projects and sessions.'**
+  String get homeSavedServersEmptySubtitle;
+
+  /// No description provided for @homeRecentActivityTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Recent activity'**
+  String get homeRecentActivityTitle;
+
+  /// No description provided for @homeRecentActivitySubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'A quick record of the servers you checked most recently.'**
+  String get homeRecentActivitySubtitle;
+
+  /// No description provided for @homeRecentActivityEmptyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'No recent activity yet'**
+  String get homeRecentActivityEmptyTitle;
+
+  /// No description provided for @homeRecentActivityEmptySubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Recent checks show up here after you connect or retry a server.'**
+  String get homeRecentActivityEmptySubtitle;
+
+  /// No description provided for @homeRecentActivityNotUsed.
+  ///
+  /// In en, this message translates to:
+  /// **'Not used yet'**
+  String get homeRecentActivityNotUsed;
+
+  /// No description provided for @homeRecentActivityLastUsed.
+  ///
+  /// In en, this message translates to:
+  /// **'Last used {timestamp}'**
+  String homeRecentActivityLastUsed(String timestamp);
+
+  /// No description provided for @homeCredentialsSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Credentials saved'**
+  String get homeCredentialsSaved;
+
+  /// No description provided for @homeCredentialsMissing.
+  ///
+  /// In en, this message translates to:
+  /// **'No credentials saved'**
+  String get homeCredentialsMissing;
+
+  /// No description provided for @homeServerCardBodyReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready to open projects and sessions from home.'**
+  String get homeServerCardBodyReady;
+
+  /// No description provided for @homeServerCardBodySignIn.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry, or update sign-in details before projects can load.'**
+  String get homeServerCardBodySignIn;
+
+  /// No description provided for @homeServerCardBodyBasicAuthRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Basic auth is required before this server can load projects.'**
+  String get homeServerCardBodyBasicAuthRequired;
+
+  /// No description provided for @homeServerCardBodyOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry, or edit the saved address before continuing.'**
+  String get homeServerCardBodyOffline;
+
+  /// No description provided for @homeServerCardBodyUpdate.
+  ///
+  /// In en, this message translates to:
+  /// **'Update the server before continuing into projects and sessions.'**
+  String get homeServerCardBodyUpdate;
+
+  /// No description provided for @homeServerCardBodyUnknownWithAuth.
+  ///
+  /// In en, this message translates to:
+  /// **'Run a quick check before loading projects.'**
+  String get homeServerCardBodyUnknownWithAuth;
+
+  /// No description provided for @homeServerCardBodyUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Run a quick check, then edit details only if sign-in is needed.'**
+  String get homeServerCardBodyUnknown;
+
+  /// No description provided for @homeStatusNewHome.
+  ///
+  /// In en, this message translates to:
+  /// **'New home'**
+  String get homeStatusNewHome;
+
+  /// No description provided for @homeStatusChooseServer.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a server'**
+  String get homeStatusChooseServer;
+
+  /// No description provided for @homeStatusCheckingServer.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking server'**
+  String get homeStatusCheckingServer;
+
+  /// No description provided for @homeStatusReadyForProjects.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready for projects'**
+  String get homeStatusReadyForProjects;
+
+  /// No description provided for @homeStatusSignInRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign-in required'**
+  String get homeStatusSignInRequired;
+
+  /// No description provided for @homeStatusServerOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'Server offline'**
+  String get homeStatusServerOffline;
+
+  /// No description provided for @homeStatusNeedsAttention.
+  ///
+  /// In en, this message translates to:
+  /// **'Needs attention'**
+  String get homeStatusNeedsAttention;
+
+  /// No description provided for @homeStatusAwaitingSetup.
+  ///
+  /// In en, this message translates to:
+  /// **'Awaiting setup'**
+  String get homeStatusAwaitingSetup;
+
+  /// No description provided for @homeHeroTitleNoServers.
+  ///
+  /// In en, this message translates to:
+  /// **'Start with a server'**
+  String get homeHeroTitleNoServers;
+
+  /// No description provided for @homeHeroTitleOneServer.
+  ///
+  /// In en, this message translates to:
+  /// **'Your server, ready to go'**
+  String get homeHeroTitleOneServer;
+
+  /// No description provided for @homeHeroTitleManyServers.
+  ///
+  /// In en, this message translates to:
+  /// **'All your servers in one place'**
+  String get homeHeroTitleManyServers;
+
+  /// No description provided for @homeHeroBodyNoServers.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a server once, then return here to open projects and continue sessions.'**
+  String get homeHeroBodyNoServers;
+
+  /// No description provided for @homeHeroBodyOneServer.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue from home, and only open server details when something changes.'**
+  String get homeHeroBodyOneServer;
+
+  /// No description provided for @homeHeroBodyManyServers.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick a server, keep recents in view, and run a quick check when needed.'**
+  String get homeHeroBodyManyServers;
+
+  /// No description provided for @homeA11yAddServerAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Add server'**
+  String get homeA11yAddServerAction;
+
+  /// No description provided for @homeA11yEditSelectedServerAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit selected server'**
+  String get homeA11yEditSelectedServerAction;
+
+  /// No description provided for @homeA11yWorkspacePrimaryAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Workspace primary action'**
+  String get homeA11yWorkspacePrimaryAction;
+
+  /// No description provided for @homeA11yEditServerAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit server'**
+  String get homeA11yEditServerAction;
+
+  /// No description provided for @homeA11ySwitchServerAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Switch server'**
+  String get homeA11ySwitchServerAction;
+
+  /// No description provided for @homeA11yResumeWorkspaceAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Resume workspace'**
+  String get homeA11yResumeWorkspaceAction;
+
+  /// No description provided for @homeStatusShortReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready'**
+  String get homeStatusShortReady;
+
+  /// No description provided for @homeStatusShortSignInRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign-in required'**
+  String get homeStatusShortSignInRequired;
+
+  /// No description provided for @homeStatusShortOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'Offline'**
+  String get homeStatusShortOffline;
+
+  /// No description provided for @homeStatusShortNeedsAttention.
+  ///
+  /// In en, this message translates to:
+  /// **'Needs attention'**
+  String get homeStatusShortNeedsAttention;
+
+  /// No description provided for @homeStatusShortNotCheckedYet.
+  ///
+  /// In en, this message translates to:
+  /// **'Not checked yet'**
+  String get homeStatusShortNotCheckedYet;
+
+  /// No description provided for @projectCatalogUnavailableTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Project list unavailable'**
+  String get projectCatalogUnavailableTitle;
+
+  /// No description provided for @projectCatalogUnavailableBody.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t load this server\'s project list just now. You can still open a recent workspace or enter a folder path.'**
+  String get projectCatalogUnavailableBody;
 
   /// No description provided for @projectOpenAction.
   ///
@@ -973,6 +1669,156 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Project and sessions'**
   String get shellProjectRailTitle;
+
+  /// No description provided for @shellDestinationSessions.
+  ///
+  /// In en, this message translates to:
+  /// **'Sessions'**
+  String get shellDestinationSessions;
+
+  /// No description provided for @shellDestinationChat.
+  ///
+  /// In en, this message translates to:
+  /// **'Chat'**
+  String get shellDestinationChat;
+
+  /// No description provided for @shellDestinationContext.
+  ///
+  /// In en, this message translates to:
+  /// **'Context'**
+  String get shellDestinationContext;
+
+  /// No description provided for @shellDestinationSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Settings'**
+  String get shellDestinationSettings;
+
+  /// No description provided for @shellAdvancedLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Advanced'**
+  String get shellAdvancedLabel;
+
+  /// No description provided for @shellAdvancedSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Advanced settings and troubleshooting tools.'**
+  String get shellAdvancedSubtitle;
+
+  /// No description provided for @shellAdvancedOverviewSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Technical options kept out of the main flow.'**
+  String get shellAdvancedOverviewSubtitle;
+
+  /// No description provided for @shellOpenAdvancedAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Open advanced'**
+  String get shellOpenAdvancedAction;
+
+  /// No description provided for @shellBackToSettingsAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to settings'**
+  String get shellBackToSettingsAction;
+
+  /// No description provided for @shellA11yOpenCacheSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Open cache settings'**
+  String get shellA11yOpenCacheSettings;
+
+  /// No description provided for @shellA11yOpenAdvanced.
+  ///
+  /// In en, this message translates to:
+  /// **'Open advanced settings'**
+  String get shellA11yOpenAdvanced;
+
+  /// No description provided for @shellA11yBackToSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to settings'**
+  String get shellA11yBackToSettings;
+
+  /// No description provided for @shellA11yBackToProjectsAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to projects'**
+  String get shellA11yBackToProjectsAction;
+
+  /// No description provided for @shellA11yComposerField.
+  ///
+  /// In en, this message translates to:
+  /// **'Message field'**
+  String get shellA11yComposerField;
+
+  /// No description provided for @shellA11ySendMessageAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Send message'**
+  String get shellA11ySendMessageAction;
+
+  /// No description provided for @shellIntegrationsLastAuthUrlTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Last authorization URL'**
+  String get shellIntegrationsLastAuthUrlTitle;
+
+  /// No description provided for @shellIntegrationsEventsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Event stream status and recovery details.'**
+  String get shellIntegrationsEventsSubtitle;
+
+  /// No description provided for @shellStreamHealthConnected.
+  ///
+  /// In en, this message translates to:
+  /// **'Connected'**
+  String get shellStreamHealthConnected;
+
+  /// No description provided for @shellStreamHealthStale.
+  ///
+  /// In en, this message translates to:
+  /// **'Stale'**
+  String get shellStreamHealthStale;
+
+  /// No description provided for @shellStreamHealthReconnecting.
+  ///
+  /// In en, this message translates to:
+  /// **'Reconnecting'**
+  String get shellStreamHealthReconnecting;
+
+  /// No description provided for @shellConfigPreviewUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Configuration view is unavailable right now.'**
+  String get shellConfigPreviewUnavailable;
+
+  /// No description provided for @shellNoticeLastSessionUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Your last session is no longer available. Choose another session or start a new one.'**
+  String get shellNoticeLastSessionUnavailable;
+
+  /// No description provided for @shellConfigJsonObjectError.
+  ///
+  /// In en, this message translates to:
+  /// **'Config must be a JSON object.'**
+  String get shellConfigJsonObjectError;
+
+  /// No description provided for @shellRecoveryLogReconnectRequested.
+  ///
+  /// In en, this message translates to:
+  /// **'Reconnect requested'**
+  String get shellRecoveryLogReconnectRequested;
+
+  /// No description provided for @shellRecoveryLogReconnectCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Reconnect completed'**
+  String get shellRecoveryLogReconnectCompleted;
 
   /// No description provided for @shellUnknownLabel.
   ///
@@ -1043,7 +1889,7 @@ abstract class AppLocalizations {
   /// No description provided for @shellAgentLabel.
   ///
   /// In en, this message translates to:
-  /// **'build agent'**
+  /// **'Agent'**
   String get shellAgentLabel;
 
   /// No description provided for @shellChatTimelineTitle.
@@ -1061,7 +1907,7 @@ abstract class AppLocalizations {
   /// No description provided for @shellUserMessageBody.
   ///
   /// In en, this message translates to:
-  /// **'Review the selected project context and continue from the latest session state.'**
+  /// **'Pick a session, then send a message to get started.'**
   String get shellUserMessageBody;
 
   /// No description provided for @shellAssistantMessageTitle.
@@ -1073,13 +1919,13 @@ abstract class AppLocalizations {
   /// No description provided for @shellAssistantMessageBody.
   ///
   /// In en, this message translates to:
-  /// **'Shell layout is ready. Session, message parts, tools, and context panels attach here in the next phase.'**
+  /// **'You\'re in the workspace. Review context, pick a session, and keep work moving.'**
   String get shellAssistantMessageBody;
 
   /// No description provided for @shellComposerPlaceholder.
   ///
   /// In en, this message translates to:
-  /// **'Message composer stays here without autofocus by default.'**
+  /// **'Write a message'**
   String get shellComposerPlaceholder;
 
   /// No description provided for @shellComposerSendAction.
@@ -1175,7 +2021,7 @@ abstract class AppLocalizations {
   /// No description provided for @shellToolsSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Built-in and experimental tools surface here.'**
+  /// **'Helpful tools for this workspace.'**
   String get shellToolsSubtitle;
 
   /// No description provided for @shellTerminalTitle.
@@ -1385,7 +2231,7 @@ abstract class AppLocalizations {
   /// No description provided for @shellActionInit.
   ///
   /// In en, this message translates to:
-  /// **'Init'**
+  /// **'Initialize'**
   String get shellActionInit;
 
   /// No description provided for @shellActionSummarize.
@@ -1565,7 +2411,7 @@ abstract class AppLocalizations {
   /// No description provided for @shellConfigPreviewSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Live preview of editable configuration'**
+  /// **'Review and edit configuration'**
   String get shellConfigPreviewSubtitle;
 
   /// No description provided for @shellInspectorSubtitle.

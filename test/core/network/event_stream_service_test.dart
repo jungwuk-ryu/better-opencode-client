@@ -73,4 +73,34 @@ void main() {
     expect(seen.last.type, 'permission.asked');
     expect(didComplete, isTrue);
   });
+
+  test('rejects non-SSE responses', () async {
+    await server.close(force: true);
+    server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    baseUri = Uri.parse('http://${server.address.address}:${server.port}');
+    server.listen((request) async {
+      request.response.statusCode = 401;
+      request.response.headers.contentType = ContentType.json;
+      request.response.write('{"error":"unauthorized"}');
+      await request.response.close();
+    });
+
+    final service = EventStreamService();
+    await expectLater(
+      () => service.connect(
+        profile: ServerProfile(
+          id: 'server',
+          label: 'mock',
+          baseUrl: baseUri.toString(),
+        ),
+        project: const ProjectTarget(
+          directory: '/workspace/demo',
+          label: 'Demo',
+        ),
+        onEvent: (_) {},
+      ),
+      throwsA(isA<Exception>()),
+    );
+    service.dispose();
+  });
 }

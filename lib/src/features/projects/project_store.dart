@@ -9,6 +9,9 @@ class ProjectStore {
   static const _pinnedProjectsKey = 'pinned_projects';
   static const _recentProjectLimit = 10;
 
+  String _lastWorkspaceKey(String serverStorageKey) =>
+      'last_workspace::$serverStorageKey';
+
   Future<List<ProjectTarget>> loadRecentProjects() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getStringList(_recentProjectsKey) ?? const <String>[];
@@ -39,6 +42,38 @@ class ProjectStore {
       next.map((item) => jsonEncode(item.toJson())).toList(growable: false),
     );
     return List<ProjectTarget>.unmodifiable(next);
+  }
+
+  Future<ProjectTarget?> loadLastWorkspace(String serverStorageKey) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_lastWorkspaceKey(serverStorageKey));
+    if (raw == null || raw.isEmpty) {
+      return null;
+    }
+    try {
+      return ProjectTarget.fromJson(
+        (jsonDecode(raw) as Map).cast<String, Object?>(),
+      );
+    } catch (_) {
+      await prefs.remove(_lastWorkspaceKey(serverStorageKey));
+      return null;
+    }
+  }
+
+  Future<void> saveLastWorkspace({
+    required String serverStorageKey,
+    required ProjectTarget target,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _lastWorkspaceKey(serverStorageKey),
+      jsonEncode(target.toJson()),
+    );
+  }
+
+  Future<void> clearLastWorkspace(String serverStorageKey) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_lastWorkspaceKey(serverStorageKey));
   }
 
   Future<Set<String>> loadPinnedProjects() async {

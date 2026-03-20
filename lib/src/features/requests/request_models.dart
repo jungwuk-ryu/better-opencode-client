@@ -10,6 +10,11 @@ class QuestionOptionSummary {
       description: (json['description'] as String?) ?? '',
     );
   }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'label': label,
+    'description': description,
+  };
 }
 
 class QuestionPromptSummary {
@@ -39,6 +44,13 @@ class QuestionPromptSummary {
       multiple: (json['multiple'] as bool?) ?? false,
     );
   }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'question': question,
+    'header': header,
+    'options': options.map((item) => item.toJson()).toList(growable: false),
+    'multiple': multiple,
+  };
 }
 
 class QuestionRequestSummary {
@@ -77,6 +89,12 @@ class QuestionRequestSummary {
           .toList(growable: false),
     );
   }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'id': id,
+    'sessionID': sessionId,
+    'questions': questions.map((item) => item.toJson()).toList(growable: false),
+  };
 }
 
 class PermissionRequestSummary {
@@ -116,6 +134,13 @@ class PermissionRequestSummary {
           .toList(growable: false),
     );
   }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'id': id,
+    'sessionID': sessionId,
+    'permission': permission,
+    'patterns': patterns,
+  };
 }
 
 class PendingRequestBundle {
@@ -126,4 +151,30 @@ class PendingRequestBundle {
 
   final List<QuestionRequestSummary> questions;
   final List<PermissionRequestSummary> permissions;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'questions': questions.map((item) => item.toJson()).toList(growable: false),
+    'permissions': permissions
+        .map((item) => item.toJson())
+        .toList(growable: false),
+  };
+
+  factory PendingRequestBundle.fromJson(Map<String, Object?> json) {
+    return PendingRequestBundle(
+      questions: ((json['questions'] as List?) ?? const <Object?>[])
+          .whereType<Map>()
+          .map(
+            (item) =>
+                QuestionRequestSummary.fromJson(item.cast<String, Object?>()),
+          )
+          .toList(growable: false),
+      permissions: ((json['permissions'] as List?) ?? const <Object?>[])
+          .whereType<Map>()
+          .map(
+            (item) =>
+                PermissionRequestSummary.fromJson(item.cast<String, Object?>()),
+          )
+          .toList(growable: false),
+    );
+  }
 }

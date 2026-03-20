@@ -62,6 +62,21 @@ class EventStreamService {
 
     final request = http.Request('GET', uri)..headers.addAll(headers);
     final response = await _client.send(request);
+
+    final status = response.statusCode;
+    final contentType = response.headers['content-type'];
+    final isSuccess = status >= 200 && status < 300;
+    final isSse =
+        contentType != null &&
+        contentType.toLowerCase().contains('text/event-stream');
+    if (!isSuccess || !isSse) {
+      await response.stream.drain<void>();
+      throw http.ClientException(
+        'Expected SSE response but got status=$status content-type=${contentType ?? "(missing)"}.',
+        uri,
+      );
+    }
+
     final stream = const SseParser()
         .bind(response.stream)
         .map(EventEnvelope.fromFrame);

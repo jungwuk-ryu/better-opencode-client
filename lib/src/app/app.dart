@@ -3,7 +3,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../design_system/app_theme.dart';
-import '../features/connection/connection_home_screen.dart';
+import '../features/home/workspace_home_screen.dart';
 import '../i18n/locale_controller.dart';
 import 'flavor.dart';
 
@@ -41,7 +41,7 @@ class _OpenCodeRemoteAppState extends State<OpenCodeRemoteApp> {
             GlobalCupertinoLocalizations.delegate,
             GlobalWidgetsLocalizations.delegate,
           ],
-          home: ConnectionHomeScreen(
+          home: WorkspaceHomeScreen(
             flavor: _flavor,
             localeController: _localeController,
           ),

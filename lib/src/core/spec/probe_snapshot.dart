@@ -8,12 +8,14 @@ class ProbeEndpointResult {
     required this.status,
     this.statusCode,
     this.body,
+    this.authScheme,
   });
 
   final String path;
   final ProbeStatus status;
   final int? statusCode;
   final Object? body;
+  final String? authScheme;
 
   factory ProbeEndpointResult.fromJson(Map<String, Object?> json) {
     return ProbeEndpointResult(
@@ -21,8 +23,17 @@ class ProbeEndpointResult {
       status: ProbeStatus.values.byName(json['status']! as String),
       statusCode: json['statusCode'] as int?,
       body: json['body'],
+      authScheme: json['authScheme'] as String?,
     );
   }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'path': path,
+    'status': status.name,
+    'statusCode': statusCode,
+    'body': body,
+    'authScheme': authScheme,
+  };
 }
 
 class ProbeSnapshot {
@@ -64,4 +75,15 @@ class ProbeSnapshot {
               .cast<String, Object?>(),
     );
   }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'name': name,
+    'version': version,
+    'paths': paths.toList(growable: false),
+    'endpoints': endpoints.values
+        .map((item) => item.toJson())
+        .toList(growable: false),
+    'config': config,
+    'providerConfig': providerConfig,
+  };
 }

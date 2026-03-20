@@ -39,6 +39,17 @@ class ProjectSummary {
           : null,
     );
   }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'id': id,
+    'directory': directory,
+    'worktree': worktree,
+    'name': name,
+    'vcs': vcs,
+    'time': updatedAt == null
+        ? null
+        : <String, Object?>{'updated': updatedAt!.millisecondsSinceEpoch},
+  };
 }
 
 class PathInfo {
@@ -65,6 +76,14 @@ class PathInfo {
       directory: (json['directory'] as String?) ?? '',
     );
   }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'home': home,
+    'state': state,
+    'config': config,
+    'worktree': worktree,
+    'directory': directory,
+  };
 }
 
 class VcsInfo {
@@ -75,6 +94,8 @@ class VcsInfo {
   factory VcsInfo.fromJson(Map<String, Object?> json) {
     return VcsInfo(branch: (json['branch'] as String?) ?? '');
   }
+
+  Map<String, Object?> toJson() => <String, Object?>{'branch': branch};
 }
 
 class ProjectSessionHint {
@@ -139,4 +160,31 @@ class ProjectCatalog {
   final List<ProjectSummary> projects;
   final PathInfo? pathInfo;
   final VcsInfo? vcsInfo;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'currentProject': currentProject?.toJson(),
+    'projects': projects.map((item) => item.toJson()).toList(growable: false),
+    'pathInfo': pathInfo?.toJson(),
+    'vcsInfo': vcsInfo?.toJson(),
+  };
+
+  factory ProjectCatalog.fromJson(Map<String, Object?> json) {
+    return ProjectCatalog(
+      currentProject: json['currentProject'] is Map
+          ? ProjectSummary.fromJson(
+              (json['currentProject'] as Map).cast<String, Object?>(),
+            )
+          : null,
+      projects: ((json['projects'] as List?) ?? const <Object?>[])
+          .whereType<Map>()
+          .map((item) => ProjectSummary.fromJson(item.cast<String, Object?>()))
+          .toList(growable: false),
+      pathInfo: json['pathInfo'] is Map
+          ? PathInfo.fromJson((json['pathInfo'] as Map).cast<String, Object?>())
+          : null,
+      vcsInfo: json['vcsInfo'] is Map
+          ? VcsInfo.fromJson((json['vcsInfo'] as Map).cast<String, Object?>())
+          : null,
+    );
+  }
 }
