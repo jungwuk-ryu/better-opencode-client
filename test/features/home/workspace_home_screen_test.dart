@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -5,11 +7,14 @@ import 'package:opencode_mobile_remote/l10n/app_localizations.dart';
 import 'package:opencode_mobile_remote/src/app/flavor.dart';
 import 'package:opencode_mobile_remote/src/core/connection/connection_models.dart';
 import 'package:opencode_mobile_remote/src/core/network/opencode_server_probe.dart';
+import 'package:opencode_mobile_remote/src/core/persistence/server_profile_store.dart';
+import 'package:opencode_mobile_remote/src/core/persistence/stale_cache_store.dart';
 import 'package:opencode_mobile_remote/src/core/spec/capability_registry.dart';
 import 'package:opencode_mobile_remote/src/core/spec/probe_snapshot.dart';
 import 'package:opencode_mobile_remote/src/design_system/app_theme.dart';
 import 'package:opencode_mobile_remote/src/features/home/workspace_home_screen.dart';
 import 'package:opencode_mobile_remote/src/features/projects/project_catalog_service.dart';
+import 'package:opencode_mobile_remote/src/features/projects/project_store.dart';
 import 'package:opencode_mobile_remote/src/features/projects/project_models.dart';
 import 'package:opencode_mobile_remote/src/features/shell/opencode_shell_screen.dart';
 import 'package:opencode_mobile_remote/src/features/shell/server_workspace_shell_screen.dart';
@@ -145,6 +150,67 @@ void main() {
     expect(find.byType(ServerWorkspaceShellScreen), findsOneWidget);
     expect(find.byType(OpenCodeShellScreen), findsOneWidget);
   });
+
+  testWidgets(
+    'launch auto-resumes straight into the last remembered session shell',
+    (tester) async {
+      tester.view.physicalSize = const Size(1440, 2200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final localeController = LocaleController();
+      addTearDown(localeController.dispose);
+
+      const profile = ServerProfile(
+        id: 'alpha',
+        label: 'Studio',
+        baseUrl: 'https://studio.example.com',
+      );
+      const recentWorkspace = ProjectTarget(
+        directory: '/workspace/demo',
+        label: 'Demo workspace',
+        source: 'server',
+        lastSession: ProjectSessionHint(
+          title: 'Sprint planning',
+          status: 'running',
+        ),
+      );
+
+      await tester.pumpWidget(
+        _TestApp(
+          child: WorkspaceHomeScreen(
+            flavor: AppFlavor.debug,
+            localeController: localeController,
+            profileStore: _FakeProfileStore(
+              savedProfiles: const <ServerProfile>[profile],
+            ),
+            cacheStore: _FakeCacheStore(
+              entries: <String, StaleCacheEntry>{
+                'probe::${profile.storageKey}': StaleCacheEntry(
+                  payloadJson: jsonEncode(_readyReport().toJson()),
+                  signature: 'ready-report',
+                  fetchedAt: DateTime(2026, 3, 21, 9),
+                ),
+              },
+            ),
+            projectStore: _FakeProjectStore(
+              lastWorkspaceByServerKey: <String, ProjectTarget?>{
+                profile.storageKey: recentWorkspace,
+              },
+            ),
+            projectCatalogService: _FakeProjectCatalogService(
+              catalog: _catalogWithCurrentProject(),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ServerWorkspaceShellScreen), findsOneWidget);
+      expect(find.text('Continue'), findsNothing);
+    },
+  );
 
   testWidgets('workspace header can return to the server selection state', (
     tester,
@@ -326,6 +392,68 @@ class _FakeProjectCatalogService extends ProjectCatalogService {
 
   @override
   Future<ProjectCatalog> fetchCatalog(ServerProfile profile) async => catalog;
+}
+
+class _FakeProfileStore extends ServerProfileStore {
+  _FakeProfileStore({
+    required this.savedProfiles,
+    this.recentConnections = const <RecentConnection>[],
+    this.pinnedProfiles = const <String>{},
+  });
+
+  final List<ServerProfile> savedProfiles;
+  final List<RecentConnection> recentConnections;
+  final Set<String> pinnedProfiles;
+
+  @override
+  Future<List<ServerProfile>> load() async => savedProfiles;
+
+  @override
+  Future<List<RecentConnection>> loadRecentConnections() async =>
+      recentConnections;
+
+  @override
+  Future<Set<String>> loadPinnedProfiles() async => pinnedProfiles;
+}
+
+class _FakeCacheStore extends StaleCacheStore {
+  _FakeCacheStore({required this.entries});
+
+  final Map<String, StaleCacheEntry> entries;
+
+  @override
+  Future<StaleCacheEntry?> load(String key) async => entries[key];
+}
+
+class _FakeProjectStore extends ProjectStore {
+  _FakeProjectStore({required this.lastWorkspaceByServerKey});
+
+  final Map<String, ProjectTarget?> lastWorkspaceByServerKey;
+
+  @override
+  Future<ProjectTarget?> loadLastWorkspace(String serverStorageKey) async {
+    return lastWorkspaceByServerKey[serverStorageKey];
+  }
+
+  @override
+  Future<List<ProjectTarget>> loadRecentProjects() async {
+    return lastWorkspaceByServerKey.values.whereType<ProjectTarget>().toList(
+      growable: false,
+    );
+  }
+
+  @override
+  Future<List<ProjectTarget>> recordRecentProject(ProjectTarget target) async {
+    return <ProjectTarget>[target];
+  }
+
+  @override
+  Future<void> saveLastWorkspace({
+    required String serverStorageKey,
+    required ProjectTarget target,
+  }) async {
+    lastWorkspaceByServerKey[serverStorageKey] = target;
+  }
 }
 
 ProjectCatalog _catalogWithCurrentProject() {

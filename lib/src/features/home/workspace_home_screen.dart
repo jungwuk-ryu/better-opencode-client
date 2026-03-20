@@ -111,6 +111,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
   String? _connectingProfileKey;
   String? _workspaceNotice;
   bool _resumingWorkspace = false;
+  bool _evaluatedStartupAutoResume = false;
   int _resumeWorkspaceRequestToken = 0;
 
   @override
@@ -221,6 +222,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
       _loading = false;
     });
     _loadEditorFromProfile(selectedProfile);
+    _attemptStartupAutoResume();
   }
 
   Future<Map<String, ServerProbeReport>> _loadCachedReports(
@@ -271,6 +273,28 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
     _recentWorkspace = snapshot.recentWorkspace;
     _loading = false;
     _loadEditorFromProfile(_selectedProfile);
+  }
+
+  void _attemptStartupAutoResume() {
+    if (_evaluatedStartupAutoResume) {
+      return;
+    }
+    _evaluatedStartupAutoResume = true;
+    if (widget.workspaceSectionBuilder != null) {
+      return;
+    }
+    final selectedProfile = _selectedProfile;
+    final recentWorkspace = _recentWorkspace;
+    if (selectedProfile == null ||
+        recentWorkspace == null ||
+        recentWorkspace.lastSession == null ||
+        !_canProceedToProjectSelection(selectedProfile)) {
+      return;
+    }
+    setState(() {
+      _openedProject = recentWorkspace;
+      _workspaceShellOpen = true;
+    });
   }
 
   ServerProfile? _pickInitialProfile({
