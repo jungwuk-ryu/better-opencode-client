@@ -93,8 +93,9 @@ void main() {
       find.byKey(const ValueKey<String>('chat-part-shimmer-tool-part')),
       findsOneWidget,
     );
+    expect(find.text('Summary'), findsOneWidget);
     expect(
-      find.text('Searching the workspace for matching files.'),
+      find.byKey(const ValueKey<String>('chat-part-summary-tool-part')),
       findsOneWidget,
     );
   });

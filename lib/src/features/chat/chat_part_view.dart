@@ -210,6 +210,7 @@ class _ActivityPartCard extends StatelessWidget {
     final palette = _activityPalette(context, part.type);
     final secondaryLabel = _activitySecondaryLabel(part);
     final shimmer = _shouldShimmerLabel(part.type);
+    final summaryOnly = part.type == 'tool';
     return LayoutBuilder(
       builder: (context, constraints) {
         final maxCardWidth = constraints.maxWidth.isFinite
@@ -353,26 +354,67 @@ class _ActivityPartCard extends StatelessWidget {
                           ),
                         ],
                         const SizedBox(height: AppSpacing.md),
-                        DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(
-                              AppSpacing.formFieldRadius,
+                        if (summaryOnly)
+                          DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(
+                                AppSpacing.formFieldRadius,
+                              ),
+                              border: Border.all(
+                                color: palette.accent.withValues(alpha: 0.12),
+                              ),
                             ),
-                            border: Border.all(
-                              color: palette.accent.withValues(alpha: 0.12),
+                            child: Padding(
+                              padding: const EdgeInsets.all(AppSpacing.md),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: <Widget>[
+                                  Text(
+                                    'Summary',
+                                    style: theme.textTheme.labelMedium
+                                        ?.copyWith(
+                                          color: palette.accent,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                  ),
+                                  const SizedBox(height: AppSpacing.xs),
+                                  Text(
+                                    _activitySummary(rendered.body),
+                                    key: ValueKey<String>(
+                                      'chat-part-summary-${part.id}',
+                                    ),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      height: 1.55,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(AppSpacing.md),
-                            child: Text(
-                              rendered.body,
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                height: 1.65,
+                          )
+                        else
+                          DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(
+                                AppSpacing.formFieldRadius,
+                              ),
+                              border: Border.all(
+                                color: palette.accent.withValues(alpha: 0.12),
+                              ),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(AppSpacing.md),
+                              child: Text(
+                                rendered.body,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  height: 1.65,
+                                ),
                               ),
                             ),
                           ),
-                        ),
                       ],
                     ),
                   ),
@@ -467,6 +509,18 @@ String _activityCaption(ChatMessageInfo message, ChatPart part) {
     return '$roleLabel activity · $toolLabel';
   }
   return '$roleLabel activity · ${part.type}';
+}
+
+String _activitySummary(String body) {
+  final normalized = body
+      .split(RegExp(r'\s+'))
+      .where((segment) => segment.isNotEmpty)
+      .join(' ')
+      .trim();
+  if (normalized.length <= 140) {
+    return normalized;
+  }
+  return '${normalized.substring(0, 137).trimRight()}...';
 }
 
 String? _activitySecondaryLabel(ChatPart part) {
