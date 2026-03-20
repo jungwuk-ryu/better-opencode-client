@@ -1655,6 +1655,84 @@ void main() {
     expect(chatService.sentPrompts.single.reasoning, 'max');
   });
 
+  testWidgets(
+    'new session action resets the draft and creates a fresh session',
+    (tester) async {
+      final chatService = _ControlledChatService(
+        bundlesByScopeKey: <String, ChatSessionBundle>{
+          _scopeKeyFor(profile, project): ChatSessionBundle(
+            sessions: <SessionSummary>[
+              _testSession(
+                'session-1',
+                'First session',
+                directory: project.directory,
+              ),
+            ],
+            statuses: const <String, SessionStatusSummary>{},
+            messages: <ChatMessage>[
+              _testMessage('session-1', text: 'First message'),
+            ],
+            selectedSessionId: 'session-1',
+          ),
+        },
+        createdSessionByScopeKey: <String, SessionSummary>{
+          _scopeKeyFor(profile, project): _testSession(
+            'session-new',
+            'Created session',
+            directory: project.directory,
+          ),
+        },
+        messagesBySessionId: <String, List<ChatMessage>>{
+          'session-new': <ChatMessage>[
+            _testMessage('session-new', text: 'Fresh reply'),
+          ],
+        },
+        replyByScopeSessionKey: <String, ChatMessage>{
+          _scopeSessionKey(profile, project, 'session-new'): _testMessage(
+            'session-new',
+            text: 'Fresh reply',
+          ),
+        },
+      );
+
+      await pumpShellWithCapabilities(
+        tester,
+        size: const Size(1440, 1400),
+        capabilitiesToUse: capabilities,
+        chatService: chatService,
+        todoService: _RecordingTodoService(),
+        fileBrowserService: _ControlledFileBrowserService.empty(),
+        requestService: _ControlledRequestService.empty(),
+        configService: _ControlledConfigService.empty(),
+        integrationStatusService: _ControlledIntegrationStatusService.empty(),
+      );
+
+      expect(find.text('First message'), findsAtLeastNWidgets(1));
+
+      final newSessionButton = find.byKey(
+        const ValueKey<String>('new-session-button'),
+      );
+      final button = tester.widget<OutlinedButton>(newSessionButton);
+      button.onPressed!.call();
+      await tester.pump();
+      await _pumpShellFrames(tester);
+
+      expect(find.text('First message'), findsNothing);
+      expect(find.text('Create session and send'), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField).first, 'start fresh');
+      await tester.tap(find.text('Create session and send'));
+      await _pumpShellFrames(tester);
+
+      expect(find.text('Fresh reply'), findsAtLeastNWidgets(1));
+      expect(chatService.sentPrompts, hasLength(1));
+      expect(
+        chatService.sentPrompts.single.scopeSessionKey,
+        _scopeSessionKey(profile, project, 'session-new'),
+      );
+    },
+  );
+
   testWidgets('composer thinking options come from the selected server model', (
     tester,
   ) async {

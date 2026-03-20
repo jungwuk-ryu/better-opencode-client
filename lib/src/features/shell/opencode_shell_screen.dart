@@ -1316,6 +1316,23 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     }
   }
 
+  void _startNewSessionDraft() {
+    setState(() {
+      _retireSessionScopedOperations();
+      _selectedSessionId = null;
+      _messages = const <ChatMessage>[];
+      _todos = const <TodoItem>[];
+      _questionRequests = const <QuestionRequestSummary>[];
+      _permissionRequests = const <PermissionRequestSummary>[];
+      _lastShellResult = null;
+      _runningShellCommand = false;
+      _submittingPrompt = false;
+      _loading = false;
+      _error = null;
+      _primaryDestination = _ShellPrimaryDestination.chat;
+    });
+  }
+
   Future<bool> _submitPrompt(
     String prompt,
     _ComposerSubmissionOptions options,
@@ -2099,6 +2116,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         loading: _loading,
         error: _error,
         submittingPrompt: _submittingPrompt,
+        onCreateSessionDraft: _startNewSessionDraft,
         onSelectSession: _selectSession,
         onForkSession: _forkSession,
         onAbortSession: _abortSession,
@@ -2162,6 +2180,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         loading: _loading,
         error: _error,
         submittingPrompt: _submittingPrompt,
+        onCreateSessionDraft: _startNewSessionDraft,
         onSelectSession: _selectSession,
         onForkSession: _forkSession,
         onAbortSession: _abortSession,
@@ -2225,6 +2244,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         loading: _loading,
         error: _error,
         submittingPrompt: _submittingPrompt,
+        onCreateSessionDraft: _startNewSessionDraft,
         onSelectSession: _selectSession,
         onForkSession: _forkSession,
         onAbortSession: _abortSession,
@@ -2287,6 +2307,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       loading: _loading,
       error: _error,
       submittingPrompt: _submittingPrompt,
+      onCreateSessionDraft: _startNewSessionDraft,
       onSelectSession: _selectSession,
       onForkSession: _forkSession,
       onAbortSession: _abortSession,
@@ -2352,6 +2373,7 @@ class _DesktopShell extends StatelessWidget {
     required this.loading,
     required this.error,
     required this.onSelectSession,
+    required this.onCreateSessionDraft,
     required this.onForkSession,
     required this.onAbortSession,
     required this.onShareSession,
@@ -2413,6 +2435,7 @@ class _DesktopShell extends StatelessWidget {
   final bool loading;
   final String? error;
   final ValueChanged<String> onSelectSession;
+  final VoidCallback onCreateSessionDraft;
   final Future<void> Function(String) onForkSession;
   final Future<void> Function(String) onAbortSession;
   final Future<void> Function(String) onShareSession;
@@ -2467,6 +2490,7 @@ class _DesktopShell extends StatelessWidget {
                     sessions: sessions,
                     statuses: statuses,
                     selectedSessionId: selectedSessionId,
+                    onCreateSessionDraft: onCreateSessionDraft,
                     onSelectSession: onSelectSession,
                     onForkSession: onForkSession,
                     onAbortSession: onAbortSession,
@@ -2600,6 +2624,7 @@ class _TabletLandscapeShell extends StatelessWidget {
     required this.loading,
     required this.error,
     required this.onSelectSession,
+    required this.onCreateSessionDraft,
     required this.onForkSession,
     required this.onAbortSession,
     required this.onShareSession,
@@ -2661,6 +2686,7 @@ class _TabletLandscapeShell extends StatelessWidget {
   final bool loading;
   final String? error;
   final ValueChanged<String> onSelectSession;
+  final VoidCallback onCreateSessionDraft;
   final Future<void> Function(String) onForkSession;
   final Future<void> Function(String) onAbortSession;
   final Future<void> Function(String) onShareSession;
@@ -2715,6 +2741,7 @@ class _TabletLandscapeShell extends StatelessWidget {
                     sessions: sessions,
                     statuses: statuses,
                     selectedSessionId: selectedSessionId,
+                    onCreateSessionDraft: onCreateSessionDraft,
                     onSelectSession: onSelectSession,
                     onForkSession: onForkSession,
                     onAbortSession: onAbortSession,
@@ -2848,6 +2875,7 @@ class _TabletPortraitShell extends StatelessWidget {
     required this.loading,
     required this.error,
     required this.onSelectSession,
+    required this.onCreateSessionDraft,
     required this.onForkSession,
     required this.onAbortSession,
     required this.onShareSession,
@@ -2909,6 +2937,7 @@ class _TabletPortraitShell extends StatelessWidget {
   final bool loading;
   final String? error;
   final ValueChanged<String> onSelectSession;
+  final VoidCallback onCreateSessionDraft;
   final Future<void> Function(String) onForkSession;
   final Future<void> Function(String) onAbortSession;
   final Future<void> Function(String) onShareSession;
@@ -2948,6 +2977,7 @@ class _TabletPortraitShell extends StatelessWidget {
       statuses: statuses,
       capabilities: capabilities,
       selectedSessionId: selectedSessionId,
+      onCreateSessionDraft: onCreateSessionDraft,
       onSelectSession: onSelectSession,
       onForkSession: onForkSession,
       onAbortSession: onAbortSession,
@@ -3000,6 +3030,7 @@ class _TabletPortraitShell extends StatelessWidget {
                     sessions: sessions,
                     capabilities: capabilities,
                     selectedSessionId: selectedSessionId,
+                    onCreateSessionDraft: onCreateSessionDraft,
                     onSelectSession: onSelectSession,
                     onForkSession: onForkSession,
                     onAbortSession: onAbortSession,
@@ -3124,6 +3155,7 @@ class _MobileShell extends StatelessWidget {
     required this.loading,
     required this.error,
     required this.onSelectSession,
+    required this.onCreateSessionDraft,
     required this.onForkSession,
     required this.onAbortSession,
     required this.onShareSession,
@@ -3185,6 +3217,7 @@ class _MobileShell extends StatelessWidget {
   final bool loading;
   final String? error;
   final ValueChanged<String> onSelectSession;
+  final VoidCallback onCreateSessionDraft;
   final Future<void> Function(String) onForkSession;
   final Future<void> Function(String) onAbortSession;
   final Future<void> Function(String) onShareSession;
@@ -3224,6 +3257,7 @@ class _MobileShell extends StatelessWidget {
       statuses: statuses,
       capabilities: capabilities,
       selectedSessionId: selectedSessionId,
+      onCreateSessionDraft: onCreateSessionDraft,
       onSelectSession: onSelectSession,
       onForkSession: onForkSession,
       onAbortSession: onAbortSession,
@@ -3277,6 +3311,7 @@ class _MobileShell extends StatelessWidget {
                     sessions: sessions,
                     capabilities: capabilities,
                     selectedSessionId: selectedSessionId,
+                    onCreateSessionDraft: onCreateSessionDraft,
                     onSelectSession: onSelectSession,
                     onForkSession: onForkSession,
                     onAbortSession: onAbortSession,
@@ -3821,6 +3856,7 @@ class _WorkspaceDrawer extends StatelessWidget {
     required this.statuses,
     required this.capabilities,
     required this.selectedSessionId,
+    required this.onCreateSessionDraft,
     required this.onSelectSession,
     required this.onForkSession,
     required this.onAbortSession,
@@ -3844,6 +3880,7 @@ class _WorkspaceDrawer extends StatelessWidget {
   final Map<String, SessionStatusSummary> statuses;
   final CapabilityRegistry capabilities;
   final String? selectedSessionId;
+  final VoidCallback onCreateSessionDraft;
   final ValueChanged<String> onSelectSession;
   final Future<void> Function(String) onForkSession;
   final Future<void> Function(String) onAbortSession;
@@ -3880,6 +3917,10 @@ class _WorkspaceDrawer extends StatelessWidget {
               sessions: sessions,
               capabilities: capabilities,
               selectedSessionId: selectedSessionId,
+              onCreateSessionDraft: () {
+                Navigator.of(context).maybePop();
+                onCreateSessionDraft();
+              },
               onSelectSession: (sessionId) {
                 Navigator.of(context).maybePop();
                 onSelectSession(sessionId);
@@ -3914,6 +3955,7 @@ class _CompactSessionsPanel extends StatelessWidget {
     required this.sessions,
     required this.capabilities,
     required this.selectedSessionId,
+    required this.onCreateSessionDraft,
     required this.onSelectSession,
     required this.onForkSession,
     required this.onAbortSession,
@@ -3939,6 +3981,7 @@ class _CompactSessionsPanel extends StatelessWidget {
   final List<SessionSummary> sessions;
   final CapabilityRegistry capabilities;
   final String? selectedSessionId;
+  final VoidCallback onCreateSessionDraft;
   final ValueChanged<String> onSelectSession;
   final Future<void> Function(String) onForkSession;
   final Future<void> Function(String) onAbortSession;
@@ -3981,6 +4024,20 @@ class _CompactSessionsPanel extends StatelessWidget {
             child: ListView(
               padding: EdgeInsets.zero,
               children: <Widget>[
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Semantics(
+                    button: true,
+                    label: l10n.shellNewSession,
+                    child: OutlinedButton.icon(
+                      key: const ValueKey<String>('new-session-button'),
+                      onPressed: onCreateSessionDraft,
+                      icon: const Icon(Icons.add_comment_outlined),
+                      label: Text(l10n.shellNewSession),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
                 ...(sessions.isEmpty
                     ? <Widget>[
                         _SessionTile(
@@ -4318,6 +4375,7 @@ class _LeftRail extends StatelessWidget {
     required this.sessions,
     required this.statuses,
     required this.selectedSessionId,
+    required this.onCreateSessionDraft,
     required this.onSelectSession,
     required this.onForkSession,
     required this.onAbortSession,
@@ -4342,6 +4400,7 @@ class _LeftRail extends StatelessWidget {
   final List<SessionSummary> sessions;
   final Map<String, SessionStatusSummary> statuses;
   final String? selectedSessionId;
+  final VoidCallback onCreateSessionDraft;
   final ValueChanged<String> onSelectSession;
   final Future<void> Function(String) onForkSession;
   final Future<void> Function(String) onAbortSession;
@@ -4393,32 +4452,52 @@ class _LeftRail extends StatelessWidget {
             fillChild: true,
             child: ListView(
               padding: EdgeInsets.zero,
-              children: sessions.isEmpty
-                  ? <Widget>[
-                      _SessionTile(
-                        title: l10n.shellSessionCurrent,
-                        status: l10n.shellStatusIdle,
-                        statusType: 'idle',
-                      ),
-                    ]
-                  : sessions
-                        .map((session) {
-                          final depth = orderedSessions[session.id] ?? 0;
-                          return Padding(
-                            padding: EdgeInsets.only(
-                              left: depth * AppSpacing.sm,
-                              bottom: AppSpacing.sm,
-                            ),
-                            child: _SessionTile(
-                              title: session.title,
-                              status: _statusLabel(l10n, statuses[session.id]),
-                              statusType: statuses[session.id]?.type ?? 'idle',
-                              selected: session.id == selectedSessionId,
-                              onTap: () => onSelectSession(session.id),
-                            ),
-                          );
-                        })
-                        .toList(growable: false),
+              children: <Widget>[
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Semantics(
+                    button: true,
+                    label: l10n.shellNewSession,
+                    child: OutlinedButton.icon(
+                      key: const ValueKey<String>('new-session-button'),
+                      onPressed: onCreateSessionDraft,
+                      icon: const Icon(Icons.add_comment_outlined),
+                      label: Text(l10n.shellNewSession),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                ...(sessions.isEmpty
+                    ? <Widget>[
+                        _SessionTile(
+                          title: l10n.shellSessionCurrent,
+                          status: l10n.shellStatusIdle,
+                          statusType: 'idle',
+                        ),
+                      ]
+                    : sessions
+                          .map((session) {
+                            final depth = orderedSessions[session.id] ?? 0;
+                            return Padding(
+                              padding: EdgeInsets.only(
+                                left: depth * AppSpacing.sm,
+                                bottom: AppSpacing.sm,
+                              ),
+                              child: _SessionTile(
+                                title: session.title,
+                                status: _statusLabel(
+                                  l10n,
+                                  statuses[session.id],
+                                ),
+                                statusType:
+                                    statuses[session.id]?.type ?? 'idle',
+                                selected: session.id == selectedSessionId,
+                                onTap: () => onSelectSession(session.id),
+                              ),
+                            );
+                          })
+                          .toList(growable: false)),
+              ],
             ),
           ),
         ),
