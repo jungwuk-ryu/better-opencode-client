@@ -242,6 +242,203 @@ void main() {
     expect(selectedProject?.directory, '/workspace/sidequest');
   });
 
+  testWidgets('chat timeline opens scrolled to the newest message', (
+    tester,
+  ) async {
+    final chatService = _ControlledChatService(
+      bundlesByScopeKey: <String, ChatSessionBundle>{
+        _scopeKeyFor(profile, project): ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _testSession(
+              'session-1',
+              'First session',
+              directory: project.directory,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{},
+          messages: _manyMessages('session-1', 40),
+          selectedSessionId: 'session-1',
+        ),
+      },
+    );
+
+    await pumpShellWithCapabilities(
+      tester,
+      size: const Size(430, 932),
+      capabilitiesToUse: capabilities,
+      chatService: chatService,
+      todoService: _RecordingTodoService(),
+    );
+
+    final position = tester
+        .widget<ListView>(
+          find.byKey(const ValueKey<String>('chat-message-list')),
+        )
+        .controller!
+        .position;
+
+    expect(position.maxScrollExtent, greaterThan(0));
+    expect(position.pixels, closeTo(position.maxScrollExtent, 96));
+  });
+
+  testWidgets('chat timeline auto-scrolls when new messages arrive at bottom', (
+    tester,
+  ) async {
+    final initialService = _ControlledChatService(
+      bundlesByScopeKey: <String, ChatSessionBundle>{
+        _scopeKeyFor(profile, project): ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _testSession(
+              'session-1',
+              'First session',
+              directory: project.directory,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{},
+          messages: _manyMessages('session-1', 24),
+          selectedSessionId: 'session-1',
+        ),
+      },
+    );
+    final updatedService = _ControlledChatService(
+      bundlesByScopeKey: <String, ChatSessionBundle>{
+        _scopeKeyFor(profile, project): ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _testSession(
+              'session-1',
+              'First session',
+              directory: project.directory,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{},
+          messages: _manyMessages('session-1', 36),
+          selectedSessionId: 'session-1',
+        ),
+      },
+    );
+
+    await pumpShellWithCapabilities(
+      tester,
+      size: const Size(430, 932),
+      capabilitiesToUse: capabilities,
+      chatService: initialService,
+      todoService: _RecordingTodoService(),
+    );
+
+    final initialPosition = tester
+        .widget<ListView>(
+          find.byKey(const ValueKey<String>('chat-message-list')),
+        )
+        .controller!
+        .position;
+    final initialExtent = initialPosition.maxScrollExtent;
+
+    await tester.pumpWidget(
+      _buildShell(
+        capabilitiesToUse: capabilities,
+        profileToUse: profile,
+        projectToUse: project,
+        chatService: updatedService,
+        todoService: _RecordingTodoService(),
+      ),
+    );
+    await _pumpShellFrames(tester);
+
+    final updatedPosition = tester
+        .widget<ListView>(
+          find.byKey(const ValueKey<String>('chat-message-list')),
+        )
+        .controller!
+        .position;
+
+    expect(updatedPosition.maxScrollExtent, greaterThan(initialExtent));
+    expect(
+      updatedPosition.pixels,
+      closeTo(updatedPosition.maxScrollExtent, 96),
+    );
+  });
+
+  testWidgets(
+    'chat timeline does not auto-scroll when the user is reading older messages',
+    (tester) async {
+      final initialService = _ControlledChatService(
+        bundlesByScopeKey: <String, ChatSessionBundle>{
+          _scopeKeyFor(profile, project): ChatSessionBundle(
+            sessions: <SessionSummary>[
+              _testSession(
+                'session-1',
+                'First session',
+                directory: project.directory,
+              ),
+            ],
+            statuses: const <String, SessionStatusSummary>{},
+            messages: _manyMessages('session-1', 24),
+            selectedSessionId: 'session-1',
+          ),
+        },
+      );
+      final updatedService = _ControlledChatService(
+        bundlesByScopeKey: <String, ChatSessionBundle>{
+          _scopeKeyFor(profile, project): ChatSessionBundle(
+            sessions: <SessionSummary>[
+              _testSession(
+                'session-1',
+                'First session',
+                directory: project.directory,
+              ),
+            ],
+            statuses: const <String, SessionStatusSummary>{},
+            messages: _manyMessages('session-1', 36),
+            selectedSessionId: 'session-1',
+          ),
+        },
+      );
+
+      await pumpShellWithCapabilities(
+        tester,
+        size: const Size(430, 932),
+        capabilitiesToUse: capabilities,
+        chatService: initialService,
+        todoService: _RecordingTodoService(),
+      );
+
+      final listFinder = find.byKey(
+        const ValueKey<String>('chat-message-list'),
+      );
+      await tester.drag(listFinder, const Offset(0, 240));
+      await _pumpShellFrames(tester);
+
+      final scrolledPosition = tester
+          .widget<ListView>(listFinder)
+          .controller!
+          .position;
+      final scrolledPixels = scrolledPosition.pixels;
+
+      await tester.pumpWidget(
+        _buildShell(
+          capabilitiesToUse: capabilities,
+          profileToUse: profile,
+          projectToUse: project,
+          chatService: updatedService,
+          todoService: _RecordingTodoService(),
+        ),
+      );
+      await _pumpShellFrames(tester);
+
+      final updatedPosition = tester
+          .widget<ListView>(listFinder)
+          .controller!
+          .position;
+
+      expect(updatedPosition.maxScrollExtent, greaterThan(scrolledPixels));
+      expect(
+        updatedPosition.pixels,
+        lessThan(updatedPosition.maxScrollExtent - 72),
+      );
+      expect(updatedPosition.pixels, closeTo(scrolledPixels, 24));
+    },
+  );
+
   testWidgets('minimal capabilities hide unsupported shell controls', (
     tester,
   ) async {
@@ -2054,6 +2251,15 @@ ChatMessage _testMessage(String sessionId, {required String text}) {
     parts: <ChatPart>[
       ChatPart(id: 'part-$sessionId', type: 'text', text: text),
     ],
+  );
+}
+
+List<ChatMessage> _manyMessages(String sessionId, int count) {
+  return List<ChatMessage>.generate(
+    count,
+    (index) =>
+        _testMessage(sessionId, text: 'message ${index + 1} ${'detail ' * 12}'),
+    growable: false,
   );
 }
 

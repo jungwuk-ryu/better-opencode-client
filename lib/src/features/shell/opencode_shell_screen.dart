@@ -4505,20 +4505,117 @@ class _ChatCanvas extends StatefulWidget {
 }
 
 class _ChatCanvasState extends State<_ChatCanvas> {
+  static const double _bottomSnapThreshold = 72;
+
   late List<({ChatMessageInfo message, ChatPart part})> _parts;
+  final ScrollController _scrollController = ScrollController();
+  bool _shouldStickToBottom = true;
+  double _lastKnownOffset = 0;
 
   @override
   void initState() {
     super.initState();
     _parts = _flattenedParts(widget.messages);
+    _scrollController.addListener(_handleScroll);
+    if (_parts.isNotEmpty) {
+      _scheduleScrollToBottom();
+    }
   }
 
   @override
   void didUpdateWidget(covariant _ChatCanvas oldWidget) {
     super.didUpdateWidget(oldWidget);
+    final selectedSessionChanged =
+        oldWidget.selectedSessionId != widget.selectedSessionId;
+    final loadingCompleted = oldWidget.loading && !widget.loading;
+    final previousPartCount = _parts.length;
     if (!identical(oldWidget.messages, widget.messages)) {
       _parts = _flattenedParts(widget.messages);
     }
+    final partCountChanged = previousPartCount != _parts.length;
+    final shouldForceScrollToBottom =
+        selectedSessionChanged ||
+        (loadingCompleted &&
+            (oldWidget.selectedSessionId == null ||
+                oldWidget.messages.isEmpty));
+    if (shouldForceScrollToBottom) {
+      _shouldStickToBottom = true;
+      _scheduleScrollToBottom();
+      return;
+    }
+    if (loadingCompleted && !_shouldStickToBottom) {
+      _scheduleRestoreOffset();
+      return;
+    }
+    if (partCountChanged && _shouldStickToBottom) {
+      _scheduleScrollToBottom(animated: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController
+      ..removeListener(_handleScroll)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _handleScroll() {
+    if (!_scrollController.hasClients) {
+      return;
+    }
+    _lastKnownOffset = _scrollController.positions.last.pixels;
+    _shouldStickToBottom = _isNearBottom();
+  }
+
+  bool _isNearBottom() {
+    if (!_scrollController.hasClients) {
+      return true;
+    }
+    final position = _scrollController.positions.last;
+    if (!position.hasContentDimensions) {
+      return true;
+    }
+    return position.maxScrollExtent - position.pixels <= _bottomSnapThreshold;
+  }
+
+  void _scheduleScrollToBottom({bool animated = false}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) {
+        return;
+      }
+      final positions = _scrollController.positions
+          .where((position) => position.hasContentDimensions)
+          .toList(growable: false);
+      for (final position in positions) {
+        final target = position.maxScrollExtent;
+        if (animated) {
+          unawaited(
+            position.animateTo(
+              target,
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+            ),
+          );
+        } else {
+          position.jumpTo(target);
+        }
+      }
+    });
+  }
+
+  void _scheduleRestoreOffset() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) {
+        return;
+      }
+      final positions = _scrollController.positions
+          .where((position) => position.hasContentDimensions)
+          .toList(growable: false);
+      for (final position in positions) {
+        position.jumpTo(_lastKnownOffset.clamp(0, position.maxScrollExtent));
+      }
+    });
   }
 
   @override
@@ -4683,6 +4780,8 @@ class _ChatCanvasState extends State<_ChatCanvas> {
   ) {
     if (parts.isEmpty) {
       return ListView(
+        key: const ValueKey<String>('chat-message-list'),
+        controller: _scrollController,
         padding: const EdgeInsets.fromLTRB(
           AppSpacing.md,
           AppSpacing.xl,
@@ -4699,6 +4798,8 @@ class _ChatCanvasState extends State<_ChatCanvas> {
       );
     }
     return ListView.separated(
+      key: const ValueKey<String>('chat-message-list'),
+      controller: _scrollController,
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.md,
         AppSpacing.md,
