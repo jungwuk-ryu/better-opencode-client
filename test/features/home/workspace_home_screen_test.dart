@@ -35,15 +35,11 @@ void main() {
     expect(find.text('OpenCode Remote'), findsOneWidget);
     expect(find.text('Add server'), findsWidgets);
     expect(find.text('Saved servers'), findsOneWidget);
-    expect(find.text('Recent activity'), findsOneWidget);
-    expect(find.text('Projects and sessions'), findsOneWidget);
-    expect(find.text('Start with a server, not a probe'), findsNothing);
+    expect(find.text('Choose a server'), findsWidgets);
     expect(
-      find.text('Leave endpoint diagnostics tucked inside server details.'),
-      findsNothing,
+      find.text('Select a server from the list or add a new one.'),
+      findsWidgets,
     );
-    expect(find.text('Probe server'), findsNothing);
-    expect(find.text('Live capability probe'), findsNothing);
   });
 
   testWidgets('saved ready server shows workspace section seam', (
@@ -90,15 +86,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Studio'), findsWidgets);
+    expect(find.text('Back to servers'), findsOneWidget);
     expect(find.byKey(const Key('workspace-section-seam')), findsOneWidget);
-    expect(find.text('Ready for projects'), findsWidgets);
-    expect(find.text('Start with a server, not a probe'), findsNothing);
-    expect(
-      find.text('Leave endpoint diagnostics tucked inside server details.'),
-      findsNothing,
-    );
-    expect(find.text('Probe server'), findsNothing);
-    expect(find.text('Live capability probe'), findsNothing);
   });
 
   testWidgets('workspace header can return to the server selection state', (

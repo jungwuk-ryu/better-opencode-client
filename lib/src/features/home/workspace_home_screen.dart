@@ -88,6 +88,11 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
   late final ProjectStore _projectStore;
   late final ProjectCatalogService _projectCatalogService;
   late final bool _ownsProjectCatalogService;
+  final GlobalKey<FormState> _serverFormKey = GlobalKey<FormState>();
+  final TextEditingController _labelController = TextEditingController();
+  final TextEditingController _baseUrlController = TextEditingController();
+  final TextEditingController _usernameController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
 
   List<ServerProfile> _savedProfiles = const <ServerProfile>[];
   List<RecentConnection> _recentConnections = const <RecentConnection>[];
@@ -97,7 +102,10 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
   ServerProfile? _selectedProfile;
   ProjectTarget? _recentWorkspace;
   ProjectTarget? _openedProject;
+  String? _editingProfileId;
   bool _loading = true;
+  bool _isSaving = false;
+  bool _showPassword = false;
   String? _connectingProfileKey;
   String? _workspaceNotice;
   bool _resumingWorkspace = false;
@@ -130,6 +138,10 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
     if (_ownsProjectCatalogService) {
       _projectCatalogService.dispose();
     }
+    _labelController.dispose();
+    _baseUrlController.dispose();
+    _usernameController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
@@ -206,6 +218,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
       _recentWorkspace = recentWorkspace;
       _loading = false;
     });
+    _loadEditorFromProfile(selectedProfile);
   }
 
   Future<Map<String, ServerProbeReport>> _loadCachedReports(
@@ -255,6 +268,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
     );
     _recentWorkspace = snapshot.recentWorkspace;
     _loading = false;
+    _loadEditorFromProfile(_selectedProfile);
   }
 
   ServerProfile? _pickInitialProfile({
@@ -375,6 +389,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
         return;
       }
 
+      final l10n = AppLocalizations.of(context)!;
       setState(() {
         _cachedReports = Map<String, ServerProbeReport>.unmodifiable(
           <String, ServerProbeReport>{
@@ -383,6 +398,11 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
           },
         );
         _recentConnections = recents;
+        _workspaceNotice = _connectionNoticeForReport(
+          report,
+          l10n,
+          selectedProfile.effectiveLabel,
+        );
         if (_connectingProfileKey == selectedProfile.storageKey) {
           _connectingProfileKey = null;
         }
@@ -399,6 +419,25 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
     }
   }
 
+  String? _connectionNoticeForReport(
+    ServerProbeReport report,
+    AppLocalizations l10n,
+    String serverLabel,
+  ) {
+    return switch (report.classification) {
+      ConnectionProbeClassification.ready => null,
+      ConnectionProbeClassification.unsupportedCapabilities => null,
+      ConnectionProbeClassification.authFailure =>
+        report.requiresBasicAuth
+            ? l10n.homeConnectionNeedsCredentialsNotice
+            : l10n.homeConnectionFailedNotice(serverLabel),
+      ConnectionProbeClassification.specFetchFailure =>
+        l10n.homeConnectionFailedNotice(serverLabel),
+      ConnectionProbeClassification.connectivityFailure =>
+        l10n.homeConnectionFailedNotice(serverLabel),
+    };
+  }
+
   void _selectProfile(ServerProfile profile) {
     setState(() {
       _resumeWorkspaceRequestToken += 1;
@@ -408,6 +447,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
       _resumingWorkspace = false;
       _workspaceNotice = null;
     });
+    _loadEditorFromProfile(profile);
     if (widget.snapshot == null) {
       unawaited(_loadRecentWorkspace(profile));
     }
@@ -423,6 +463,98 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
       _connectingProfileKey = null;
       _workspaceNotice = null;
     });
+    _clearEditor();
+  }
+
+  void _loadEditorFromProfile(ServerProfile? profile) {
+    if (profile == null) {
+      _clearEditor();
+      return;
+    }
+    _editingProfileId = profile.id;
+    _labelController.text = profile.label;
+    _baseUrlController.text = profile.normalizedBaseUrl;
+    _usernameController.text = profile.username ?? '';
+    _passwordController.text = profile.password ?? '';
+  }
+
+  void _clearEditor() {
+    _editingProfileId = null;
+    _labelController.clear();
+    _baseUrlController.clear();
+    _usernameController.clear();
+    _passwordController.clear();
+  }
+
+  ServerProfile _currentEditorProfile() {
+    return ServerProfile(
+      id: _editingProfileId ?? DateTime.now().microsecondsSinceEpoch.toString(),
+      label: _labelController.text.trim(),
+      baseUrl: _baseUrlController.text.trim(),
+      username: _normalizedOptional(_usernameController.text),
+      password: _normalizedOptional(_passwordController.text),
+    );
+  }
+
+  String? _normalizedOptional(String value) {
+    final trimmed = value.trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
+
+  String? _validateAddress(String? value) {
+    final draft = ServerProfile(id: 'draft', label: '', baseUrl: value ?? '');
+    final uri = draft.uriOrNull;
+    if (uri == null || uri.host.isEmpty) {
+      return AppLocalizations.of(context)!.connectionAddressValidation;
+    }
+    return null;
+  }
+
+  Future<void> _saveEditedProfile() async {
+    if (!_serverFormKey.currentState!.validate()) {
+      return;
+    }
+    final draft = _currentEditorProfile();
+    setState(() {
+      _isSaving = true;
+      _workspaceNotice = null;
+    });
+    final savedProfiles = await _profileStore.upsertProfile(draft);
+    final selectedProfile = savedProfiles.firstWhere(
+      (profile) => profile.id == draft.id,
+      orElse: () => draft,
+    );
+    final recentWorkspace = widget.snapshot == null
+        ? await _projectStore.loadLastWorkspace(selectedProfile.storageKey)
+        : _recentWorkspace;
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _savedProfiles = savedProfiles;
+      _selectedProfile = selectedProfile;
+      _editingProfileId = selectedProfile.id;
+      _recentWorkspace = recentWorkspace;
+      _isSaving = false;
+    });
+    _loadEditorFromProfile(selectedProfile);
+  }
+
+  Future<void> _deleteProfile(ServerProfile profile) async {
+    final savedProfiles = await _profileStore.deleteProfile(profile.id);
+    if (!mounted) {
+      return;
+    }
+    final nextSelected = _selectedProfile?.id == profile.id
+        ? (savedProfiles.isEmpty ? null : savedProfiles.first)
+        : _selectedProfile;
+    setState(() {
+      _savedProfiles = savedProfiles;
+      _selectedProfile = nextSelected;
+      _recentWorkspace = null;
+      _workspaceNotice = null;
+    });
+    _loadEditorFromProfile(nextSelected);
   }
 
   void _openProject(ProjectTarget project) {
@@ -612,28 +744,11 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
                     ),
                     child: LayoutBuilder(
                       builder: (context, constraints) {
-                        final isWide =
-                            constraints.maxWidth >=
-                            AppSpacing.wideLayoutBreakpoint;
-                        final primary = _buildPrimaryColumn(context);
-                        final side = _buildSideColumn(context);
-                        if (isWide) {
-                          return Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: <Widget>[
-                              Expanded(child: primary),
-                              const SizedBox(width: AppSpacing.lg),
-                              SizedBox(width: _sideColumnWidth, child: side),
-                            ],
-                          );
-                        }
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: <Widget>[
-                            primary,
-                            const SizedBox(height: AppSpacing.lg),
-                            side,
-                          ],
+                        return _buildSimpleHomeContent(
+                          context,
+                          isWide:
+                              constraints.maxWidth >=
+                              AppSpacing.wideLayoutBreakpoint,
                         );
                       },
                     ),
@@ -642,6 +757,297 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSimpleHomeContent(BuildContext context, {required bool isWide}) {
+    final serverManager = _buildServerManagerCard(context);
+    final workspacePane = _buildSimpleWorkspacePane(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        _buildHeader(context),
+        const SizedBox(height: AppSpacing.lg),
+        if (isWide)
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              SizedBox(width: 440, child: serverManager),
+              const SizedBox(width: AppSpacing.lg),
+              Expanded(child: workspacePane),
+            ],
+          )
+        else
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              serverManager,
+              const SizedBox(height: AppSpacing.lg),
+              workspacePane,
+            ],
+          ),
+      ],
+    );
+  }
+
+  Widget _buildServerManagerCard(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+
+    return _SectionCard(
+      title: l10n.homeSavedServersTitle,
+      subtitle: l10n.homeServerPanelSubtitle,
+      action: TextButton.icon(
+        onPressed: _returnToServerSelection,
+        icon: const Icon(Icons.add_rounded),
+        label: Text(l10n.homeAddServerAction),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            _buildServerForm(context),
+            const SizedBox(height: AppSpacing.lg),
+            const Divider(height: 1),
+            const SizedBox(height: AppSpacing.lg),
+            _buildSavedServerList(context),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildServerForm(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final editingExisting = _editingProfileId != null;
+
+    return Form(
+      key: _serverFormKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            editingExisting
+                ? l10n.homeEditServerAction
+                : l10n.homeAddServerAction,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: AppSpacing.md),
+          TextFormField(
+            controller: _labelController,
+            decoration: InputDecoration(
+              labelText: l10n.connectionProfileLabel,
+              hintText: l10n.connectionProfileLabelHint,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          TextFormField(
+            controller: _baseUrlController,
+            keyboardType: TextInputType.url,
+            decoration: InputDecoration(labelText: l10n.connectionAddressLabel),
+            validator: _validateAddress,
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          TextFormField(
+            controller: _usernameController,
+            decoration: InputDecoration(
+              labelText: l10n.connectionUsernameLabel,
+            ),
+            autofillHints: const <String>[AutofillHints.username],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          TextFormField(
+            controller: _passwordController,
+            obscureText: !_showPassword,
+            decoration: InputDecoration(
+              labelText: l10n.connectionPasswordLabel,
+              suffixIcon: IconButton(
+                onPressed: () {
+                  setState(() {
+                    _showPassword = !_showPassword;
+                  });
+                },
+                icon: Icon(
+                  _showPassword ? Icons.visibility_off : Icons.visibility,
+                ),
+              ),
+            ),
+            autofillHints: const <String>[AutofillHints.password],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
+            children: <Widget>[
+              ElevatedButton.icon(
+                onPressed: _isSaving ? null : _saveEditedProfile,
+                icon: const Icon(Icons.save_outlined),
+                label: Text(l10n.saveProfile),
+              ),
+              OutlinedButton.icon(
+                onPressed: _returnToServerSelection,
+                icon: const Icon(Icons.add_link_rounded),
+                label: Text(l10n.homeAddServerAction),
+              ),
+              if (editingExisting && _selectedProfile != null)
+                OutlinedButton.icon(
+                  onPressed: () => _deleteProfile(_selectedProfile!),
+                  icon: const Icon(Icons.delete_outline),
+                  label: Text(l10n.deleteProfile),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSavedServerList(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    if (_savedProfiles.isEmpty) {
+      return _EmptyStateBlock(
+        title: l10n.homeSavedServersEmptyTitle,
+        subtitle: l10n.homeSavedServersEmptySubtitle,
+      );
+    }
+
+    final sortedProfiles = _savedProfiles.toList()
+      ..sort(
+        (a, b) => a.effectiveLabel.toLowerCase().compareTo(
+          b.effectiveLabel.toLowerCase(),
+        ),
+      );
+
+    return Column(
+      children: sortedProfiles
+          .map(
+            (profile) => Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+              child: _SimpleServerRow(
+                profile: profile,
+                selected: _selectedProfile?.id == profile.id,
+                connecting: _isConnectingProfile(profile),
+                connectLabel: l10n.homeConnectServerAction,
+                editLabel: l10n.homeEditServerAction,
+                deleteLabel: l10n.deleteProfile,
+                onSelect: () => _selectProfile(profile),
+                onConnect: () => _connectProfile(profile),
+                onEdit: () {
+                  _selectProfile(profile);
+                  _loadEditorFromProfile(profile);
+                },
+                onDelete: () => _deleteProfile(profile),
+              ),
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+
+  Widget _buildSimpleWorkspacePane(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final selectedProfile = _selectedProfile;
+
+    if (_loading) {
+      return _SectionCard(
+        title: l10n.homeWorkspaceSectionTitle,
+        subtitle: l10n.homeWorkspaceLoadingSubtitle,
+        child: const Padding(
+          padding: EdgeInsets.all(AppSpacing.xl),
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      );
+    }
+
+    if (selectedProfile == null) {
+      return _wrapWorkspaceSurface(
+        _SectionCard(
+          title: l10n.homeChooseServerLabel,
+          subtitle: l10n.homeWorkspaceSelectionHint,
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            child: _EmptyStateBlock(
+              title: l10n.homeChooseServerLabel,
+              subtitle: l10n.homeWorkspaceSelectionHint,
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (_isConnectingProfile(selectedProfile)) {
+      return _wrapWorkspaceSurface(
+        _SectionCard(
+          title: selectedProfile.effectiveLabel,
+          subtitle: l10n.homeActionCheckingServer,
+          child: const Padding(
+            padding: EdgeInsets.all(AppSpacing.xl),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+        ),
+      );
+    }
+
+    if (_canProceedToProjectSelection(selectedProfile)) {
+      final resumePanel = _buildResumePanel(context, _launchState);
+      final builder =
+          widget.workspaceSectionBuilder ??
+          (
+            BuildContext context,
+            ServerProfile profile,
+            ValueChanged<ProjectTarget> onOpenProject,
+          ) {
+            return ProjectWorkspaceSection(
+              profile: profile,
+              projectCatalogService: _projectCatalogService,
+              projectStore: _projectStore,
+              cacheStore: _cacheStore,
+              onOpenProject: onOpenProject,
+            );
+          };
+      return _wrapWorkspaceSurface(
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            if (resumePanel != null) ...<Widget>[
+              resumePanel,
+              const SizedBox(height: AppSpacing.lg),
+            ],
+            builder(context, selectedProfile, _openProject),
+          ],
+        ),
+      );
+    }
+
+    return _wrapWorkspaceSurface(
+      _SectionCard(
+        title: selectedProfile.effectiveLabel,
+        subtitle: l10n.homeWorkspaceConnectHint,
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              _EmptyStateBlock(
+                title: l10n.homeWorkspaceSectionTitle,
+                subtitle: l10n.homeWorkspaceConnectHint,
+              ),
+              const SizedBox(height: AppSpacing.md),
+              Semantics(
+                container: true,
+                label: l10n.homeA11yWorkspacePrimaryAction,
+                button: true,
+                child: ElevatedButton.icon(
+                  onPressed: () => _connectProfile(selectedProfile),
+                  icon: const Icon(Icons.arrow_forward_rounded),
+                  label: Text(l10n.homeConnectServerAction),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -750,7 +1156,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
               label: l10n.homeA11yAddServerAction,
               button: true,
               child: TextButton.icon(
-                onPressed: () => _openAddServerEditor(),
+                onPressed: _returnToServerSelection,
                 icon: const Icon(Icons.add_link_rounded),
                 label: Text(l10n.homeAddServerAction),
               ),
@@ -1745,6 +2151,115 @@ class _WorkspaceNoticeBanner extends StatelessWidget {
                 message,
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SimpleServerRow extends StatelessWidget {
+  const _SimpleServerRow({
+    required this.profile,
+    required this.selected,
+    required this.connecting,
+    required this.connectLabel,
+    required this.editLabel,
+    required this.deleteLabel,
+    required this.onSelect,
+    required this.onConnect,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  final ServerProfile profile;
+  final bool selected;
+  final bool connecting;
+  final String connectLabel;
+  final String editLabel;
+  final String deleteLabel;
+  final VoidCallback onSelect;
+  final VoidCallback onConnect;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final l10n = AppLocalizations.of(context)!;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(AppSpacing.lg),
+      onTap: onSelect,
+      child: AnimatedContainer(
+        duration: _motionFast,
+        curve: Curves.easeOutCubic,
+        decoration: BoxDecoration(
+          color: selected
+              ? theme.colorScheme.primary.withValues(alpha: 0.12)
+              : surfaces.panelRaised.withValues(alpha: 0.84),
+          borderRadius: BorderRadius.circular(AppSpacing.lg),
+          border: Border.all(
+            color: selected
+                ? theme.colorScheme.primary.withValues(alpha: 0.32)
+                : surfaces.line,
+          ),
+        ),
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              profile.effectiveLabel,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              profile.normalizedBaseUrl,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: surfaces.muted,
+              ),
+            ),
+            if (profile.hasBasicAuth) ...<Widget>[
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                l10n.homeCredentialsSaved,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: surfaces.accentSoft,
+                ),
+              ),
+            ],
+            const SizedBox(height: AppSpacing.md),
+            Wrap(
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
+              children: <Widget>[
+                ElevatedButton.icon(
+                  onPressed: connecting ? null : onConnect,
+                  icon: connecting
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.arrow_forward_rounded),
+                  label: Text(connectLabel),
+                ),
+                OutlinedButton.icon(
+                  onPressed: onEdit,
+                  icon: const Icon(Icons.edit_outlined),
+                  label: Text(editLabel),
+                ),
+                OutlinedButton.icon(
+                  onPressed: onDelete,
+                  icon: const Icon(Icons.delete_outline),
+                  label: Text(deleteLabel),
+                ),
+              ],
             ),
           ],
         ),

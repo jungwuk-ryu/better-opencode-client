@@ -501,6 +501,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get homeBackToServersAction => '서버 선택으로 돌아가기';
 
   @override
+  String get homeConnectServerAction => '접속';
+
+  @override
   String get homeEditSelectedServerAction => '선택한 서버 편집';
 
   @override
@@ -584,6 +587,12 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get homeWorkspaceLoadingSubtitle => '저장된 서버와 최근 활동을 불러오는 중입니다.';
+
+  @override
+  String get homeWorkspaceSelectionHint => '목록에서 서버를 선택하거나 새 서버를 추가하세요.';
+
+  @override
+  String get homeWorkspaceConnectHint => '선택한 서버에 접속하면 프로젝트를 불러올 수 있습니다.';
 
   @override
   String get homeWorkspaceEmptySubtitle => '서버를 추가하면 여기에서 프로젝트와 세션을 열 수 있습니다.';
@@ -693,6 +702,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get homeSavedServersSubtitle => '서버를 고른 뒤 프로젝트와 세션으로 이어갑니다.';
 
   @override
+  String get homeServerPanelSubtitle => '서버를 추가하거나 수정하고, 준비되면 바로 접속하세요.';
+
+  @override
   String get homeSavedServersEmptyTitle => '저장된 서버가 없습니다';
 
   @override
@@ -746,6 +758,15 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get homeServerCardBodyUnknown => '간단히 확인한 뒤, 필요하면 인증 정보를 수정하세요.';
+
+  @override
+  String homeConnectionFailedNotice(String server) {
+    return '$server에 연결할 수 없습니다. 저장된 주소나 자격 증명을 확인한 뒤 다시 시도하세요.';
+  }
+
+  @override
+  String get homeConnectionNeedsCredentialsNotice =>
+      '이 서버는 접속하기 전에 사용자 이름과 비밀번호가 필요합니다.';
 
   @override
   String get homeStatusNewHome => '새 홈';

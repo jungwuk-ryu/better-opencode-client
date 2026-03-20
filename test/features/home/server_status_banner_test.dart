@@ -14,7 +14,7 @@ import 'package:opencode_mobile_remote/src/i18n/locale_controller.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('auth failure banner stays concise and actionable', (
+  testWidgets('auth failure stays inside the simple connect pane', (
     tester,
   ) async {
     final localeController = LocaleController();
@@ -48,16 +48,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('server-status-banner')), findsOneWidget);
-    expect(find.text('Sign-in required'), findsWidgets);
-    expect(find.text('Retry'), findsWidgets);
-    expect(find.text('Edit server'), findsWidgets);
-    expect(
-      find.text(
-        'Auth Gate is protected by Basic auth. Edit this server and add the username and password before loading projects.',
-      ),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('server-status-banner')), findsNothing);
+    expect(find.text('Connect'), findsWidgets);
     expect(
       find.text('401 token expired while probing /provider/auth'),
       findsNothing,
@@ -65,50 +57,50 @@ void main() {
     expect(find.text('/provider/auth'), findsNothing);
   });
 
-  testWidgets('offline banner offers retry and edit without probe detail', (
-    tester,
-  ) async {
-    final localeController = LocaleController();
-    addTearDown(localeController.dispose);
+  testWidgets(
+    'offline state keeps the simple connect panel without probe detail',
+    (tester) async {
+      final localeController = LocaleController();
+      addTearDown(localeController.dispose);
 
-    const profile = ServerProfile(
-      id: 'offline',
-      label: 'Offline Edge',
-      baseUrl: 'https://offline.example.com',
-    );
+      const profile = ServerProfile(
+        id: 'offline',
+        label: 'Offline Edge',
+        baseUrl: 'https://offline.example.com',
+      );
 
-    await tester.pumpWidget(
-      _TestApp(
-        child: WorkspaceHomeScreen(
-          flavor: AppFlavor.release,
-          localeController: localeController,
-          snapshot: WorkspaceHomeSnapshot(
-            savedProfiles: const <ServerProfile>[profile],
-            cachedReports: <String, ServerProbeReport>{
-              profile.storageKey: _report(
-                ConnectionProbeClassification.connectivityFailure,
-                summary: 'Timed out while contacting /global/health.',
-              ),
-            },
-            selectedProfile: profile,
+      await tester.pumpWidget(
+        _TestApp(
+          child: WorkspaceHomeScreen(
+            flavor: AppFlavor.release,
+            localeController: localeController,
+            snapshot: WorkspaceHomeSnapshot(
+              savedProfiles: const <ServerProfile>[profile],
+              cachedReports: <String, ServerProbeReport>{
+                profile.storageKey: _report(
+                  ConnectionProbeClassification.connectivityFailure,
+                  summary: 'Timed out while contacting /global/health.',
+                ),
+              },
+              selectedProfile: profile,
+            ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('server-status-banner')), findsOneWidget);
-    expect(find.text('Offline'), findsWidgets);
-    expect(find.text('Retry'), findsWidgets);
-    expect(
-      find.text('Timed out while contacting /global/health.'),
-      findsNothing,
-    );
-    expect(find.text('/global/health'), findsNothing);
-  });
+      expect(find.byKey(const Key('server-status-banner')), findsNothing);
+      expect(find.text('Connect'), findsWidgets);
+      expect(
+        find.text('Timed out while contacting /global/health.'),
+        findsNothing,
+      );
+      expect(find.text('/global/health'), findsNothing);
+    },
+  );
 
   testWidgets(
-    'incompatible banner hides capability paths behind concise copy',
+    'incompatible state hides capability paths behind the simple project entry flow',
     (tester) async {
       final localeController = LocaleController();
       addTearDown(localeController.dispose);
@@ -136,14 +128,16 @@ void main() {
               },
               selectedProfile: profile,
             ),
+            workspaceSectionBuilder: (context, selectedProfile, onOpenProject) {
+              return const Placeholder(key: Key('workspace-section-seam'));
+            },
           ),
         ),
       );
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('server-status-banner')), findsOneWidget);
-      expect(find.text('Update required'), findsWidgets);
-      expect(find.text('Retry'), findsWidgets);
+      expect(find.byKey(const Key('server-status-banner')), findsNothing);
+      expect(find.byKey(const Key('workspace-section-seam')), findsOneWidget);
       expect(find.text('/provider/auth'), findsNothing);
       expect(find.text('/experimental/tool/ids'), findsNothing);
       expect(

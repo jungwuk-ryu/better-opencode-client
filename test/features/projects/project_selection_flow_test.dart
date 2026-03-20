@@ -155,6 +155,8 @@ void main() {
     expect(find.text('Choose a project'), findsNothing);
     expect(find.text('Project preview'), findsNothing);
     expect(find.text('Open project'), findsNothing);
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
   });
 }
 

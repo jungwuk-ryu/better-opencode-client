@@ -158,6 +158,7 @@
   "homeHeaderSubtitle": "Connect a server, then open a project and continue your sessions.",
   "homeAddServerAction": "Add server",
   "homeBackToServersAction": "Back to servers",
+  "homeConnectServerAction": "Connect",
   "homeEditSelectedServerAction": "Edit selected server",
   "homeEditServerAction": "Edit server",
   "homeSwitchServerAction": "Switch server",
@@ -199,6 +200,8 @@
   "homeThisServerLabel": "This server",
   "homeWorkspaceSectionTitle": "Projects and sessions",
   "homeWorkspaceLoadingSubtitle": "Loading your saved servers and recent activity.",
+  "homeWorkspaceSelectionHint": "Select a server from the list or add a new one.",
+  "homeWorkspaceConnectHint": "Connect the selected server to load its projects.",
   "homeWorkspaceEmptySubtitle": "Add a server to start opening projects and sessions here.",
   "homeWorkspaceFeatureSaveTitle": "Save a server once",
   "homeWorkspaceFeatureSaveBody": "Keep servers in one place, ready when you come back.",
@@ -271,6 +274,7 @@
   "homeNoticeWorkspaceResumeFailed": "Couldn't reopen your last workspace right now. Choose a project below or retry this server.",
   "homeSavedServersTitle": "Saved servers",
   "homeSavedServersSubtitle": "Pick a server, then continue into projects and sessions.",
+  "homeServerPanelSubtitle": "Add a server, edit saved details, and connect when you're ready.",
   "homeSavedServersEmptyTitle": "No saved servers yet",
   "homeSavedServersEmptySubtitle": "Add your first server to start opening projects and sessions.",
   "homeRecentActivityTitle": "Recent activity",
@@ -295,6 +299,15 @@
   "homeServerCardBodyUpdate": "Update the server before continuing into projects and sessions.",
   "homeServerCardBodyUnknownWithAuth": "Run a quick check before loading projects.",
   "homeServerCardBodyUnknown": "Run a quick check, then edit details only if sign-in is needed.",
+  "homeConnectionFailedNotice": "Couldn't connect to {server}. Check the saved address or credentials and try again.",
+  "@homeConnectionFailedNotice": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
+  "homeConnectionNeedsCredentialsNotice": "This server needs username and password before it can connect.",
   "homeStatusNewHome": "New home",
   "homeStatusChooseServer": "Choose a server",
   "homeStatusCheckingServer": "Checking server",

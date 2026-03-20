@@ -517,6 +517,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeBackToServersAction => 'Back to servers';
 
   @override
+  String get homeConnectServerAction => 'Connect';
+
+  @override
   String get homeEditSelectedServerAction => 'Edit selected server';
 
   @override
@@ -604,6 +607,14 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get homeWorkspaceLoadingSubtitle =>
       'Loading your saved servers and recent activity.';
+
+  @override
+  String get homeWorkspaceSelectionHint =>
+      'Select a server from the list or add a new one.';
+
+  @override
+  String get homeWorkspaceConnectHint =>
+      'Connect the selected server to load its projects.';
 
   @override
   String get homeWorkspaceEmptySubtitle =>
@@ -721,6 +732,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Pick a server, then continue into projects and sessions.';
 
   @override
+  String get homeServerPanelSubtitle =>
+      'Add a server, edit saved details, and connect when you\'re ready.';
+
+  @override
   String get homeSavedServersEmptyTitle => 'No saved servers yet';
 
   @override
@@ -782,6 +797,15 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get homeServerCardBodyUnknown =>
       'Run a quick check, then edit details only if sign-in is needed.';
+
+  @override
+  String homeConnectionFailedNotice(String server) {
+    return 'Couldn\'t connect to $server. Check the saved address or credentials and try again.';
+  }
+
+  @override
+  String get homeConnectionNeedsCredentialsNotice =>
+      'This server needs username and password before it can connect.';
 
   @override
   String get homeStatusNewHome => 'New home';

@@ -19,7 +19,7 @@ void main() {
     SharedPreferences.setMockInitialValues(<String, Object>{});
   });
 
-  testWidgets('saved server cards show identity, context, and clear actions', (
+  testWidgets('saved servers stay focused on selection and quick actions', (
     tester,
   ) async {
     _setLargeSurface(tester);
@@ -68,15 +68,13 @@ void main() {
 
     expect(find.text('Studio North'), findsWidgets);
     expect(find.text('https://studio.example.com'), findsWidgets);
-    expect(find.text('Ready for projects'), findsWidgets);
     expect(find.text('Credentials saved'), findsOneWidget);
-    expect(find.textContaining('Last used'), findsOneWidget);
-    expect(find.text('Continue'), findsOneWidget);
-    expect(find.text('Edit server'), findsOneWidget);
-    expect(find.text('Current server'), findsOneWidget);
+    expect(find.text('Connect'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, 'Edit server'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, 'Delete profile'), findsWidgets);
   });
 
-  testWidgets('saved server cards hide probe jargon and raw probe detail', (
+  testWidgets('saved server list hides probe jargon and raw probe detail', (
     tester,
   ) async {
     _setLargeSurface(tester);
@@ -123,12 +121,6 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Needs attention'), findsWidgets);
-    expect(find.text('Start with a server, not a probe'), findsNothing);
-    expect(
-      find.text('Leave endpoint diagnostics tucked inside server details.'),
-      findsNothing,
-    );
     expect(
       find.text('401 token expired while probing /provider/auth'),
       findsNothing,
@@ -140,7 +132,7 @@ void main() {
   });
 
   testWidgets(
-    'unsupported saved server still offers continue when the user wants to proceed',
+    'unsupported saved server still offers connect without compatibility copy',
     (tester) async {
       _setLargeSurface(tester);
       final localeController = LocaleController();
@@ -173,7 +165,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Continue'), findsOneWidget);
+      expect(find.text('Connect'), findsOneWidget);
+      expect(find.text('Needs attention'), findsNothing);
     },
   );
 }

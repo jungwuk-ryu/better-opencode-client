@@ -19,39 +19,25 @@ void main() {
     SharedPreferences.setMockInitialValues(<String, Object>{});
   });
 
-  testWidgets('add server opens a blank editor flow from home', (tester) async {
+  testWidgets('home shows an inline server editor for adding a server', (
+    tester,
+  ) async {
     _setLargeSurface(tester);
     final localeController = LocaleController();
     addTearDown(localeController.dispose);
-
-    const existingProfile = ServerProfile(
-      id: 'existing',
-      label: 'Existing Server',
-      baseUrl: 'https://existing.example.com',
-      username: 'saved-user',
-      password: 'saved-pass',
-    );
 
     await tester.pumpWidget(
       _TestApp(
         child: WorkspaceHomeScreen(
           flavor: AppFlavor.release,
           localeController: localeController,
-          snapshot: WorkspaceHomeSnapshot(
-            savedProfiles: const <ServerProfile>[existingProfile],
-            cachedReports: <String, ServerProbeReport>{
-              existingProfile.storageKey: _readyReport(),
-            },
-            selectedProfile: existingProfile,
-          ),
+          snapshot: const WorkspaceHomeSnapshot(),
         ),
       ),
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Add server').first);
-    await tester.pumpAndSettle();
-
+    expect(find.text('Add server'), findsWidgets);
     final fields = tester
         .widgetList<TextFormField>(find.byType(TextFormField))
         .toList();
@@ -60,11 +46,9 @@ void main() {
     expect(fields[1].controller?.text, isEmpty);
     expect(fields[2].controller?.text, isEmpty);
     expect(fields[3].controller?.text, isEmpty);
-    expect(find.text('Existing Server'), findsNothing);
-    await tester.pump(const Duration(seconds: 1));
   });
 
-  testWidgets('edit server opens a prefilled editor flow from home', (
+  testWidgets('selecting a saved server loads it into the inline editor', (
     tester,
   ) async {
     _setLargeSurface(tester);
@@ -96,7 +80,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithText(OutlinedButton, 'Edit server'));
+    await tester.tap(find.text('Studio').first);
     await tester.pumpAndSettle();
 
     final fields = tester
@@ -107,20 +91,35 @@ void main() {
     expect(fields[1].controller?.text, 'https://studio.example.com');
     expect(fields[2].controller?.text, 'operator');
     expect(fields[3].controller?.text, 'secret');
-    await tester.pump(const Duration(seconds: 1));
   });
 
-  testWidgets('add server offers a button to return home', (tester) async {
+  testWidgets('add server clears the inline editor instead of opening a page', (
+    tester,
+  ) async {
     _setLargeSurface(tester);
     final localeController = LocaleController();
     addTearDown(localeController.dispose);
+
+    const profile = ServerProfile(
+      id: 'studio',
+      label: 'Studio',
+      baseUrl: 'https://studio.example.com',
+      username: 'operator',
+      password: 'secret',
+    );
 
     await tester.pumpWidget(
       _TestApp(
         child: WorkspaceHomeScreen(
           flavor: AppFlavor.release,
           localeController: localeController,
-          snapshot: const WorkspaceHomeSnapshot(),
+          snapshot: WorkspaceHomeSnapshot(
+            savedProfiles: const <ServerProfile>[profile],
+            cachedReports: <String, ServerProbeReport>{
+              profile.storageKey: _readyReport(),
+            },
+            selectedProfile: profile,
+          ),
         ),
       ),
     );
@@ -129,14 +128,15 @@ void main() {
     await tester.tap(find.text('Add server').first);
     await tester.pumpAndSettle();
 
-    expect(find.text('Back to home'), findsOneWidget);
-
-    await tester.tap(find.text('Back to home'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Workspace'), findsOneWidget);
-    expect(find.text('OpenCode Remote'), findsOneWidget);
-    await tester.pump(const Duration(seconds: 1));
+    final fields = tester
+        .widgetList<TextFormField>(find.byType(TextFormField))
+        .toList();
+    expect(fields, hasLength(4));
+    expect(fields[0].controller?.text, isEmpty);
+    expect(fields[1].controller?.text, isEmpty);
+    expect(fields[2].controller?.text, isEmpty);
+    expect(fields[3].controller?.text, isEmpty);
+    expect(find.text('Back to home'), findsNothing);
   });
 }
 

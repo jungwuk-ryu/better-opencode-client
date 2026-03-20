@@ -1046,6 +1046,12 @@ abstract class AppLocalizations {
   /// **'Back to servers'**
   String get homeBackToServersAction;
 
+  /// No description provided for @homeConnectServerAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect'**
+  String get homeConnectServerAction;
+
   /// No description provided for @homeEditSelectedServerAction.
   ///
   /// In en, this message translates to:
@@ -1207,6 +1213,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Loading your saved servers and recent activity.'**
   String get homeWorkspaceLoadingSubtitle;
+
+  /// No description provided for @homeWorkspaceSelectionHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Select a server from the list or add a new one.'**
+  String get homeWorkspaceSelectionHint;
+
+  /// No description provided for @homeWorkspaceConnectHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect the selected server to load its projects.'**
+  String get homeWorkspaceConnectHint;
 
   /// No description provided for @homeWorkspaceEmptySubtitle.
   ///
@@ -1388,6 +1406,12 @@ abstract class AppLocalizations {
   /// **'Pick a server, then continue into projects and sessions.'**
   String get homeSavedServersSubtitle;
 
+  /// No description provided for @homeServerPanelSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a server, edit saved details, and connect when you\'re ready.'**
+  String get homeServerPanelSubtitle;
+
   /// No description provided for @homeSavedServersEmptyTitle.
   ///
   /// In en, this message translates to:
@@ -1489,6 +1513,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Run a quick check, then edit details only if sign-in is needed.'**
   String get homeServerCardBodyUnknown;
+
+  /// No description provided for @homeConnectionFailedNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t connect to {server}. Check the saved address or credentials and try again.'**
+  String homeConnectionFailedNotice(String server);
+
+  /// No description provided for @homeConnectionNeedsCredentialsNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'This server needs username and password before it can connect.'**
+  String get homeConnectionNeedsCredentialsNotice;
 
   /// No description provided for @homeStatusNewHome.
   ///
