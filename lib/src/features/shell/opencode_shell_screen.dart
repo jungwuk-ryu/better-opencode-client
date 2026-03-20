@@ -38,18 +38,17 @@ import '../tools/todo_service.dart';
 const _motionFast = Duration(milliseconds: 220);
 const _motionMedium = Duration(milliseconds: 320);
 const _activityCycle = Duration(milliseconds: 1400);
-const _defaultComposerReasoning = 'medium';
 
 class _ComposerSubmissionOptions {
   const _ComposerSubmissionOptions({
     this.providerId,
     this.modelId,
-    required this.reasoning,
+    this.reasoning,
   });
 
   final String? providerId;
   final String? modelId;
-  final String reasoning;
+  final String? reasoning;
 }
 
 class _ComposerModelOption {
@@ -58,12 +57,14 @@ class _ComposerModelOption {
     required this.label,
     required this.modelId,
     this.providerId,
+    this.reasoningValues = const <String>[],
   });
 
   final String key;
   final String label;
   final String modelId;
   final String? providerId;
+  final List<String> reasoningValues;
 }
 
 enum _ShellPrimaryDestination { sessions, chat, context, settings }
@@ -4513,13 +4514,15 @@ Map<String, double> _buildSessionTree(List<SessionSummary> sessions) {
   return depths;
 }
 
-List<_ComposerModelOption> _composerModelOptions(
-  ConfigSnapshot? snapshot,
-  List<ChatMessage> messages,
-) {
+List<_ComposerModelOption> _composerModelOptions(ConfigSnapshot? snapshot) {
   final options = <String, _ComposerModelOption>{};
 
-  void addOption(String? providerId, String? modelId, {String? label}) {
+  void addOption(
+    String? providerId,
+    String? modelId, {
+    String? label,
+    List<String> reasoningValues = const <String>[],
+  }) {
     final normalizedModel = modelId?.trim();
     if (normalizedModel == null || normalizedModel.isEmpty) {
       return;
@@ -4539,97 +4542,48 @@ List<_ComposerModelOption> _composerModelOptions(
             : '$normalizedProvider / $normalizedModel',
         modelId: normalizedModel,
         providerId: normalizedProvider,
+        reasoningValues: List<String>.unmodifiable(reasoningValues),
       ),
     );
   }
 
-  void scanNode(Object? node, {String? providerHint}) {
-    if (node is List) {
-      for (final item in node) {
-        scanNode(item, providerHint: providerHint);
-      }
-      return;
-    }
-    if (node is! Map) {
-      return;
-    }
-    final map = node.cast<Object?, Object?>();
-    final explicitProvider =
-        map['providerID']?.toString() ??
-        map['providerId']?.toString() ??
-        map['provider']?.toString();
-    final providerId = (explicitProvider?.trim().isNotEmpty == true)
-        ? explicitProvider!.trim()
-        : providerHint;
-
-    final models = map['models'];
-    if (models is List) {
-      for (final item in models) {
-        if (item is String) {
-          addOption(providerId, item);
-          continue;
-        }
-        if (item is Map) {
-          final modelMap = item.cast<Object?, Object?>();
-          addOption(
-            modelMap['providerID']?.toString() ??
-                modelMap['providerId']?.toString() ??
-                providerId,
-            modelMap['modelID']?.toString() ??
-                modelMap['modelId']?.toString() ??
-                modelMap['id']?.toString() ??
-                modelMap['name']?.toString(),
-            label:
-                modelMap['label']?.toString() ?? modelMap['name']?.toString(),
-          );
-        }
-      }
-    }
-
-    final inlineModel = map['model']?.toString();
-    if (inlineModel != null && inlineModel.trim().isNotEmpty) {
-      final normalizedInlineModel = inlineModel.trim();
-      if (normalizedInlineModel.contains('/')) {
-        final parts = normalizedInlineModel.split('/');
-        if (parts.length >= 2) {
-          addOption(parts.first, parts.sublist(1).join('/'));
-        }
-      } else {
-        addOption(providerId, normalizedInlineModel);
-      }
-    }
-
-    for (final entry in map.entries) {
-      final key = entry.key?.toString();
-      if (key == null) {
-        continue;
-      }
-      final value = entry.value;
-      final nestedProviderHint = value is Map && !key.startsWith('x-')
-          ? key
-          : providerId;
-      scanNode(value, providerHint: nestedProviderHint);
-    }
-  }
-
   if (snapshot != null) {
+    final catalog = snapshot.providerCatalog;
+    for (final provider in catalog.providers) {
+      final models = provider.models.values.toList(growable: false)
+        ..sort((left, right) => left.name.compareTo(right.name));
+      for (final model in models) {
+        addOption(
+          provider.id,
+          model.id,
+          label: '${provider.id} / ${model.id}',
+          reasoningValues: model.reasoningVariants,
+        );
+      }
+    }
     final config = snapshot.config.toJson();
     final configuredModel = config['model']?.toString();
     if (configuredModel != null && configuredModel.trim().isNotEmpty) {
-      if (configuredModel.contains('/')) {
-        final parts = configuredModel.split('/');
+      final normalizedConfiguredModel = configuredModel.trim();
+      if (normalizedConfiguredModel.contains('/')) {
+        final parts = normalizedConfiguredModel.split('/');
         if (parts.length >= 2) {
-          addOption(parts.first, parts.sublist(1).join('/'));
+          final providerId = parts.first;
+          final modelId = parts.sublist(1).join('/');
+          addOption(
+            providerId,
+            modelId,
+            reasoningValues:
+                catalog
+                    .modelForKey('$providerId/$modelId')
+                    ?.reasoningVariants ??
+                const <String>[],
+          );
         }
       } else {
-        addOption(null, configuredModel);
+        addOption(null, normalizedConfiguredModel);
       }
     }
-    scanNode(snapshot.providerConfig.toJson());
-  }
-
-  for (final message in messages.reversed) {
-    addOption(message.info.providerId, message.info.modelId);
   }
 
   final values = options.values.toList(growable: false);
@@ -4640,7 +4594,6 @@ List<_ComposerModelOption> _composerModelOptions(
 String? _defaultComposerModelKey(
   ConfigSnapshot? snapshot,
   List<_ComposerModelOption> options,
-  List<ChatMessage> messages,
 ) {
   if (options.isEmpty) {
     return null;
@@ -4657,17 +4610,15 @@ String? _defaultComposerModelKey(
       }
     }
   }
-  for (final message in messages.reversed) {
-    final providerId = message.info.providerId;
-    final modelId = message.info.modelId;
-    if (modelId == null || modelId.isEmpty) {
-      continue;
-    }
-    final key = providerId == null || providerId.isEmpty
-        ? modelId
-        : '$providerId/$modelId';
+  final defaults =
+      snapshot?.providerCatalog.defaults ?? const <String, String>{};
+  if (defaults.isNotEmpty) {
     for (final option in options) {
-      if (option.key == key) {
+      final providerId = option.providerId;
+      if (providerId == null || providerId.isEmpty) {
+        continue;
+      }
+      if (defaults[providerId] == option.modelId) {
         return option.key;
       }
     }
@@ -4675,15 +4626,42 @@ String? _defaultComposerModelKey(
   return options.first.key;
 }
 
-String _resolveDefaultComposerReasoning(ConfigSnapshot? snapshot) {
-  final reasoning = snapshot?.config.toJson()['reasoning']?.toString();
-  if (reasoning == null || reasoning.trim().isEmpty) {
-    return _defaultComposerReasoning;
+String? _resolveDefaultComposerReasoning(
+  ConfigSnapshot? snapshot,
+  _ComposerModelOption? modelOption,
+) {
+  final reasoning = snapshot?.config.toJson()['reasoning']?.toString().trim();
+  if (reasoning == null || reasoning.isEmpty) {
+    return null;
   }
-  return switch (reasoning.trim()) {
-    'low' || 'medium' || 'high' || 'xhigh' => reasoning.trim(),
-    _ => _defaultComposerReasoning,
+  if (modelOption == null || modelOption.reasoningValues.contains(reasoning)) {
+    return reasoning;
+  }
+  return null;
+}
+
+String _reasoningLabel(AppLocalizations l10n, String value) {
+  return switch (value) {
+    'low' => l10n.shellComposerThinkingLow,
+    'medium' => l10n.shellComposerThinkingBalanced,
+    'high' => l10n.shellComposerThinkingDeep,
+    'xhigh' || 'max' => l10n.shellComposerThinkingMax,
+    _ => _titleCaseLabel(value),
   };
+}
+
+String _titleCaseLabel(String value) {
+  final pieces = value
+      .trim()
+      .split(RegExp(r'[_\\-]+'))
+      .where((piece) => piece.isNotEmpty)
+      .toList(growable: false);
+  if (pieces.isEmpty) {
+    return value;
+  }
+  return pieces
+      .map((piece) => '${piece[0].toUpperCase()}${piece.substring(1)}')
+      .join(' ');
 }
 
 class _ChatCanvas extends StatefulWidget {
@@ -4891,17 +4869,23 @@ class _ChatCanvasState extends State<_ChatCanvas> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final maxContentWidth = widget.compact ? double.infinity : 840.0;
-    final composerModels = _composerModelOptions(
-      widget.configSnapshot,
-      widget.messages,
-    );
+    final composerModels = _composerModelOptions(widget.configSnapshot);
     final defaultComposerModelKey = _defaultComposerModelKey(
       widget.configSnapshot,
       composerModels,
-      widget.messages,
     );
+    _ComposerModelOption? defaultComposerModel;
+    if (defaultComposerModelKey != null) {
+      for (final option in composerModels) {
+        if (option.key == defaultComposerModelKey) {
+          defaultComposerModel = option;
+          break;
+        }
+      }
+    }
     final defaultComposerReasoning = _resolveDefaultComposerReasoning(
       widget.configSnapshot,
+      defaultComposerModel,
     );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -5043,6 +5027,7 @@ class _ChatCanvasState extends State<_ChatCanvas> {
                                   widget.selectedSessionId == null ||
                                   widget.selectedSessionId!.isEmpty,
                               modelOptions: composerModels,
+                              serverDefaultModelKey: defaultComposerModelKey,
                               initialModelKey: defaultComposerModelKey,
                               initialReasoning: defaultComposerReasoning,
                               onSubmit: widget.onSubmitPrompt,
@@ -6749,6 +6734,7 @@ class _ComposerCard extends StatefulWidget {
     required this.submitting,
     required this.startsNewSession,
     required this.modelOptions,
+    required this.serverDefaultModelKey,
     required this.initialModelKey,
     required this.initialReasoning,
     required this.onSubmit,
@@ -6759,8 +6745,9 @@ class _ComposerCard extends StatefulWidget {
   final bool submitting;
   final bool startsNewSession;
   final List<_ComposerModelOption> modelOptions;
+  final String? serverDefaultModelKey;
   final String? initialModelKey;
-  final String initialReasoning;
+  final String? initialReasoning;
   final Future<bool> Function(String, _ComposerSubmissionOptions) onSubmit;
 
   @override
@@ -6770,7 +6757,27 @@ class _ComposerCard extends StatefulWidget {
 class _ComposerCardState extends State<_ComposerCard> {
   late final TextEditingController _controller = TextEditingController();
   late String? _selectedModelKey = widget.initialModelKey;
-  late String _selectedReasoning = widget.initialReasoning;
+  late String? _selectedReasoning = widget.initialReasoning;
+
+  _ComposerModelOption? _modelForKey(String? key) {
+    final lookupKey = key ?? widget.serverDefaultModelKey;
+    if (lookupKey == null || lookupKey.isEmpty) {
+      return null;
+    }
+    for (final option in widget.modelOptions) {
+      if (option.key == lookupKey) {
+        return option;
+      }
+    }
+    return null;
+  }
+
+  bool _isReasoningAllowed(String? reasoning, String? modelKey) {
+    if (reasoning == null || reasoning.isEmpty) {
+      return true;
+    }
+    return _modelForKey(modelKey)?.reasoningValues.contains(reasoning) ?? false;
+  }
 
   @override
   void didUpdateWidget(covariant _ComposerCard oldWidget) {
@@ -6783,8 +6790,7 @@ class _ComposerCardState extends State<_ComposerCard> {
     } else if (_selectedModelKey == null && widget.initialModelKey != null) {
       _selectedModelKey = widget.initialModelKey;
     }
-    const reasoningValues = <String>{'low', 'medium', 'high', 'xhigh'};
-    if (!reasoningValues.contains(_selectedReasoning)) {
+    if (!_isReasoningAllowed(_selectedReasoning, _selectedModelKey)) {
       _selectedReasoning = widget.initialReasoning;
     }
   }
@@ -6822,11 +6828,12 @@ class _ComposerCardState extends State<_ComposerCard> {
     final l10n = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
-    final reasoningOptions = <({String value, String label})>[
-      (value: 'low', label: l10n.shellComposerThinkingLow),
-      (value: 'medium', label: l10n.shellComposerThinkingBalanced),
-      (value: 'high', label: l10n.shellComposerThinkingDeep),
-      (value: 'xhigh', label: l10n.shellComposerThinkingMax),
+    final selectedModel = _modelForKey(_selectedModelKey);
+    final reasoningOptions = <({String? value, String label})>[
+      (value: null, label: l10n.shellComposerModelDefault),
+      ...?selectedModel?.reasoningValues.map(
+        (value) => (value: value, label: _reasoningLabel(l10n, value)),
+      ),
     ];
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -6930,13 +6937,19 @@ class _ComposerCardState extends State<_ComposerCard> {
                         : (value) {
                             setState(() {
                               _selectedModelKey = value;
+                              if (!_isReasoningAllowed(
+                                _selectedReasoning,
+                                value,
+                              )) {
+                                _selectedReasoning = null;
+                              }
                             });
                           },
                   ),
                 ),
                 SizedBox(
                   width: widget.compact ? 180 : 200,
-                  child: DropdownButtonFormField<String>(
+                  child: DropdownButtonFormField<String?>(
                     key: const ValueKey<String>('composer-reasoning-select'),
                     value: _selectedReasoning,
                     isExpanded: true,
@@ -6946,7 +6959,7 @@ class _ComposerCardState extends State<_ComposerCard> {
                     ),
                     items: reasoningOptions
                         .map(
-                          (option) => DropdownMenuItem<String>(
+                          (option) => DropdownMenuItem<String?>(
                             value: option.value,
                             child: Text(option.label),
                           ),
@@ -6955,9 +6968,6 @@ class _ComposerCardState extends State<_ComposerCard> {
                     onChanged: widget.submitting
                         ? null
                         : (value) {
-                            if (value == null) {
-                              return;
-                            }
                             setState(() {
                               _selectedReasoning = value;
                             });

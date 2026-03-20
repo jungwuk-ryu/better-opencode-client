@@ -24,7 +24,22 @@ void main() {
       if (request.uri.path == '/config/providers') {
         body = {
           'providers': [
-            {'id': 'openai'},
+            {
+              'id': 'openai',
+              'name': 'OpenAI',
+              'source': 'custom',
+              'env': ['OPENAI_API_KEY'],
+              'options': {},
+              'models': {
+                'gpt-5': {
+                  'id': 'gpt-5',
+                  'providerID': 'openai',
+                  'name': 'GPT-5',
+                  'status': 'active',
+                  'variants': {'low': {}, 'medium': {}},
+                },
+              },
+            },
           ],
           'default': {'openai': 'gpt-5'},
         };
@@ -60,6 +75,13 @@ void main() {
       (snapshot.providerConfig.toJson()['default'] as Map)['openai'],
       'gpt-5',
     );
+    expect(snapshot.providerCatalog.providers, hasLength(1));
+    expect(snapshot.providerCatalog.providers.single.id, 'openai');
+    expect(
+      snapshot.providerCatalog.providers.single.models['openai/gpt-5']?.id,
+      'gpt-5',
+    );
+    expect(snapshot.providerCatalog.defaults['openai'], 'gpt-5');
     service.dispose();
   });
 

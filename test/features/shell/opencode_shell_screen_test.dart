@@ -1652,7 +1652,61 @@ void main() {
     expect(chatService.sentPrompts.single.prompt, 'ship it');
     expect(chatService.sentPrompts.single.providerId, 'anthropic');
     expect(chatService.sentPrompts.single.modelId, 'claude-sonnet-4.5');
-    expect(chatService.sentPrompts.single.reasoning, 'xhigh');
+    expect(chatService.sentPrompts.single.reasoning, 'max');
+  });
+
+  testWidgets('composer thinking options come from the selected server model', (
+    tester,
+  ) async {
+    final configService = _ControlledConfigService(
+      snapshotsByScopeKey: <String, ConfigSnapshot>{
+        _scopeKeyFor(profile, project): _configSnapshotWithModelChoices(),
+      },
+    );
+
+    await pumpShellWithCapabilities(
+      tester,
+      size: const Size(1440, 1400),
+      capabilitiesToUse: capabilities,
+      chatService: _ControlledChatService(
+        bundlesByScopeKey: <String, ChatSessionBundle>{
+          _scopeKeyFor(profile, project): ChatSessionBundle(
+            sessions: <SessionSummary>[
+              _testSession(
+                'session-1',
+                'First session',
+                directory: project.directory,
+              ),
+            ],
+            statuses: const <String, SessionStatusSummary>{},
+            messages: <ChatMessage>[
+              _testMessage('session-1', text: 'First message'),
+            ],
+            selectedSessionId: 'session-1',
+          ),
+        },
+      ),
+      todoService: _RecordingTodoService(),
+      fileBrowserService: _ControlledFileBrowserService.empty(),
+      requestService: _ControlledRequestService.empty(),
+      configService: configService,
+      integrationStatusService: _ControlledIntegrationStatusService.empty(),
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('composer-model-select')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('openai / gpt-5-mini').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('composer-reasoning-select')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Minimal').last, findsOneWidget);
+    expect(find.text('Balanced'), findsNothing);
   });
 
   testWidgets('uncached project swap clears stale shell state immediately', (
@@ -2496,14 +2550,62 @@ ConfigSnapshot _configSnapshotWithModelChoices() {
     config: RawJsonDocument(<String, Object?>{
       'mode': 'demo-mode',
       'model': 'openai/gpt-5',
-      'reasoning': 'medium',
     }),
     providerConfig: RawJsonDocument(<String, Object?>{
-      'openai': <String, Object?>{
-        'models': <String>['gpt-5', 'gpt-5-mini'],
-      },
-      'anthropic': <String, Object?>{
-        'models': <String>['claude-sonnet-4.5'],
+      'providers': <Object?>[
+        <String, Object?>{
+          'id': 'openai',
+          'name': 'OpenAI',
+          'source': 'custom',
+          'env': <String>['OPENAI_API_KEY'],
+          'options': <String, Object?>{},
+          'models': <String, Object?>{
+            'gpt-5': <String, Object?>{
+              'id': 'gpt-5',
+              'providerID': 'openai',
+              'name': 'GPT-5',
+              'status': 'active',
+              'variants': <String, Object?>{
+                'low': <String, Object?>{},
+                'medium': <String, Object?>{},
+                'high': <String, Object?>{},
+              },
+            },
+            'gpt-5-mini': <String, Object?>{
+              'id': 'gpt-5-mini',
+              'providerID': 'openai',
+              'name': 'GPT-5 Mini',
+              'status': 'active',
+              'variants': <String, Object?>{
+                'minimal': <String, Object?>{},
+                'low': <String, Object?>{},
+              },
+            },
+          },
+        },
+        <String, Object?>{
+          'id': 'anthropic',
+          'name': 'Anthropic',
+          'source': 'custom',
+          'env': <String>['ANTHROPIC_API_KEY'],
+          'options': <String, Object?>{},
+          'models': <String, Object?>{
+            'claude-sonnet-4.5': <String, Object?>{
+              'id': 'claude-sonnet-4.5',
+              'providerID': 'anthropic',
+              'name': 'Claude Sonnet 4.5',
+              'status': 'active',
+              'variants': <String, Object?>{
+                'high': <String, Object?>{},
+                'max': <String, Object?>{},
+              },
+            },
+          },
+        },
+      ],
+      'default': <String, Object?>{
+        'openai': 'gpt-5',
+        'anthropic': 'claude-sonnet-4.5',
       },
     }),
   );

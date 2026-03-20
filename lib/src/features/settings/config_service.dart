@@ -12,6 +12,228 @@ class ConfigSnapshot {
 
   final RawJsonDocument config;
   final RawJsonDocument providerConfig;
+
+  ProviderCatalog get providerCatalog =>
+      ProviderCatalog.fromJson(providerConfig.toJson());
+}
+
+class ProviderCatalog {
+  const ProviderCatalog({required this.providers, required this.defaults});
+
+  factory ProviderCatalog.fromJson(Map<String, Object?> json) {
+    final providers = switch (json['providers']) {
+      final List<Object?> list =>
+        list
+            .whereType<Map>()
+            .map(
+              (provider) =>
+                  ProviderDefinition.fromJson(provider.cast<String, Object?>()),
+            )
+            .toList(growable: false),
+      _ => _legacyProvidersFromJson(json),
+    };
+    final defaults = switch (json['default']) {
+      final Map<Object?, Object?> value => value.map(
+        (key, modelId) => MapEntry(key.toString(), modelId?.toString() ?? ''),
+      )..removeWhere((_, modelId) => modelId.trim().isEmpty),
+      _ => const <String, String>{},
+    };
+    return ProviderCatalog(providers: providers, defaults: defaults);
+  }
+
+  final List<ProviderDefinition> providers;
+  final Map<String, String> defaults;
+
+  ProviderModelDefinition? modelForKey(String key) {
+    for (final provider in providers) {
+      final model = provider.models[key];
+      if (model != null) {
+        return model;
+      }
+    }
+    return null;
+  }
+
+  static List<ProviderDefinition> _legacyProvidersFromJson(
+    Map<String, Object?> json,
+  ) {
+    final providers = <ProviderDefinition>[];
+    for (final entry in json.entries) {
+      if (entry.key == 'default' || entry.key == 'providers') {
+        continue;
+      }
+      final value = entry.value;
+      if (value is! Map) {
+        continue;
+      }
+      providers.add(
+        ProviderDefinition.fromLegacyJson(
+          id: entry.key,
+          json: value.cast<String, Object?>(),
+        ),
+      );
+    }
+    return providers;
+  }
+}
+
+class ProviderDefinition {
+  const ProviderDefinition({
+    required this.id,
+    required this.name,
+    required this.source,
+    required this.models,
+  });
+
+  factory ProviderDefinition.fromJson(Map<String, Object?> json) {
+    final id = json['id']?.toString().trim() ?? '';
+    final models = <String, ProviderModelDefinition>{};
+    final rawModels = json['models'];
+    if (rawModels is Map) {
+      for (final entry in rawModels.entries) {
+        final value = entry.value;
+        if (value is! Map) {
+          continue;
+        }
+        final model = ProviderModelDefinition.fromJson(
+          providerId: id,
+          modelKey: entry.key.toString(),
+          json: value.cast<String, Object?>(),
+        );
+        models[model.key] = model;
+      }
+    }
+    return ProviderDefinition(
+      id: id,
+      name: json['name']?.toString().trim().isNotEmpty == true
+          ? json['name']!.toString().trim()
+          : id,
+      source: json['source']?.toString().trim() ?? '',
+      models: models,
+    );
+  }
+
+  factory ProviderDefinition.fromLegacyJson({
+    required String id,
+    required Map<String, Object?> json,
+  }) {
+    final models = <String, ProviderModelDefinition>{};
+    final rawModels = json['models'];
+    if (rawModels is List) {
+      for (final entry in rawModels) {
+        if (entry is String) {
+          final model = ProviderModelDefinition.legacy(
+            providerId: id,
+            modelId: entry,
+          );
+          models[model.key] = model;
+          continue;
+        }
+        if (entry is Map) {
+          final model = ProviderModelDefinition.fromJson(
+            providerId: entry['providerID']?.toString() ?? id,
+            modelKey:
+                entry['id']?.toString() ??
+                entry['modelID']?.toString() ??
+                entry['modelId']?.toString() ??
+                '',
+            json: entry.cast<String, Object?>(),
+          );
+          models[model.key] = model;
+        }
+      }
+    }
+    if (rawModels is Map) {
+      for (final entry in rawModels.entries) {
+        final value = entry.value;
+        if (value is! Map) {
+          continue;
+        }
+        final model = ProviderModelDefinition.fromJson(
+          providerId: id,
+          modelKey: entry.key.toString(),
+          json: value.cast<String, Object?>(),
+        );
+        models[model.key] = model;
+      }
+    }
+    return ProviderDefinition(
+      id: id,
+      name: json['name']?.toString().trim().isNotEmpty == true
+          ? json['name']!.toString().trim()
+          : id,
+      source: json['source']?.toString().trim() ?? '',
+      models: models,
+    );
+  }
+
+  final String id;
+  final String name;
+  final String source;
+  final Map<String, ProviderModelDefinition> models;
+}
+
+class ProviderModelDefinition {
+  const ProviderModelDefinition({
+    required this.id,
+    required this.providerId,
+    required this.name,
+    required this.status,
+    required this.reasoningVariants,
+  });
+
+  factory ProviderModelDefinition.fromJson({
+    required String providerId,
+    required String modelKey,
+    required Map<String, Object?> json,
+  }) {
+    final id = json['id']?.toString().trim().isNotEmpty == true
+        ? json['id']!.toString().trim()
+        : modelKey.trim();
+    final variants = <String>[];
+    final rawVariants = json['variants'];
+    if (rawVariants is Map) {
+      for (final entry in rawVariants.keys) {
+        final value = entry.toString().trim();
+        if (value.isEmpty) {
+          continue;
+        }
+        variants.add(value);
+      }
+    }
+    return ProviderModelDefinition(
+      id: id,
+      providerId: json['providerID']?.toString().trim().isNotEmpty == true
+          ? json['providerID']!.toString().trim()
+          : providerId,
+      name: json['name']?.toString().trim().isNotEmpty == true
+          ? json['name']!.toString().trim()
+          : id,
+      status: json['status']?.toString().trim() ?? '',
+      reasoningVariants: variants,
+    );
+  }
+
+  factory ProviderModelDefinition.legacy({
+    required String providerId,
+    required String modelId,
+  }) {
+    return ProviderModelDefinition(
+      id: modelId.trim(),
+      providerId: providerId.trim(),
+      name: modelId.trim(),
+      status: '',
+      reasoningVariants: const <String>[],
+    );
+  }
+
+  final String id;
+  final String providerId;
+  final String name;
+  final String status;
+  final List<String> reasoningVariants;
+
+  String get key => '$providerId/$id';
 }
 
 class ConfigService {
