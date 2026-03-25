@@ -165,6 +165,59 @@ void main() {
     );
   });
 
+  testWidgets('compaction renders as a divider instead of an activity card', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      initialShellToolPartsExpanded: true,
+      initialTimelineProgressDetailsVisible: false,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _TimelineWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(
+      find.byKey(const ValueKey<String>('timeline-compaction-part_compaction')),
+      findsOneWidget,
+    );
+    expect(find.text('Session compacted'), findsOneWidget);
+    expect(find.text('Goal'), findsOneWidget);
+    expect(find.textContaining('id: prt_compaction_1'), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('timeline-activity-part_compaction')),
+      findsNothing,
+    );
+  });
+
   testWidgets(
     'step and to-do details stay hidden by default and can be shown from settings',
     (tester) async {
@@ -439,6 +492,31 @@ class _TimelineWorkspaceController extends WorkspaceController {
               },
             ],
           },
+        ),
+      ],
+    ),
+    const ChatMessage(
+      info: ChatMessageInfo(
+        id: 'msg_assistant_2',
+        role: 'assistant',
+        sessionId: 'ses_1',
+      ),
+      parts: <ChatPart>[
+        ChatPart(
+          id: 'part_compaction',
+          type: 'compaction',
+          metadata: <String, Object?>{
+            'id': 'prt_compaction_1',
+            'sessionID': 'ses_1',
+            'messageID': 'msg_assistant_2',
+            'type': 'compaction',
+          },
+        ),
+        ChatPart(
+          id: 'part_compaction_text',
+          type: 'text',
+          text:
+              'Goal\n\nCreate and implement the planned architecture for the repo workflow.',
         ),
       ],
     ),

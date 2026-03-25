@@ -4901,8 +4901,8 @@ class _TimelinePart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final body = _partText(part);
     if (part.type == 'text') {
+      final body = _partText(part);
       if (body.trim().isEmpty) {
         return const SizedBox.shrink();
       }
@@ -4913,6 +4913,13 @@ class _TimelinePart extends StatelessWidget {
         animate: _shouldAnimateStreamingText(part, textStreamingActive),
       );
     }
+    if (part.type == 'compaction') {
+      return _TimelineCompactionDivider(
+        key: ValueKey<String>('timeline-compaction-${part.id}'),
+        label: _partTitle(part),
+      );
+    }
+    final body = _partText(part);
     final linkedSession = _partLinkedSession(
       part,
       sessions: sessions,
@@ -4950,6 +4957,41 @@ class _TimelinePart extends StatelessWidget {
       );
     }
     return _StructuredTextBlock(text: body);
+  }
+}
+
+class _TimelineCompactionDivider extends StatelessWidget {
+  const _TimelineCompactionDivider({required this.label, super.key});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Divider(color: surfaces.lineSoft, thickness: 1, height: 1),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+            child: Text(
+              label,
+              style: theme.textTheme.titleSmall?.copyWith(
+                color: surfaces.muted,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Divider(color: surfaces.lineSoft, thickness: 1, height: 1),
+          ),
+        ],
+      ),
+    );
   }
 }
 
