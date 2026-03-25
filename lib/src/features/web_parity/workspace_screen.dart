@@ -12,6 +12,7 @@ import '../chat/chat_models.dart';
 import '../files/file_models.dart';
 import '../projects/project_models.dart';
 import '../requests/request_models.dart';
+import '../settings/agent_service.dart';
 import '../terminal/terminal_service.dart';
 import '../tools/todo_models.dart';
 import 'workspace_controller.dart';
@@ -29,7 +30,8 @@ class WebParityWorkspaceScreen extends StatefulWidget {
   final String? sessionId;
 
   @override
-  State<WebParityWorkspaceScreen> createState() => _WebParityWorkspaceScreenState();
+  State<WebParityWorkspaceScreen> createState() =>
+      _WebParityWorkspaceScreenState();
 }
 
 class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
@@ -233,10 +235,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                 ),
                 const SizedBox(height: AppSpacing.lg),
                 FilledButton(
-                  onPressed: () => Navigator.of(context).pushNamedAndRemoveUntil(
-                    '/',
-                    (route) => false,
-                  ),
+                  onPressed: () => Navigator.of(
+                    context,
+                  ).pushNamedAndRemoveUntil('/', (route) => false),
                   child: const Text('Back Home'),
                 ),
               ],
@@ -259,9 +260,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
           sessions: controller.sessions,
           statuses: controller.statuses,
           onSelectProject: (project) {
-            Navigator.of(context).pushReplacementNamed(
-              buildWorkspaceRoute(project.directory),
-            );
+            Navigator.of(
+              context,
+            ).pushReplacementNamed(buildWorkspaceRoute(project.directory));
           },
           onSelectSession: (sessionId) {
             Navigator.of(context).pushReplacementNamed(
@@ -269,9 +270,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
             );
           },
           onNewSession: () {
-            Navigator.of(context).pushReplacementNamed(
-              buildWorkspaceRoute(widget.directory),
-            );
+            Navigator.of(
+              context,
+            ).pushReplacementNamed(buildWorkspaceRoute(widget.directory));
           },
           onOpenSettings: () => _showPlaceholderDialog(
             'Settings',
@@ -300,11 +301,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                         session: controller.selectedSession,
                         status: controller.selectedStatus,
                         terminalOpen: controller.terminalOpen,
-                        onBackHome: () =>
-                            Navigator.of(context).pushNamedAndRemoveUntil(
-                              '/',
-                              (route) => false,
-                            ),
+                        onBackHome: () => Navigator.of(
+                          context,
+                        ).pushNamedAndRemoveUntil('/', (route) => false),
                         onOpenDrawer: compact
                             ? () => _scaffoldKey.currentState?.openDrawer()
                             : null,
@@ -337,13 +336,16 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                 if (!context.mounted) {
                                   return;
                                 }
-                                final nextRoute = controller.selectedSessionId == null
+                                final nextRoute =
+                                    controller.selectedSessionId == null
                                     ? buildWorkspaceRoute(widget.directory)
                                     : buildWorkspaceRoute(
                                         widget.directory,
                                         sessionId: controller.selectedSessionId,
                                       );
-                                Navigator.of(context).pushReplacementNamed(nextRoute);
+                                Navigator.of(
+                                  context,
+                                ).pushReplacementNamed(nextRoute);
                               },
                       ),
                       Expanded(
@@ -352,8 +354,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                             : controller.error != null
                             ? _WorkspaceError(
                                 error: controller.error!,
-                                onBackHome: () =>
-                                    Navigator.of(context).pushNamedAndRemoveUntil(
+                                onBackHome: () => Navigator.of(context)
+                                    .pushNamedAndRemoveUntil(
                                       '/',
                                       (route) => false,
                                     ),
@@ -375,9 +377,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                   });
                                 },
                                 onSubmitPrompt: _submitPrompt,
-                                onRunCommand: () => controller.runTerminalCommand(
-                                  _terminalController.text,
-                                ),
+                                onRunCommand: () =>
+                                    controller.runTerminalCommand(
+                                      _terminalController.text,
+                                    ),
                               ),
                       ),
                     ],
@@ -649,11 +652,12 @@ class _WorkspaceSidebar extends StatelessWidget {
                             alignment: Alignment.center,
                             decoration: BoxDecoration(
                               color: selected
-                                  ? Theme.of(
-                                      context,
-                                    ).colorScheme.primary.withValues(alpha: 0.16)
+                                  ? Theme.of(context).colorScheme.primary
+                                        .withValues(alpha: 0.16)
                                   : surfaces.panelRaised,
-                              borderRadius: BorderRadius.circular(AppSpacing.md),
+                              borderRadius: BorderRadius.circular(
+                                AppSpacing.md,
+                              ),
                               border: Border.all(
                                 color: selected
                                     ? Theme.of(context).colorScheme.primary
@@ -709,9 +713,7 @@ class _WorkspaceSidebar extends StatelessWidget {
                     child: sessions.isEmpty
                         ? Text(
                             'Start a new session to begin.',
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodyMedium
+                            style: Theme.of(context).textTheme.bodyMedium
                                 ?.copyWith(color: surfaces.muted),
                           )
                         : ListView.separated(
@@ -729,10 +731,8 @@ class _WorkspaceSidebar extends StatelessWidget {
                                   ),
                                 ),
                                 tileColor: selected
-                                    ? Theme.of(context)
-                                        .colorScheme
-                                        .primary
-                                        .withValues(alpha: 0.12)
+                                    ? Theme.of(context).colorScheme.primary
+                                          .withValues(alpha: 0.12)
                                     : null,
                                 title: Text(
                                   session.title.isEmpty
@@ -766,7 +766,9 @@ String _projectInitial(ProjectTarget project) {
       return '';
     }
     final normalized = trimmed.replaceAll('\\', '/');
-    final segments = normalized.split('/').where((segment) => segment.isNotEmpty);
+    final segments = normalized
+        .split('/')
+        .where((segment) => segment.isNotEmpty);
     if (segments.isNotEmpty) {
       return segments.last;
     }
@@ -837,6 +839,15 @@ class _WorkspaceBody extends StatelessWidget {
         _PromptComposer(
           controller: promptController,
           submitting: controller.submittingPrompt,
+          agents: controller.composerAgents,
+          models: controller.composerModels,
+          selectedAgentName: controller.selectedAgentName,
+          selectedModel: controller.selectedModel,
+          selectedReasoning: controller.selectedReasoning,
+          reasoningValues: controller.availableReasoningValues,
+          onSelectAgent: controller.selectAgent,
+          onSelectModel: controller.selectModel,
+          onSelectReasoning: controller.selectReasoning,
           onSubmit: onSubmitPrompt,
         ),
         if (controller.terminalOpen || controller.lastShellResult != null)
@@ -880,7 +891,8 @@ class _WorkspaceBody extends StatelessWidget {
 String _compactSideLabel(WorkspaceController controller) {
   final reviewCount = controller.fileBundle?.statuses.length ?? 0;
   return switch (controller.sideTab) {
-    WorkspaceSideTab.review when reviewCount > 0 => '$reviewCount Files Changed',
+    WorkspaceSideTab.review when reviewCount > 0 =>
+      '$reviewCount Files Changed',
     WorkspaceSideTab.review => 'Review',
     WorkspaceSideTab.files => 'Files',
     WorkspaceSideTab.context => 'Context',
@@ -981,16 +993,37 @@ class _PromptComposer extends StatelessWidget {
   const _PromptComposer({
     required this.controller,
     required this.submitting,
+    required this.agents,
+    required this.models,
+    required this.selectedAgentName,
+    required this.selectedModel,
+    required this.selectedReasoning,
+    required this.reasoningValues,
+    required this.onSelectAgent,
+    required this.onSelectModel,
+    required this.onSelectReasoning,
     required this.onSubmit,
   });
 
+  static const String _defaultReasoningSentinel = '__default_reasoning__';
+
   final TextEditingController controller;
   final bool submitting;
+  final List<AgentDefinition> agents;
+  final List<WorkspaceComposerModelOption> models;
+  final String? selectedAgentName;
+  final WorkspaceComposerModelOption? selectedModel;
+  final String? selectedReasoning;
+  final List<String> reasoningValues;
+  final ValueChanged<String?> onSelectAgent;
+  final ValueChanged<String?> onSelectModel;
+  final ValueChanged<String?> onSelectReasoning;
   final VoidCallback onSubmit;
 
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final reasoningLabel = _reasoningLabel(selectedReasoning);
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.md,
@@ -1029,25 +1062,71 @@ class _PromptComposer extends StatelessWidget {
                     hintText: 'Ask anything...',
                     contentPadding: EdgeInsets.zero,
                   ),
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    height: 1.55,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyLarge?.copyWith(height: 1.55),
                   onSubmitted: (_) => onSubmit(),
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 Row(
                   children: <Widget>[
-                    _ComposerIconButton(
-                      icon: Icons.add_rounded,
-                      onTap: () {},
+                    _ComposerIconButton(icon: Icons.add_rounded, onTap: () {}),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: <Widget>[
+                            _ComposerSelectionPill(
+                              label: selectedAgentName ?? 'Agent',
+                              onTap: agents.isEmpty
+                                  ? null
+                                  : () async {
+                                      final selection = await _showAgentPicker(
+                                        context,
+                                      );
+                                      if (selection != null) {
+                                        onSelectAgent(selection);
+                                      }
+                                    },
+                            ),
+                            const SizedBox(width: AppSpacing.xs),
+                            _ComposerSelectionPill(
+                              label: selectedModel?.name ?? 'Model',
+                              onTap: models.isEmpty
+                                  ? null
+                                  : () async {
+                                      final selection = await _showModelPicker(
+                                        context,
+                                      );
+                                      if (selection != null) {
+                                        onSelectModel(selection);
+                                      }
+                                    },
+                            ),
+                            const SizedBox(width: AppSpacing.xs),
+                            _ComposerSelectionPill(
+                              label: reasoningLabel,
+                              onTap: selectedModel == null
+                                  ? null
+                                  : () async {
+                                      final selection =
+                                          await _showReasoningPicker(context);
+                                      if (selection == null) {
+                                        return;
+                                      }
+                                      onSelectReasoning(
+                                        selection == _defaultReasoningSentinel
+                                            ? null
+                                            : selection,
+                                      );
+                                    },
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                     const SizedBox(width: AppSpacing.sm),
-                    const _ComposerMetaPill(label: 'Sisyphus'),
-                    const SizedBox(width: AppSpacing.xs),
-                    const _ComposerMetaPill(label: 'GPT-5.4'),
-                    const SizedBox(width: AppSpacing.xs),
-                    const _ComposerMetaPill(label: 'Medium'),
-                    const Spacer(),
                     _ComposerIconButton(
                       icon: Icons.arrow_upward_rounded,
                       onTap: submitting ? null : onSubmit,
@@ -1060,6 +1139,132 @@ class _PromptComposer extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Future<String?> _showAgentPicker(BuildContext context) {
+    return showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => _SearchableSelectionSheet<_AgentChoice>(
+        title: 'Select Agent',
+        searchHint: 'Search agents',
+        items: agents
+            .map(
+              (agent) => _AgentChoice(
+                value: agent.name,
+                title: agent.name,
+                subtitle: agent.description,
+              ),
+            )
+            .toList(growable: false),
+        selectedValue: selectedAgentName,
+        matchesQuery: (item, query) {
+          final q = query.toLowerCase();
+          return item.title.toLowerCase().contains(q) ||
+              (item.subtitle?.toLowerCase().contains(q) ?? false);
+        },
+        onSelected: (item) => Navigator.of(context).pop(item.value),
+        titleBuilder: (item) => item.title,
+        subtitleBuilder: (item) => item.subtitle,
+        valueOf: (item) => item.value,
+      ),
+    );
+  }
+
+  Future<String?> _showModelPicker(BuildContext context) {
+    final grouped = <String, List<WorkspaceComposerModelOption>>{};
+    for (final model in models) {
+      grouped
+          .putIfAbsent(
+            model.providerName,
+            () => <WorkspaceComposerModelOption>[],
+          )
+          .add(model);
+    }
+
+    final items =
+        grouped.entries
+            .map(
+              (entry) => _GroupedSelectionItems<WorkspaceComposerModelOption>(
+                title: entry.key,
+                items: entry.value
+                  ..sort(
+                    (left, right) => left.name.toLowerCase().compareTo(
+                      right.name.toLowerCase(),
+                    ),
+                  ),
+              ),
+            )
+            .toList(growable: false)
+          ..sort(
+            (left, right) =>
+                left.title.toLowerCase().compareTo(right.title.toLowerCase()),
+          );
+
+    return showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) =>
+          _GroupedSelectionSheet<WorkspaceComposerModelOption>(
+            title: 'Select Model',
+            searchHint: 'Search models',
+            groups: items,
+            selectedValue: selectedModel?.key,
+            matchesQuery: (item, query) {
+              final q = query.toLowerCase();
+              return item.name.toLowerCase().contains(q) ||
+                  item.modelId.toLowerCase().contains(q) ||
+                  item.providerName.toLowerCase().contains(q) ||
+                  item.providerId.toLowerCase().contains(q);
+            },
+            onSelected: (item) => Navigator.of(context).pop(item.key),
+            titleBuilder: (item) => item.name,
+            subtitleBuilder: (item) => item.providerName,
+            valueOf: (item) => item.key,
+            trailingBuilder: (item) => item.reasoningValues.isEmpty
+                ? null
+                : Text(
+                    '${item.reasoningValues.length} variants',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).extension<AppSurfaces>()!.muted,
+                    ),
+                  ),
+          ),
+    );
+  }
+
+  Future<String?> _showReasoningPicker(BuildContext context) {
+    final options = <_ReasoningChoice>[
+      const _ReasoningChoice(
+        value: _defaultReasoningSentinel,
+        label: 'Default',
+      ),
+      ...reasoningValues.map(
+        (value) =>
+            _ReasoningChoice(value: value, label: _reasoningLabel(value)),
+      ),
+    ];
+    return showModalBottomSheet<String?>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _SearchableSelectionSheet<_ReasoningChoice>(
+        title: 'Reasoning',
+        searchHint: 'Search variants',
+        items: options,
+        selectedValue: selectedReasoning ?? _defaultReasoningSentinel,
+        matchesQuery: (item, query) {
+          final q = query.toLowerCase();
+          return item.label.toLowerCase().contains(q) ||
+              (item.value?.toLowerCase().contains(q) ?? false);
+        },
+        onSelected: (item) => Navigator.of(context).pop(item.value),
+        titleBuilder: (item) => item.label,
+        subtitleBuilder: (item) => item.value,
+        valueOf: (item) => item.value,
       ),
     );
   }
@@ -1083,9 +1288,7 @@ class _CompactPaneSwitcher extends StatelessWidget {
       height: 52,
       decoration: BoxDecoration(
         color: surfaces.panel,
-        border: Border(
-          bottom: BorderSide(color: surfaces.lineSoft),
-        ),
+        border: Border(bottom: BorderSide(color: surfaces.lineSoft)),
       ),
       child: Row(
         children: <Widget>[
@@ -1196,9 +1399,9 @@ class _TerminalPanel extends StatelessWidget {
                     if (lastResult != null)
                       Text(
                         'session ${lastResult!.sessionId}',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: surfaces.muted,
-                        ),
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
                       ),
                   ],
                 ),
@@ -1330,9 +1533,9 @@ class _StructuredTextBlock extends StatelessWidget {
               if (language != null && language.isNotEmpty) ...<Widget>[
                 Text(
                   language.toUpperCase(),
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: surfaces.muted,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelMedium?.copyWith(color: surfaces.muted),
                 ),
                 const SizedBox(height: AppSpacing.sm),
               ],
@@ -1446,9 +1649,7 @@ class _InlineCodeText extends StatelessWidget {
     if (cursor < text.length) {
       spans.add(TextSpan(text: text.substring(cursor)));
     }
-    return Text.rich(
-      TextSpan(style: baseStyle, children: spans),
-    );
+    return Text.rich(TextSpan(style: baseStyle, children: spans));
   }
 }
 
@@ -1479,7 +1680,11 @@ class _ToolCard extends StatelessWidget {
         children: <Widget>[
           Row(
             children: <Widget>[
-              Icon(icon, size: 16, color: Theme.of(context).colorScheme.primary),
+              Icon(
+                icon,
+                size: 16,
+                color: Theme.of(context).colorScheme.primary,
+              ),
               const SizedBox(width: AppSpacing.xs),
               Text(title, style: Theme.of(context).textTheme.titleSmall),
             ],
@@ -1539,9 +1744,7 @@ class _ComposerIconButton extends StatelessWidget {
         decoration: BoxDecoration(
           color: color,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: filled ? color : surfaces.lineSoft,
-          ),
+          border: Border.all(color: filled ? color : surfaces.lineSoft),
         ),
         child: Center(
           child: busy
@@ -1560,36 +1763,420 @@ class _ComposerIconButton extends StatelessWidget {
   }
 }
 
-class _ComposerMetaPill extends StatelessWidget {
-  const _ComposerMetaPill({required this.label});
+class _ComposerSelectionPill extends StatelessWidget {
+  const _ComposerSelectionPill({required this.label, required this.onTap});
 
   final String label;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: AppSpacing.xs,
-      ),
-      decoration: BoxDecoration(
-        color: surfaces.panelRaised,
-        borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
-        border: Border.all(color: surfaces.lineSoft),
-      ),
-      child: Text(
-        label,
-        style: Theme.of(
-          context,
-        ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
+    final enabled = onTap != null;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 220),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm,
+          vertical: AppSpacing.xs,
+        ),
+        decoration: BoxDecoration(
+          color: surfaces.panelRaised,
+          borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
+          border: Border.all(color: surfaces.lineSoft),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Flexible(
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: enabled ? null : surfaces.muted,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Icon(
+              Icons.keyboard_arrow_down_rounded,
+              size: 16,
+              color: enabled ? surfaces.muted : surfaces.lineSoft,
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
+class _AgentChoice {
+  const _AgentChoice({required this.value, required this.title, this.subtitle});
+
+  final String value;
+  final String title;
+  final String? subtitle;
+}
+
+class _ReasoningChoice {
+  const _ReasoningChoice({required this.value, required this.label});
+
+  final String? value;
+  final String label;
+}
+
+class _SearchableSelectionSheet<T> extends StatefulWidget {
+  const _SearchableSelectionSheet({
+    required this.title,
+    required this.searchHint,
+    required this.items,
+    required this.selectedValue,
+    required this.matchesQuery,
+    required this.onSelected,
+    required this.titleBuilder,
+    required this.valueOf,
+    this.subtitleBuilder,
+  });
+
+  final String title;
+  final String searchHint;
+  final List<T> items;
+  final String? selectedValue;
+  final bool Function(T item, String query) matchesQuery;
+  final void Function(T item) onSelected;
+  final String Function(T item) titleBuilder;
+  final String? Function(T item)? subtitleBuilder;
+  final String? Function(T item) valueOf;
+
+  @override
+  State<_SearchableSelectionSheet<T>> createState() =>
+      _SearchableSelectionSheetState<T>();
+}
+
+class _SearchableSelectionSheetState<T>
+    extends State<_SearchableSelectionSheet<T>> {
+  String _query = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final filtered = _query.trim().isEmpty
+        ? widget.items
+        : widget.items
+              .where((item) => widget.matchesQuery(item, _query.trim()))
+              .toList(growable: false);
+
+    return _SelectionSheetFrame(
+      title: widget.title,
+      searchHint: widget.searchHint,
+      onSearchChanged: (value) {
+        setState(() {
+          _query = value;
+        });
+      },
+      child: ListView.separated(
+        shrinkWrap: true,
+        itemCount: filtered.length,
+        separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.xs),
+        itemBuilder: (context, index) {
+          final item = filtered[index];
+          final selected = widget.valueOf(item) == widget.selectedValue;
+          return _SelectionTile(
+            title: widget.titleBuilder(item),
+            subtitle: widget.subtitleBuilder?.call(item),
+            selected: selected,
+            onTap: () => widget.onSelected(item),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _GroupedSelectionSheet<T> extends StatefulWidget {
+  const _GroupedSelectionSheet({
+    required this.title,
+    required this.searchHint,
+    required this.groups,
+    required this.selectedValue,
+    required this.matchesQuery,
+    required this.onSelected,
+    required this.titleBuilder,
+    required this.valueOf,
+    this.subtitleBuilder,
+    this.trailingBuilder,
+  });
+
+  final String title;
+  final String searchHint;
+  final List<_GroupedSelectionItems<T>> groups;
+  final String? selectedValue;
+  final bool Function(T item, String query) matchesQuery;
+  final void Function(T item) onSelected;
+  final String Function(T item) titleBuilder;
+  final String? Function(T item)? subtitleBuilder;
+  final Widget? Function(T item)? trailingBuilder;
+  final String? Function(T item) valueOf;
+
+  @override
+  State<_GroupedSelectionSheet<T>> createState() =>
+      _GroupedSelectionSheetState<T>();
+}
+
+class _GroupedSelectionSheetState<T> extends State<_GroupedSelectionSheet<T>> {
+  String _query = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final sections = widget.groups
+        .map((group) {
+          final items = _query.trim().isEmpty
+              ? group.items
+              : group.items
+                    .where((item) => widget.matchesQuery(item, _query.trim()))
+                    .toList(growable: false);
+          return _GroupedSelectionItems<T>(title: group.title, items: items);
+        })
+        .where((group) => group.items.isNotEmpty)
+        .toList(growable: false);
+
+    return _SelectionSheetFrame(
+      title: widget.title,
+      searchHint: widget.searchHint,
+      onSearchChanged: (value) {
+        setState(() {
+          _query = value;
+        });
+      },
+      child: ListView.builder(
+        shrinkWrap: true,
+        itemCount: sections.length,
+        itemBuilder: (context, index) {
+          final group = sections[index];
+          return Padding(
+            padding: EdgeInsets.only(
+              bottom: index == sections.length - 1 ? 0 : AppSpacing.md,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.xs,
+                    vertical: AppSpacing.sm,
+                  ),
+                  child: Text(
+                    group.title,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: Theme.of(context).extension<AppSurfaces>()!.muted,
+                    ),
+                  ),
+                ),
+                ...group.items.map(
+                  (item) => Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                    child: _SelectionTile(
+                      title: widget.titleBuilder(item),
+                      subtitle: widget.subtitleBuilder?.call(item),
+                      trailing: widget.trailingBuilder?.call(item),
+                      selected: widget.valueOf(item) == widget.selectedValue,
+                      onTap: () => widget.onSelected(item),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _GroupedSelectionItems<T> {
+  const _GroupedSelectionItems({required this.title, required this.items});
+
+  final String title;
+  final List<T> items;
+}
+
+class _SelectionSheetFrame extends StatelessWidget {
+  const _SelectionSheetFrame({
+    required this.title,
+    required this.searchHint,
+    required this.onSearchChanged,
+    required this.child,
+  });
+
+  final String title;
+  final String searchHint;
+  final ValueChanged<String> onSearchChanged;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final mediaQuery = MediaQuery.of(context);
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          AppSpacing.md,
+          AppSpacing.md,
+          AppSpacing.md,
+          AppSpacing.md + mediaQuery.viewInsets.bottom,
+        ),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560, maxHeight: 520),
+            child: Material(
+              color: surfaces.panel,
+              borderRadius: BorderRadius.circular(24),
+              child: Container(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: surfaces.lineSoft),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(title, style: Theme.of(context).textTheme.titleLarge),
+                    const SizedBox(height: AppSpacing.md),
+                    TextField(
+                      onChanged: onSearchChanged,
+                      decoration: InputDecoration(
+                        hintText: searchHint,
+                        prefixIcon: const Icon(Icons.search_rounded),
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    Flexible(child: child),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SelectionTile extends StatelessWidget {
+  const _SelectionTile({
+    required this.title,
+    required this.selected,
+    required this.onTap,
+    this.subtitle,
+    this.trailing,
+  });
+
+  final String title;
+  final String? subtitle;
+  final Widget? trailing;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.sm,
+        ),
+        decoration: BoxDecoration(
+          color: selected
+              ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.14)
+              : surfaces.panelRaised,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: selected
+                ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.4)
+                : surfaces.lineSoft,
+          ),
+        ),
+        child: Row(
+          children: <Widget>[
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (subtitle != null &&
+                      subtitle!.trim().isNotEmpty) ...<Widget>[
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle!,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (trailing != null) ...<Widget>[
+              const SizedBox(width: AppSpacing.sm),
+              trailing!,
+            ],
+            if (selected) ...<Widget>[
+              const SizedBox(width: AppSpacing.sm),
+              Icon(
+                Icons.check_rounded,
+                size: 18,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _reasoningLabel(String? value) {
+  return switch (value?.trim().toLowerCase()) {
+    null || '' => 'Default',
+    'none' => 'None',
+    'low' => 'Low',
+    'medium' => 'Medium',
+    'high' => 'High',
+    'xhigh' || 'max' => 'Xhigh',
+    final other => _titleCase(other),
+  };
+}
+
+String _titleCase(String value) {
+  final words = value
+      .split(RegExp(r'[_\\-]+'))
+      .where((part) => part.trim().isNotEmpty)
+      .map((part) => '${part[0].toUpperCase()}${part.substring(1)}');
+  final joined = words.join(' ');
+  return joined.isEmpty ? value : joined;
+}
+
 String _messageBody(ChatMessage message) {
-  return message.parts.map(_partText).where((value) => value.isNotEmpty).join('\n\n');
+  return message.parts
+      .map(_partText)
+      .where((value) => value.isNotEmpty)
+      .join('\n\n');
 }
 
 String _partText(ChatPart part) {
@@ -1624,8 +2211,16 @@ String _partText(ChatPart part) {
 
 bool _isToolLikePart(ChatPart part) {
   return switch (part.type) {
-    'tool' || 'reasoning' || 'step-start' || 'step-finish' || 'patch' ||
-    'snapshot' || 'retry' || 'agent' || 'subtask' || 'compaction' => true,
+    'tool' ||
+    'reasoning' ||
+    'step-start' ||
+    'step-finish' ||
+    'patch' ||
+    'snapshot' ||
+    'retry' ||
+    'agent' ||
+    'subtask' ||
+    'compaction' => true,
     _ => false,
   };
 }
@@ -1692,15 +2287,17 @@ class _SidePanel extends StatelessWidget {
         Expanded(
           child: switch (tab) {
             WorkspaceSideTab.review => _ReviewPanel(
-                statuses: controller.fileBundle?.statuses ?? const <FileStatusSummary>[],
-              ),
+              statuses:
+                  controller.fileBundle?.statuses ??
+                  const <FileStatusSummary>[],
+            ),
             WorkspaceSideTab.files => _FilesPanel(
-                bundle: controller.fileBundle,
-              ),
+              bundle: controller.fileBundle,
+            ),
             WorkspaceSideTab.context => _ContextPanel(
-                todos: controller.todos,
-                pendingRequests: controller.pendingRequests,
-              ),
+              todos: controller.todos,
+              pendingRequests: controller.pendingRequests,
+            ),
           },
         ),
       ],
@@ -1794,9 +2391,9 @@ class _FilesPanel extends StatelessWidget {
             child: SingleChildScrollView(
               child: SelectableText(
                 bundle.preview!.content,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  fontFamily: 'monospace',
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
               ),
             ),
           ),
@@ -1806,10 +2403,7 @@ class _FilesPanel extends StatelessWidget {
 }
 
 class _ContextPanel extends StatelessWidget {
-  const _ContextPanel({
-    required this.todos,
-    required this.pendingRequests,
-  });
+  const _ContextPanel({required this.todos, required this.pendingRequests});
 
   final List<TodoItem> todos;
   final PendingRequestBundle pendingRequests;
@@ -1837,7 +2431,10 @@ class _ContextPanel extends StatelessWidget {
             ),
           ),
         const SizedBox(height: AppSpacing.lg),
-        Text('Pending Requests', style: Theme.of(context).textTheme.titleMedium),
+        Text(
+          'Pending Requests',
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
         const SizedBox(height: AppSpacing.sm),
         ListTile(
           title: const Text('Questions'),
@@ -1880,10 +2477,7 @@ class _WorkspaceError extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: AppSpacing.lg),
-            FilledButton(
-              onPressed: onBackHome,
-              child: const Text('Back Home'),
-            ),
+            FilledButton(onPressed: onBackHome, child: const Text('Back Home')),
           ],
         ),
       ),

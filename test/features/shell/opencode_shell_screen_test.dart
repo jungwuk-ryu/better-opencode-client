@@ -3109,9 +3109,11 @@ class _ControlledChatService extends ChatService {
   final List<String> selectedMessagesSessionIds = <String>[];
   final List<
     ({
+      String? agent,
       String prompt,
       String? providerId,
       String? modelId,
+      String? variant,
       String? reasoning,
       String scopeSessionKey,
     })
@@ -3119,9 +3121,11 @@ class _ControlledChatService extends ChatService {
   sentPrompts =
       <
         ({
+          String? agent,
           String prompt,
           String? providerId,
           String? modelId,
+          String? variant,
           String? reasoning,
           String scopeSessionKey,
         })
@@ -3186,15 +3190,19 @@ class _ControlledChatService extends ChatService {
     required ProjectTarget project,
     required String sessionId,
     required String prompt,
+    String? agent,
     String? providerId,
     String? modelId,
+    String? variant,
     String? reasoning,
   }) async {
     final scopeSessionKey = _scopeSessionKey(profile, project, sessionId);
     sentPrompts.add((
+      agent: agent,
       prompt: prompt,
       providerId: providerId,
       modelId: modelId,
+      variant: variant,
       reasoning: reasoning,
       scopeSessionKey: scopeSessionKey,
     ));

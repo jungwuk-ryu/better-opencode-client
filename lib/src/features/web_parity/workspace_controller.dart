@@ -15,11 +15,31 @@ import '../projects/project_models.dart';
 import '../projects/project_store.dart';
 import '../requests/request_models.dart';
 import '../requests/request_service.dart';
+import '../settings/agent_service.dart';
+import '../settings/config_service.dart';
 import '../terminal/terminal_service.dart';
 import '../tools/todo_models.dart';
 import '../tools/todo_service.dart';
 
 enum WorkspaceSideTab { review, files, context }
+
+class WorkspaceComposerModelOption {
+  const WorkspaceComposerModelOption({
+    required this.key,
+    required this.providerId,
+    required this.providerName,
+    required this.modelId,
+    required this.name,
+    this.reasoningValues = const <String>[],
+  });
+
+  final String key;
+  final String providerId;
+  final String providerName;
+  final String modelId;
+  final String name;
+  final List<String> reasoningValues;
+}
 
 class WorkspaceController extends ChangeNotifier {
   WorkspaceController({
@@ -35,8 +55,11 @@ class WorkspaceController extends ChangeNotifier {
     EventStreamService? eventStreamService,
     TerminalService? terminalService,
     SessionActionService? sessionActionService,
+    ConfigService? configService,
+    AgentService? agentService,
   }) : _chatService = chatService ?? ChatService(),
-       _projectCatalogService = projectCatalogService ?? ProjectCatalogService(),
+       _projectCatalogService =
+           projectCatalogService ?? ProjectCatalogService(),
        _projectStore = projectStore ?? ProjectStore(),
        _fileBrowserService = fileBrowserService ?? FileBrowserService(),
        _todoService = todoService ?? TodoService(),
@@ -44,6 +67,8 @@ class WorkspaceController extends ChangeNotifier {
        _eventStreamService = eventStreamService ?? EventStreamService(),
        _terminalService = terminalService ?? TerminalService(),
        _sessionActionService = sessionActionService ?? SessionActionService(),
+       _configService = configService ?? ConfigService(),
+       _agentService = agentService ?? AgentService(),
        _ownsChatService = chatService == null,
        _ownsProjectCatalogService = projectCatalogService == null,
        _ownsFileBrowserService = fileBrowserService == null,
@@ -51,7 +76,9 @@ class WorkspaceController extends ChangeNotifier {
        _ownsRequestService = requestService == null,
        _ownsEventStreamService = eventStreamService == null,
        _ownsTerminalService = terminalService == null,
-       _ownsSessionActionService = sessionActionService == null;
+       _ownsSessionActionService = sessionActionService == null,
+       _ownsConfigService = configService == null,
+       _ownsAgentService = agentService == null;
 
   final ServerProfile profile;
   final String directory;
@@ -66,6 +93,8 @@ class WorkspaceController extends ChangeNotifier {
   final EventStreamService _eventStreamService;
   final TerminalService _terminalService;
   final SessionActionService _sessionActionService;
+  final ConfigService _configService;
+  final AgentService _agentService;
   final bool _ownsChatService;
   final bool _ownsProjectCatalogService;
   final bool _ownsFileBrowserService;
@@ -74,6 +103,8 @@ class WorkspaceController extends ChangeNotifier {
   final bool _ownsEventStreamService;
   final bool _ownsTerminalService;
   final bool _ownsSessionActionService;
+  final bool _ownsConfigService;
+  final bool _ownsAgentService;
 
   bool _disposed = false;
   bool _loading = true;
@@ -97,6 +128,14 @@ class WorkspaceController extends ChangeNotifier {
     permissions: <PermissionRequestSummary>[],
   );
   ShellCommandResult? _lastShellResult;
+  List<AgentDefinition> _composerAgents = const <AgentDefinition>[];
+  List<WorkspaceComposerModelOption> _composerModels =
+      const <WorkspaceComposerModelOption>[];
+  String? _selectedAgentName;
+  String? _selectedModelKey;
+  String? _selectedReasoning;
+  String? _serverDefaultModelKey;
+  String? _serverDefaultReasoning;
 
   bool get loading => _loading;
   bool get submittingPrompt => _submittingPrompt;
@@ -115,6 +154,43 @@ class WorkspaceController extends ChangeNotifier {
   List<TodoItem> get todos => _todos;
   PendingRequestBundle get pendingRequests => _pendingRequests;
   ShellCommandResult? get lastShellResult => _lastShellResult;
+  List<AgentDefinition> get composerAgents => _composerAgents;
+  List<WorkspaceComposerModelOption> get composerModels => _composerModels;
+  String? get selectedAgentName => _selectedAgentName;
+  String? get selectedModelKey => _selectedModelKey;
+  String? get selectedReasoning => _selectedReasoning;
+
+  WorkspaceComposerModelOption? get selectedModel {
+    final selectedModelKey = _selectedModelKey;
+    if (selectedModelKey == null || selectedModelKey.isEmpty) {
+      return _defaultComposerModel;
+    }
+    for (final option in _composerModels) {
+      if (option.key == selectedModelKey) {
+        return option;
+      }
+    }
+    return _defaultComposerModel;
+  }
+
+  AgentDefinition? get selectedAgent {
+    final selectedAgentName = _selectedAgentName;
+    if (selectedAgentName == null || selectedAgentName.isEmpty) {
+      return _defaultComposerAgent;
+    }
+    for (final agent in _composerAgents) {
+      if (agent.name == selectedAgentName) {
+        return agent;
+      }
+    }
+    return _defaultComposerAgent;
+  }
+
+  List<String> get availableReasoningValues {
+    return List<String>.unmodifiable(
+      selectedModel?.reasoningValues ?? const <String>[],
+    );
+  }
 
   SessionSummary? get selectedSession {
     final selectedSessionId = _selectedSessionId;
@@ -137,6 +213,61 @@ class WorkspaceController extends ChangeNotifier {
     return _statuses[selectedSessionId];
   }
 
+  void selectAgent(String? name) {
+    final agent = _findAgent(name) ?? _defaultComposerAgent;
+    if (agent == null) {
+      return;
+    }
+
+    _selectedAgentName = agent.name;
+    final preferredModelKey = agent.modelKey;
+    if (preferredModelKey.isNotEmpty && _findModel(preferredModelKey) != null) {
+      _selectedModelKey = preferredModelKey;
+    } else if (_findModel(_selectedModelKey) == null) {
+      _selectedModelKey =
+          _serverDefaultModelKey ??
+          (_composerModels.isEmpty ? null : _composerModels.first.key);
+    }
+
+    final preferredReasoning = _resolveReasoningForAgent(agent);
+    if (preferredReasoning != null) {
+      _selectedReasoning = preferredReasoning;
+    } else if (!_isReasoningAllowed(_selectedReasoning, _selectedModelKey)) {
+      _selectedReasoning = _fallbackReasoningForModel(_selectedModelKey);
+    }
+    _notify();
+  }
+
+  void selectModel(String? key) {
+    final normalized = key?.trim();
+    final nextKey = normalized != null && normalized.isNotEmpty
+        ? normalized
+        : null;
+    if (nextKey == _selectedModelKey) {
+      return;
+    }
+    _selectedModelKey = nextKey;
+    if (!_isReasoningAllowed(_selectedReasoning, nextKey)) {
+      _selectedReasoning = _fallbackReasoningForModel(nextKey);
+    }
+    _notify();
+  }
+
+  void selectReasoning(String? value) {
+    final normalized = value?.trim();
+    final nextValue = normalized != null && normalized.isNotEmpty
+        ? normalized
+        : null;
+    if (!_isReasoningAllowed(nextValue, _selectedModelKey)) {
+      return;
+    }
+    if (_selectedReasoning == nextValue) {
+      return;
+    }
+    _selectedReasoning = nextValue;
+    _notify();
+  }
+
   Future<void> load() async {
     _loading = true;
     _error = null;
@@ -155,7 +286,8 @@ class WorkspaceController extends ChangeNotifier {
       final resolvedProject = project;
 
       _project = resolvedProject;
-      _availableProjects = availableProjects.any(
+      _availableProjects =
+          availableProjects.any(
             (candidate) => candidate.directory == resolvedProject.directory,
           )
           ? availableProjects
@@ -167,6 +299,7 @@ class WorkspaceController extends ChangeNotifier {
         target: resolvedProject,
       );
 
+      await _loadComposerState(resolvedProject);
       final bundle = await _chatService.fetchBundle(
         profile: profile,
         project: resolvedProject,
@@ -184,8 +317,10 @@ class WorkspaceController extends ChangeNotifier {
           project: resolvedProject,
           sessionId: _selectedSessionId!,
         );
+        _restoreComposerSelectionFromMessages();
       } else {
         _messages = const <ChatMessage>[];
+        _applyDefaultComposerSelection();
       }
 
       await _loadProjectPanels();
@@ -217,17 +352,25 @@ class WorkspaceController extends ChangeNotifier {
       target: project,
     );
 
-    final bundle = await _chatService.fetchBundle(profile: profile, project: project);
+    await _loadComposerState(project);
+    final bundle = await _chatService.fetchBundle(
+      profile: profile,
+      project: project,
+    );
     _sessions = bundle.sessions;
     _statuses = bundle.statuses;
     _selectedSessionId =
-        bundle.selectedSessionId ?? _sessionIdHintForProject(project, bundle.sessions);
+        bundle.selectedSessionId ??
+        _sessionIdHintForProject(project, bundle.sessions);
     if (_selectedSessionId != null) {
       _messages = await _chatService.fetchMessages(
         profile: profile,
         project: project,
         sessionId: _selectedSessionId!,
       );
+      _restoreComposerSelectionFromMessages();
+    } else {
+      _applyDefaultComposerSelection();
     }
     await _loadProjectPanels();
     await _connectEvents();
@@ -248,6 +391,7 @@ class WorkspaceController extends ChangeNotifier {
     _notify();
 
     if (sessionId == null || sessionId.isEmpty) {
+      _applyDefaultComposerSelection();
       return;
     }
 
@@ -256,6 +400,7 @@ class WorkspaceController extends ChangeNotifier {
       project: _project!,
       sessionId: sessionId,
     );
+    _restoreComposerSelectionFromMessages();
     await _loadSessionPanels();
     await _persistSessionHint(sessionId);
     _notify();
@@ -264,6 +409,8 @@ class WorkspaceController extends ChangeNotifier {
   Future<String?> submitPrompt(String prompt) async {
     final trimmed = prompt.trim();
     final project = _project;
+    final selectedAgent = this.selectedAgent;
+    final selectedModel = this.selectedModel;
     if (project == null || trimmed.isEmpty) {
       return _selectedSessionId;
     }
@@ -288,12 +435,18 @@ class WorkspaceController extends ChangeNotifier {
         project: project,
         sessionId: sessionId,
         prompt: trimmed,
+        agent: selectedAgent?.name,
+        providerId: selectedModel?.providerId,
+        modelId: selectedModel?.modelId,
+        variant: _selectedReasoning,
+        reasoning: _selectedReasoning,
       );
       _messages = await _chatService.fetchMessages(
         profile: profile,
         project: project,
         sessionId: sessionId,
       );
+      _restoreComposerSelectionFromMessages();
       _statuses = await _reloadStatuses(project);
       await _loadSessionPanels();
       await _persistSessionHint(sessionId);
@@ -437,6 +590,263 @@ class WorkspaceController extends ChangeNotifier {
     _notify();
   }
 
+  Future<void> _loadComposerState(ProjectTarget project) async {
+    ConfigSnapshot? snapshot;
+    List<AgentDefinition> agents = const <AgentDefinition>[];
+
+    try {
+      snapshot = await _configService.fetch(profile: profile, project: project);
+    } catch (_) {
+      snapshot = null;
+    }
+
+    try {
+      agents = await _agentService.fetchAgents(profile: profile);
+    } catch (_) {
+      agents = const <AgentDefinition>[];
+    }
+
+    _composerAgents = agents
+        .where((agent) => agent.visible)
+        .toList(growable: false);
+    _composerModels = _buildComposerModelOptions(snapshot);
+    _serverDefaultModelKey = _resolveDefaultComposerModelKey(snapshot);
+    _serverDefaultReasoning = _resolveDefaultComposerReasoning(snapshot);
+
+    if (_findAgent(_selectedAgentName) == null) {
+      _selectedAgentName = null;
+    }
+    if (_findModel(_selectedModelKey) == null) {
+      _selectedModelKey = null;
+    }
+    if (!_isReasoningAllowed(_selectedReasoning, _selectedModelKey)) {
+      _selectedReasoning = null;
+    }
+    _applyDefaultComposerSelection();
+  }
+
+  void _applyDefaultComposerSelection() {
+    final agent = selectedAgent ?? _defaultComposerAgent;
+    if (agent != null) {
+      _selectedAgentName = agent.name;
+    }
+
+    final preferredModelKey = agent?.modelKey.isNotEmpty == true
+        ? agent!.modelKey
+        : null;
+    if (_findModel(_selectedModelKey) == null) {
+      _selectedModelKey =
+          _findModel(preferredModelKey)?.key ??
+          _findModel(_serverDefaultModelKey)?.key ??
+          (_composerModels.isEmpty ? null : _composerModels.first.key);
+    }
+
+    if (!_isReasoningAllowed(_selectedReasoning, _selectedModelKey)) {
+      _selectedReasoning = _fallbackReasoningForModel(_selectedModelKey);
+    }
+  }
+
+  void _restoreComposerSelectionFromMessages() {
+    ChatMessage? lastUser;
+    for (final message in _messages.reversed) {
+      if (message.info.role == 'user') {
+        lastUser = message;
+        break;
+      }
+    }
+
+    if (lastUser == null) {
+      _applyDefaultComposerSelection();
+      return;
+    }
+
+    final agent = _findAgent(lastUser.info.agent) ?? _defaultComposerAgent;
+    if (agent != null) {
+      _selectedAgentName = agent.name;
+    }
+
+    final messageModelKey = _normalizeModelKey(
+      providerId: lastUser.info.providerId,
+      modelId: lastUser.info.modelId,
+    );
+    _selectedModelKey =
+        _findModel(messageModelKey)?.key ??
+        _findModel(agent?.modelKey)?.key ??
+        _findModel(_serverDefaultModelKey)?.key ??
+        (_composerModels.isEmpty ? null : _composerModels.first.key);
+
+    final messageVariant = lastUser.info.variant?.trim();
+    if (_isReasoningAllowed(messageVariant, _selectedModelKey)) {
+      _selectedReasoning = messageVariant;
+    } else {
+      _selectedReasoning = _fallbackReasoningForModel(_selectedModelKey);
+    }
+  }
+
+  List<WorkspaceComposerModelOption> _buildComposerModelOptions(
+    ConfigSnapshot? snapshot,
+  ) {
+    if (snapshot == null) {
+      return const <WorkspaceComposerModelOption>[];
+    }
+
+    final options = <String, WorkspaceComposerModelOption>{};
+    final catalog = snapshot.providerCatalog;
+    for (final provider in catalog.providers) {
+      final models = provider.models.values.toList(growable: false)
+        ..sort((left, right) => left.name.compareTo(right.name));
+      for (final model in models) {
+        final key = '${provider.id}/${model.id}';
+        options[key] = WorkspaceComposerModelOption(
+          key: key,
+          providerId: provider.id,
+          providerName: provider.name,
+          modelId: model.id,
+          name: model.name,
+          reasoningValues: List<String>.unmodifiable(model.reasoningVariants),
+        );
+      }
+    }
+    final values = options.values.toList(growable: false)
+      ..sort((left, right) {
+        final providerCompare = left.providerName.toLowerCase().compareTo(
+          right.providerName.toLowerCase(),
+        );
+        if (providerCompare != 0) {
+          return providerCompare;
+        }
+        return left.name.toLowerCase().compareTo(right.name.toLowerCase());
+      });
+    return values;
+  }
+
+  String? _resolveDefaultComposerModelKey(ConfigSnapshot? snapshot) {
+    if (snapshot == null) {
+      return _composerModels.isEmpty ? null : _composerModels.first.key;
+    }
+
+    final configuredModel = snapshot.config
+        .toJson()['model']
+        ?.toString()
+        .trim();
+    if (configuredModel != null && configuredModel.isNotEmpty) {
+      final matched = _findModel(configuredModel);
+      if (matched != null) {
+        return matched.key;
+      }
+    }
+
+    final defaults = snapshot.providerCatalog.defaults;
+    for (final option in _composerModels) {
+      if (defaults[option.providerId] == option.modelId) {
+        return option.key;
+      }
+    }
+
+    return _composerModels.isEmpty ? null : _composerModels.first.key;
+  }
+
+  String? _resolveDefaultComposerReasoning(ConfigSnapshot? snapshot) {
+    final config = snapshot?.config.toJson();
+    final variant = config?['variant']?.toString().trim();
+    if (variant != null && variant.isNotEmpty) {
+      return variant;
+    }
+    final reasoning = config?['reasoning']?.toString().trim();
+    if (reasoning != null && reasoning.isNotEmpty) {
+      return reasoning;
+    }
+    return null;
+  }
+
+  AgentDefinition? get _defaultComposerAgent {
+    if (_composerAgents.isEmpty) {
+      return null;
+    }
+    return _composerAgents.first;
+  }
+
+  WorkspaceComposerModelOption? get _defaultComposerModel {
+    final key = _serverDefaultModelKey;
+    return key == null ? null : _findModel(key);
+  }
+
+  AgentDefinition? _findAgent(String? name) {
+    final normalized = name?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return null;
+    }
+    for (final agent in _composerAgents) {
+      if (agent.name == normalized) {
+        return agent;
+      }
+    }
+    return null;
+  }
+
+  WorkspaceComposerModelOption? _findModel(String? key) {
+    final normalized = key?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return null;
+    }
+    for (final option in _composerModels) {
+      if (option.key == normalized ||
+          option.modelId == normalized ||
+          '${option.providerId}/${option.modelId}' == normalized) {
+        return option;
+      }
+    }
+    return null;
+  }
+
+  String? _normalizeModelKey({String? providerId, String? modelId}) {
+    final normalizedProvider = providerId?.trim();
+    final normalizedModel = modelId?.trim();
+    if (normalizedProvider == null ||
+        normalizedProvider.isEmpty ||
+        normalizedModel == null ||
+        normalizedModel.isEmpty) {
+      return null;
+    }
+    return '$normalizedProvider/$normalizedModel';
+  }
+
+  bool _isReasoningAllowed(String? value, String? modelKey) {
+    final normalized = value?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return true;
+    }
+    return _findModel(modelKey)?.reasoningValues.contains(normalized) ?? false;
+  }
+
+  String? _resolveReasoningForAgent(AgentDefinition agent) {
+    final candidate = agent.variant?.trim();
+    if (_isReasoningAllowed(candidate, _selectedModelKey)) {
+      return candidate;
+    }
+    return _fallbackReasoningForModel(_selectedModelKey);
+  }
+
+  String? _fallbackReasoningForModel(String? modelKey) {
+    final model = _findModel(modelKey);
+    if (model == null) {
+      return null;
+    }
+
+    final agentVariant = selectedAgent?.variant?.trim();
+    if (agentVariant != null && model.reasoningValues.contains(agentVariant)) {
+      return agentVariant;
+    }
+
+    final serverDefaultReasoning = _serverDefaultReasoning?.trim();
+    if (serverDefaultReasoning != null &&
+        model.reasoningValues.contains(serverDefaultReasoning)) {
+      return serverDefaultReasoning;
+    }
+
+    return null;
+  }
+
   Future<void> _loadProjectPanels() async {
     final project = _project;
     if (project == null) {
@@ -499,7 +909,10 @@ class WorkspaceController extends ChangeNotifier {
   Future<Map<String, SessionStatusSummary>> _reloadStatuses(
     ProjectTarget project,
   ) async {
-    final bundle = await _chatService.fetchBundle(profile: profile, project: project);
+    final bundle = await _chatService.fetchBundle(
+      profile: profile,
+      project: project,
+    );
     _sessions = bundle.sessions;
     return bundle.statuses;
   }
@@ -608,7 +1021,9 @@ class WorkspaceController extends ChangeNotifier {
     }
 
     final values = byDirectory.values.toList(growable: false);
-    values.sort((a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()));
+    values.sort(
+      (a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()),
+    );
     return values;
   }
 
@@ -643,10 +1058,7 @@ class WorkspaceController extends ChangeNotifier {
         source: project.source,
         vcs: project.vcs,
         branch: project.branch,
-        lastSession: ProjectSessionHint(
-          title: session?.title,
-          status: status,
-        ),
+        lastSession: ProjectSessionHint(title: session?.title, status: status),
       ),
     );
   }
@@ -696,6 +1108,12 @@ class WorkspaceController extends ChangeNotifier {
     }
     if (_ownsSessionActionService) {
       _sessionActionService.dispose();
+    }
+    if (_ownsConfigService) {
+      _configService.dispose();
+    }
+    if (_ownsAgentService) {
+      _agentService.dispose();
     }
     super.dispose();
   }

@@ -9,11 +9,22 @@ import 'package:opencode_mobile_remote/src/features/projects/project_models.dart
 void main() {
   late HttpServer server;
   late Uri baseUri;
+  Map<String, Object?>? lastPromptBody;
 
   setUp(() async {
+    lastPromptBody = null;
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     baseUri = Uri.parse('http://${server.address.address}:${server.port}');
     server.listen((request) async {
+      final requestBody = await utf8.decoder.bind(request).join();
+      final decodedBody = requestBody.trim().isEmpty
+          ? null
+          : jsonDecode(requestBody) as Object?;
+      if (request.uri.path == '/session/ses_2/message' &&
+          request.method == 'POST' &&
+          decodedBody is Map) {
+        lastPromptBody = decodedBody.cast<String, Object?>();
+      }
       final body = switch (request.uri.path) {
         '/session' when request.method == 'POST' => {
           'id': 'ses_2',
@@ -49,7 +60,13 @@ void main() {
         },
         '/session/ses_1/message' => [
           {
-            'info': {'id': 'msg_1', 'role': 'user'},
+            'info': {
+              'id': 'msg_1',
+              'role': 'user',
+              'agent': 'Sisyphus',
+              'variant': 'medium',
+              'model': {'providerID': 'openai', 'modelID': 'gpt-5.4'},
+            },
             'parts': [
               {'id': 'prt_1', 'type': 'text', 'text': 'hello'},
             ],
@@ -127,6 +144,10 @@ void main() {
     ]);
     expect(bundle.statuses['ses_1']?.type, 'busy');
     expect(bundle.messages.length, 2);
+    expect(bundle.messages.first.info.agent, 'Sisyphus');
+    expect(bundle.messages.first.info.providerId, 'openai');
+    expect(bundle.messages.first.info.modelId, 'gpt-5.4');
+    expect(bundle.messages.first.info.variant, 'medium');
     expect(bundle.messages.last.parts.last.text, 'done');
     service.dispose();
   });
@@ -167,11 +188,25 @@ void main() {
       project: project,
       sessionId: session.id,
       prompt: 'hello',
+      agent: 'Sisyphus',
+      providerId: 'openai',
+      modelId: 'gpt-5.4',
+      variant: 'medium',
+      reasoning: 'medium',
     );
 
     expect(session.id, 'ses_2');
     expect(message.info.id, 'msg_3');
     expect(message.parts.single.text, 'ok');
+    expect(lastPromptBody?['agent'], 'Sisyphus');
+    expect(lastPromptBody?['providerID'], 'openai');
+    expect(lastPromptBody?['modelID'], 'gpt-5.4');
+    expect(lastPromptBody?['variant'], 'medium');
+    expect(lastPromptBody?['reasoning'], 'medium');
+    expect(lastPromptBody?['model'], <String, Object?>{
+      'providerID': 'openai',
+      'modelID': 'gpt-5.4',
+    });
     service.dispose();
   });
 }

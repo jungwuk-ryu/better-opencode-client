@@ -62,8 +62,10 @@ class ChatService {
     required ProjectTarget project,
     required String sessionId,
     required String prompt,
+    String? agent,
     String? providerId,
     String? modelId,
+    String? variant,
     String? reasoning,
   }) async {
     final baseUri = profile.uriOrNull;
@@ -92,11 +94,29 @@ class ChatService {
         <String, Object?>{'type': 'text', 'text': prompt},
       ],
     };
+    if (agent != null && agent.isNotEmpty) {
+      body['agent'] = agent;
+    }
+    if (providerId != null &&
+        providerId.isNotEmpty &&
+        modelId != null &&
+        modelId.isNotEmpty) {
+      body['model'] = <String, Object?>{
+        'providerID': providerId,
+        'modelID': modelId,
+      };
+    }
     if (providerId != null && providerId.isNotEmpty) {
       body['providerID'] = providerId;
     }
     if (modelId != null && modelId.isNotEmpty) {
       body['modelID'] = modelId;
+    }
+    final resolvedVariant = variant?.trim().isNotEmpty == true
+        ? variant!.trim()
+        : reasoning?.trim();
+    if (resolvedVariant != null && resolvedVariant.isNotEmpty) {
+      body['variant'] = resolvedVariant;
     }
     if (reasoning != null && reasoning.isNotEmpty) {
       body['reasoning'] = reasoning;

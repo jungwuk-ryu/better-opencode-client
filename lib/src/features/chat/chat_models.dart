@@ -97,6 +97,8 @@ class ChatMessageInfo {
     this.sessionId,
     this.modelId,
     this.providerId,
+    this.agent,
+    this.variant,
   });
 
   final String id;
@@ -104,6 +106,8 @@ class ChatMessageInfo {
   final String? sessionId;
   final String? modelId;
   final String? providerId;
+  final String? agent;
+  final String? variant;
 
   ChatMessageInfo copyWith({
     String? id,
@@ -111,6 +115,8 @@ class ChatMessageInfo {
     String? sessionId,
     String? modelId,
     String? providerId,
+    String? agent,
+    String? variant,
   }) {
     return ChatMessageInfo(
       id: id ?? this.id,
@@ -118,16 +124,24 @@ class ChatMessageInfo {
       sessionId: sessionId ?? this.sessionId,
       modelId: modelId ?? this.modelId,
       providerId: providerId ?? this.providerId,
+      agent: agent ?? this.agent,
+      variant: variant ?? this.variant,
     );
   }
 
   factory ChatMessageInfo.fromJson(Map<String, Object?> json) {
+    final model = (json['model'] as Map?)?.cast<String, Object?>();
     return ChatMessageInfo(
       id: json['id']! as String,
       role: (json['role'] as String?) ?? 'assistant',
       sessionId: json['sessionID'] as String?,
-      modelId: json['modelID'] as String?,
-      providerId: json['providerID'] as String?,
+      modelId:
+          json['modelID'] as String? ?? model?['modelID']?.toString().trim(),
+      providerId:
+          json['providerID'] as String? ??
+          model?['providerID']?.toString().trim(),
+      agent: json['agent'] as String?,
+      variant: json['variant'] as String?,
     );
   }
 
@@ -137,6 +151,8 @@ class ChatMessageInfo {
     'sessionID': sessionId,
     'modelID': modelId,
     'providerID': providerId,
+    'agent': agent,
+    'variant': variant,
   };
 }
 
