@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:async';
 import 'dart:collection';
 
@@ -6,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import '../../core/connection/connection_models.dart';
 import '../../core/network/event_stream_service.dart';
 import '../../core/network/live_event_applier.dart';
+import '../../core/persistence/stale_cache_store.dart';
 import '../chat/chat_models.dart';
 import '../chat/chat_service.dart';
 import '../chat/prompt_attachment_models.dart';
@@ -54,6 +56,7 @@ class WorkspaceController extends ChangeNotifier {
     ChatService? chatService,
     ProjectCatalogService? projectCatalogService,
     ProjectStore? projectStore,
+    StaleCacheStore? cacheStore,
     FileBrowserService? fileBrowserService,
     ReviewDiffService? reviewDiffService,
     TodoService? todoService,
@@ -68,6 +71,7 @@ class WorkspaceController extends ChangeNotifier {
        _projectCatalogService =
            projectCatalogService ?? ProjectCatalogService(),
        _projectStore = projectStore ?? ProjectStore(),
+       _cacheStore = cacheStore ?? StaleCacheStore(),
        _fileBrowserService = fileBrowserService ?? FileBrowserService(),
        _reviewDiffService = reviewDiffService ?? ReviewDiffService(),
        _todoService = todoService ?? TodoService(),
@@ -98,6 +102,7 @@ class WorkspaceController extends ChangeNotifier {
   final ChatService _chatService;
   final ProjectCatalogService _projectCatalogService;
   final ProjectStore _projectStore;
+  final StaleCacheStore _cacheStore;
   final FileBrowserService _fileBrowserService;
   final ReviewDiffService _reviewDiffService;
   final TodoService _todoService;
@@ -124,6 +129,7 @@ class WorkspaceController extends ChangeNotifier {
   bool _disposed = false;
   bool _loading = true;
   bool _sessionLoading = false;
+  bool _showingCachedSessionMessages = false;
   bool _submittingPrompt = false;
   bool _runningTerminal = false;
   bool _terminalOpen = false;
@@ -170,6 +176,7 @@ class WorkspaceController extends ChangeNotifier {
 
   bool get loading => _loading;
   bool get sessionLoading => _sessionLoading;
+  bool get showingCachedSessionMessages => _showingCachedSessionMessages;
   bool get submittingPrompt => _submittingPrompt;
   bool get runningTerminal => _runningTerminal;
   bool get terminalOpen => _terminalOpen;
@@ -405,6 +412,8 @@ class WorkspaceController extends ChangeNotifier {
         project: resolvedProject,
         sessions: bundle.sessions,
       );
+      _loading = false;
+      _notify();
 
       if (_selectedSessionId != null) {
         await _loadSelectedSessionMessages(
@@ -412,13 +421,15 @@ class WorkspaceController extends ChangeNotifier {
           sessionId: _selectedSessionId!,
           loadPanels: false,
           persistHint: false,
-          notifyOnStart: false,
+          notifyOnStart: true,
         );
       } else {
         _messages = const <ChatMessage>[];
         _sessionLoading = false;
+        _showingCachedSessionMessages = false;
         _sessionLoadError = null;
         _applyDefaultComposerSelection();
+        _notify();
       }
 
       await _loadProjectPanels();
@@ -436,6 +447,7 @@ class WorkspaceController extends ChangeNotifier {
     _selectedSessionId = null;
     _messages = const <ChatMessage>[];
     _sessionLoading = false;
+    _showingCachedSessionMessages = false;
     _sessionLoadError = null;
     _loadingFileDirectoryPath = null;
     _expandedFileDirectories = <String>{};
@@ -484,6 +496,7 @@ class WorkspaceController extends ChangeNotifier {
     } else {
       _messages = const <ChatMessage>[];
       _sessionLoading = false;
+      _showingCachedSessionMessages = false;
       _sessionLoadError = null;
       _applyDefaultComposerSelection();
     }
@@ -499,6 +512,7 @@ class WorkspaceController extends ChangeNotifier {
     _selectedSessionId = sessionId;
     _messages = const <ChatMessage>[];
     _sessionLoading = false;
+    _showingCachedSessionMessages = false;
     _sessionLoadError = null;
     _todos = const <TodoItem>[];
     _loadingReviewDiff = false;
@@ -508,6 +522,7 @@ class WorkspaceController extends ChangeNotifier {
 
     if (sessionId == null || sessionId.isEmpty) {
       _sessionLoading = false;
+      _showingCachedSessionMessages = false;
       _sessionLoadError = null;
       _applyDefaultComposerSelection();
       _notify();
@@ -745,7 +760,24 @@ class WorkspaceController extends ChangeNotifier {
     final revision = ++_sessionLoadRevision;
     _sessionLoading = true;
     _sessionLoadError = null;
+    _showingCachedSessionMessages = false;
     _todos = const <TodoItem>[];
+    final cachedMessages = await _loadCachedSessionMessages(
+      project: project,
+      sessionId: sessionId,
+    );
+    if (_isStaleSessionLoad(revision, sessionId)) {
+      return;
+    }
+    if (cachedMessages != null) {
+      _messages = cachedMessages;
+      _showingCachedSessionMessages = cachedMessages.isNotEmpty;
+      if (_messages.isEmpty) {
+        _applyDefaultComposerSelection();
+      } else {
+        _restoreComposerSelectionFromMessages();
+      }
+    }
     if (notifyOnStart) {
       _notify();
     }
@@ -761,11 +793,19 @@ class WorkspaceController extends ChangeNotifier {
       }
 
       _messages = messages;
+      _showingCachedSessionMessages = false;
       if (_messages.isEmpty) {
         _applyDefaultComposerSelection();
       } else {
         _restoreComposerSelectionFromMessages();
       }
+      unawaited(
+        _saveSessionMessagesCache(
+          project: project,
+          sessionId: sessionId,
+          messages: messages,
+        ),
+      );
 
       if (loadPanels) {
         await _loadSessionPanels();
@@ -788,10 +828,12 @@ class WorkspaceController extends ChangeNotifier {
       if (_isStaleSessionLoad(revision, sessionId)) {
         return;
       }
-      _messages = const <ChatMessage>[];
       _sessionLoading = false;
       _sessionLoadError = _describeSessionLoadError(error);
-      _applyDefaultComposerSelection();
+      if (_messages.isEmpty) {
+        _showingCachedSessionMessages = false;
+        _applyDefaultComposerSelection();
+      }
       _notify();
     }
   }
@@ -906,8 +948,16 @@ class WorkspaceController extends ChangeNotifier {
     if (_selectedSessionId == sessionId && messages != null) {
       _messages = messages;
       _sessionLoading = false;
+      _showingCachedSessionMessages = false;
       _sessionLoadError = null;
       _restoreComposerSelectionFromMessages();
+      unawaited(
+        _saveSessionMessagesCache(
+          project: project,
+          sessionId: sessionId,
+          messages: messages,
+        ),
+      );
     }
 
     try {
@@ -957,6 +1007,7 @@ class WorkspaceController extends ChangeNotifier {
     _selectedSessionId = created.id;
     _messages = const <ChatMessage>[];
     _sessionLoading = false;
+    _showingCachedSessionMessages = false;
     _sessionLoadError = null;
     _todos = const <TodoItem>[];
     _statuses = <String, SessionStatusSummary>{
@@ -1111,10 +1162,14 @@ class WorkspaceController extends ChangeNotifier {
     if (_selectedSessionId == null) {
       _messages = const <ChatMessage>[];
       _sessionLoading = false;
+      _showingCachedSessionMessages = false;
       _sessionLoadError = null;
+      await _cacheStore.remove(_sessionMessagesCacheKey(project, sessionId));
       await _loadSessionPanels();
     } else {
       _messages = const <ChatMessage>[];
+      _showingCachedSessionMessages = false;
+      await _cacheStore.remove(_sessionMessagesCacheKey(project, sessionId));
       await _loadSelectedSessionMessages(
         project: project,
         sessionId: _selectedSessionId!,
@@ -1148,7 +1203,15 @@ class WorkspaceController extends ChangeNotifier {
           project: project,
           sessionId: sessionId,
         );
+        _showingCachedSessionMessages = false;
         _sessionLoadError = null;
+        unawaited(
+          _saveSessionMessagesCache(
+            project: project,
+            sessionId: sessionId,
+            messages: _messages,
+          ),
+        );
       } catch (error) {
         _sessionLoadError = _describeSessionLoadError(error);
       }
@@ -1622,7 +1685,9 @@ class WorkspaceController extends ChangeNotifier {
       );
       if (!identical(nextMessages, _messages)) {
         _sessionLoading = false;
+        _showingCachedSessionMessages = false;
         _sessionLoadError = null;
+        unawaited(_persistSelectedSessionMessagesCache(nextMessages));
       }
       _messages = nextMessages;
     } else if (type == 'message.part.updated') {
@@ -1633,7 +1698,9 @@ class WorkspaceController extends ChangeNotifier {
       );
       if (!identical(nextMessages, _messages)) {
         _sessionLoading = false;
+        _showingCachedSessionMessages = false;
         _sessionLoadError = null;
+        unawaited(_persistSelectedSessionMessagesCache(nextMessages));
       }
       _messages = nextMessages;
     } else if (type == 'message.removed') {
@@ -1644,7 +1711,9 @@ class WorkspaceController extends ChangeNotifier {
       );
       if (!identical(nextMessages, _messages)) {
         _sessionLoading = false;
+        _showingCachedSessionMessages = false;
         _sessionLoadError = null;
+        unawaited(_persistSelectedSessionMessagesCache(nextMessages));
       }
       _messages = nextMessages;
     } else if (type == 'todo.updated') {
@@ -1982,6 +2051,57 @@ class WorkspaceController extends ChangeNotifier {
           status: status,
         ),
       ),
+    );
+  }
+
+  String _sessionMessagesCacheKey(ProjectTarget project, String sessionId) {
+    return 'workspace.messages::${profile.storageKey}::${project.directory}::$sessionId';
+  }
+
+  Future<List<ChatMessage>?> _loadCachedSessionMessages({
+    required ProjectTarget project,
+    required String sessionId,
+  }) async {
+    final entry = await _cacheStore.load(
+      _sessionMessagesCacheKey(project, sessionId),
+    );
+    if (entry == null) {
+      return null;
+    }
+    try {
+      return ((jsonDecode(entry.payloadJson) as List)
+              .cast<Map<String, Object?>>())
+          .map(ChatMessage.fromJson)
+          .toList(growable: false);
+    } catch (_) {
+      await _cacheStore.remove(_sessionMessagesCacheKey(project, sessionId));
+      return null;
+    }
+  }
+
+  Future<void> _saveSessionMessagesCache({
+    required ProjectTarget project,
+    required String sessionId,
+    required List<ChatMessage> messages,
+  }) async {
+    await _cacheStore.save(
+      _sessionMessagesCacheKey(project, sessionId),
+      messages.map((message) => message.toJson()).toList(growable: false),
+    );
+  }
+
+  Future<void> _persistSelectedSessionMessagesCache(
+    List<ChatMessage> messages,
+  ) async {
+    final project = _project;
+    final sessionId = _selectedSessionId;
+    if (project == null || sessionId == null || sessionId.isEmpty) {
+      return;
+    }
+    await _saveSessionMessagesCache(
+      project: project,
+      sessionId: sessionId,
+      messages: messages,
     );
   }
 

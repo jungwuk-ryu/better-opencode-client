@@ -86,6 +86,64 @@ void main() {
       expect(find.text('Couldn\'t load this session'), findsNothing);
     },
   );
+
+  testWidgets(
+    'timeline keeps cached messages visible while a shimmer refresh banner is shown',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final createdControllers = <_CachedSessionWorkspaceController>[];
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              final controller = _CachedSessionWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+              createdControllers.add(controller);
+              return controller;
+            },
+      );
+      addTearDown(appController.dispose);
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          initialRoute: buildWorkspaceRoute(
+            '/workspace/demo',
+            sessionId: 'ses_1',
+          ),
+        ),
+      );
+      await _pumpUntilVisible(tester, find.text('Session Two'));
+
+      await tester.tap(find.text('Session Two'));
+      await tester.pump();
+
+      expect(find.text('cached hello from two'), findsOneWidget);
+      expect(find.text('Refreshing cached messages...'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('timeline-cached-refresh-shimmer')),
+        findsOneWidget,
+      );
+
+      createdControllers.single.completePendingSelection();
+      await _pumpUntilVisible(tester, find.text('fresh hello from two'));
+
+      expect(find.text('fresh hello from two'), findsOneWidget);
+      expect(find.text('Refreshing cached messages...'), findsNothing);
+    },
+  );
 }
 
 Future<void> _pumpUntilVisible(
@@ -319,6 +377,168 @@ class _SessionLoadingWorkspaceController extends WorkspaceController {
         ),
         parts: <ChatPart>[
           ChatPart(id: 'part_$sessionId', type: 'text', text: text),
+        ],
+      ),
+    ];
+  }
+}
+
+class _CachedSessionWorkspaceController extends WorkspaceController {
+  _CachedSessionWorkspaceController({
+    required super.profile,
+    required super.directory,
+    super.initialSessionId,
+  });
+
+  static const ProjectTarget _projectTarget = ProjectTarget(
+    directory: '/workspace/demo',
+    label: 'Demo',
+    source: 'server',
+    vcs: 'git',
+    branch: 'main',
+  );
+
+  static final List<SessionSummary> _sessions = <SessionSummary>[
+    SessionSummary(
+      id: 'ses_1',
+      directory: '/workspace/demo',
+      title: 'Session One',
+      version: '1',
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(1710000001000),
+    ),
+    SessionSummary(
+      id: 'ses_2',
+      directory: '/workspace/demo',
+      title: 'Session Two',
+      version: '1',
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(1710000002000),
+    ),
+  ];
+
+  static final Map<String, SessionStatusSummary> _statuses =
+      <String, SessionStatusSummary>{
+        'ses_1': const SessionStatusSummary(type: 'idle'),
+        'ses_2': const SessionStatusSummary(type: 'idle'),
+      };
+
+  bool _loading = true;
+  bool _sessionLoading = false;
+  bool _showingCachedSessionMessages = false;
+  String? _selectedSessionId;
+  List<ChatMessage> _messages = const <ChatMessage>[];
+  Completer<void>? _selectionCompleter;
+
+  @override
+  bool get loading => _loading;
+
+  @override
+  bool get sessionLoading => _sessionLoading;
+
+  @override
+  bool get showingCachedSessionMessages => _showingCachedSessionMessages;
+
+  @override
+  ProjectTarget? get project => _projectTarget;
+
+  @override
+  List<ProjectTarget> get availableProjects => const <ProjectTarget>[
+    _projectTarget,
+  ];
+
+  @override
+  List<SessionSummary> get sessions => _sessions;
+
+  @override
+  List<SessionSummary> get visibleSessions => _sessions;
+
+  @override
+  Map<String, SessionStatusSummary> get statuses => _statuses;
+
+  @override
+  String? get selectedSessionId => _selectedSessionId;
+
+  @override
+  SessionSummary? get selectedSession {
+    final selectedSessionId = _selectedSessionId;
+    if (selectedSessionId == null) {
+      return null;
+    }
+    for (final session in _sessions) {
+      if (session.id == selectedSessionId) {
+        return session;
+      }
+    }
+    return null;
+  }
+
+  @override
+  SessionStatusSummary? get selectedStatus {
+    final selectedSessionId = _selectedSessionId;
+    if (selectedSessionId == null) {
+      return null;
+    }
+    return _statuses[selectedSessionId];
+  }
+
+  @override
+  List<ChatMessage> get messages => _messages;
+
+  @override
+  List<TodoItem> get todos => const <TodoItem>[];
+
+  @override
+  PendingRequestBundle get pendingRequests => const PendingRequestBundle(
+    questions: <QuestionRequestSummary>[],
+    permissions: <PermissionRequestSummary>[],
+  );
+
+  @override
+  Future<void> load() async {
+    _loading = false;
+    _selectedSessionId = initialSessionId ?? 'ses_1';
+    _messages = _messageListFor('ses_1', fresh: true);
+    notifyListeners();
+  }
+
+  @override
+  Future<void> selectSession(String? sessionId) async {
+    _selectedSessionId = sessionId;
+    _messages = _messageListFor(sessionId ?? 'ses_2', fresh: false);
+    _sessionLoading = true;
+    _showingCachedSessionMessages = true;
+    _selectionCompleter = Completer<void>();
+    notifyListeners();
+    await _selectionCompleter!.future;
+  }
+
+  void completePendingSelection() {
+    _messages = _messageListFor('ses_2', fresh: true);
+    _sessionLoading = false;
+    _showingCachedSessionMessages = false;
+    _selectionCompleter?.complete();
+    _selectionCompleter = null;
+    notifyListeners();
+  }
+
+  List<ChatMessage> _messageListFor(String sessionId, {required bool fresh}) {
+    final text = switch ((sessionId, fresh)) {
+      ('ses_2', false) => 'cached hello from two',
+      ('ses_2', true) => 'fresh hello from two',
+      (_, _) => 'hello from one',
+    };
+    return <ChatMessage>[
+      ChatMessage(
+        info: ChatMessageInfo(
+          id: 'msg_${sessionId}_${fresh ? 'fresh' : 'cached'}',
+          role: 'assistant',
+          sessionId: sessionId,
+        ),
+        parts: <ChatPart>[
+          ChatPart(
+            id: 'part_${sessionId}_${fresh ? 'fresh' : 'cached'}',
+            type: 'text',
+            text: text,
+          ),
         ],
       ),
     ];

@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:opencode_mobile_remote/src/core/connection/connection_models.dart';
 import 'package:opencode_mobile_remote/src/core/network/event_stream_service.dart';
+import 'package:opencode_mobile_remote/src/core/persistence/stale_cache_store.dart';
 import 'package:opencode_mobile_remote/src/core/spec/raw_json_document.dart';
 import 'package:opencode_mobile_remote/src/features/chat/chat_models.dart';
 import 'package:opencode_mobile_remote/src/features/chat/chat_service.dart';
@@ -16,8 +17,15 @@ import 'package:opencode_mobile_remote/src/features/settings/config_service.dart
 import 'package:opencode_mobile_remote/src/features/tools/todo_models.dart';
 import 'package:opencode_mobile_remote/src/features/tools/todo_service.dart';
 import 'package:opencode_mobile_remote/src/features/web_parity/workspace_controller.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+  });
+
   const profile = ServerProfile(
     id: 'server',
     label: 'Mock',
@@ -317,6 +325,69 @@ void main() {
   );
 
   test(
+    'controller shows cached messages first when the server is slow or unavailable',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final cachedMessages = <ChatMessage>[
+        ChatMessage(
+          info: const ChatMessageInfo(
+            id: 'msg_cached',
+            role: 'assistant',
+            sessionId: 'ses_1',
+          ),
+          parts: const <ChatPart>[
+            ChatPart(id: 'part_cached', type: 'text', text: 'Cached snapshot'),
+          ],
+        ),
+      ];
+      final cacheStore = StaleCacheStore();
+      await cacheStore.save(
+        'workspace.messages::${profile.storageKey}::${project.directory}::ses_1',
+        cachedMessages
+            .map((message) => message.toJson())
+            .toList(growable: false),
+      );
+
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_1',
+              title: 'Initial session',
+              createdAt: 1710000001000,
+              updatedAt: 1710000005000,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{
+            'ses_1': SessionStatusSummary(type: 'idle'),
+          },
+          messages: const <ChatMessage>[],
+          selectedSessionId: 'ses_1',
+        ),
+        fetchMessagesHandler:
+            ({required profile, required project, required sessionId}) async {
+              throw Exception('connection timed out');
+            },
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+        cacheStore: cacheStore,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+
+      expect(controller.messages, hasLength(1));
+      expect(controller.messages.single.parts.single.text, 'Cached snapshot');
+      expect(controller.showingCachedSessionMessages, isTrue);
+      expect(controller.sessionLoadError, contains('responding too slowly'));
+    },
+  );
+
+  test(
     'controller can retry loading the selected session after a failure',
     () async {
       final eventStreamService = _ControlledEventStreamService();
@@ -388,6 +459,7 @@ WorkspaceController _buildController({
   required ProjectTarget project,
   required _ControlledEventStreamService eventStreamService,
   ChatService? chatService,
+  StaleCacheStore? cacheStore,
   List<SessionSummary>? initialSessions,
   String? initialSelectedSessionId,
   PendingRequestBundle pendingBundle = const PendingRequestBundle(
@@ -422,6 +494,7 @@ WorkspaceController _buildController({
         ),
     projectCatalogService: _FakeProjectCatalogService(project),
     projectStore: _MemoryProjectStore(),
+    cacheStore: cacheStore,
     fileBrowserService: _FakeFileBrowserService(),
     todoService: _FakeTodoService(),
     requestService: _FakeRequestService(pendingBundle: pendingBundle),

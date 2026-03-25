@@ -2929,11 +2929,7 @@ class _SidebarProjectMenuButton extends StatelessWidget {
             }
           },
           splashRadius: 18,
-          icon: Icon(
-            Icons.more_horiz_rounded,
-            color: surfaces.muted,
-            size: 20,
-          ),
+          icon: Icon(Icons.more_horiz_rounded, color: surfaces.muted, size: 20),
         );
       },
     );
@@ -4059,6 +4055,8 @@ class _WorkspaceBody extends StatelessWidget {
                     controller: timelineScrollController,
                     currentSessionId: controller.selectedSessionId,
                     loading: controller.sessionLoading,
+                    showingCachedMessages:
+                        controller.showingCachedSessionMessages,
                     error: controller.sessionLoadError,
                     messages: controller.messages,
                     sessions: allSessions,
@@ -4584,6 +4582,7 @@ class _MessageTimeline extends StatelessWidget {
     required this.controller,
     required this.currentSessionId,
     required this.loading,
+    required this.showingCachedMessages,
     required this.error,
     required this.messages,
     required this.sessions,
@@ -4597,6 +4596,7 @@ class _MessageTimeline extends StatelessWidget {
   final ScrollController controller;
   final String? currentSessionId;
   final bool loading;
+  final bool showingCachedMessages;
   final String? error;
   final List<ChatMessage> messages;
   final List<SessionSummary> sessions;
@@ -4609,7 +4609,7 @@ class _MessageTimeline extends StatelessWidget {
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final theme = Theme.of(context);
-    if (loading) {
+    if (loading && messages.isEmpty) {
       return const _TimelineStatusCard(
         icon: SizedBox(
           width: 20,
@@ -4620,7 +4620,7 @@ class _MessageTimeline extends StatelessWidget {
         message: 'Connecting to the server and loading this session.',
       );
     }
-    if (error != null) {
+    if (error != null && messages.isEmpty) {
       return _TimelineStatusCard(
         icon: Icon(
           Icons.wifi_tethering_error_rounded,
@@ -4644,40 +4644,162 @@ class _MessageTimeline extends StatelessWidget {
       );
     }
 
-    return SelectionArea(
-      child: Scrollbar(
-        controller: controller,
-        thumbVisibility: true,
-        interactive: true,
-        child: ListView.separated(
-          controller: controller,
-          key: const PageStorageKey<String>('web-parity-message-timeline'),
-          restorationId: null,
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.xl,
-            AppSpacing.xl,
-            AppSpacing.xl,
-            AppSpacing.lg,
+    return Column(
+      children: <Widget>[
+        if (showingCachedMessages && loading)
+          _TimelineCachedRefreshBanner(
+            key: const ValueKey<String>('timeline-cached-refresh-banner'),
+            shimmering: true,
+            title: 'Refreshing cached messages...',
+            message:
+                'Showing the last saved snapshot while the server loads newer messages.',
+          )
+        else if (showingCachedMessages && error != null)
+          _TimelineCachedRefreshBanner(
+            key: const ValueKey<String>('timeline-cached-refresh-banner'),
+            shimmering: false,
+            title: 'Showing cached messages',
+            message: error!,
+            action: OutlinedButton(
+              onPressed: () => unawaited(onRetry()),
+              child: const Text('Retry'),
+            ),
           ),
-          itemCount: messages.length,
-          separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.xl),
-          itemBuilder: (context, index) {
-            final message = messages[index];
-            return Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 860),
-                child: _TimelineMessage(
-                  currentSessionId: currentSessionId,
-                  message: message,
-                  sessions: sessions,
-                  shellToolDefaultExpanded: shellToolDefaultExpanded,
-                  timelineProgressDetailsVisible:
-                      timelineProgressDetailsVisible,
-                  onOpenSession: onOpenSession,
+        Expanded(
+          child: SelectionArea(
+            child: Scrollbar(
+              controller: controller,
+              thumbVisibility: true,
+              interactive: true,
+              child: ListView.separated(
+                controller: controller,
+                key: const PageStorageKey<String>(
+                  'web-parity-message-timeline',
                 ),
+                restorationId: null,
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.xl,
+                  AppSpacing.xl,
+                  AppSpacing.xl,
+                  AppSpacing.lg,
+                ),
+                itemCount: messages.length,
+                separatorBuilder: (_, _) =>
+                    const SizedBox(height: AppSpacing.xl),
+                itemBuilder: (context, index) {
+                  final message = messages[index];
+                  return Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 860),
+                      child: _TimelineMessage(
+                        currentSessionId: currentSessionId,
+                        message: message,
+                        sessions: sessions,
+                        shellToolDefaultExpanded: shellToolDefaultExpanded,
+                        timelineProgressDetailsVisible:
+                            timelineProgressDetailsVisible,
+                        onOpenSession: onOpenSession,
+                      ),
+                    ),
+                  );
+                },
               ),
-            );
-          },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _TimelineCachedRefreshBanner extends StatelessWidget {
+  const _TimelineCachedRefreshBanner({
+    required this.title,
+    required this.message,
+    required this.shimmering,
+    this.action,
+    super.key,
+  });
+
+  final String title;
+  final String message;
+  final bool shimmering;
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.xl,
+        AppSpacing.lg,
+        AppSpacing.xl,
+        0,
+      ),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 860),
+          child: Container(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            decoration: BoxDecoration(
+              color: surfaces.panelRaised.withValues(alpha: 0.92),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: shimmering
+                    ? theme.colorScheme.primary.withValues(alpha: 0.34)
+                    : surfaces.lineSoft,
+              ),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Icon(
+                    shimmering
+                        ? Icons.sync_rounded
+                        : Icons.history_toggle_off_rounded,
+                    size: 18,
+                    color: shimmering
+                        ? theme.colorScheme.primary
+                        : surfaces.warning,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      _ShimmeringRichText(
+                        key: const ValueKey<String>(
+                          'timeline-cached-refresh-shimmer',
+                        ),
+                        active: shimmering,
+                        text: TextSpan(
+                          text: title,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        message,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: surfaces.muted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (action != null) ...<Widget>[
+                  const SizedBox(width: AppSpacing.md),
+                  action!,
+                ],
+              ],
+            ),
+          ),
         ),
       ),
     );
