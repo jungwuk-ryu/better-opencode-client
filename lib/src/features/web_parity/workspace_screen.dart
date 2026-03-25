@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -1186,6 +1187,81 @@ class _WorkspaceTopBar extends StatelessWidget {
         profile!.effectiveLabel.trim(),
       if (project?.directory.trim().isNotEmpty == true) project!.directory,
     ];
+    final menuSections = <List<_SessionOverflowMenuAction>>[
+      <_SessionOverflowMenuAction>[
+        if (compact)
+          _SessionOverflowMenuAction(
+            id: 'home',
+            label: 'Back Home',
+            icon: Icons.home_rounded,
+            onSelected: onBackHome,
+          ),
+        if (canReturnToMain)
+          _SessionOverflowMenuAction(
+            id: 'main',
+            label: 'Back to Main Session',
+            icon: Icons.subdirectory_arrow_left_rounded,
+            onSelected: onBackToMainSession,
+          ),
+      ],
+      <_SessionOverflowMenuAction>[
+        _SessionOverflowMenuAction(
+          id: 'shell-default',
+          label: 'Expand shell output by default',
+          icon: Icons.terminal_rounded,
+          checked: shellToolPartsExpanded,
+          onSelected: () {
+            unawaited(onSetShellToolPartsExpanded(!shellToolPartsExpanded));
+          },
+        ),
+        _SessionOverflowMenuAction(
+          id: 'timeline-progress-details',
+          label: 'Show to-do and step details in timeline',
+          icon: Icons.checklist_rtl_rounded,
+          checked: timelineProgressDetailsVisible,
+          onSelected: () {
+            unawaited(
+              onSetTimelineProgressDetailsVisible(
+                !timelineProgressDetailsVisible,
+              ),
+            );
+          },
+        ),
+      ],
+      <_SessionOverflowMenuAction>[
+        _SessionOverflowMenuAction(
+          id: 'rename',
+          label: 'Rename Session',
+          icon: Icons.edit_rounded,
+          enabled: onRename != null,
+          onSelected: onRename,
+        ),
+        _SessionOverflowMenuAction(
+          id: 'fork',
+          label: 'Fork Session',
+          icon: Icons.call_split_rounded,
+          enabled: onFork != null,
+          onSelected: onFork,
+        ),
+        _SessionOverflowMenuAction(
+          id: 'share',
+          label: 'Share Session',
+          icon: Icons.ios_share_rounded,
+          enabled: onShare != null,
+          onSelected: onShare,
+        ),
+      ],
+      <_SessionOverflowMenuAction>[
+        _SessionOverflowMenuAction(
+          id: 'delete',
+          label: 'Delete Session',
+          icon: Icons.delete_outline_rounded,
+          destructive: true,
+          enabled: onDelete != null,
+          onSelected: onDelete,
+        ),
+      ],
+    ].where((section) => section.isNotEmpty).toList(growable: false);
     if (compact) {
       return Material(
         color: surfaces.panel,
@@ -1262,77 +1338,7 @@ class _WorkspaceTopBar extends StatelessWidget {
                 tooltip: terminalOpen ? 'Hide terminal' : 'Show terminal',
                 splashRadius: 18,
               ),
-              PopupMenuButton<String>(
-                icon: const Icon(Icons.more_horiz_rounded, size: 18),
-                onSelected: (value) {
-                  switch (value) {
-                    case 'home':
-                      onBackHome();
-                    case 'main':
-                      onBackToMainSession?.call();
-                    case 'shell-default':
-                      unawaited(
-                        onSetShellToolPartsExpanded(!shellToolPartsExpanded),
-                      );
-                    case 'timeline-progress-details':
-                      unawaited(
-                        onSetTimelineProgressDetailsVisible(
-                          !timelineProgressDetailsVisible,
-                        ),
-                      );
-                    case 'rename':
-                      onRename?.call();
-                    case 'fork':
-                      onFork?.call();
-                    case 'share':
-                      onShare?.call();
-                    case 'delete':
-                      onDelete?.call();
-                  }
-                },
-                itemBuilder: (context) => <PopupMenuEntry<String>>[
-                  const PopupMenuItem<String>(
-                    value: 'home',
-                    child: Text('Back Home'),
-                  ),
-                  if (canReturnToMain)
-                    const PopupMenuItem<String>(
-                      value: 'main',
-                      child: Text('Back to Main Session'),
-                    ),
-                  const PopupMenuDivider(),
-                  CheckedPopupMenuItem<String>(
-                    value: 'shell-default',
-                    checked: shellToolPartsExpanded,
-                    child: const Text('Expand shell output by default'),
-                  ),
-                  CheckedPopupMenuItem<String>(
-                    value: 'timeline-progress-details',
-                    checked: timelineProgressDetailsVisible,
-                    child: const Text(
-                      'Show to-do and step details in timeline',
-                    ),
-                  ),
-                  const PopupMenuDivider(),
-                  const PopupMenuItem<String>(
-                    value: 'rename',
-                    child: Text('Rename Session'),
-                  ),
-                  const PopupMenuItem<String>(
-                    value: 'fork',
-                    child: Text('Fork Session'),
-                  ),
-                  const PopupMenuItem<String>(
-                    value: 'share',
-                    child: Text('Share Session'),
-                  ),
-                  const PopupMenuDivider(),
-                  const PopupMenuItem<String>(
-                    value: 'delete',
-                    child: Text('Delete Session'),
-                  ),
-                ],
-              ),
+              _SessionOverflowMenuButton(compact: true, sections: menuSections),
             ],
           ),
         ),
@@ -1443,75 +1449,297 @@ class _WorkspaceTopBar extends StatelessWidget {
             IconButton(
               onPressed: onToggleTerminal,
               icon: Icon(
-                terminalOpen
-                    ? Icons.terminal_rounded
-                    : Icons.terminal_outlined,
+                terminalOpen ? Icons.terminal_rounded : Icons.terminal_outlined,
               ),
               tooltip: terminalOpen ? 'Hide terminal' : 'Show terminal',
             ),
-            PopupMenuButton<String>(
-              onSelected: (value) {
-                switch (value) {
-                  case 'main':
-                    onBackToMainSession?.call();
-                  case 'shell-default':
-                    unawaited(
-                      onSetShellToolPartsExpanded(!shellToolPartsExpanded),
-                    );
-                  case 'timeline-progress-details':
-                    unawaited(
-                      onSetTimelineProgressDetailsVisible(
-                        !timelineProgressDetailsVisible,
+            _SessionOverflowMenuButton(sections: menuSections),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SessionOverflowMenuAction {
+  const _SessionOverflowMenuAction({
+    required this.id,
+    required this.label,
+    required this.icon,
+    required this.onSelected,
+    this.checked = false,
+    this.destructive = false,
+    this.enabled = true,
+  });
+
+  final String id;
+  final String label;
+  final IconData icon;
+  final VoidCallback? onSelected;
+  final bool checked;
+  final bool destructive;
+  final bool enabled;
+}
+
+class _SessionOverflowMenuButton extends StatefulWidget {
+  const _SessionOverflowMenuButton({
+    required this.sections,
+    this.compact = false,
+  });
+
+  final List<List<_SessionOverflowMenuAction>> sections;
+  final bool compact;
+
+  @override
+  State<_SessionOverflowMenuButton> createState() =>
+      _SessionOverflowMenuButtonState();
+}
+
+class _SessionOverflowMenuButtonState
+    extends State<_SessionOverflowMenuButton> {
+  final LayerLink _layerLink = LayerLink();
+
+  Future<void> _openMenu() async {
+    if (widget.sections.isEmpty) {
+      return;
+    }
+    await showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Dismiss session menu',
+      barrierColor: Colors.transparent,
+      transitionDuration: const Duration(milliseconds: 170),
+      pageBuilder: (dialogContext, animation, secondaryAnimation) {
+        return _SessionOverflowMenuOverlay(
+          link: _layerLink,
+          sections: widget.sections,
+          compact: widget.compact,
+        );
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+          reverseCurve: Curves.easeInCubic,
+        );
+        return FadeTransition(opacity: curved, child: child);
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return CompositedTransformTarget(
+      link: _layerLink,
+      child: IconButton(
+        key: const ValueKey<String>('session-header-overflow-menu-button'),
+        onPressed: _openMenu,
+        icon: Icon(Icons.more_horiz_rounded, size: widget.compact ? 18 : 20),
+        tooltip: 'Show menu',
+        splashRadius: 18,
+      ),
+    );
+  }
+}
+
+class _SessionOverflowMenuOverlay extends StatelessWidget {
+  const _SessionOverflowMenuOverlay({
+    required this.link,
+    required this.sections,
+    required this.compact,
+  });
+
+  final LayerLink link;
+  final List<List<_SessionOverflowMenuAction>> sections;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      type: MaterialType.transparency,
+      child: Stack(
+        children: <Widget>[
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(context).pop(),
+            ),
+          ),
+          SafeArea(
+            child: CompositedTransformFollower(
+              link: link,
+              showWhenUnlinked: false,
+              targetAnchor: Alignment.bottomRight,
+              followerAnchor: Alignment.topRight,
+              offset: const Offset(0, 10),
+              child: Padding(
+                padding: EdgeInsets.only(
+                  right: compact ? AppSpacing.sm : AppSpacing.md,
+                ),
+                child: _SessionOverflowMenuPanel(sections: sections),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SessionOverflowMenuPanel extends StatelessWidget {
+  const _SessionOverflowMenuPanel({required this.sections});
+
+  final List<List<_SessionOverflowMenuAction>> sections;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(22),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+        child: Container(
+          key: const ValueKey<String>('session-header-overflow-menu-panel'),
+          constraints: const BoxConstraints(maxWidth: 320, minWidth: 260),
+          decoration: BoxDecoration(
+            color: surfaces.panelRaised.withValues(alpha: 0.78),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.09)),
+            boxShadow: <BoxShadow>[
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.42),
+                blurRadius: 34,
+                offset: const Offset(0, 20),
+              ),
+              BoxShadow(
+                color: surfaces.background.withValues(alpha: 0.24),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.xs),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (
+                  var sectionIndex = 0;
+                  sectionIndex < sections.length;
+                  sectionIndex += 1
+                ) ...<Widget>[
+                  if (sectionIndex > 0)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: AppSpacing.xs,
+                        horizontal: AppSpacing.sm,
                       ),
-                    );
-                  case 'rename':
-                    onRename?.call();
-                  case 'fork':
-                    onFork?.call();
-                  case 'share':
-                    onShare?.call();
-                  case 'delete':
-                    onDelete?.call();
-                }
-              },
-              itemBuilder: (context) => <PopupMenuEntry<String>>[
-                if (canReturnToMain)
-                  const PopupMenuItem<String>(
-                    value: 'main',
-                    child: Text('Back to Main Session'),
+                      child: Divider(
+                        color: Colors.white.withValues(alpha: 0.08),
+                        height: 1,
+                      ),
+                    ),
+                  ...sections[sectionIndex].map(
+                    (action) => _SessionOverflowMenuItem(action: action),
                   ),
-                if (canReturnToMain) const PopupMenuDivider(),
-                CheckedPopupMenuItem<String>(
-                  value: 'shell-default',
-                  checked: shellToolPartsExpanded,
-                  child: const Text('Expand shell output by default'),
-                ),
-                CheckedPopupMenuItem<String>(
-                  value: 'timeline-progress-details',
-                  checked: timelineProgressDetailsVisible,
-                  child: const Text('Show to-do and step details in timeline'),
-                ),
-                const PopupMenuDivider(),
-                const PopupMenuItem<String>(
-                  value: 'rename',
-                  child: Text('Rename Session'),
-                ),
-                const PopupMenuItem<String>(
-                  value: 'fork',
-                  child: Text('Fork Session'),
-                ),
-                const PopupMenuItem<String>(
-                  value: 'share',
-                  child: Text('Share Session'),
-                ),
-                const PopupMenuDivider(),
-                const PopupMenuItem<String>(
-                  value: 'delete',
-                  child: Text('Delete Session'),
-                ),
+                ],
               ],
             ),
-          ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SessionOverflowMenuItem extends StatelessWidget {
+  const _SessionOverflowMenuItem({required this.action});
+
+  final _SessionOverflowMenuAction action;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final destructiveColor = surfaces.danger;
+    final accentColor = theme.colorScheme.primary;
+    final itemColor = action.destructive
+        ? destructiveColor
+        : theme.colorScheme.onSurface;
+    final iconTone = action.checked ? accentColor : itemColor;
+
+    return Opacity(
+      opacity: action.enabled ? 1 : 0.44,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          key: ValueKey<String>(
+            'session-header-overflow-menu-item-${action.id}',
+          ),
+          onTap: !action.enabled
+              ? null
+              : () {
+                  Navigator.of(context).pop();
+                  action.onSelected?.call();
+                },
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm,
+              vertical: AppSpacing.sm,
+            ),
+            child: Row(
+              children: <Widget>[
+                Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: (action.checked ? accentColor : itemColor)
+                        .withValues(alpha: action.destructive ? 0.12 : 0.14),
+                    borderRadius: BorderRadius.circular(11),
+                    border: Border.all(
+                      color: (action.checked ? accentColor : itemColor)
+                          .withValues(alpha: 0.16),
+                    ),
+                  ),
+                  child: Icon(action.icon, size: 16, color: iconTone),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    action.label,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: itemColor,
+                      fontWeight: FontWeight.w600,
+                      height: 1.25,
+                    ),
+                  ),
+                ),
+                if (action.checked)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.xs,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: accentColor.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: accentColor.withValues(alpha: 0.24),
+                      ),
+                    ),
+                    child: Icon(
+                      Icons.check_rounded,
+                      size: 14,
+                      color: accentColor,
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ),
       ),
     );

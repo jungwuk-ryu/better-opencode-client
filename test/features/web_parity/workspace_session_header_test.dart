@@ -67,13 +67,72 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.byTooltip(
-          '5% of context window used (51,945 / 1,050,000 tokens)',
-        ),
+        find.byTooltip('5% of context window used (51,945 / 1,050,000 tokens)'),
         findsOneWidget,
       );
     },
   );
+
+  testWidgets('session header menu opens with the styled overflow panel', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1480, 960);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _HeaderWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('session-header-overflow-menu-button')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    expect(
+      find.byKey(const ValueKey<String>('session-header-overflow-menu-panel')),
+      findsOneWidget,
+    );
+    expect(find.byType(BackdropFilter), findsWidgets);
+    expect(find.text('Rename Session'), findsOneWidget);
+    expect(find.text('Delete Session'), findsOneWidget);
+    expect(
+      find.byKey(
+        const ValueKey<String>(
+          'session-header-overflow-menu-item-shell-default',
+        ),
+      ),
+      findsOneWidget,
+    );
+  });
 }
 
 class _WorkspaceRouteHarness extends StatelessWidget {
