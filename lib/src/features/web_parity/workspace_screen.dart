@@ -53,7 +53,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   static final PromptAttachmentService _attachmentService =
       PromptAttachmentService();
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  final ScrollController _timelineScrollController = ScrollController();
+  final ScrollController _timelineScrollController = ScrollController(
+    keepScrollOffset: false,
+  );
   WorkspaceController? _controller;
   ServerProfile? _profile;
   final TextEditingController _promptController = TextEditingController();
@@ -62,7 +64,13 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   String? _lastTimelineScopeKey;
   int _lastTimelineMessageCount = 0;
   int _lastTimelineContentSignature = 0;
+  bool _lastTimelineLoading = false;
   bool _timelineWasNearBottom = true;
+  String? _timelineBottomLockScopeKey;
+  double? _timelineBottomLockLastExtent;
+  int _timelineBottomLockStableFrames = 0;
+  int _timelineBottomLockAttempts = 0;
+  bool _timelineBottomLockScheduled = false;
   _CompactWorkspacePane _compactPane = _CompactWorkspacePane.session;
   PtyService? _ptyService;
   List<PtySessionInfo> _ptySessions = const <PtySessionInfo>[];
@@ -491,6 +499,11 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       final messageCount = controller.messages.length;
       final contentSignature = _timelineContentSignature(controller.messages);
       final sessionChanged = _lastTimelineScopeKey != scopeKey;
+      final sessionLoadFinished =
+          _lastTimelineLoading &&
+          !controller.sessionLoading &&
+          messageCount > 0 &&
+          _lastTimelineScopeKey == scopeKey;
       final messageCountChanged = _lastTimelineMessageCount != messageCount;
       final contentChanged =
           _lastTimelineContentSignature != contentSignature ||
@@ -505,6 +518,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       final shouldFollowTimeline =
           sessionChanged ||
           (contentChanged && (_timelineWasNearBottom || nearBottomNow));
+
+      if (messageCount > 0 && (sessionChanged || sessionLoadFinished)) {
+        _beginTimelineBottomLock(scopeKey);
+      }
 
       if (shouldFollowTimeline) {
         final target = position.maxScrollExtent;
@@ -526,6 +543,78 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       _lastTimelineScopeKey = scopeKey;
       _lastTimelineMessageCount = messageCount;
       _lastTimelineContentSignature = contentSignature;
+      _lastTimelineLoading = controller.sessionLoading;
+    });
+  }
+
+  void _beginTimelineBottomLock(String scopeKey) {
+    _timelineBottomLockScopeKey = scopeKey;
+    _timelineBottomLockLastExtent = null;
+    _timelineBottomLockStableFrames = 0;
+    _timelineBottomLockAttempts = 0;
+    _scheduleTimelineBottomLock();
+  }
+
+  void _clearTimelineBottomLock() {
+    _timelineBottomLockScopeKey = null;
+    _timelineBottomLockLastExtent = null;
+    _timelineBottomLockStableFrames = 0;
+    _timelineBottomLockAttempts = 0;
+  }
+
+  void _scheduleTimelineBottomLock() {
+    if (_timelineBottomLockScheduled || _timelineBottomLockScopeKey == null) {
+      return;
+    }
+    _timelineBottomLockScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _timelineBottomLockScheduled = false;
+      if (!mounted) {
+        return;
+      }
+      final expectedScopeKey = _timelineBottomLockScopeKey;
+      if (expectedScopeKey == null) {
+        return;
+      }
+      if (!_timelineScrollController.hasClients) {
+        _scheduleTimelineBottomLock();
+        return;
+      }
+      final controller = _controller;
+      final currentScopeKey = controller == null
+          ? null
+          : '${widget.directory}::${controller.selectedSessionId ?? 'new'}';
+      if (currentScopeKey != expectedScopeKey) {
+        _clearTimelineBottomLock();
+        return;
+      }
+      final position = _timelineScrollController.position;
+      if (!position.hasContentDimensions) {
+        _scheduleTimelineBottomLock();
+        return;
+      }
+
+      final target = position.maxScrollExtent;
+      if (!position.hasPixels || (target - position.pixels).abs() > 1) {
+        _timelineScrollController.jumpTo(target);
+      }
+      _timelineWasNearBottom = true;
+
+      final lastExtent = _timelineBottomLockLastExtent;
+      if (lastExtent != null && (target - lastExtent).abs() <= 1) {
+        _timelineBottomLockStableFrames += 1;
+      } else {
+        _timelineBottomLockStableFrames = 0;
+        _timelineBottomLockLastExtent = target;
+      }
+
+      _timelineBottomLockAttempts += 1;
+      if (_timelineBottomLockStableFrames >= 1 ||
+          _timelineBottomLockAttempts >= 8) {
+        _clearTimelineBottomLock();
+        return;
+      }
+      _scheduleTimelineBottomLock();
     });
   }
 
@@ -2171,6 +2260,7 @@ class _MessageTimeline extends StatelessWidget {
         child: ListView.separated(
           controller: controller,
           key: const PageStorageKey<String>('web-parity-message-timeline'),
+          restorationId: null,
           padding: const EdgeInsets.fromLTRB(
             AppSpacing.xl,
             AppSpacing.xl,

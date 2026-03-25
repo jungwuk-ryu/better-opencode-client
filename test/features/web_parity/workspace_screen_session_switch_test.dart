@@ -220,6 +220,67 @@ void main() {
       );
     },
   );
+
+  testWidgets(
+    'timeline lands at the bottom when opening a long existing session',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final createdControllers = <_LongSessionWorkspaceController>[];
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              final controller = _LongSessionWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+              createdControllers.add(controller);
+              return controller;
+            },
+      );
+      addTearDown(appController.dispose);
+
+      final navigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          navigatorKey: navigatorKey,
+          initialRoute: '/',
+        ),
+      );
+      navigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_long'),
+      );
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.pumpAndSettle();
+
+      final controller = createdControllers.single;
+      expect(controller.selectedSessionId, 'ses_long');
+
+      final listFinder = find.byKey(
+        const PageStorageKey<String>('web-parity-message-timeline'),
+      );
+      final position = tester.widget<ListView>(listFinder).controller!.position;
+
+      expect(position.maxScrollExtent, greaterThan(0));
+      expect(position.pixels, closeTo(position.maxScrollExtent, 96));
+    },
+  );
 }
 
 class _WorkspaceRouteHarness extends StatelessWidget {
@@ -517,6 +578,83 @@ class _StreamingWorkspaceController extends WorkspaceController {
         ],
       );
     });
+  }
+}
+
+class _LongSessionWorkspaceController extends WorkspaceController {
+  _LongSessionWorkspaceController({
+    required super.profile,
+    required super.directory,
+    super.initialSessionId,
+  });
+
+  static const ProjectTarget _projectTarget = ProjectTarget(
+    directory: '/workspace/demo',
+    label: 'Demo',
+    source: 'server',
+    vcs: 'git',
+    branch: 'main',
+  );
+
+  bool _loading = true;
+  String? _selectedSessionId;
+  List<ChatMessage> _messages = const <ChatMessage>[];
+
+  @override
+  bool get loading => _loading;
+
+  @override
+  ProjectTarget? get project => _projectTarget;
+
+  @override
+  List<ProjectTarget> get availableProjects => const <ProjectTarget>[
+    _projectTarget,
+  ];
+
+  @override
+  List<SessionSummary> get sessions => <SessionSummary>[
+    SessionSummary(
+      id: 'ses_long',
+      directory: '/workspace/demo',
+      title: 'Long session',
+      version: '1',
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(1710000001000),
+    ),
+  ];
+
+  @override
+  String? get selectedSessionId => _selectedSessionId;
+
+  @override
+  SessionSummary? get selectedSession => sessions.first;
+
+  @override
+  List<ChatMessage> get messages => _messages;
+
+  @override
+  Future<void> load() async {
+    _selectedSessionId = initialSessionId ?? 'ses_long';
+    notifyListeners();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    _messages = List<ChatMessage>.generate(120, (index) {
+      final role = index.isEven ? 'user' : 'assistant';
+      final text = List<String>.filled(
+        10,
+        '$role long session message $index with enough content to wrap repeatedly across multiple lines.',
+      ).join(' ');
+      return ChatMessage(
+        info: ChatMessageInfo(
+          id: 'msg_long_$index',
+          role: role,
+          sessionId: 'ses_long',
+        ),
+        parts: <ChatPart>[
+          ChatPart(id: 'part_long_$index', type: 'text', text: text),
+        ],
+      );
+    });
+    _loading = false;
+    notifyListeners();
   }
 }
 
