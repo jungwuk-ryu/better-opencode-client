@@ -1332,6 +1332,11 @@ class _WorkspaceSidebar extends StatelessWidget {
                             itemBuilder: (context, index) {
                               final session = sessions[index];
                               final selected = session.id == currentSessionId;
+                              final statusType =
+                                  statuses[session.id]?.type ?? 'idle';
+                              final title = session.title.isEmpty
+                                  ? 'Untitled session'
+                                  : session.title;
                               return ListTile(
                                 selected: selected,
                                 shape: RoundedRectangleBorder(
@@ -1343,15 +1348,20 @@ class _WorkspaceSidebar extends StatelessWidget {
                                     ? Theme.of(context).colorScheme.primary
                                           .withValues(alpha: 0.12)
                                     : null,
-                                title: Text(
-                                  session.title.isEmpty
-                                      ? 'Untitled session'
-                                      : session.title,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                subtitle: Text(
-                                  statuses[session.id]?.type ?? 'idle',
+                                title: _ShimmeringRichText(
+                                  key: ValueKey<String>(
+                                    'sidebar-session-shimmer-${session.id}',
+                                  ),
+                                  active: statusType != 'idle',
+                                  text: TextSpan(
+                                    text: title,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodyMedium?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
                                 ),
                                 onTap: () => onSelectSession(session.id),
                               );

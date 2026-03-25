@@ -52,11 +52,18 @@ void main() {
         initialRoute: buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
 
     expect(find.text('Root session'), findsAtLeastNWidgets(1));
     expect(find.text('Another root session'), findsAtLeastNWidgets(1));
     expect(find.text('Nested subagent session'), findsNothing);
+    expect(find.text('idle'), findsNothing);
+    expect(find.text('busy'), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('sidebar-session-shimmer-ses_1')),
+      findsOneWidget,
+    );
   });
 }
 
@@ -151,6 +158,13 @@ class _SidebarWorkspaceController extends WorkspaceController {
     ),
   ];
 
+  static const Map<String, SessionStatusSummary> _statuses =
+      <String, SessionStatusSummary>{
+        'ses_1': SessionStatusSummary(type: 'running'),
+        'ses_2': SessionStatusSummary(type: 'idle'),
+        'ses_child': SessionStatusSummary(type: 'idle'),
+      };
+
   bool _loading = true;
   String? _selectedSessionId;
 
@@ -176,6 +190,9 @@ class _SidebarWorkspaceController extends WorkspaceController {
 
   @override
   List<ChatMessage> get messages => const <ChatMessage>[];
+
+  @override
+  Map<String, SessionStatusSummary> get statuses => _statuses;
 
   @override
   List<TodoItem> get todos => const <TodoItem>[];
