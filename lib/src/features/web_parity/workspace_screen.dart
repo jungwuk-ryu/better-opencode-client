@@ -14,6 +14,7 @@ import '../chat/chat_models.dart';
 import '../chat/session_context_insights.dart';
 import '../files/file_models.dart';
 import '../projects/project_models.dart';
+import '../requests/request_models.dart';
 import '../settings/agent_service.dart';
 import '../settings/config_service.dart';
 import '../terminal/pty_models.dart';
@@ -1231,6 +1232,7 @@ class _WorkspaceBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final questionRequest = controller.currentQuestionRequest;
     final content = Column(
       children: <Widget>[
         Expanded(
@@ -1257,20 +1259,28 @@ class _WorkspaceBody extends StatelessWidget {
                   ),
           ),
         ),
-        _PromptComposer(
-          controller: promptController,
-          submitting: controller.submittingPrompt,
-          agents: controller.composerAgents,
-          models: controller.composerModels,
-          selectedAgentName: controller.selectedAgentName,
-          selectedModel: controller.selectedModel,
-          selectedReasoning: controller.selectedReasoning,
-          reasoningValues: controller.availableReasoningValues,
-          onSelectAgent: controller.selectAgent,
-          onSelectModel: controller.selectModel,
-          onSelectReasoning: controller.selectReasoning,
-          onSubmit: onSubmitPrompt,
-        ),
+        if (questionRequest != null)
+          _QuestionPromptDock(
+            key: ValueKey<String>('question-dock-${questionRequest.id}'),
+            request: questionRequest,
+            onReply: controller.replyToQuestion,
+            onReject: controller.rejectQuestion,
+          )
+        else
+          _PromptComposer(
+            controller: promptController,
+            submitting: controller.submittingPrompt,
+            agents: controller.composerAgents,
+            models: controller.composerModels,
+            selectedAgentName: controller.selectedAgentName,
+            selectedModel: controller.selectedModel,
+            selectedReasoning: controller.selectedReasoning,
+            reasoningValues: controller.availableReasoningValues,
+            onSelectAgent: controller.selectAgent,
+            onSelectModel: controller.selectModel,
+            onSelectReasoning: controller.selectReasoning,
+            onSubmit: onSubmitPrompt,
+          ),
         if (terminalPanelOpen && terminalPanel != null) terminalPanel!,
       ],
     );
@@ -1685,6 +1695,567 @@ class _PromptComposer extends StatelessWidget {
   }
 }
 
+class _QuestionPromptDock extends StatefulWidget {
+  const _QuestionPromptDock({
+    required this.request,
+    required this.onReply,
+    required this.onReject,
+    super.key,
+  });
+
+  final QuestionRequestSummary request;
+  final Future<void> Function(String requestId, List<List<String>> answers)
+  onReply;
+  final Future<void> Function(String requestId) onReject;
+
+  @override
+  State<_QuestionPromptDock> createState() => _QuestionPromptDockState();
+}
+
+class _QuestionPromptDockState extends State<_QuestionPromptDock> {
+  int _tab = 0;
+  bool _submitting = false;
+  List<List<String>> _answers = const <List<String>>[];
+  List<String> _customValues = const <String>[];
+  List<bool> _customEnabled = const <bool>[];
+  List<TextEditingController> _customControllers =
+      const <TextEditingController>[];
+
+  @override
+  void initState() {
+    super.initState();
+    _resetState();
+  }
+
+  @override
+  void didUpdateWidget(covariant _QuestionPromptDock oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.request.id != widget.request.id ||
+        oldWidget.request.questions.length != widget.request.questions.length) {
+      _resetState();
+    }
+  }
+
+  @override
+  void dispose() {
+    _disposeControllers();
+    super.dispose();
+  }
+
+  void _disposeControllers() {
+    for (final controller in _customControllers) {
+      controller.dispose();
+    }
+    _customControllers = const <TextEditingController>[];
+  }
+
+  void _resetState() {
+    _disposeControllers();
+    final count = widget.request.questions.length;
+    _tab = 0;
+    _submitting = false;
+    _answers = List<List<String>>.generate(
+      count,
+      (_) => <String>[],
+      growable: false,
+    );
+    _customValues = List<String>.filled(count, '', growable: false);
+    _customEnabled = List<bool>.filled(count, false, growable: false);
+    _customControllers = List<TextEditingController>.generate(
+      count,
+      (_) => TextEditingController(),
+      growable: false,
+    );
+  }
+
+  QuestionPromptSummary? get _question {
+    if (widget.request.questions.isEmpty) {
+      return null;
+    }
+    final index = _tab.clamp(0, widget.request.questions.length - 1);
+    return widget.request.questions[index];
+  }
+
+  bool get _isLastQuestion => _tab >= widget.request.questions.length - 1;
+
+  void _replaceAnswersForTab(List<String> values) {
+    final next = _answers
+        .map((item) => List<String>.from(item))
+        .toList(growable: false);
+    next[_tab] = values;
+    setState(() {
+      _answers = next;
+    });
+  }
+
+  void _selectOption(String label) {
+    final question = _question;
+    if (question == null || _submitting) {
+      return;
+    }
+
+    if (question.multiple) {
+      final current = List<String>.from(_answers[_tab]);
+      if (current.contains(label)) {
+        current.removeWhere((item) => item == label);
+      } else {
+        current.add(label);
+      }
+      _replaceAnswersForTab(current);
+      return;
+    }
+
+    final nextEnabled = List<bool>.from(_customEnabled);
+    nextEnabled[_tab] = false;
+    setState(() {
+      _customEnabled = nextEnabled;
+      _answers = _answers
+          .asMap()
+          .entries
+          .map(
+            (entry) => entry.key == _tab
+                ? <String>[label]
+                : List<String>.from(entry.value),
+          )
+          .toList(growable: false);
+    });
+  }
+
+  void _toggleCustom() {
+    final question = _question;
+    if (question == null || _submitting) {
+      return;
+    }
+
+    final nextEnabled = List<bool>.from(_customEnabled);
+    final currentValue = _customControllers[_tab].text.trim();
+    if (!question.multiple) {
+      nextEnabled[_tab] = true;
+      setState(() {
+        _customEnabled = nextEnabled;
+        _answers = _answers
+            .asMap()
+            .entries
+            .map(
+              (entry) => entry.key == _tab
+                  ? (currentValue.isEmpty ? <String>[] : <String>[currentValue])
+                  : List<String>.from(entry.value),
+            )
+            .toList(growable: false);
+      });
+      return;
+    }
+
+    final nextSelected = !nextEnabled[_tab];
+    nextEnabled[_tab] = nextSelected;
+    final previousValue = _customValues[_tab].trim();
+    final current = _answers[_tab]
+        .where((item) => item.trim() != previousValue)
+        .toList(growable: true);
+    if (nextSelected && currentValue.isNotEmpty) {
+      current.add(currentValue);
+    }
+    setState(() {
+      _customEnabled = nextEnabled;
+      _answers = _answers
+          .asMap()
+          .entries
+          .map(
+            (entry) =>
+                entry.key == _tab ? current : List<String>.from(entry.value),
+          )
+          .toList(growable: false);
+    });
+  }
+
+  void _updateCustomValue(String value) {
+    final question = _question;
+    if (question == null) {
+      return;
+    }
+
+    final previousValue = _customValues[_tab].trim();
+    final nextValues = List<String>.from(_customValues);
+    nextValues[_tab] = value;
+
+    if (!_customEnabled[_tab]) {
+      setState(() {
+        _customValues = nextValues;
+      });
+      return;
+    }
+
+    final trimmed = value.trim();
+    if (question.multiple) {
+      final current = _answers[_tab]
+          .where((item) => item.trim() != previousValue)
+          .toList(growable: true);
+      if (trimmed.isNotEmpty && !current.contains(trimmed)) {
+        current.add(trimmed);
+      }
+      setState(() {
+        _customValues = nextValues;
+        _answers = _answers
+            .asMap()
+            .entries
+            .map(
+              (entry) =>
+                  entry.key == _tab ? current : List<String>.from(entry.value),
+            )
+            .toList(growable: false);
+      });
+      return;
+    }
+
+    setState(() {
+      _customValues = nextValues;
+      _answers = _answers
+          .asMap()
+          .entries
+          .map(
+            (entry) => entry.key == _tab
+                ? (trimmed.isEmpty ? <String>[] : <String>[trimmed])
+                : List<String>.from(entry.value),
+          )
+          .toList(growable: false);
+    });
+  }
+
+  Future<void> _submitAnswers() async {
+    if (_submitting) {
+      return;
+    }
+    setState(() {
+      _submitting = true;
+    });
+    try {
+      await widget.onReply(
+        widget.request.id,
+        _answers
+            .map((item) => List<String>.unmodifiable(item))
+            .toList(growable: false),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _submitting = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _dismiss() async {
+    if (_submitting) {
+      return;
+    }
+    setState(() {
+      _submitting = true;
+    });
+    try {
+      await widget.onReject(widget.request.id);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _submitting = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final question = _question;
+    if (question == null) {
+      return const SizedBox.shrink();
+    }
+
+    final total = widget.request.questions.length;
+    final summary = '${_tab + 1} of $total questions';
+    final customValue = _customControllers[_tab].text.trim();
+    final customSelected = _customEnabled[_tab];
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.md,
+        AppSpacing.sm,
+        AppSpacing.md,
+        AppSpacing.md,
+      ),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 920),
+          child: Container(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            decoration: BoxDecoration(
+              color: surfaces.panel,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: surfaces.lineSoft),
+              boxShadow: <BoxShadow>[
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.22),
+                  blurRadius: 24,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Text(
+                        summary,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    ...List<Widget>.generate(total, (index) {
+                      final answered = _answers[index].isNotEmpty;
+                      final active = index == _tab;
+                      return Padding(
+                        padding: EdgeInsets.only(
+                          left: index == 0 ? 0 : AppSpacing.xs,
+                        ),
+                        child: InkWell(
+                          onTap: _submitting
+                              ? null
+                              : () => setState(() => _tab = index),
+                          borderRadius: BorderRadius.circular(999),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 160),
+                            width: 22,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: active
+                                  ? theme.colorScheme.onSurface
+                                  : answered
+                                  ? theme.colorScheme.primary
+                                  : surfaces.lineSoft,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.md),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 360),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        if (question.header.trim().isNotEmpty) ...<Widget>[
+                          Text(
+                            question.header,
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              color: surfaces.muted,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.xs),
+                        ],
+                        Text(
+                          question.question,
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            height: 1.35,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.xs),
+                        Text(
+                          question.multiple
+                              ? 'Select one or more answers.'
+                              : 'Select one answer.',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: surfaces.muted,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        for (final option in question.options) ...<Widget>[
+                          _QuestionChoiceTile(
+                            title: option.label,
+                            subtitle: option.description,
+                            selected: _answers[_tab].contains(option.label),
+                            multiple: question.multiple,
+                            onTap: () => _selectOption(option.label),
+                          ),
+                          const SizedBox(height: AppSpacing.sm),
+                        ],
+                        _QuestionChoiceTile(
+                          title: 'Type your own answer',
+                          subtitle: customValue.isEmpty
+                              ? 'Type your answer...'
+                              : customValue,
+                          selected: customSelected,
+                          multiple: question.multiple,
+                          onTap: _toggleCustom,
+                        ),
+                        if (customSelected ||
+                            customValue.isNotEmpty) ...<Widget>[
+                          const SizedBox(height: AppSpacing.sm),
+                          TextField(
+                            controller: _customControllers[_tab],
+                            onChanged: _updateCustomValue,
+                            enabled: !_submitting,
+                            minLines: 1,
+                            maxLines: 4,
+                            decoration: InputDecoration(
+                              hintText: 'Type your answer...',
+                              filled: true,
+                              fillColor: surfaces.panelMuted,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: BorderSide(
+                                  color: surfaces.lineSoft,
+                                ),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: BorderSide(
+                                  color: surfaces.lineSoft,
+                                ),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: BorderSide(
+                                  color: theme.colorScheme.primary,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                Row(
+                  children: <Widget>[
+                    TextButton(
+                      onPressed: _submitting ? null : _dismiss,
+                      child: const Text('Dismiss'),
+                    ),
+                    const Spacer(),
+                    if (_tab > 0) ...<Widget>[
+                      OutlinedButton(
+                        onPressed: _submitting
+                            ? null
+                            : () => setState(() => _tab -= 1),
+                        child: const Text('Back'),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                    ],
+                    FilledButton(
+                      key: const ValueKey<String>('question-dock-submit'),
+                      onPressed: _submitting
+                          ? null
+                          : _isLastQuestion
+                          ? _submitAnswers
+                          : () => setState(() => _tab += 1),
+                      child: _submitting
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Text(_isLastQuestion ? 'Submit' : 'Next'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _QuestionChoiceTile extends StatelessWidget {
+  const _QuestionChoiceTile({
+    required this.title,
+    required this.selected,
+    required this.multiple,
+    required this.onTap,
+    this.subtitle,
+  });
+
+  final String title;
+  final String? subtitle;
+  final bool selected;
+  final bool multiple;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final borderColor = selected
+        ? theme.colorScheme.primary
+        : surfaces.lineSoft;
+    final icon = multiple
+        ? (selected
+              ? Icons.check_box_rounded
+              : Icons.check_box_outline_blank_rounded)
+        : (selected
+              ? Icons.radio_button_checked_rounded
+              : Icons.radio_button_unchecked_rounded);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(AppSpacing.md),
+          decoration: BoxDecoration(
+            color: selected ? surfaces.panelRaised : surfaces.panelMuted,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: borderColor),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Icon(icon, size: 20, color: borderColor),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      title,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    if (subtitle != null &&
+                        subtitle!.trim().isNotEmpty) ...<Widget>[
+                      const SizedBox(height: AppSpacing.xxs),
+                      Text(
+                        subtitle!,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: surfaces.muted,
+                          height: 1.45,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _CompactPaneSwitcher extends StatelessWidget {
   const _CompactPaneSwitcher({
     required this.activePane,
@@ -1796,6 +2367,7 @@ class _TimelineMessage extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: message.parts
+          .where(_shouldRenderTimelinePart)
           .map(
             (part) => Padding(
               padding: const EdgeInsets.only(bottom: AppSpacing.md),
@@ -2554,6 +3126,13 @@ String _messageBody(ChatMessage message) {
 }
 
 String _partText(ChatPart part) {
+  if (_isQuestionToolPart(part)) {
+    final formatted = _questionToolBody(part);
+    if (formatted.isNotEmpty) {
+      return formatted;
+    }
+  }
+
   final candidates = <Object?>[
     part.text,
     part.metadata['summary'],
@@ -2584,6 +3163,17 @@ String _partText(ChatPart part) {
 }
 
 String _partSummary(ChatPart part, String body) {
+  if (_isQuestionToolPart(part)) {
+    final questions = _questionToolQuestions(part);
+    final count = questions.length;
+    if (count > 0) {
+      final answers = _questionToolAnswers(part);
+      return answers.isNotEmpty
+          ? '$count answered question${count == 1 ? '' : 's'}'
+          : '$count question${count == 1 ? '' : 's'}';
+    }
+  }
+
   final value = switch (part.type) {
     'reasoning' => _firstNonEmpty(<String?>[
       _markdownHeading(part.text),
@@ -2675,6 +3265,7 @@ String _toolTitle(String? tool) {
   return switch (value) {
     null || '' => 'Tool',
     'bash' => 'Shell',
+    'question' => 'Questions',
     'task' => 'Agent',
     'apply_patch' => 'Patch',
     'websearch' => 'Web Search',
@@ -2683,6 +3274,95 @@ String _toolTitle(String? tool) {
     'todowrite' => 'To-dos',
     final other => _titleCase(other),
   };
+}
+
+bool _shouldRenderTimelinePart(ChatPart part) {
+  if (_isQuestionToolPart(part)) {
+    final status = _toolStateStatus(part);
+    if (status == 'pending' || status == 'running') {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool _isQuestionToolPart(ChatPart part) {
+  return part.type == 'tool' && part.tool?.trim().toLowerCase() == 'question';
+}
+
+String? _toolStateStatus(ChatPart part) {
+  return _nestedValue(part.metadata, const <String>[
+    'state',
+    'status',
+  ])?.toString().trim().toLowerCase();
+}
+
+List<QuestionPromptSummary> _questionToolQuestions(ChatPart part) {
+  final raw =
+      _nestedValue(part.metadata, const <String>[
+        'state',
+        'input',
+        'questions',
+      ]) ??
+      _nestedValue(part.metadata, const <String>['input', 'questions']) ??
+      _nestedValue(part.metadata, const <String>['questions']);
+  if (raw is! List) {
+    return const <QuestionPromptSummary>[];
+  }
+  return raw
+      .whereType<Map>()
+      .map(
+        (item) => QuestionPromptSummary.fromJson(item.cast<String, Object?>()),
+      )
+      .toList(growable: false);
+}
+
+List<List<String>> _questionToolAnswers(ChatPart part) {
+  final raw =
+      _nestedValue(part.metadata, const <String>['metadata', 'answers']) ??
+      _nestedValue(part.metadata, const <String>[
+        'state',
+        'metadata',
+        'answers',
+      ]) ??
+      _nestedValue(part.metadata, const <String>['answers']);
+  if (raw is! List) {
+    return const <List<String>>[];
+  }
+  return raw
+      .map((item) {
+        if (item is List) {
+          return item
+              .map((answer) => answer.toString())
+              .toList(growable: false);
+        }
+        return <String>[item.toString()];
+      })
+      .toList(growable: false);
+}
+
+String _questionToolBody(ChatPart part) {
+  final questions = _questionToolQuestions(part);
+  final answers = _questionToolAnswers(part);
+  if (questions.isEmpty && answers.isEmpty) {
+    return '';
+  }
+
+  final count = questions.length > answers.length
+      ? questions.length
+      : answers.length;
+  final lines = <String>[];
+  for (var index = 0; index < count; index += 1) {
+    final prompt = index < questions.length
+        ? questions[index].question.trim()
+        : 'Question ${index + 1}';
+    final answerList = index < answers.length
+        ? answers[index]
+        : const <String>[];
+    lines.add(prompt.isEmpty ? 'Question ${index + 1}' : prompt);
+    lines.add(answerList.isEmpty ? 'Unanswered' : answerList.join(', '));
+  }
+  return lines.join('\n\n').trim();
 }
 
 String? _toolInputSummary(ChatPart part) {
@@ -2722,7 +3402,7 @@ String? _toolInputSummary(ChatPart part) {
   };
 }
 
-String? _nestedString(Map<String, Object?> source, List<String> path) {
+Object? _nestedValue(Map<String, Object?> source, List<String> path) {
   Object? current = source;
   for (final segment in path) {
     if (current is! Map) {
@@ -2730,7 +3410,11 @@ String? _nestedString(Map<String, Object?> source, List<String> path) {
     }
     current = current[segment];
   }
-  final value = current?.toString().trim();
+  return current;
+}
+
+String? _nestedString(Map<String, Object?> source, List<String> path) {
+  final value = _nestedValue(source, path)?.toString().trim();
   if (value == null || value.isEmpty) {
     return null;
   }

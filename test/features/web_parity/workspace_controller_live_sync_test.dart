@@ -125,6 +125,104 @@ void main() {
       'ses_1',
     ]);
   });
+
+  test(
+    'controller surfaces child session questions for the selected root session',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        initialSelectedSessionId: 'ses_root',
+        initialSessions: <SessionSummary>[
+          _session(
+            id: 'ses_root',
+            title: 'Root session',
+            createdAt: 1710000001000,
+            updatedAt: 1710000005000,
+          ),
+          _session(
+            id: 'ses_child',
+            title: 'Child session',
+            createdAt: 1710000002000,
+            updatedAt: 1710000006000,
+            parentId: 'ses_root',
+          ),
+        ],
+        pendingBundle: PendingRequestBundle(
+          questions: <QuestionRequestSummary>[
+            QuestionRequestSummary(
+              id: 'req_1',
+              sessionId: 'ses_child',
+              questions: const <QuestionPromptSummary>[
+                QuestionPromptSummary(
+                  question: 'Which environment should I target?',
+                  header: 'Environment',
+                  multiple: false,
+                  options: <QuestionOptionSummary>[
+                    QuestionOptionSummary(
+                      label: 'Cron/Container',
+                      description: 'Simple once-per-day deployment.',
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ],
+          permissions: const <PermissionRequestSummary>[],
+        ),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+
+      expect(controller.selectedSessionId, 'ses_root');
+      expect(controller.currentQuestionRequest?.id, 'req_1');
+      expect(controller.currentQuestionRequest?.sessionId, 'ses_child');
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'question.replied',
+          properties: <String, Object?>{
+            'sessionID': 'ses_child',
+            'requestID': 'req_1',
+          },
+        ),
+      );
+
+      expect(controller.currentQuestionRequest, isNull);
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'question.asked',
+          properties: <String, Object?>{
+            'id': 'req_2',
+            'sessionID': 'ses_child',
+            'questions': <Object?>[
+              <String, Object?>{
+                'question': 'Which execution path should I use?',
+                'header': 'Execution',
+                'multiple': false,
+                'options': <Object?>[
+                  <String, Object?>{
+                    'label': 'GitHub Actions',
+                    'description': 'Use the CI runner.',
+                  },
+                ],
+              },
+            ],
+          },
+        ),
+      );
+
+      expect(controller.currentQuestionRequest?.id, 'req_2');
+    },
+  );
 }
 
 WorkspaceController _buildController({
@@ -132,6 +230,11 @@ WorkspaceController _buildController({
   required ProjectTarget project,
   required _ControlledEventStreamService eventStreamService,
   List<SessionSummary>? initialSessions,
+  String? initialSelectedSessionId,
+  PendingRequestBundle pendingBundle = const PendingRequestBundle(
+    questions: <QuestionRequestSummary>[],
+    permissions: <PermissionRequestSummary>[],
+  ),
 }) {
   final sessions =
       initialSessions ??
@@ -153,14 +256,14 @@ WorkspaceController _buildController({
           'ses_1': SessionStatusSummary(type: 'idle'),
         },
         messages: const <ChatMessage>[],
-        selectedSessionId: 'ses_1',
+        selectedSessionId: initialSelectedSessionId ?? 'ses_1',
       ),
     ),
     projectCatalogService: _FakeProjectCatalogService(project),
     projectStore: _MemoryProjectStore(),
     fileBrowserService: _FakeFileBrowserService(),
     todoService: _FakeTodoService(),
-    requestService: _FakeRequestService(),
+    requestService: _FakeRequestService(pendingBundle: pendingBundle),
     eventStreamService: eventStreamService,
     configService: _FakeConfigService(),
     agentService: _FakeAgentService(),
@@ -172,6 +275,7 @@ SessionSummary _session({
   required String title,
   required int createdAt,
   required int updatedAt,
+  String? parentId,
 }) {
   return SessionSummary(
     id: id,
@@ -180,6 +284,7 @@ SessionSummary _session({
     version: '1',
     createdAt: DateTime.fromMillisecondsSinceEpoch(createdAt),
     updatedAt: DateTime.fromMillisecondsSinceEpoch(updatedAt),
+    parentId: parentId,
   );
 }
 
@@ -345,6 +450,10 @@ class _FakeTodoService extends TodoService {
 }
 
 class _FakeRequestService extends RequestService {
+  _FakeRequestService({required this.pendingBundle});
+
+  final PendingRequestBundle pendingBundle;
+
   @override
   Future<PendingRequestBundle> fetchPending({
     required ServerProfile profile,
@@ -352,10 +461,7 @@ class _FakeRequestService extends RequestService {
     bool supportsQuestions = true,
     bool supportsPermissions = true,
   }) async {
-    return const PendingRequestBundle(
-      questions: <QuestionRequestSummary>[],
-      permissions: <PermissionRequestSummary>[],
-    );
+    return pendingBundle;
   }
 
   @override

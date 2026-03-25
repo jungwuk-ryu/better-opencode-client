@@ -13,6 +13,7 @@ import '../files/file_models.dart';
 import '../projects/project_catalog_service.dart';
 import '../projects/project_models.dart';
 import '../projects/project_store.dart';
+import '../requests/request_event_applier.dart';
 import '../requests/request_models.dart';
 import '../requests/request_service.dart';
 import '../settings/agent_service.dart';
@@ -157,6 +158,16 @@ class WorkspaceController extends ChangeNotifier {
   FileBrowserBundle? get fileBundle => _fileBundle;
   List<TodoItem> get todos => _todos;
   PendingRequestBundle get pendingRequests => _pendingRequests;
+  QuestionRequestSummary? get currentQuestionRequest =>
+      _sessionTreeRequest<QuestionRequestSummary>(
+        _pendingRequests.questions,
+        (request) => request.sessionId,
+      );
+  PermissionRequestSummary? get currentPermissionRequest =>
+      _sessionTreeRequest<PermissionRequestSummary>(
+        _pendingRequests.permissions,
+        (request) => request.sessionId,
+      );
   ShellCommandResult? get lastShellResult => _lastShellResult;
   ConfigSnapshot? get configSnapshot => _configSnapshot;
   List<AgentDefinition> get composerAgents => _composerAgents;
@@ -389,10 +400,6 @@ class WorkspaceController extends ChangeNotifier {
     _selectedSessionId = sessionId;
     _messages = const <ChatMessage>[];
     _todos = const <TodoItem>[];
-    _pendingRequests = const PendingRequestBundle(
-      questions: <QuestionRequestSummary>[],
-      permissions: <PermissionRequestSummary>[],
-    );
     _notify();
 
     if (sessionId == null || sessionId.isEmpty) {
@@ -541,10 +548,6 @@ class WorkspaceController extends ChangeNotifier {
     _selectedSessionId = created.id;
     _messages = const <ChatMessage>[];
     _todos = const <TodoItem>[];
-    _pendingRequests = const PendingRequestBundle(
-      questions: <QuestionRequestSummary>[],
-      permissions: <PermissionRequestSummary>[],
-    );
     _statuses = <String, SessionStatusSummary>{
       ..._statuses,
       created.id:
@@ -570,6 +573,40 @@ class WorkspaceController extends ChangeNotifier {
     );
     _replaceSession(updated);
     _actionNotice = 'Renamed session to "${updated.title}".';
+    _notify();
+  }
+
+  Future<void> replyToQuestion(
+    String requestId,
+    List<List<String>> answers,
+  ) async {
+    final project = _project;
+    final trimmed = requestId.trim();
+    if (project == null || trimmed.isEmpty) {
+      return;
+    }
+    await _requestService.replyToQuestion(
+      profile: profile,
+      project: project,
+      requestId: trimmed,
+      answers: answers,
+    );
+    await _loadSessionPanels();
+    _notify();
+  }
+
+  Future<void> rejectQuestion(String requestId) async {
+    final project = _project;
+    final trimmed = requestId.trim();
+    if (project == null || trimmed.isEmpty) {
+      return;
+    }
+    await _requestService.rejectQuestion(
+      profile: profile,
+      project: project,
+      requestId: trimmed,
+    );
+    await _loadSessionPanels();
     _notify();
   }
 
@@ -968,7 +1005,7 @@ class WorkspaceController extends ChangeNotifier {
   Future<void> _loadSessionPanels() async {
     final project = _project;
     final sessionId = _selectedSessionId;
-    if (project == null || sessionId == null || sessionId.isEmpty) {
+    if (project == null) {
       _todos = const <TodoItem>[];
       _pendingRequests = const PendingRequestBundle(
         questions: <QuestionRequestSummary>[],
@@ -977,14 +1014,18 @@ class WorkspaceController extends ChangeNotifier {
       return;
     }
 
-    try {
-      _todos = await _todoService.fetchTodos(
-        profile: profile,
-        project: project,
-        sessionId: sessionId,
-      );
-    } catch (_) {
+    if (sessionId == null || sessionId.isEmpty) {
       _todos = const <TodoItem>[];
+    } else {
+      try {
+        _todos = await _todoService.fetchTodos(
+          profile: profile,
+          project: project,
+          sessionId: sessionId,
+        );
+      } catch (_) {
+        _todos = const <TodoItem>[];
+      }
     }
 
     try {
@@ -992,14 +1033,7 @@ class WorkspaceController extends ChangeNotifier {
         profile: profile,
         project: project,
       );
-      _pendingRequests = PendingRequestBundle(
-        questions: pending.questions
-            .where((item) => item.sessionId == sessionId)
-            .toList(growable: false),
-        permissions: pending.permissions
-            .where((item) => item.sessionId == sessionId)
-            .toList(growable: false),
-      );
+      _pendingRequests = pending;
     } catch (_) {
       _pendingRequests = const PendingRequestBundle(
         questions: <QuestionRequestSummary>[],
@@ -1040,43 +1074,126 @@ class WorkspaceController extends ChangeNotifier {
     if (_disposed) {
       return;
     }
-    switch (event.type) {
-      case 'session.created':
-      case 'session.updated':
-        _sessions = applySessionUpsertEvent(_sessions, event.properties);
-      case 'session.deleted':
-        _sessions = applySessionDeletedEvent(_sessions, event.properties);
-        _statuses = removeSessionStatusEvent(_statuses, event.properties);
-      case 'session.status':
-        _statuses = applySessionStatusEvent(_statuses, event.properties);
-      case 'message.updated':
-        _messages = applyMessageUpdatedEvent(
-          _messages,
+    final type = event.type;
+    if (type == 'session.created' || type == 'session.updated') {
+      _sessions = applySessionUpsertEvent(_sessions, event.properties);
+    } else if (type == 'session.deleted') {
+      _sessions = applySessionDeletedEvent(_sessions, event.properties);
+      _statuses = removeSessionStatusEvent(_statuses, event.properties);
+    } else if (type == 'session.status') {
+      _statuses = applySessionStatusEvent(_statuses, event.properties);
+    } else if (type == 'message.updated') {
+      _messages = applyMessageUpdatedEvent(
+        _messages,
+        event.properties,
+        selectedSessionId: _selectedSessionId,
+      );
+    } else if (type == 'message.part.updated') {
+      _messages = applyMessagePartUpdatedEvent(
+        _messages,
+        event.properties,
+        selectedSessionId: _selectedSessionId,
+      );
+    } else if (type == 'message.removed') {
+      _messages = applyMessageRemovedEvent(
+        _messages,
+        event.properties,
+        selectedSessionId: _selectedSessionId,
+      );
+    } else if (type == 'todo.updated') {
+      _todos = applyTodoUpdatedEvent(
+        _todos,
+        event.properties,
+        selectedSessionId: _selectedSessionId,
+      );
+    } else if (type == 'question.asked') {
+      _pendingRequests = PendingRequestBundle(
+        questions: applyQuestionAskedEvent(
+          _pendingRequests.questions,
           event.properties,
-          selectedSessionId: _selectedSessionId,
-        );
-      case 'message.part.updated':
-        _messages = applyMessagePartUpdatedEvent(
-          _messages,
+          selectedSessionId: null,
+        ),
+        permissions: _pendingRequests.permissions,
+      );
+    } else if (type == 'question.replied' || type == 'question.rejected') {
+      _pendingRequests = PendingRequestBundle(
+        questions: applyQuestionResolvedEvent(
+          _pendingRequests.questions,
           event.properties,
-          selectedSessionId: _selectedSessionId,
-        );
-      case 'message.removed':
-        _messages = applyMessageRemovedEvent(
-          _messages,
+          selectedSessionId: null,
+        ),
+        permissions: _pendingRequests.permissions,
+      );
+    } else if (type == 'permission.asked') {
+      _pendingRequests = PendingRequestBundle(
+        questions: _pendingRequests.questions,
+        permissions: applyPermissionAskedEvent(
+          _pendingRequests.permissions,
           event.properties,
-          selectedSessionId: _selectedSessionId,
-        );
-      case 'todo.updated':
-        _todos = applyTodoUpdatedEvent(
-          _todos,
+          selectedSessionId: null,
+        ),
+      );
+    } else if (type == 'permission.replied' || type == 'permission.rejected') {
+      _pendingRequests = PendingRequestBundle(
+        questions: _pendingRequests.questions,
+        permissions: applyPermissionResolvedEvent(
+          _pendingRequests.permissions,
           event.properties,
-          selectedSessionId: _selectedSessionId,
-        );
-      default:
-        return;
+          selectedSessionId: null,
+        ),
+      );
+    } else {
+      return;
     }
     _notify();
+  }
+
+  T? _sessionTreeRequest<T>(
+    List<T> requests,
+    String Function(T request) sessionIdOf,
+  ) {
+    final rootSessionId = _selectedSessionId;
+    if (rootSessionId == null || rootSessionId.isEmpty || requests.isEmpty) {
+      return null;
+    }
+
+    final ids = _sessionTreeIds(rootSessionId);
+    for (final sessionId in ids) {
+      for (final request in requests) {
+        if (sessionIdOf(request) == sessionId) {
+          return request;
+        }
+      }
+    }
+    return null;
+  }
+
+  List<String> _sessionTreeIds(String rootSessionId) {
+    final childrenByParent = <String, List<String>>{};
+    for (final session in _sessions) {
+      final parentId = session.parentId;
+      if (parentId == null || parentId.isEmpty) {
+        continue;
+      }
+      final children = childrenByParent.putIfAbsent(parentId, () => <String>[]);
+      children.add(session.id);
+    }
+
+    final seen = <String>{rootSessionId};
+    final ids = <String>[rootSessionId];
+    for (var index = 0; index < ids.length; index += 1) {
+      final sessionId = ids[index];
+      final children = childrenByParent[sessionId];
+      if (children == null) {
+        continue;
+      }
+      for (final childId in children) {
+        if (seen.add(childId)) {
+          ids.add(childId);
+        }
+      }
+    }
+    return ids;
   }
 
   ProjectTarget? _matchProject(List<ProjectTarget> projects, String directory) {
