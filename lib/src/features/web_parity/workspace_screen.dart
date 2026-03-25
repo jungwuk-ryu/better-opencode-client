@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
 
 import '../../app/app_routes.dart';
 import '../../app/app_scope.dart';
@@ -9,12 +11,14 @@ import '../../core/connection/connection_models.dart';
 import '../../design_system/app_spacing.dart';
 import '../../design_system/app_theme.dart';
 import '../chat/chat_models.dart';
+import '../chat/session_context_insights.dart';
 import '../files/file_models.dart';
 import '../projects/project_models.dart';
-import '../requests/request_models.dart';
 import '../settings/agent_service.dart';
-import '../terminal/terminal_service.dart';
-import '../tools/todo_models.dart';
+import '../settings/config_service.dart';
+import '../terminal/pty_models.dart';
+import '../terminal/pty_service.dart';
+import '../terminal/pty_terminal_panel.dart';
 import 'workspace_controller.dart';
 
 enum _CompactWorkspacePane { session, side }
@@ -23,11 +27,13 @@ class WebParityWorkspaceScreen extends StatefulWidget {
   const WebParityWorkspaceScreen({
     required this.directory,
     this.sessionId,
+    this.ptyServiceFactory,
     super.key,
   });
 
   final String directory;
   final String? sessionId;
+  final PtyService Function()? ptyServiceFactory;
 
   @override
   State<WebParityWorkspaceScreen> createState() =>
@@ -40,54 +46,99 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   WorkspaceController? _controller;
   ServerProfile? _profile;
   final TextEditingController _promptController = TextEditingController();
-  final TextEditingController _terminalController = TextEditingController(
-    text: 'pwd',
-  );
   String? _lastTimelineScopeKey;
   int _lastTimelineMessageCount = 0;
+  int _lastTimelineContentSignature = 0;
+  bool _timelineWasNearBottom = true;
   _CompactWorkspacePane _compactPane = _CompactWorkspacePane.session;
+  PtyService? _ptyService;
+  List<PtySessionInfo> _ptySessions = const <PtySessionInfo>[];
+  String? _activePtyId;
+  String? _terminalError;
+  bool _terminalPanelOpen = false;
+  bool _loadingPtySessions = false;
+  bool _creatingPtySession = false;
+  int _terminalEpoch = 0;
+  bool _hasPendingSessionRouteSync = false;
+  bool _sessionRouteSyncInFlight = false;
+  String? _pendingSessionRouteId;
+  int _sessionRouteSyncRevision = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _timelineScrollController.addListener(_handleTimelineScroll);
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final profile = AppScope.of(context).selectedProfile;
+    final appController = AppScope.of(context);
+    final profile = appController.selectedProfile;
     if (profile == null) {
       _disposeController();
       _profile = null;
+      _resetRouteSessionSync();
       return;
     }
-    if (_controller != null &&
-        _profile?.storageKey == profile.storageKey &&
-        _controller!.directory == widget.directory &&
-        _controller!.initialSessionId == widget.sessionId) {
-      return;
-    }
-    _disposeController();
-    _profile = profile;
-    _compactPane = _CompactWorkspacePane.session;
-    _controller = WorkspaceController(
+    final hadCachedController = appController.hasWorkspaceController(
+      profile: profile,
+      directory: widget.directory,
+    );
+    final nextController = appController.obtainWorkspaceController(
       profile: profile,
       directory: widget.directory,
       initialSessionId: widget.sessionId,
-    )..load();
+    );
+    final bindingChanged =
+        !identical(_controller, nextController) ||
+        _profile?.storageKey != profile.storageKey;
+
+    _controller = nextController;
+    _profile = profile;
+
+    if (!bindingChanged) {
+      return;
+    }
+
+    _compactPane = _CompactWorkspacePane.session;
+    _resetTerminalState(profile);
+    if (hadCachedController) {
+      _queueRouteSessionSync(widget.sessionId);
+    } else {
+      _resetRouteSessionSync();
+    }
   }
 
   @override
   void didUpdateWidget(covariant WebParityWorkspaceScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.directory != widget.directory ||
-        oldWidget.sessionId != widget.sessionId) {
+    if (oldWidget.directory != widget.directory) {
       _disposeController();
-      final profile = AppScope.of(context).selectedProfile;
+      _resetRouteSessionSync();
+      final appController = AppScope.of(context);
+      final profile = appController.selectedProfile;
       if (profile != null) {
-        _profile = profile;
-        _compactPane = _CompactWorkspacePane.session;
-        _controller = WorkspaceController(
+        final hadCachedController = appController.hasWorkspaceController(
+          profile: profile,
+          directory: widget.directory,
+        );
+        _controller = appController.obtainWorkspaceController(
           profile: profile,
           directory: widget.directory,
           initialSessionId: widget.sessionId,
-        )..load();
+        );
+        _profile = profile;
+        _compactPane = _CompactWorkspacePane.session;
+        _resetTerminalState(profile);
+        if (hadCachedController) {
+          _queueRouteSessionSync(widget.sessionId);
+        }
       }
+      return;
+    }
+    if (oldWidget.sessionId != widget.sessionId) {
+      _queueRouteSessionSync(widget.sessionId);
     }
   }
 
@@ -95,14 +146,324 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   void dispose() {
     _disposeController();
     _promptController.dispose();
-    _terminalController.dispose();
+    _timelineScrollController.removeListener(_handleTimelineScroll);
     _timelineScrollController.dispose();
+    _ptyService?.dispose();
     super.dispose();
   }
 
   void _disposeController() {
-    _controller?.dispose();
     _controller = null;
+  }
+
+  void _resetRouteSessionSync() {
+    _hasPendingSessionRouteSync = false;
+    _sessionRouteSyncInFlight = false;
+    _pendingSessionRouteId = null;
+    _sessionRouteSyncRevision = 0;
+  }
+
+  void _queueRouteSessionSync(String? sessionId) {
+    _pendingSessionRouteId = sessionId;
+    _hasPendingSessionRouteSync = true;
+    _sessionRouteSyncRevision += 1;
+    _scheduleRouteSessionSync();
+  }
+
+  void _scheduleRouteSessionSync() {
+    if (!_hasPendingSessionRouteSync || _sessionRouteSyncInFlight) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final controller = _controller;
+      if (!mounted ||
+          controller == null ||
+          !_hasPendingSessionRouteSync ||
+          _sessionRouteSyncInFlight ||
+          controller.loading) {
+        return;
+      }
+
+      final requestedSessionId = _pendingSessionRouteId;
+      if (controller.selectedSessionId == requestedSessionId) {
+        _hasPendingSessionRouteSync = false;
+        return;
+      }
+
+      final revision = _sessionRouteSyncRevision;
+      _sessionRouteSyncInFlight = true;
+      try {
+        await controller.selectSession(requestedSessionId);
+      } finally {
+        _sessionRouteSyncInFlight = false;
+        if (mounted) {
+          if (revision == _sessionRouteSyncRevision &&
+              _pendingSessionRouteId == requestedSessionId) {
+            _hasPendingSessionRouteSync = false;
+          }
+          if (_hasPendingSessionRouteSync) {
+            _scheduleRouteSessionSync();
+          }
+        }
+      }
+    });
+  }
+
+  void _resetTerminalState(ServerProfile profile) {
+    _terminalEpoch += 1;
+    _ptyService?.dispose();
+    _ptyService = (widget.ptyServiceFactory ?? PtyService.new)();
+    _ptySessions = const <PtySessionInfo>[];
+    _activePtyId = null;
+    _terminalError = null;
+    _terminalPanelOpen = false;
+    _loadingPtySessions = true;
+    _creatingPtySession = false;
+    unawaited(_loadPtySessions(epoch: _terminalEpoch, profile: profile));
+  }
+
+  Future<void> _loadPtySessions({
+    required int epoch,
+    required ServerProfile profile,
+  }) async {
+    final service = _ptyService;
+    if (service == null) {
+      return;
+    }
+    try {
+      final sessions = await service.listSessions(
+        profile: profile,
+        directory: widget.directory,
+      );
+      if (!mounted || epoch != _terminalEpoch) {
+        return;
+      }
+      setState(() {
+        _ptySessions = sessions;
+        _activePtyId = _resolveActivePtyId(sessions, preferred: _activePtyId);
+        _loadingPtySessions = false;
+        _terminalError = null;
+      });
+      if (_terminalPanelOpen && sessions.isEmpty) {
+        unawaited(_createPtySession());
+      }
+    } catch (error) {
+      if (!mounted || epoch != _terminalEpoch) {
+        return;
+      }
+      setState(() {
+        _loadingPtySessions = false;
+        _terminalError = error.toString();
+      });
+    }
+  }
+
+  String? _resolveActivePtyId(
+    List<PtySessionInfo> sessions, {
+    String? preferred,
+  }) {
+    if (sessions.isEmpty) {
+      return null;
+    }
+    if (preferred != null) {
+      for (final session in sessions) {
+        if (session.id == preferred) {
+          return preferred;
+        }
+      }
+    }
+    return sessions.first.id;
+  }
+
+  Future<void> _toggleTerminalPanel() async {
+    if (_terminalPanelOpen) {
+      setState(() {
+        _terminalPanelOpen = false;
+      });
+      return;
+    }
+    setState(() {
+      _terminalPanelOpen = true;
+      _terminalError = null;
+    });
+    if (!_loadingPtySessions && _ptySessions.isEmpty) {
+      await _createPtySession();
+    }
+  }
+
+  Future<void> _createPtySession() async {
+    final profile = _profile;
+    final service = _ptyService;
+    if (profile == null || service == null || _creatingPtySession) {
+      return;
+    }
+    setState(() {
+      _creatingPtySession = true;
+      _terminalPanelOpen = true;
+      _terminalError = null;
+    });
+    try {
+      final session = await service.createSession(
+        profile: profile,
+        directory: widget.directory,
+        cwd: widget.directory,
+        title: _nextTerminalTitle(_ptySessions),
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _ptySessions = <PtySessionInfo>[
+          session,
+          ..._ptySessions.where((item) => item.id != session.id),
+        ];
+        _activePtyId = session.id;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _terminalError = error.toString();
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _creatingPtySession = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _closePtySession(String ptyId) async {
+    final profile = _profile;
+    final service = _ptyService;
+    if (profile == null || service == null) {
+      return;
+    }
+    setState(() {
+      _ptySessions = _ptySessions
+          .where((session) => session.id != ptyId)
+          .toList(growable: false);
+      _activePtyId = _resolveActivePtyId(_ptySessions);
+      if (_ptySessions.isEmpty) {
+        _terminalPanelOpen = false;
+      }
+    });
+    try {
+      await service.removeSession(
+        profile: profile,
+        directory: widget.directory,
+        ptyId: ptyId,
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _terminalError = error.toString();
+      });
+    }
+  }
+
+  Future<void> _renamePtySession(String ptyId, String title) async {
+    final trimmed = title.trim();
+    final profile = _profile;
+    final service = _ptyService;
+    if (profile == null || service == null || trimmed.isEmpty) {
+      return;
+    }
+
+    PtySessionInfo? previous;
+    setState(() {
+      _ptySessions = _ptySessions
+          .map((session) {
+            if (session.id != ptyId) {
+              return session;
+            }
+            previous = session;
+            return session.copyWith(title: trimmed);
+          })
+          .toList(growable: false);
+    });
+
+    try {
+      final updated = await service.updateSession(
+        profile: profile,
+        directory: widget.directory,
+        ptyId: ptyId,
+        title: trimmed,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _ptySessions = _ptySessions
+            .map((session) {
+              return session.id == updated.id ? updated : session;
+            })
+            .toList(growable: false);
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        if (previous != null) {
+          _ptySessions = _ptySessions
+              .map((session) {
+                return session.id == ptyId ? previous! : session;
+              })
+              .toList(growable: false);
+        }
+        _terminalError = error.toString();
+      });
+    }
+  }
+
+  void _removeMissingPtySession(String ptyId) {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _ptySessions = _ptySessions
+          .where((session) => session.id != ptyId)
+          .toList(growable: false);
+      _activePtyId = _resolveActivePtyId(_ptySessions, preferred: _activePtyId);
+      if (_ptySessions.isEmpty) {
+        _terminalPanelOpen = false;
+      }
+    });
+  }
+
+  String _nextTerminalTitle(List<PtySessionInfo> sessions) {
+    final used = <int>{};
+    final pattern = RegExp(r'^Terminal\s+(\d+)$', caseSensitive: false);
+    for (final session in sessions) {
+      final match = pattern.firstMatch(session.title.trim());
+      final value = match == null ? null : int.tryParse(match.group(1)!);
+      if (value != null && value > 0) {
+        used.add(value);
+      }
+    }
+    var number = 1;
+    while (used.contains(number)) {
+      number += 1;
+    }
+    return 'Terminal $number';
+  }
+
+  void _handleTimelineScroll() {
+    if (!_timelineScrollController.hasClients) {
+      return;
+    }
+    final position = _timelineScrollController.position;
+    if (!position.hasContentDimensions) {
+      return;
+    }
+    _timelineWasNearBottom =
+        !position.hasPixels ||
+        (position.maxScrollExtent - position.pixels) <= 120;
   }
 
   void _scheduleTimelineSync(WorkspaceController controller) {
@@ -114,29 +475,53 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       final scopeKey =
           '${widget.directory}::${controller.selectedSessionId ?? 'new'}';
       final messageCount = controller.messages.length;
+      final contentSignature = _timelineContentSignature(controller.messages);
       final sessionChanged = _lastTimelineScopeKey != scopeKey;
       final messageCountChanged = _lastTimelineMessageCount != messageCount;
+      final contentChanged =
+          _lastTimelineContentSignature != contentSignature ||
+          messageCountChanged;
       final position = _timelineScrollController.position;
-      final nearBottom =
+      if (!position.hasContentDimensions) {
+        return;
+      }
+      final nearBottomNow =
           !position.hasPixels ||
           (position.maxScrollExtent - position.pixels) <= 120;
+      final shouldFollowTimeline =
+          sessionChanged ||
+          (contentChanged && (_timelineWasNearBottom || nearBottomNow));
 
-      if (sessionChanged || (messageCountChanged && nearBottom)) {
+      if (shouldFollowTimeline) {
         final target = position.maxScrollExtent;
-        if (sessionChanged || !position.hasPixels) {
+        if ((target - position.pixels).abs() <= 1) {
+          _timelineWasNearBottom = true;
+        } else if (sessionChanged || !position.hasPixels) {
           _timelineScrollController.jumpTo(target);
+          _timelineWasNearBottom = true;
         } else {
           _timelineScrollController.animateTo(
             target,
             duration: const Duration(milliseconds: 180),
             curve: Curves.easeOutCubic,
           );
+          _timelineWasNearBottom = true;
         }
       }
 
       _lastTimelineScopeKey = scopeKey;
       _lastTimelineMessageCount = messageCount;
+      _lastTimelineContentSignature = contentSignature;
     });
+  }
+
+  int _timelineContentSignature(List<ChatMessage> messages) {
+    var signature = messages.length;
+    for (final message in messages) {
+      final encoded = jsonEncode(message.toJson());
+      signature = Object.hash(signature, encoded.length, encoded.hashCode);
+    }
+    return signature;
   }
 
   Future<void> _submitPrompt() async {
@@ -189,6 +574,25 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       return;
     }
     await controller.renameSelectedSession(nextTitle);
+  }
+
+  Future<void> _createNewSession(WorkspaceController controller) async {
+    try {
+      final created = await controller.createEmptySession();
+      if (!mounted || created == null) {
+        return;
+      }
+      Navigator.of(context).pushReplacementNamed(
+        buildWorkspaceRoute(widget.directory, sessionId: created.id),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to create session: $error')),
+      );
+    }
   }
 
   void _showPlaceholderDialog(String title, String body) {
@@ -251,13 +655,14 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       animation: controller,
       builder: (context, _) {
         _scheduleTimelineSync(controller);
+        _scheduleRouteSessionSync();
         final compact =
             MediaQuery.sizeOf(context).width < AppSpacing.wideLayoutBreakpoint;
         final sidebar = _WorkspaceSidebar(
           currentDirectory: widget.directory,
           currentSessionId: widget.sessionId,
           projects: controller.availableProjects,
-          sessions: controller.sessions,
+          sessions: controller.visibleSessions,
           statuses: controller.statuses,
           onSelectProject: (project) {
             Navigator.of(
@@ -269,11 +674,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
               buildWorkspaceRoute(widget.directory, sessionId: sessionId),
             );
           },
-          onNewSession: () {
-            Navigator.of(
-              context,
-            ).pushReplacementNamed(buildWorkspaceRoute(widget.directory));
-          },
+          onNewSession: () => _createNewSession(controller),
           onOpenSettings: () => _showPlaceholderDialog(
             'Settings',
             'Use "See Servers" on the home screen to manage connections while the parity shell is being completed.',
@@ -300,16 +701,14 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                         project: controller.project,
                         session: controller.selectedSession,
                         status: controller.selectedStatus,
-                        terminalOpen: controller.terminalOpen,
+                        terminalOpen: _terminalPanelOpen,
                         onBackHome: () => Navigator.of(
                           context,
                         ).pushNamedAndRemoveUntil('/', (route) => false),
                         onOpenDrawer: compact
                             ? () => _scaffoldKey.currentState?.openDrawer()
                             : null,
-                        onToggleTerminal: () => controller.setTerminalOpen(
-                          !controller.terminalOpen,
-                        ),
+                        onToggleTerminal: _toggleTerminalPanel,
                         onRename: () => _renameSelectedSession(controller),
                         onFork: controller.selectedSession == null
                             ? null
@@ -364,7 +763,6 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                 compact: compact,
                                 controller: controller,
                                 promptController: _promptController,
-                                terminalController: _terminalController,
                                 timelineScrollController:
                                     _timelineScrollController,
                                 compactPane: _compactPane,
@@ -377,10 +775,33 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                   });
                                 },
                                 onSubmitPrompt: _submitPrompt,
-                                onRunCommand: () =>
-                                    controller.runTerminalCommand(
-                                      _terminalController.text,
-                                    ),
+                                terminalPanelOpen: _terminalPanelOpen,
+                                terminalPanel: _ptyService == null
+                                    ? null
+                                    : PtyTerminalPanel(
+                                        profile: _profile!,
+                                        directory: widget.directory,
+                                        service: _ptyService!,
+                                        sessions: _ptySessions,
+                                        activeSessionId: _activePtyId,
+                                        loading: _loadingPtySessions,
+                                        creating: _creatingPtySession,
+                                        error: _terminalError,
+                                        onSelectSession: (ptyId) {
+                                          setState(() {
+                                            _activePtyId = ptyId;
+                                          });
+                                        },
+                                        onCreateSession: _createPtySession,
+                                        onCloseSession: _closePtySession,
+                                        onRetry: () => _loadPtySessions(
+                                          epoch: _terminalEpoch,
+                                          profile: _profile!,
+                                        ),
+                                        onTitleChanged: _renamePtySession,
+                                        onSessionMissing:
+                                            _removeMissingPtySession,
+                                      ),
                               ),
                       ),
                     ],
@@ -789,23 +1210,23 @@ class _WorkspaceBody extends StatelessWidget {
     required this.compact,
     required this.controller,
     required this.promptController,
-    required this.terminalController,
     required this.timelineScrollController,
     required this.compactPane,
     required this.onCompactPaneChanged,
     required this.onSubmitPrompt,
-    required this.onRunCommand,
+    required this.terminalPanelOpen,
+    required this.terminalPanel,
   });
 
   final bool compact;
   final WorkspaceController controller;
   final TextEditingController promptController;
-  final TextEditingController terminalController;
   final ScrollController timelineScrollController;
   final _CompactWorkspacePane compactPane;
   final ValueChanged<_CompactWorkspacePane> onCompactPaneChanged;
   final VoidCallback onSubmitPrompt;
-  final VoidCallback onRunCommand;
+  final bool terminalPanelOpen;
+  final Widget? terminalPanel;
 
   @override
   Widget build(BuildContext context) {
@@ -850,13 +1271,7 @@ class _WorkspaceBody extends StatelessWidget {
           onSelectReasoning: controller.selectReasoning,
           onSubmit: onSubmitPrompt,
         ),
-        if (controller.terminalOpen || controller.lastShellResult != null)
-          _TerminalPanel(
-            controller: terminalController,
-            running: controller.runningTerminal,
-            lastResult: controller.lastShellResult,
-            onRun: onRunCommand,
-          ),
+        if (terminalPanelOpen && terminalPanel != null) terminalPanel!,
       ],
     );
 
@@ -1353,95 +1768,6 @@ class _CompactPaneButton extends StatelessWidget {
   }
 }
 
-class _TerminalPanel extends StatelessWidget {
-  const _TerminalPanel({
-    required this.controller,
-    required this.running,
-    required this.lastResult,
-    required this.onRun,
-  });
-
-  final TextEditingController controller;
-  final bool running;
-  final ShellCommandResult? lastResult;
-  final VoidCallback onRun;
-
-  @override
-  Widget build(BuildContext context) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.md,
-        0,
-        AppSpacing.md,
-        AppSpacing.md,
-      ),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 920),
-          child: Container(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            decoration: BoxDecoration(
-              color: surfaces.panelRaised,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: surfaces.lineSoft),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    Text(
-                      'Shell',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const Spacer(),
-                    if (lastResult != null)
-                      Text(
-                        'session ${lastResult!.sessionId}',
-                        style: Theme.of(
-                          context,
-                        ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: TextField(
-                        controller: controller,
-                        decoration: const InputDecoration(
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          filled: false,
-                          hintText: 'pwd',
-                          contentPadding: EdgeInsets.zero,
-                        ),
-                        style: GoogleFonts.ibmPlexMono(
-                          color: Theme.of(context).colorScheme.onSurface,
-                          fontSize: 13,
-                        ),
-                        onSubmitted: (_) => onRun(),
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    OutlinedButton(
-                      onPressed: running ? null : onRun,
-                      child: Text(running ? 'Running...' : 'Run'),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _TimelineMessage extends StatelessWidget {
   const _TimelineMessage({required this.message});
 
@@ -1490,13 +1816,121 @@ class _TimelinePart extends StatelessWidget {
   Widget build(BuildContext context) {
     final body = _partText(part);
     if (_isToolLikePart(part)) {
-      return _ToolCard(
+      return _TimelineActivityPart(
+        key: ValueKey<String>('timeline-activity-${part.id}'),
         title: _partTitle(part),
+        summary: _partSummary(part, body),
         body: body,
-        icon: _partIcon(part),
       );
     }
     return _StructuredTextBlock(text: body);
+  }
+}
+
+class _TimelineActivityPart extends StatefulWidget {
+  const _TimelineActivityPart({
+    required this.title,
+    required this.summary,
+    required this.body,
+    super.key,
+  });
+
+  final String title;
+  final String summary;
+  final String body;
+
+  @override
+  State<_TimelineActivityPart> createState() => _TimelineActivityPartState();
+}
+
+class _TimelineActivityPartState extends State<_TimelineActivityPart> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final canExpand = widget.body.trim().isNotEmpty;
+    final titleStyle = theme.textTheme.titleSmall?.copyWith(
+      fontWeight: FontWeight.w700,
+      color: theme.colorScheme.onSurface,
+    );
+    final summaryStyle = theme.textTheme.bodyMedium?.copyWith(
+      height: 1.6,
+      color: surfaces.muted,
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: canExpand
+                ? () => setState(() => _expanded = !_expanded)
+                : null,
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.xs,
+                vertical: AppSpacing.xxs,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Expanded(
+                    child: Text.rich(
+                      TextSpan(
+                        children: <InlineSpan>[
+                          TextSpan(text: widget.title, style: titleStyle),
+                          if (widget.summary.isNotEmpty)
+                            TextSpan(
+                              text: ' ${widget.summary}',
+                              style: summaryStyle,
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (canExpand) ...<Widget>[
+                    const SizedBox(width: AppSpacing.sm),
+                    Icon(
+                      _expanded
+                          ? Icons.keyboard_arrow_up_rounded
+                          : Icons.keyboard_arrow_down_rounded,
+                      size: 18,
+                      color: surfaces.muted,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+        ClipRect(
+          child: AnimatedSize(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            child: !_expanded || !canExpand
+                ? const SizedBox.shrink()
+                : Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(
+                      left: AppSpacing.lg,
+                      top: AppSpacing.xs,
+                    ),
+                    padding: const EdgeInsets.all(AppSpacing.md),
+                    decoration: BoxDecoration(
+                      color: surfaces.panelMuted,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: surfaces.lineSoft),
+                    ),
+                    child: _StructuredTextBlock(text: widget.body),
+                  ),
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -1650,66 +2084,6 @@ class _InlineCodeText extends StatelessWidget {
       spans.add(TextSpan(text: text.substring(cursor)));
     }
     return Text.rich(TextSpan(style: baseStyle, children: spans));
-  }
-}
-
-class _ToolCard extends StatelessWidget {
-  const _ToolCard({
-    required this.title,
-    required this.body,
-    required this.icon,
-  });
-
-  final String title;
-  final String body;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: surfaces.panel,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: surfaces.lineSoft),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              Icon(
-                icon,
-                size: 16,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              const SizedBox(width: AppSpacing.xs),
-              Text(title, style: Theme.of(context).textTheme.titleSmall),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(AppSpacing.md),
-            decoration: BoxDecoration(
-              color: surfaces.panelMuted,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: surfaces.lineSoft),
-            ),
-            child: Text(
-              body,
-              style: GoogleFonts.ibmPlexMono(
-                color: Theme.of(context).colorScheme.onSurface,
-                fontSize: 12.5,
-                height: 1.6,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }
 
@@ -2209,6 +2583,61 @@ String _partText(ChatPart part) {
   return lines.join('\n');
 }
 
+String _partSummary(ChatPart part, String body) {
+  final value = switch (part.type) {
+    'reasoning' => _firstNonEmpty(<String?>[
+      _markdownHeading(part.text),
+      _markdownHeading(_nestedString(part.metadata, const <String>['summary'])),
+      _firstMeaningfulLine(body),
+    ]),
+    'tool' => _firstNonEmpty(<String?>[
+      _nestedString(part.metadata, const <String>['state', 'title']),
+      _nestedString(part.metadata, const <String>[
+        'state',
+        'input',
+        'description',
+      ]),
+      _toolInputSummary(part),
+      _firstMeaningfulLine(body),
+    ]),
+    'step-start' => _firstNonEmpty(<String?>[
+      _nestedString(part.metadata, const <String>['title']),
+      _nestedString(part.metadata, const <String>['description']),
+      _firstMeaningfulLine(body),
+    ]),
+    'step-finish' => _firstNonEmpty(<String?>[
+      _nestedString(part.metadata, const <String>['reason']),
+      _nestedString(part.metadata, const <String>['message']),
+      _firstMeaningfulLine(body),
+    ]),
+    'patch' => _firstNonEmpty(<String?>[
+      _nestedString(part.metadata, const <String>['summary']),
+      _nestedString(part.metadata, const <String>['description']),
+      _firstMeaningfulLine(body),
+    ]),
+    'snapshot' => _firstNonEmpty(<String?>[
+      _nestedString(part.metadata, const <String>['summary']),
+      _firstMeaningfulLine(body),
+    ]),
+    'retry' => _firstNonEmpty(<String?>[
+      _nestedString(part.metadata, const <String>['message']),
+      _nestedString(part.metadata, const <String>['reason']),
+      _firstMeaningfulLine(body),
+    ]),
+    'agent' || 'subtask' => _firstNonEmpty(<String?>[
+      _nestedString(part.metadata, const <String>['description']),
+      _nestedString(part.metadata, const <String>['summary']),
+      _firstMeaningfulLine(body),
+    ]),
+    'compaction' => _firstNonEmpty(<String?>[
+      _nestedString(part.metadata, const <String>['summary']),
+      _firstMeaningfulLine(body),
+    ]),
+    _ => _firstMeaningfulLine(body),
+  };
+  return _truncateSummary(value ?? '');
+}
+
 bool _isToolLikePart(ChatPart part) {
   return switch (part.type) {
     'tool' ||
@@ -2227,8 +2656,8 @@ bool _isToolLikePart(ChatPart part) {
 
 String _partTitle(ChatPart part) {
   return switch (part.type) {
-    'tool' => part.tool?.trim().isNotEmpty == true ? part.tool!.trim() : 'Tool',
-    'reasoning' => 'Reasoning',
+    'tool' => _toolTitle(part.tool),
+    'reasoning' => 'Thinking',
     'step-start' => 'Step',
     'step-finish' => 'Step Result',
     'patch' => 'Patch',
@@ -2236,20 +2665,168 @@ String _partTitle(ChatPart part) {
     'retry' => 'Retry',
     'agent' => 'Agent',
     'subtask' => 'Subtask',
-    'compaction' => 'Compaction',
+    'compaction' => 'Session compacted',
     _ => part.type,
   };
 }
 
-IconData _partIcon(ChatPart part) {
-  return switch (part.type) {
-    'tool' => Icons.terminal_rounded,
-    'reasoning' => Icons.psychology_alt_outlined,
-    'patch' => Icons.auto_fix_high_rounded,
-    'snapshot' => Icons.photo_library_outlined,
-    'agent' => Icons.hub_outlined,
-    _ => Icons.code_rounded,
+String _toolTitle(String? tool) {
+  final value = tool?.trim().toLowerCase();
+  return switch (value) {
+    null || '' => 'Tool',
+    'bash' => 'Shell',
+    'task' => 'Agent',
+    'apply_patch' => 'Patch',
+    'websearch' => 'Web Search',
+    'webfetch' => 'Web Fetch',
+    'codesearch' => 'Code Search',
+    'todowrite' => 'To-dos',
+    final other => _titleCase(other),
   };
+}
+
+String? _toolInputSummary(ChatPart part) {
+  final tool = part.tool?.trim().toLowerCase();
+  return switch (tool) {
+    'read' => _nestedString(part.metadata, const <String>[
+      'state',
+      'input',
+      'filePath',
+    ]),
+    'list' => _nestedString(part.metadata, const <String>[
+      'state',
+      'input',
+      'path',
+    ]),
+    'glob' || 'grep' => _nestedString(part.metadata, const <String>[
+      'state',
+      'input',
+      'pattern',
+    ]),
+    'websearch' || 'codesearch' => _nestedString(part.metadata, const <String>[
+      'state',
+      'input',
+      'query',
+    ]),
+    'webfetch' => _nestedString(part.metadata, const <String>[
+      'state',
+      'input',
+      'url',
+    ]),
+    'task' || 'bash' || 'skill' => _nestedString(part.metadata, const <String>[
+      'state',
+      'input',
+      'description',
+    ]),
+    _ => null,
+  };
+}
+
+String? _nestedString(Map<String, Object?> source, List<String> path) {
+  Object? current = source;
+  for (final segment in path) {
+    if (current is! Map) {
+      return null;
+    }
+    current = current[segment];
+  }
+  final value = current?.toString().trim();
+  if (value == null || value.isEmpty) {
+    return null;
+  }
+  return value;
+}
+
+String? _firstNonEmpty(Iterable<String?> values) {
+  for (final value in values) {
+    final normalized = value?.trim();
+    if (normalized != null && normalized.isNotEmpty) {
+      return normalized;
+    }
+  }
+  return null;
+}
+
+String? _firstMeaningfulLine(String? value) {
+  if (value == null) {
+    return null;
+  }
+  final lines = value
+      .split('\n')
+      .map(_cleanInlineSummary)
+      .where((line) => line.isNotEmpty)
+      .toList(growable: false);
+  return lines.isEmpty ? null : lines.first;
+}
+
+String? _markdownHeading(String? value) {
+  if (value == null || value.trim().isEmpty) {
+    return null;
+  }
+  final markdown = value.replaceAll(RegExp(r'\r\n?'), '\n');
+  final html = RegExp(
+    r'<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>',
+    caseSensitive: false,
+  ).firstMatch(markdown);
+  if (html != null) {
+    final cleaned = _cleanInlineSummary(
+      html.group(1)?.replaceAll(RegExp(r'<[^>]+>'), ' ') ?? '',
+    );
+    if (cleaned.isNotEmpty) {
+      return cleaned;
+    }
+  }
+  final atx = RegExp(
+    r'^\s{0,3}#{1,6}[ \t]+(.+?)(?:[ \t]+#+[ \t]*)?$',
+    multiLine: true,
+  ).firstMatch(markdown);
+  if (atx != null) {
+    final cleaned = _cleanInlineSummary(atx.group(1) ?? '');
+    if (cleaned.isNotEmpty) {
+      return cleaned;
+    }
+  }
+  final setext = RegExp(
+    r'^([^\n]+)\n(?:=+|-+)\s*$',
+    multiLine: true,
+  ).firstMatch(markdown);
+  if (setext != null) {
+    final cleaned = _cleanInlineSummary(setext.group(1) ?? '');
+    if (cleaned.isNotEmpty) {
+      return cleaned;
+    }
+  }
+  final strong = RegExp(
+    r'^\s*(?:\*\*|__)(.+?)(?:\*\*|__)\s*$',
+    multiLine: true,
+  ).firstMatch(markdown);
+  if (strong != null) {
+    final cleaned = _cleanInlineSummary(strong.group(1) ?? '');
+    if (cleaned.isNotEmpty) {
+      return cleaned;
+    }
+  }
+  return null;
+}
+
+String _truncateSummary(String value, {int maxLength = 120}) {
+  final cleaned = _cleanInlineSummary(value);
+  if (cleaned.length <= maxLength) {
+    return cleaned;
+  }
+  return '${cleaned.substring(0, maxLength - 1).trimRight()}…';
+}
+
+String _cleanInlineSummary(String value) {
+  return value
+      .replaceAllMapped(RegExp(r'`([^`]+)`'), (match) => match.group(1) ?? '')
+      .replaceAllMapped(
+        RegExp(r'\[([^\]]+)\]\([^)]+\)'),
+        (match) => match.group(1) ?? '',
+      )
+      .replaceAll(RegExp(r'[*_~]+'), '')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
 }
 
 class _SidePanel extends StatelessWidget {
@@ -2293,10 +2870,15 @@ class _SidePanel extends StatelessWidget {
             ),
             WorkspaceSideTab.files => _FilesPanel(
               bundle: controller.fileBundle,
+              loadingPreview: controller.loadingFilePreview,
+              onSelectFile: (path) {
+                unawaited(controller.selectFile(path));
+              },
             ),
             WorkspaceSideTab.context => _ContextPanel(
-              todos: controller.todos,
-              pendingRequests: controller.pendingRequests,
+              session: controller.selectedSession,
+              messages: controller.messages,
+              configSnapshot: controller.configSnapshot,
             ),
           },
         ),
@@ -2339,9 +2921,15 @@ class _ReviewPanel extends StatelessWidget {
 }
 
 class _FilesPanel extends StatelessWidget {
-  const _FilesPanel({required this.bundle});
+  const _FilesPanel({
+    required this.bundle,
+    required this.loadingPreview,
+    required this.onSelectFile,
+  });
 
   final FileBrowserBundle? bundle;
+  final bool loadingPreview;
+  final ValueChanged<String> onSelectFile;
 
   @override
   Widget build(BuildContext context) {
@@ -2367,8 +2955,18 @@ class _FilesPanel extends StatelessWidget {
             separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.xs),
             itemBuilder: (context, index) {
               final node = bundle.nodes[index];
+              final selected = node.path == bundle.selectedPath;
               return ListTile(
                 dense: true,
+                selected: selected,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppSpacing.md),
+                ),
+                tileColor: selected
+                    ? Theme.of(
+                        context,
+                      ).colorScheme.primary.withValues(alpha: 0.12)
+                    : null,
                 leading: Icon(
                   node.type == 'directory'
                       ? Icons.folder_outlined
@@ -2376,11 +2974,12 @@ class _FilesPanel extends StatelessWidget {
                 ),
                 title: Text(node.name),
                 subtitle: Text(node.path),
+                onTap: () => onSelectFile(node.path),
               );
             },
           ),
         ),
-        if (bundle.preview != null)
+        if (bundle.selectedPath != null || bundle.preview != null)
           Container(
             height: 180,
             width: double.infinity,
@@ -2388,13 +2987,39 @@ class _FilesPanel extends StatelessWidget {
             decoration: BoxDecoration(
               border: Border(top: BorderSide(color: surfaces.lineSoft)),
             ),
-            child: SingleChildScrollView(
-              child: SelectableText(
-                bundle.preview!.content,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                if (bundle.selectedPath != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                    child: Text(
+                      bundle.selectedPath!,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.labelMedium?.copyWith(color: surfaces.muted),
+                    ),
+                  ),
+                Expanded(
+                  child: loadingPreview
+                      ? const Center(child: CircularProgressIndicator())
+                      : bundle.preview == null
+                      ? Center(
+                          child: Text(
+                            'Preview unavailable for this item.',
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(color: surfaces.muted),
+                          ),
+                        )
+                      : SingleChildScrollView(
+                          child: SelectableText(
+                            bundle.preview!.content,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(fontFamily: 'monospace'),
+                          ),
+                        ),
+                ),
+              ],
             ),
           ),
       ],
@@ -2402,51 +3027,454 @@ class _FilesPanel extends StatelessWidget {
   }
 }
 
-class _ContextPanel extends StatelessWidget {
-  const _ContextPanel({required this.todos, required this.pendingRequests});
+class _ContextPanel extends StatefulWidget {
+  const _ContextPanel({
+    required this.session,
+    required this.messages,
+    required this.configSnapshot,
+  });
 
-  final List<TodoItem> todos;
-  final PendingRequestBundle pendingRequests;
+  final SessionSummary? session;
+  final List<ChatMessage> messages;
+  final ConfigSnapshot? configSnapshot;
+
+  @override
+  State<_ContextPanel> createState() => _ContextPanelState();
+}
+
+class _ContextPanelState extends State<_ContextPanel> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
-    return ListView(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      children: <Widget>[
-        Text('Todos', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: AppSpacing.sm),
-        if (todos.isEmpty)
-          Text(
-            'No todos for this session.',
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
-          )
-        else
-          ...todos.map(
-            (todo) => ListTile(
-              title: Text(todo.content),
-              subtitle: Text('${todo.status}  •  ${todo.priority}'),
-            ),
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final locale = Localizations.localeOf(context).toLanguageTag();
+    final decimal = NumberFormat.decimalPattern(locale);
+    final currency = NumberFormat.simpleCurrency(locale: locale, name: 'USD');
+    final metrics = getSessionContextMetrics(
+      messages: widget.messages,
+      providerCatalog: widget.configSnapshot?.providerCatalog,
+    );
+    final snapshot = metrics.context;
+    final systemPrompt = resolveSessionSystemPrompt(
+      messages: widget.messages,
+      revertMessageId: widget.session?.revertMessageId,
+    );
+    final breakdown = snapshot == null
+        ? const <SessionContextBreakdownSegment>[]
+        : estimateSessionContextBreakdown(
+            messages: widget.messages,
+            inputTokens: snapshot.inputTokens,
+            systemPrompt: systemPrompt,
+          );
+    final userMessages = widget.messages
+        .where((message) => message.info.role == 'user')
+        .length;
+    final assistantMessages = widget.messages
+        .where((message) => message.info.role == 'assistant')
+        .length;
+    final stats = <_ContextStatEntry>[
+      _ContextStatEntry(
+        label: 'Session',
+        value: widget.session?.title.trim().isNotEmpty == true
+            ? widget.session!.title.trim()
+            : (widget.session?.id ?? '—'),
+      ),
+      _ContextStatEntry(
+        label: 'Messages',
+        value: decimal.format(widget.messages.length),
+      ),
+      _ContextStatEntry(
+        label: 'Provider',
+        value: snapshot?.providerLabel ?? '—',
+      ),
+      _ContextStatEntry(label: 'Model', value: snapshot?.modelLabel ?? '—'),
+      _ContextStatEntry(
+        label: 'Context Limit',
+        value: _formatContextNumber(snapshot?.contextLimit, decimal),
+      ),
+      _ContextStatEntry(
+        label: 'Total Tokens',
+        value: _formatContextNumber(snapshot?.totalTokens, decimal),
+      ),
+      _ContextStatEntry(
+        label: 'Usage',
+        value: _formatContextPercent(snapshot?.usagePercent, decimal),
+      ),
+      _ContextStatEntry(
+        label: 'Input Tokens',
+        value: _formatContextNumber(snapshot?.inputTokens, decimal),
+      ),
+      _ContextStatEntry(
+        label: 'Output Tokens',
+        value: _formatContextNumber(snapshot?.outputTokens, decimal),
+      ),
+      _ContextStatEntry(
+        label: 'Reasoning Tokens',
+        value: _formatContextNumber(snapshot?.reasoningTokens, decimal),
+      ),
+      _ContextStatEntry(
+        label: 'Cache Tokens (read/write)',
+        value:
+            '${_formatContextNumber(snapshot?.cacheReadTokens, decimal)} / '
+            '${_formatContextNumber(snapshot?.cacheWriteTokens, decimal)}',
+      ),
+      _ContextStatEntry(
+        label: 'User Messages',
+        value: decimal.format(userMessages),
+      ),
+      _ContextStatEntry(
+        label: 'Assistant Messages',
+        value: decimal.format(assistantMessages),
+      ),
+      _ContextStatEntry(
+        label: 'Total Cost',
+        value: currency.format(metrics.totalCost),
+      ),
+      _ContextStatEntry(
+        label: 'Session Created',
+        value: _formatContextTime(widget.session?.createdAt, locale),
+      ),
+      _ContextStatEntry(
+        label: 'Last Activity',
+        value: _formatContextTime(snapshot?.message.info.createdAt, locale),
+      ),
+    ];
+
+    return SelectionArea(
+      child: Scrollbar(
+        controller: _scrollController,
+        thumbVisibility: true,
+        interactive: true,
+        child: ListView(
+          controller: _scrollController,
+          primary: false,
+          key: const PageStorageKey<String>('web-parity-context-panel'),
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.lg,
+            AppSpacing.md,
+            AppSpacing.lg,
+            AppSpacing.xl,
           ),
-        const SizedBox(height: AppSpacing.lg),
+          children: <Widget>[
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final gap = AppSpacing.lg;
+                final columns = constraints.maxWidth >= 300 ? 2 : 1;
+                final itemWidth = columns == 1
+                    ? constraints.maxWidth
+                    : (constraints.maxWidth - gap) / 2;
+                return Wrap(
+                  spacing: gap,
+                  runSpacing: AppSpacing.lg,
+                  children: stats
+                      .map(
+                        (entry) => SizedBox(
+                          width: itemWidth,
+                          child: _ContextStat(entry: entry),
+                        ),
+                      )
+                      .toList(growable: false),
+                );
+              },
+            ),
+            if (breakdown.isNotEmpty) ...<Widget>[
+              const SizedBox(height: AppSpacing.xxl),
+              Text(
+                'Context Breakdown',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: surfaces.muted,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: SizedBox(
+                  height: 8,
+                  child: Row(
+                    children: breakdown
+                        .map(
+                          (segment) => Expanded(
+                            flex: segment.tokens,
+                            child: ColoredBox(
+                              color: _breakdownColor(segment.key, surfaces),
+                            ),
+                          ),
+                        )
+                        .toList(growable: false),
+                  ),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Wrap(
+                spacing: AppSpacing.md,
+                runSpacing: AppSpacing.xs,
+                children: breakdown
+                    .map(
+                      (segment) => Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: _breakdownColor(segment.key, surfaces),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.xs),
+                          Text(
+                            '${_breakdownLabel(segment.key)} '
+                            '${segment.labelPercent.toStringAsFixed(1)}%',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: surfaces.muted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                    .toList(growable: false),
+              ),
+            ],
+            if (systemPrompt != null) ...<Widget>[
+              const SizedBox(height: AppSpacing.xxl),
+              Text(
+                'System Prompt',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: surfaces.muted,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(AppSpacing.md),
+                decoration: BoxDecoration(
+                  color: surfaces.panelMuted,
+                  borderRadius: BorderRadius.circular(AppSpacing.md),
+                  border: Border.all(color: surfaces.lineSoft),
+                ),
+                child: Text(
+                  systemPrompt,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurface,
+                    height: 1.55,
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: AppSpacing.xxl),
+            Text(
+              'Raw messages',
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: surfaces.muted,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            if (widget.messages.isEmpty)
+              Container(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                decoration: BoxDecoration(
+                  color: surfaces.panelMuted,
+                  borderRadius: BorderRadius.circular(AppSpacing.md),
+                  border: Border.all(color: surfaces.lineSoft),
+                ),
+                child: Text(
+                  'No raw messages yet.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: surfaces.muted,
+                  ),
+                ),
+              )
+            else
+              ...widget.messages.map(
+                (message) => Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                  child: _ContextRawMessageTile(
+                    message: message,
+                    timestampLabel: _formatContextTime(
+                      message.info.createdAt,
+                      locale,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ContextStatEntry {
+  const _ContextStatEntry({required this.label, required this.value});
+
+  final String label;
+  final String value;
+}
+
+class _ContextStat extends StatelessWidget {
+  const _ContextStat({required this.entry});
+
+  final _ContextStatEntry entry;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
         Text(
-          'Pending Requests',
-          style: Theme.of(context).textTheme.titleMedium,
+          entry.label,
+          style: theme.textTheme.labelMedium?.copyWith(color: surfaces.muted),
         ),
-        const SizedBox(height: AppSpacing.sm),
-        ListTile(
-          title: const Text('Questions'),
-          trailing: Text('${pendingRequests.questions.length}'),
-        ),
-        ListTile(
-          title: const Text('Permissions'),
-          trailing: Text('${pendingRequests.permissions.length}'),
+        const SizedBox(height: 2),
+        Text(
+          entry.value,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurface,
+          ),
         ),
       ],
     );
   }
+}
+
+class _ContextRawMessageTile extends StatelessWidget {
+  const _ContextRawMessageTile({
+    required this.message,
+    required this.timestampLabel,
+  });
+
+  final ChatMessage message;
+  final String timestampLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    return Container(
+      decoration: BoxDecoration(
+        color: surfaces.panelMuted,
+        borderRadius: BorderRadius.circular(AppSpacing.md),
+        border: Border.all(color: surfaces.lineSoft),
+      ),
+      child: Theme(
+        data: theme.copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: 2,
+          ),
+          childrenPadding: const EdgeInsets.fromLTRB(
+            AppSpacing.md,
+            0,
+            AppSpacing.md,
+            AppSpacing.md,
+          ),
+          iconColor: surfaces.muted,
+          collapsedIconColor: surfaces.muted,
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text.rich(
+                TextSpan(
+                  text: message.info.role,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurface,
+                  ),
+                  children: <InlineSpan>[
+                    TextSpan(
+                      text: ' • ${message.info.id}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: surfaces.muted,
+                      ),
+                    ),
+                  ],
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                timestampLabel,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: surfaces.muted,
+                ),
+              ),
+            ],
+          ),
+          children: <Widget>[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(AppSpacing.md),
+              decoration: BoxDecoration(
+                color: theme.scaffoldBackgroundColor,
+                borderRadius: BorderRadius.circular(AppSpacing.md),
+                border: Border.all(color: surfaces.lineSoft),
+              ),
+              child: Text(
+                formatRawSessionMessage(message),
+                style: GoogleFonts.ibmPlexMono(
+                  fontSize: 11,
+                  height: 1.5,
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _formatContextNumber(int? value, NumberFormat formatter) {
+  if (value == null) {
+    return '—';
+  }
+  return formatter.format(value);
+}
+
+String _formatContextPercent(int? value, NumberFormat formatter) {
+  if (value == null) {
+    return '—';
+  }
+  return '${formatter.format(value)}%';
+}
+
+String _formatContextTime(DateTime? value, String locale) {
+  if (value == null) {
+    return '—';
+  }
+  return DateFormat.yMMMd(locale).add_jm().format(value.toLocal());
+}
+
+String _breakdownLabel(SessionContextBreakdownKey key) {
+  return switch (key) {
+    SessionContextBreakdownKey.system => 'System',
+    SessionContextBreakdownKey.user => 'User',
+    SessionContextBreakdownKey.assistant => 'Assistant',
+    SessionContextBreakdownKey.tool => 'Tool Calls',
+    SessionContextBreakdownKey.other => 'Other',
+  };
+}
+
+Color _breakdownColor(SessionContextBreakdownKey key, AppSurfaces surfaces) {
+  return switch (key) {
+    SessionContextBreakdownKey.system => surfaces.accentSoft,
+    SessionContextBreakdownKey.user => surfaces.success,
+    SessionContextBreakdownKey.assistant => const Color(0xFFE4B184),
+    SessionContextBreakdownKey.tool => surfaces.warning,
+    SessionContextBreakdownKey.other => surfaces.muted,
+  };
 }
 
 class _WorkspaceError extends StatelessWidget {

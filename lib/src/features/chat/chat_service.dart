@@ -177,7 +177,16 @@ class ChatService {
           )
         : const <String, SessionStatusSummary>{};
 
-    final selectedSessionId = sessions.isEmpty ? null : sessions.first.id;
+    final visibleSessions = sessions
+        .where(
+          (session) =>
+              session.parentId == null &&
+              session.archivedAt == null,
+        )
+        .toList(growable: false);
+    final selectedSessionId = visibleSessions.isNotEmpty
+        ? visibleSessions.first.id
+        : (sessions.isEmpty ? null : sessions.first.id);
     final messages = selectedSessionId == null
         ? const <ChatMessage>[]
         : await fetchMessages(

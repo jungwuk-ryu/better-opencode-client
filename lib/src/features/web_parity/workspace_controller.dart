@@ -111,6 +111,7 @@ class WorkspaceController extends ChangeNotifier {
   bool _submittingPrompt = false;
   bool _runningTerminal = false;
   bool _terminalOpen = false;
+  bool _loadingFilePreview = false;
   WorkspaceSideTab _sideTab = WorkspaceSideTab.review;
   String? _error;
   String? _actionNotice;
@@ -128,6 +129,7 @@ class WorkspaceController extends ChangeNotifier {
     permissions: <PermissionRequestSummary>[],
   );
   ShellCommandResult? _lastShellResult;
+  ConfigSnapshot? _configSnapshot;
   List<AgentDefinition> _composerAgents = const <AgentDefinition>[];
   List<WorkspaceComposerModelOption> _composerModels =
       const <WorkspaceComposerModelOption>[];
@@ -141,12 +143,14 @@ class WorkspaceController extends ChangeNotifier {
   bool get submittingPrompt => _submittingPrompt;
   bool get runningTerminal => _runningTerminal;
   bool get terminalOpen => _terminalOpen;
+  bool get loadingFilePreview => _loadingFilePreview;
   WorkspaceSideTab get sideTab => _sideTab;
   String? get error => _error;
   String? get actionNotice => _actionNotice;
   ProjectTarget? get project => _project;
   List<ProjectTarget> get availableProjects => _availableProjects;
   List<SessionSummary> get sessions => _sessions;
+  List<SessionSummary> get visibleSessions => _visibleRootSessions(sessions);
   Map<String, SessionStatusSummary> get statuses => _statuses;
   String? get selectedSessionId => _selectedSessionId;
   List<ChatMessage> get messages => _messages;
@@ -154,6 +158,7 @@ class WorkspaceController extends ChangeNotifier {
   List<TodoItem> get todos => _todos;
   PendingRequestBundle get pendingRequests => _pendingRequests;
   ShellCommandResult? get lastShellResult => _lastShellResult;
+  ConfigSnapshot? get configSnapshot => _configSnapshot;
   List<AgentDefinition> get composerAgents => _composerAgents;
   List<WorkspaceComposerModelOption> get composerModels => _composerModels;
   String? get selectedAgentName => _selectedAgentName;
@@ -406,6 +411,70 @@ class WorkspaceController extends ChangeNotifier {
     _notify();
   }
 
+  Future<void> selectFile(String path) async {
+    final project = _project;
+    final bundle = _fileBundle;
+    final trimmed = path.trim();
+    if (project == null || bundle == null || trimmed.isEmpty) {
+      return;
+    }
+
+    FileNodeSummary? selectedNode;
+    for (final node in bundle.nodes) {
+      if (node.path == trimmed) {
+        selectedNode = node;
+        break;
+      }
+    }
+
+    final selectingDirectory = selectedNode?.type == 'directory';
+    final shouldReloadPreview =
+        bundle.selectedPath != trimmed ||
+        bundle.preview == null ||
+        _loadingFilePreview;
+    if (!shouldReloadPreview) {
+      return;
+    }
+
+    _loadingFilePreview = !selectingDirectory;
+    _fileBundle = bundle.copyWith(selectedPath: trimmed, clearPreview: true);
+    _notify();
+
+    if (selectingDirectory) {
+      _loadingFilePreview = false;
+      _notify();
+      return;
+    }
+
+    try {
+      final preview = await _fileBrowserService.fetchFileContent(
+        profile: profile,
+        project: project,
+        path: trimmed,
+      );
+      if (_disposed || _fileBundle?.selectedPath != trimmed) {
+        return;
+      }
+      _fileBundle = _fileBundle?.copyWith(
+        selectedPath: trimmed,
+        preview: preview,
+      );
+    } catch (_) {
+      if (_disposed || _fileBundle?.selectedPath != trimmed) {
+        return;
+      }
+      _fileBundle = _fileBundle?.copyWith(
+        selectedPath: trimmed,
+        clearPreview: true,
+      );
+    } finally {
+      if (!_disposed && _fileBundle?.selectedPath == trimmed) {
+        _loadingFilePreview = false;
+        _notify();
+      }
+    }
+  }
+
   Future<String?> submitPrompt(String prompt) async {
     final trimmed = prompt.trim();
     final project = _project;
@@ -455,6 +524,36 @@ class WorkspaceController extends ChangeNotifier {
       _submittingPrompt = false;
       _notify();
     }
+  }
+
+  Future<SessionSummary?> createEmptySession({String? title}) async {
+    final project = _project;
+    if (project == null) {
+      return null;
+    }
+
+    final created = await _chatService.createSession(
+      profile: profile,
+      project: project,
+      title: title?.trim().isEmpty == false ? title!.trim() : null,
+    );
+    _replaceSession(created);
+    _selectedSessionId = created.id;
+    _messages = const <ChatMessage>[];
+    _todos = const <TodoItem>[];
+    _pendingRequests = const PendingRequestBundle(
+      questions: <QuestionRequestSummary>[],
+      permissions: <PermissionRequestSummary>[],
+    );
+    _statuses = <String, SessionStatusSummary>{
+      ..._statuses,
+      created.id:
+          _statuses[created.id] ?? const SessionStatusSummary(type: 'idle'),
+    };
+    _applyDefaultComposerSelection();
+    await _persistSessionHint(created.id);
+    _notify();
+    return created;
   }
 
   Future<void> renameSelectedSession(String title) async {
@@ -606,6 +705,7 @@ class WorkspaceController extends ChangeNotifier {
       agents = const <AgentDefinition>[];
     }
 
+    _configSnapshot = snapshot;
     _composerAgents = agents
         .where((agent) => agent.visible)
         .toList(growable: false);
@@ -857,8 +957,10 @@ class WorkspaceController extends ChangeNotifier {
         profile: profile,
         project: project,
       );
+      _loadingFilePreview = false;
     } catch (_) {
       _fileBundle = null;
+      _loadingFilePreview = false;
     }
     await _loadSessionPanels();
   }
@@ -939,6 +1041,12 @@ class WorkspaceController extends ChangeNotifier {
       return;
     }
     switch (event.type) {
+      case 'session.created':
+      case 'session.updated':
+        _sessions = applySessionUpsertEvent(_sessions, event.properties);
+      case 'session.deleted':
+        _sessions = applySessionDeletedEvent(_sessions, event.properties);
+        _statuses = removeSessionStatusEvent(_statuses, event.properties);
       case 'session.status':
         _statuses = applySessionStatusEvent(_statuses, event.properties);
       case 'message.updated':
@@ -1031,16 +1139,25 @@ class WorkspaceController extends ChangeNotifier {
     ProjectTarget project,
     List<SessionSummary> sessions,
   ) {
+    final visibleSessions = _visibleRootSessions(sessions);
     final hint = project.lastSession?.title?.trim();
     if (hint == null || hint.isEmpty) {
-      return sessions.isEmpty ? null : sessions.first.id;
+      return visibleSessions.isEmpty ? null : visibleSessions.first.id;
     }
-    for (final session in sessions) {
+    for (final session in visibleSessions) {
       if (session.title.trim() == hint) {
         return session.id;
       }
     }
-    return sessions.isEmpty ? null : sessions.first.id;
+    return visibleSessions.isEmpty ? null : visibleSessions.first.id;
+  }
+
+  List<SessionSummary> _visibleRootSessions(List<SessionSummary> sessions) {
+    return sessions
+        .where(
+          (session) => session.parentId == null && (session.archivedAt == null),
+        )
+        .toList(growable: false);
   }
 
   Future<void> _persistSessionHint(String sessionId) async {

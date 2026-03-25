@@ -1,6 +1,50 @@
 import '../../features/chat/chat_models.dart';
 import '../../features/tools/todo_models.dart';
 
+List<SessionSummary> applySessionUpsertEvent(
+  List<SessionSummary> sessions,
+  Map<String, Object?> properties,
+) {
+  final infoJson = _asObjectMap(properties['info']);
+  if (infoJson == null) {
+    return sessions;
+  }
+
+  SessionSummary nextSession;
+  try {
+    nextSession = SessionSummary.fromJson(infoJson);
+  } catch (_) {
+    return sessions;
+  }
+
+  final next = List<SessionSummary>.from(sessions);
+  final index = next.indexWhere((session) => session.id == nextSession.id);
+  if (index >= 0) {
+    next[index] = nextSession;
+  } else {
+    next.add(nextSession);
+  }
+  next.sort(_compareSessionsByRecency);
+  return List<SessionSummary>.unmodifiable(next);
+}
+
+List<SessionSummary> applySessionDeletedEvent(
+  List<SessionSummary> sessions,
+  Map<String, Object?> properties,
+) {
+  final sessionId =
+      properties['sessionID']?.toString() ??
+      _asObjectMap(properties['info'])?['id']?.toString();
+  if (sessionId == null || sessionId.isEmpty) {
+    return sessions;
+  }
+
+  final next = sessions
+      .where((session) => session.id != sessionId)
+      .toList(growable: false);
+  return next.length == sessions.length ? sessions : next;
+}
+
 Map<String, SessionStatusSummary> applySessionStatusEvent(
   Map<String, SessionStatusSummary> statuses,
   Map<String, Object?> properties,
@@ -23,6 +67,24 @@ Map<String, SessionStatusSummary> applySessionStatusEvent(
   }
 
   return <String, SessionStatusSummary>{...statuses, sessionId: nextStatus};
+}
+
+Map<String, SessionStatusSummary> removeSessionStatusEvent(
+  Map<String, SessionStatusSummary> statuses,
+  Map<String, Object?> properties,
+) {
+  final sessionId =
+      properties['sessionID']?.toString() ??
+      _asObjectMap(properties['info'])?['id']?.toString();
+  if (sessionId == null ||
+      sessionId.isEmpty ||
+      !statuses.containsKey(sessionId)) {
+    return statuses;
+  }
+
+  final next = Map<String, SessionStatusSummary>.from(statuses)
+    ..remove(sessionId);
+  return next;
 }
 
 List<ChatMessage> applyMessageUpdatedEvent(
@@ -220,21 +282,36 @@ Map<String, Object?>? _asObjectMap(Object? value) {
   return null;
 }
 
+int _compareSessionsByRecency(SessionSummary left, SessionSummary right) {
+  final updated = right.updatedAt.compareTo(left.updatedAt);
+  if (updated != 0) {
+    return updated;
+  }
+
+  final leftCreated = left.createdAt;
+  final rightCreated = right.createdAt;
+  if (leftCreated != null && rightCreated != null) {
+    final created = rightCreated.compareTo(leftCreated);
+    if (created != 0) {
+      return created;
+    }
+  } else if (leftCreated == null && rightCreated != null) {
+    return 1;
+  } else if (leftCreated != null && rightCreated == null) {
+    return -1;
+  }
+
+  return right.id.compareTo(left.id);
+}
+
 ChatMessageInfo _mergeInfo(
   ChatMessageInfo? current,
   Map<String, Object?> json,
 ) {
-  return ChatMessageInfo(
-    id: json['id']?.toString() ?? current?.id ?? '',
-    role: json['role']?.toString() ?? current?.role ?? 'assistant',
-    sessionId: json['sessionID']?.toString() ?? current?.sessionId,
-    modelId: json.containsKey('modelID')
-        ? json['modelID']?.toString()
-        : current?.modelId,
-    providerId: json.containsKey('providerID')
-        ? json['providerID']?.toString()
-        : current?.providerId,
-  );
+  return ChatMessageInfo.fromJson(<String, Object?>{
+    ...?current?.toJson(),
+    ...json,
+  });
 }
 
 ChatPart _mergePart(

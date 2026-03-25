@@ -10,6 +10,26 @@ import '../core/persistence/server_profile_store.dart';
 import '../core/persistence/stale_cache_store.dart';
 import '../features/projects/project_models.dart';
 import '../features/projects/project_store.dart';
+import '../features/web_parity/workspace_controller.dart';
+
+typedef WorkspaceControllerFactory =
+    WorkspaceController Function({
+      required ServerProfile profile,
+      required String directory,
+      String? initialSessionId,
+    });
+
+WorkspaceController _defaultWorkspaceControllerFactory({
+  required ServerProfile profile,
+  required String directory,
+  String? initialSessionId,
+}) {
+  return WorkspaceController(
+    profile: profile,
+    directory: directory,
+    initialSessionId: initialSessionId,
+  );
+}
 
 class WebParityAppController extends ChangeNotifier {
   WebParityAppController({
@@ -17,10 +37,13 @@ class WebParityAppController extends ChangeNotifier {
     ProjectStore? projectStore,
     StaleCacheStore? cacheStore,
     OpenCodeServerProbe? probeService,
+    WorkspaceControllerFactory? workspaceControllerFactory,
   }) : _profileStore = profileStore ?? ServerProfileStore(),
        _projectStore = projectStore ?? ProjectStore(),
        _cacheStore = cacheStore ?? StaleCacheStore(),
-       _probeService = probeService ?? OpenCodeServerProbe();
+       _probeService = probeService ?? OpenCodeServerProbe(),
+       _workspaceControllerFactory =
+           workspaceControllerFactory ?? _defaultWorkspaceControllerFactory;
 
   static const _selectedProfileKey = 'web_parity.selected_profile';
 
@@ -28,12 +51,15 @@ class WebParityAppController extends ChangeNotifier {
   final ProjectStore _projectStore;
   final StaleCacheStore _cacheStore;
   final OpenCodeServerProbe _probeService;
+  final WorkspaceControllerFactory _workspaceControllerFactory;
 
   bool _loading = true;
   List<ServerProfile> _profiles = const <ServerProfile>[];
   List<ProjectTarget> _recentProjects = const <ProjectTarget>[];
   Map<String, ServerProbeReport> _reports = const <String, ServerProbeReport>{};
   ServerProfile? _selectedProfile;
+  final Map<String, WorkspaceController> _workspaceControllers =
+      <String, WorkspaceController>{};
 
   bool get loading => _loading;
   List<ServerProfile> get profiles => _profiles;
@@ -99,6 +125,42 @@ class WebParityAppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool hasWorkspaceController({
+    required ServerProfile profile,
+    required String directory,
+  }) {
+    return _workspaceControllers.containsKey(
+      _workspaceControllerKey(profile: profile, directory: directory),
+    );
+  }
+
+  WorkspaceController obtainWorkspaceController({
+    required ServerProfile profile,
+    required String directory,
+    String? initialSessionId,
+  }) {
+    final key = _workspaceControllerKey(profile: profile, directory: directory);
+    final existing = _workspaceControllers[key];
+    if (existing != null) {
+      return existing;
+    }
+
+    final controller = _workspaceControllerFactory(
+      profile: profile,
+      directory: directory,
+      initialSessionId: initialSessionId,
+    )..load();
+    _workspaceControllers[key] = controller;
+    return controller;
+  }
+
+  String _workspaceControllerKey({
+    required ServerProfile profile,
+    required String directory,
+  }) {
+    return '${profile.storageKey}::$directory';
+  }
+
   Future<Map<String, ServerProbeReport>> _loadCachedReports(
     List<ServerProfile> profiles,
   ) async {
@@ -130,6 +192,10 @@ class WebParityAppController extends ChangeNotifier {
 
   @override
   void dispose() {
+    for (final controller in _workspaceControllers.values) {
+      controller.dispose();
+    }
+    _workspaceControllers.clear();
     _probeService.dispose();
     super.dispose();
   }

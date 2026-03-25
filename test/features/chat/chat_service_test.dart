@@ -126,7 +126,7 @@ void main() {
     await server.close(force: true);
   });
 
-  test('fetches the full session list for the selected project', () async {
+  test('fetches sessions while defaulting selection to the first root session', () async {
     final service = ChatService();
     final bundle = await service.fetchBundle(
       profile: ServerProfile(
@@ -142,6 +142,7 @@ void main() {
       'ses_1',
       'ses_2',
     ]);
+    expect(bundle.selectedSessionId, 'ses_1');
     expect(bundle.statuses['ses_1']?.type, 'busy');
     expect(bundle.messages.length, 2);
     expect(bundle.messages.first.info.agent, 'Sisyphus');

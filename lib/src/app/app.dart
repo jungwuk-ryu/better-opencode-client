@@ -66,9 +66,7 @@ class _OpenCodeRemoteAppState extends State<OpenCodeRemoteApp> {
                     ),
                     WorkspaceRouteData(:final directory, :final sessionId) =>
                       WebParityWorkspaceScreen(
-                        key: ValueKey<String>(
-                          'workspace-$directory-${sessionId ?? "new"}',
-                        ),
+                        key: ValueKey<String>('workspace-$directory'),
                         directory: directory,
                         sessionId: sessionId,
                       ),

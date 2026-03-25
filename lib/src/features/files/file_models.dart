@@ -138,6 +138,30 @@ class FileBrowserBundle {
   final FileContentSummary? preview;
   final String? selectedPath;
 
+  FileBrowserBundle copyWith({
+    List<FileNodeSummary>? nodes,
+    List<String>? searchResults,
+    List<TextMatchSummary>? textMatches,
+    List<SymbolSummary>? symbols,
+    List<FileStatusSummary>? statuses,
+    FileContentSummary? preview,
+    bool clearPreview = false,
+    String? selectedPath,
+    bool clearSelectedPath = false,
+  }) {
+    return FileBrowserBundle(
+      nodes: nodes ?? this.nodes,
+      searchResults: searchResults ?? this.searchResults,
+      textMatches: textMatches ?? this.textMatches,
+      symbols: symbols ?? this.symbols,
+      statuses: statuses ?? this.statuses,
+      preview: clearPreview ? null : (preview ?? this.preview),
+      selectedPath: clearSelectedPath
+          ? null
+          : (selectedPath ?? this.selectedPath),
+    );
+  }
+
   Map<String, Object?> toJson() => <String, Object?>{
     'nodes': nodes.map((item) => item.toJson()).toList(growable: false),
     'searchResults': searchResults,

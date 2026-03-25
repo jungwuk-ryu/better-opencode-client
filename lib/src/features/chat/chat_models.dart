@@ -5,7 +5,11 @@ class SessionSummary {
     required this.title,
     required this.version,
     required this.updatedAt,
+    this.createdAt,
+    this.archivedAt,
     this.parentId,
+    this.revertMessageId,
+    this.revertPartId,
   });
 
   final String id;
@@ -13,11 +17,18 @@ class SessionSummary {
   final String title;
   final String version;
   final DateTime updatedAt;
+  final DateTime? createdAt;
+  final DateTime? archivedAt;
   final String? parentId;
+  final String? revertMessageId;
+  final String? revertPartId;
 
   factory SessionSummary.fromJson(Map<String, Object?> json) {
     final time = (json['time'] as Map?)?.cast<String, Object?>() ?? const {};
+    final created = time['created'];
     final updated = time['updated'];
+    final archived = time['archived'];
+    final revert = (json['revert'] as Map?)?.cast<String, Object?>();
     return SessionSummary(
       id: json['id']! as String,
       directory: json['directory']! as String,
@@ -26,7 +37,15 @@ class SessionSummary {
       updatedAt: updated is num
           ? DateTime.fromMillisecondsSinceEpoch(updated.toInt())
           : DateTime.fromMillisecondsSinceEpoch(0),
+      createdAt: created is num
+          ? DateTime.fromMillisecondsSinceEpoch(created.toInt())
+          : null,
+      archivedAt: archived is num
+          ? DateTime.fromMillisecondsSinceEpoch(archived.toInt())
+          : null,
       parentId: json['parentID'] as String?,
+      revertMessageId: revert?['messageID']?.toString(),
+      revertPartId: revert?['partID']?.toString(),
     );
   }
 
@@ -36,7 +55,17 @@ class SessionSummary {
     'title': title,
     'version': version,
     'parentID': parentId,
-    'time': <String, Object?>{'updated': updatedAt.millisecondsSinceEpoch},
+    'time': <String, Object?>{
+      'created': createdAt?.millisecondsSinceEpoch,
+      'updated': updatedAt.millisecondsSinceEpoch,
+      'archived': archivedAt?.millisecondsSinceEpoch,
+    },
+    'revert': revertMessageId == null && revertPartId == null
+        ? null
+        : <String, Object?>{
+            'messageID': revertMessageId,
+            'partID': revertPartId,
+          },
   };
 }
 
@@ -99,6 +128,17 @@ class ChatMessageInfo {
     this.providerId,
     this.agent,
     this.variant,
+    this.systemPrompt,
+    this.createdAt,
+    this.completedAt,
+    this.cost,
+    this.totalTokens,
+    this.inputTokens,
+    this.outputTokens,
+    this.reasoningTokens,
+    this.cacheReadTokens,
+    this.cacheWriteTokens,
+    this.metadata = const <String, Object?>{},
   });
 
   final String id;
@@ -108,6 +148,17 @@ class ChatMessageInfo {
   final String? providerId;
   final String? agent;
   final String? variant;
+  final String? systemPrompt;
+  final DateTime? createdAt;
+  final DateTime? completedAt;
+  final double? cost;
+  final int? totalTokens;
+  final int? inputTokens;
+  final int? outputTokens;
+  final int? reasoningTokens;
+  final int? cacheReadTokens;
+  final int? cacheWriteTokens;
+  final Map<String, Object?> metadata;
 
   ChatMessageInfo copyWith({
     String? id,
@@ -117,6 +168,17 @@ class ChatMessageInfo {
     String? providerId,
     String? agent,
     String? variant,
+    String? systemPrompt,
+    DateTime? createdAt,
+    DateTime? completedAt,
+    double? cost,
+    int? totalTokens,
+    int? inputTokens,
+    int? outputTokens,
+    int? reasoningTokens,
+    int? cacheReadTokens,
+    int? cacheWriteTokens,
+    Map<String, Object?>? metadata,
   }) {
     return ChatMessageInfo(
       id: id ?? this.id,
@@ -126,11 +188,27 @@ class ChatMessageInfo {
       providerId: providerId ?? this.providerId,
       agent: agent ?? this.agent,
       variant: variant ?? this.variant,
+      systemPrompt: systemPrompt ?? this.systemPrompt,
+      createdAt: createdAt ?? this.createdAt,
+      completedAt: completedAt ?? this.completedAt,
+      cost: cost ?? this.cost,
+      totalTokens: totalTokens ?? this.totalTokens,
+      inputTokens: inputTokens ?? this.inputTokens,
+      outputTokens: outputTokens ?? this.outputTokens,
+      reasoningTokens: reasoningTokens ?? this.reasoningTokens,
+      cacheReadTokens: cacheReadTokens ?? this.cacheReadTokens,
+      cacheWriteTokens: cacheWriteTokens ?? this.cacheWriteTokens,
+      metadata: metadata ?? this.metadata,
     );
   }
 
   factory ChatMessageInfo.fromJson(Map<String, Object?> json) {
     final model = (json['model'] as Map?)?.cast<String, Object?>();
+    final time = (json['time'] as Map?)?.cast<String, Object?>();
+    final tokens = (json['tokens'] as Map?)?.cast<String, Object?>();
+    final cache = (tokens?['cache'] as Map?)?.cast<String, Object?>();
+    final created = time?['created'];
+    final completed = time?['completed'];
     return ChatMessageInfo(
       id: json['id']! as String,
       role: (json['role'] as String?) ?? 'assistant',
@@ -142,18 +220,64 @@ class ChatMessageInfo {
           model?['providerID']?.toString().trim(),
       agent: json['agent'] as String?,
       variant: json['variant'] as String?,
+      systemPrompt: json['system'] as String?,
+      createdAt: created is num
+          ? DateTime.fromMillisecondsSinceEpoch(created.toInt())
+          : null,
+      completedAt: completed is num
+          ? DateTime.fromMillisecondsSinceEpoch(completed.toInt())
+          : null,
+      cost: (json['cost'] as num?)?.toDouble(),
+      totalTokens: (tokens?['total'] as num?)?.toInt(),
+      inputTokens: (tokens?['input'] as num?)?.toInt(),
+      outputTokens: (tokens?['output'] as num?)?.toInt(),
+      reasoningTokens: (tokens?['reasoning'] as num?)?.toInt(),
+      cacheReadTokens: (cache?['read'] as num?)?.toInt(),
+      cacheWriteTokens: (cache?['write'] as num?)?.toInt(),
+      metadata: json,
     );
   }
 
-  Map<String, Object?> toJson() => <String, Object?>{
-    'id': id,
-    'role': role,
-    'sessionID': sessionId,
-    'modelID': modelId,
-    'providerID': providerId,
-    'agent': agent,
-    'variant': variant,
-  };
+  int get resolvedTotalTokens =>
+      totalTokens ??
+      (inputTokens ?? 0) +
+          (outputTokens ?? 0) +
+          (reasoningTokens ?? 0) +
+          (cacheReadTokens ?? 0) +
+          (cacheWriteTokens ?? 0);
+
+  bool get hasTokenUsage => resolvedTotalTokens > 0;
+
+  Map<String, Object?> toJson() => Map<String, Object?>.from(metadata)
+    ..putIfAbsent('id', () => id)
+    ..putIfAbsent('role', () => role)
+    ..putIfAbsent('sessionID', () => sessionId)
+    ..putIfAbsent('modelID', () => modelId)
+    ..putIfAbsent('providerID', () => providerId)
+    ..putIfAbsent('agent', () => agent)
+    ..putIfAbsent('variant', () => variant)
+    ..putIfAbsent('system', () => systemPrompt)
+    ..putIfAbsent(
+      'time',
+      () => <String, Object?>{
+        'created': createdAt?.millisecondsSinceEpoch,
+        'completed': completedAt?.millisecondsSinceEpoch,
+      },
+    )
+    ..putIfAbsent('cost', () => cost)
+    ..putIfAbsent(
+      'tokens',
+      () => <String, Object?>{
+        'total': totalTokens,
+        'input': inputTokens ?? 0,
+        'output': outputTokens ?? 0,
+        'reasoning': reasoningTokens ?? 0,
+        'cache': <String, Object?>{
+          'read': cacheReadTokens ?? 0,
+          'write': cacheWriteTokens ?? 0,
+        },
+      },
+    );
 }
 
 class ChatPart {

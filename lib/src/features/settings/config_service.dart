@@ -180,6 +180,7 @@ class ProviderModelDefinition {
     required this.name,
     required this.status,
     required this.reasoningVariants,
+    this.contextLimit,
   });
 
   factory ProviderModelDefinition.fromJson({
@@ -192,6 +193,7 @@ class ProviderModelDefinition {
         : modelKey.trim();
     final variants = <String>[];
     final rawVariants = json['variants'];
+    final rawLimit = (json['limit'] as Map?)?.cast<String, Object?>();
     if (rawVariants is Map) {
       for (final entry in rawVariants.keys) {
         final value = entry.toString().trim();
@@ -211,6 +213,7 @@ class ProviderModelDefinition {
           : id,
       status: json['status']?.toString().trim() ?? '',
       reasoningVariants: variants,
+      contextLimit: (rawLimit?['context'] as num?)?.toInt(),
     );
   }
 
@@ -224,6 +227,7 @@ class ProviderModelDefinition {
       name: modelId.trim(),
       status: '',
       reasoningVariants: const <String>[],
+      contextLimit: null,
     );
   }
 
@@ -232,6 +236,7 @@ class ProviderModelDefinition {
   final String name;
   final String status;
   final List<String> reasoningVariants;
+  final int? contextLimit;
 
   String get key => '$providerId/$id';
 }
