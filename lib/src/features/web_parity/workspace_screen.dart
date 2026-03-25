@@ -4987,7 +4987,7 @@ class _ShimmeringRichTextState extends State<_ShimmeringRichText>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 1400),
+    duration: const Duration(milliseconds: 2200),
   );
 
   @override

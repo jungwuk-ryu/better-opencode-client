@@ -553,7 +553,7 @@ class _ShimmerLabelState extends State<_ShimmerLabel>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 2200),
+    duration: const Duration(milliseconds: 3200),
   )..repeat();
 
   @override
