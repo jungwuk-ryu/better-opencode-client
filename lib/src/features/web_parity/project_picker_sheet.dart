@@ -60,7 +60,8 @@ class _ProjectPickerSheetState extends State<ProjectPickerSheet> {
     try {
       final catalog = await _catalogService.fetchCatalog(widget.profile);
       final recent = await _projectStore.loadRecentProjects();
-      final next = _mergeTargets(catalog, recent);
+      final hidden = await _projectStore.loadHiddenProjects();
+      final next = _mergeTargets(catalog, recent, hidden);
       if (!mounted) {
         return;
       }
@@ -84,20 +85,28 @@ class _ProjectPickerSheetState extends State<ProjectPickerSheet> {
   List<ProjectTarget> _mergeTargets(
     ProjectCatalog catalog,
     List<ProjectTarget> recent,
+    Set<String> hidden,
   ) {
     final byDirectory = <String, ProjectTarget>{};
 
     void add(ProjectTarget target) {
+      if (hidden.contains(target.directory)) {
+        return;
+      }
       byDirectory[target.directory] = target;
     }
 
     ProjectTarget toTarget(ProjectSummary summary, {required String source}) {
       return ProjectTarget(
+        id: summary.id,
         directory: summary.directory,
         label: summary.title,
+        name: summary.name,
         source: source,
         vcs: summary.vcs,
         branch: catalog.vcsInfo?.branch,
+        icon: summary.icon,
+        commands: summary.commands,
       );
     }
 

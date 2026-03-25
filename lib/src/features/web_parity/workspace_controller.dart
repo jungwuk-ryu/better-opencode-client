@@ -140,6 +140,7 @@ class WorkspaceController extends ChangeNotifier {
   List<SessionSummary> _sessions = const <SessionSummary>[];
   Map<String, SessionStatusSummary> _statuses =
       const <String, SessionStatusSummary>{};
+  Set<String> _hiddenProjectDirectories = <String>{};
   String? _selectedSessionId;
   List<ChatMessage> _messages = const <ChatMessage>[];
   FileBrowserBundle? _fileBundle;
@@ -363,7 +364,13 @@ class WorkspaceController extends ChangeNotifier {
     try {
       final catalog = await _projectCatalogService.fetchCatalog(profile);
       final recentProjects = await _projectStore.loadRecentProjects();
-      final availableProjects = _mergeProjects(catalog, recentProjects);
+      final hiddenProjects = await _projectStore.loadHiddenProjects();
+      _hiddenProjectDirectories = hiddenProjects;
+      final availableProjects = _mergeProjects(
+        catalog,
+        recentProjects,
+        hiddenProjects: hiddenProjects,
+      );
       var project = _matchProject(availableProjects, directory);
       project ??= await _projectCatalogService.inspectDirectory(
         profile: profile,
@@ -445,6 +452,7 @@ class WorkspaceController extends ChangeNotifier {
     _notify();
 
     await _projectStore.recordRecentProject(project);
+    _hiddenProjectDirectories = await _projectStore.loadHiddenProjects();
     await _projectStore.saveLastWorkspace(
       serverStorageKey: profile.storageKey,
       target: project,
@@ -1676,10 +1684,51 @@ class WorkspaceController extends ChangeNotifier {
           selectedSessionId: null,
         ),
       );
+    } else if (type == 'project.updated') {
+      final nextProject = _projectTargetFromEvent(event.properties);
+      if (nextProject == null) {
+        return;
+      }
+      applyProjectTargetUpdate(nextProject, notify: false);
     } else {
       return;
     }
     _notify();
+  }
+
+  void applyProjectTargetUpdate(ProjectTarget target, {bool notify = true}) {
+    _hiddenProjectDirectories = _hiddenProjectDirectories
+        .where((directory) => directory != target.directory)
+        .toSet();
+    if (target.directory == directory) {
+      _project = target;
+    }
+    _availableProjects = _availableProjects
+        .map((project) => project.directory == target.directory ? target : project)
+        .toList(growable: false);
+    final exists = _availableProjects.any(
+      (project) => project.directory == target.directory,
+    );
+    if (!exists &&
+        !_hiddenProjectDirectories.contains(target.directory)) {
+      _availableProjects = <ProjectTarget>[
+        target,
+        ..._availableProjects,
+      ].toList(growable: false);
+    }
+    if (notify) {
+      _notify();
+    }
+  }
+
+  void applyProjectRemoval(String directory, {bool notify = true}) {
+    _hiddenProjectDirectories = <String>{..._hiddenProjectDirectories, directory};
+    _availableProjects = _availableProjects
+        .where((project) => project.directory != directory)
+        .toList(growable: false);
+    if (notify) {
+      _notify();
+    }
   }
 
   T? _sessionTreeRequest<T>(
@@ -1776,30 +1825,43 @@ class WorkspaceController extends ChangeNotifier {
   List<ProjectTarget> _mergeProjects(
     ProjectCatalog catalog,
     List<ProjectTarget> recentProjects,
+    {required Set<String> hiddenProjects}
   ) {
     final byDirectory = <String, ProjectTarget>{};
 
     void add(ProjectTarget target) {
+      if (target.directory != directory &&
+          hiddenProjects.contains(target.directory)) {
+        return;
+      }
       final existing = byDirectory[target.directory];
       byDirectory[target.directory] = existing == null
           ? target
           : ProjectTarget(
               directory: target.directory,
               label: existing.label.isNotEmpty ? existing.label : target.label,
+              id: target.id ?? existing.id,
+              name: target.name ?? existing.name,
               source: target.source ?? existing.source,
               vcs: target.vcs ?? existing.vcs,
               branch: target.branch ?? existing.branch,
+              icon: target.icon ?? existing.icon,
+              commands: target.commands ?? existing.commands,
               lastSession: existing.lastSession ?? target.lastSession,
             );
     }
 
     ProjectTarget toTarget(ProjectSummary project, {required String source}) {
       return ProjectTarget(
+        id: project.id,
         directory: project.directory,
         label: project.title,
+        name: project.name,
         source: source,
         vcs: project.vcs,
         branch: catalog.vcsInfo?.branch,
+        icon: project.icon,
+        commands: project.commands,
       );
     }
 
@@ -1857,12 +1919,40 @@ class WorkspaceController extends ChangeNotifier {
       target: ProjectTarget(
         directory: project.directory,
         label: project.label,
+        id: project.id,
+        name: project.name,
         source: project.source,
         vcs: project.vcs,
         branch: project.branch,
+        icon: project.icon,
+        commands: project.commands,
         lastSession: ProjectSessionHint(title: session?.title, status: status),
       ),
     );
+  }
+
+  ProjectTarget? _projectTargetFromEvent(Map<String, Object?> properties) {
+    try {
+      final summary = ProjectSummary.fromJson(properties);
+      final existing = _availableProjects
+          .where((project) => project.directory == summary.directory)
+          .cast<ProjectTarget?>()
+          .firstOrNull;
+      return ProjectTarget(
+        id: summary.id,
+        directory: summary.directory,
+        label: summary.title,
+        name: summary.name,
+        source: existing?.source ?? 'server',
+        vcs: summary.vcs ?? existing?.vcs,
+        branch: existing?.branch,
+        icon: summary.icon,
+        commands: summary.commands,
+        lastSession: existing?.lastSession,
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   void _replaceSession(SessionSummary updated) {

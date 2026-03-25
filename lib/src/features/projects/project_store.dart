@@ -7,6 +7,7 @@ import 'project_models.dart';
 class ProjectStore {
   static const _recentProjectsKey = 'recent_projects';
   static const _pinnedProjectsKey = 'pinned_projects';
+  static const _hiddenProjectsKey = 'hidden_projects';
   static const _recentProjectLimit = 10;
 
   String _lastWorkspaceKey(String serverStorageKey) =>
@@ -14,6 +15,7 @@ class ProjectStore {
 
   Future<List<ProjectTarget>> loadRecentProjects() async {
     final prefs = await SharedPreferences.getInstance();
+    final hidden = await loadHiddenProjects();
     final raw = prefs.getStringList(_recentProjectsKey) ?? const <String>[];
     return raw
         .map(
@@ -21,10 +23,12 @@ class ProjectStore {
             (jsonDecode(item) as Map).cast<String, Object?>(),
           ),
         )
+        .where((item) => !hidden.contains(item.directory))
         .toList(growable: false);
   }
 
   Future<List<ProjectTarget>> recordRecentProject(ProjectTarget target) async {
+    await restoreProject(target.directory);
     final current = await loadRecentProjects();
     final next = <ProjectTarget>[target];
     for (final item in current) {
@@ -36,12 +40,39 @@ class ProjectStore {
         break;
       }
     }
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(
-      _recentProjectsKey,
-      next.map((item) => jsonEncode(item.toJson())).toList(growable: false),
-    );
+    await _saveRecentProjects(next);
     return List<ProjectTarget>.unmodifiable(next);
+  }
+
+  Future<List<ProjectTarget>> updateRecentProject(ProjectTarget target) async {
+    final current = await loadRecentProjects();
+    final next = <ProjectTarget>[];
+    var replaced = false;
+    for (final item in current) {
+      if (item.directory == target.directory) {
+        next.add(target);
+        replaced = true;
+      } else {
+        next.add(item);
+      }
+    }
+    if (!replaced) {
+      next.insert(0, target);
+    }
+    if (next.length > _recentProjectLimit) {
+      next.removeRange(_recentProjectLimit, next.length);
+    }
+    await _saveRecentProjects(next);
+    return List<ProjectTarget>.unmodifiable(next);
+  }
+
+  Future<List<ProjectTarget>> removeRecentProject(String directory) async {
+    final current = await loadRecentProjects();
+    final next = current
+        .where((item) => item.directory != directory)
+        .toList(growable: false);
+    await _saveRecentProjects(next);
+    return next;
   }
 
   Future<ProjectTarget?> loadLastWorkspace(String serverStorageKey) async {
@@ -82,6 +113,38 @@ class ProjectStore {
         .toSet();
   }
 
+  Future<Set<String>> loadHiddenProjects() async {
+    SharedPreferences prefs;
+    try {
+      prefs = await SharedPreferences.getInstance();
+    } catch (_) {
+      return <String>{};
+    }
+    return (prefs.getStringList(_hiddenProjectsKey) ?? const <String>[])
+        .toSet();
+  }
+
+  Future<Set<String>> hideProject(String directory) async {
+    final prefs = await SharedPreferences.getInstance();
+    final next = await loadHiddenProjects()..add(directory);
+    await prefs.setStringList(
+      _hiddenProjectsKey,
+      next.toList(growable: false),
+    );
+    await removeRecentProject(directory);
+    return next;
+  }
+
+  Future<Set<String>> restoreProject(String directory) async {
+    final prefs = await SharedPreferences.getInstance();
+    final next = await loadHiddenProjects()..remove(directory);
+    await prefs.setStringList(
+      _hiddenProjectsKey,
+      next.toList(growable: false),
+    );
+    return next;
+  }
+
   Future<Set<String>> togglePinnedProject(String directory) async {
     final prefs = await SharedPreferences.getInstance();
     final next = await loadPinnedProjects();
@@ -90,5 +153,13 @@ class ProjectStore {
     }
     await prefs.setStringList(_pinnedProjectsKey, next.toList(growable: false));
     return next;
+  }
+
+  Future<void> _saveRecentProjects(List<ProjectTarget> projects) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      _recentProjectsKey,
+      projects.map((item) => jsonEncode(item.toJson())).toList(growable: false),
+    );
   }
 }

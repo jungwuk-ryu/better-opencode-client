@@ -11,6 +11,7 @@ import 'package:opencode_mobile_remote/src/core/spec/capability_registry.dart';
 import 'package:opencode_mobile_remote/src/core/spec/probe_snapshot.dart';
 import 'package:opencode_mobile_remote/src/design_system/app_theme.dart';
 import 'package:opencode_mobile_remote/src/features/chat/chat_models.dart';
+import 'package:opencode_mobile_remote/src/features/projects/project_catalog_service.dart';
 import 'package:opencode_mobile_remote/src/features/projects/project_models.dart';
 import 'package:opencode_mobile_remote/src/features/requests/request_models.dart';
 import 'package:opencode_mobile_remote/src/features/terminal/pty_models.dart';
@@ -18,9 +19,14 @@ import 'package:opencode_mobile_remote/src/features/terminal/pty_service.dart';
 import 'package:opencode_mobile_remote/src/features/tools/todo_models.dart';
 import 'package:opencode_mobile_remote/src/features/web_parity/workspace_controller.dart';
 import 'package:opencode_mobile_remote/src/features/web_parity/workspace_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+  });
 
   testWidgets('sidebar only shows user-created root sessions', (tester) async {
     tester.view.physicalSize = const Size(1600, 1000);
@@ -135,16 +141,109 @@ void main() {
 
     expect(appController.shellToolPartsExpanded, isFalse);
   });
+
+  testWidgets('project tile context menu edits and removes projects', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    late _EditableSidebarWorkspaceController controllerInstance;
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            controllerInstance = _EditableSidebarWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+            return controllerInstance;
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+        projectCatalogService: _FakeProjectCatalogService(),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    final labTile = find.byKey(
+      const ValueKey<String>('workspace-project-/workspace/lab'),
+    );
+    expect(labTile, findsOneWidget);
+
+    await tester.longPress(labTile);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 180));
+
+    expect(find.text('Edit project'), findsOneWidget);
+    expect(find.text('Delete project'), findsOneWidget);
+
+    await tester.tap(find.text('Edit project'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    expect(find.text('Edit project'), findsAtLeastNWidgets(1));
+    final nameField = find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField && widget.decoration?.labelText == 'Name',
+    );
+    final startupField = find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField &&
+          widget.decoration?.labelText == 'Workspace startup script',
+    );
+    await tester.enterText(nameField, 'Lab Renamed');
+    await tester.enterText(startupField, 'bun install');
+    await tester.tap(find.text('Save'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    final updatedProject = controllerInstance.availableProjects
+        .firstWhere((project) => project.directory == '/workspace/lab');
+    expect(updatedProject.name, 'Lab Renamed');
+    expect(updatedProject.commands?.start, 'bun install');
+
+    await tester.longPress(labTile);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 180));
+    await tester.tap(find.text('Delete project'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    expect(
+      find.byKey(const ValueKey<String>('workspace-project-/workspace/lab')),
+      findsNothing,
+    );
+  });
 }
 
 class _WorkspaceRouteHarness extends StatelessWidget {
   const _WorkspaceRouteHarness({
     required this.controller,
     required this.initialRoute,
+    this.projectCatalogService,
   });
 
   final WebParityAppController controller;
   final String initialRoute;
+  final ProjectCatalogService? projectCatalogService;
 
   @override
   Widget build(BuildContext context) {
@@ -166,6 +265,7 @@ class _WorkspaceRouteHarness extends StatelessWidget {
                     directory: directory,
                     sessionId: sessionId,
                     ptyServiceFactory: _FakePtyService.new,
+                    projectCatalogService: projectCatalogService,
                   ),
               };
             },
@@ -326,6 +426,82 @@ class _SidebarWorkspaceController extends WorkspaceController {
     _loading = false;
     _selectedSessionId = initialSessionId ?? 'ses_1';
     notifyListeners();
+  }
+}
+
+class _EditableSidebarWorkspaceController extends _SidebarWorkspaceController {
+  _EditableSidebarWorkspaceController({
+    required super.profile,
+    required super.directory,
+    super.initialSessionId,
+  });
+
+  List<ProjectTarget> _projects = const <ProjectTarget>[
+    ProjectTarget(
+      id: 'project-demo',
+      directory: '/workspace/demo',
+      label: 'Demo',
+      name: 'Demo',
+      source: 'server',
+      vcs: 'git',
+      branch: 'main',
+    ),
+    ProjectTarget(
+      id: 'project-lab',
+      directory: '/workspace/lab',
+      label: 'Lab',
+      name: 'Lab',
+      source: 'server',
+      vcs: 'git',
+      branch: 'develop',
+    ),
+  ];
+
+  @override
+  ProjectTarget? get project => _projects.first;
+
+  @override
+  List<ProjectTarget> get availableProjects => _projects;
+
+  @override
+  void applyProjectTargetUpdate(ProjectTarget target, {bool notify = true}) {
+    _projects = _projects
+        .map((project) => project.directory == target.directory ? target : project)
+        .toList(growable: false);
+    if (notify) {
+      notifyListeners();
+    }
+  }
+
+  @override
+  void applyProjectRemoval(String directory, {bool notify = true}) {
+    _projects = _projects
+        .where((project) => project.directory != directory)
+        .toList(growable: false);
+    if (notify) {
+      notifyListeners();
+    }
+  }
+}
+
+class _FakeProjectCatalogService extends ProjectCatalogService {
+  @override
+  Future<ProjectTarget> updateProject({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    String? name,
+    ProjectIconInfo? icon,
+    ProjectCommandsInfo? commands,
+  }) async {
+    return project.copyWith(
+      label: projectDisplayLabel(project.directory, name: name),
+      name: name,
+      icon: icon,
+      commands: commands,
+      clearName: name == null,
+      clearIcon: icon == null,
+      clearCommands: commands == null,
+    );
   }
 }
 

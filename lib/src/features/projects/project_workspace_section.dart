@@ -43,6 +43,7 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
   ProjectCatalog? _catalog;
   List<ProjectTarget> _recentProjects = const <ProjectTarget>[];
   Set<String> _pinnedProjectDirectories = const <String>{};
+  Set<String> _hiddenProjectDirectories = const <String>{};
   ProjectTarget? _selectedTarget;
   String? _error;
   bool _loading = true;
@@ -80,6 +81,7 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
     final cacheKey = 'projectCatalog::${widget.profile.storageKey}';
     final recentProjects = await _projectStore.loadRecentProjects();
     final pinnedProjects = await _projectStore.loadPinnedProjects();
+    final hiddenProjects = await _projectStore.loadHiddenProjects();
     final cached = await _cacheStore.load(cacheKey);
     if (cached != null) {
       try {
@@ -98,6 +100,7 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
             _catalog = catalog;
             _recentProjects = recentProjects;
             _pinnedProjectDirectories = pinnedProjects;
+            _hiddenProjectDirectories = hiddenProjects;
             _selectedTarget = selected;
             _catalogSignature = cached.signature;
             _loading = false;
@@ -114,6 +117,7 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
             _catalog = null;
             _recentProjects = recentProjects;
             _pinnedProjectDirectories = pinnedProjects;
+            _hiddenProjectDirectories = hiddenProjects;
             _selectedTarget = null;
             _catalogSignature = 'catalog-empty';
             _loading = true;
@@ -125,6 +129,7 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
       setState(() {
         _recentProjects = recentProjects;
         _pinnedProjectDirectories = pinnedProjects;
+        _hiddenProjectDirectories = hiddenProjects;
         _loading = true;
         _error = null;
       });
@@ -134,6 +139,7 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
       await _cacheStore.save(cacheKey, catalog.toJson());
       final recentProjects = await _projectStore.loadRecentProjects();
       final pinnedProjects = await _projectStore.loadPinnedProjects();
+      final hiddenProjects = await _projectStore.loadHiddenProjects();
       final selected = catalog.currentProject == null
           ? null
           : _toTarget(
@@ -148,6 +154,7 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
         _catalog = catalog;
         _recentProjects = recentProjects;
         _pinnedProjectDirectories = pinnedProjects;
+        _hiddenProjectDirectories = hiddenProjects;
         _selectedTarget = selected;
         _catalogSignature = jsonEncode(catalog.toJson());
         _loading = false;
@@ -160,6 +167,7 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
       setState(() {
         _recentProjects = recentProjects;
         _pinnedProjectDirectories = pinnedProjects;
+        _hiddenProjectDirectories = hiddenProjects;
         _error = 'catalog-unavailable';
         _loading = false;
       });
@@ -172,11 +180,15 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
     String? branch,
   }) {
     return ProjectTarget(
+      id: project.id,
       directory: project.directory,
       label: project.title,
+      name: project.name,
       source: source,
       vcs: project.vcs,
       branch: branch,
+      icon: project.icon,
+      commands: project.commands,
     );
   }
 
@@ -191,9 +203,13 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
       return ProjectTarget(
         directory: target.directory,
         label: target.label,
+        id: target.id,
+        name: target.name,
         source: target.source,
         vcs: target.vcs,
         branch: target.branch,
+        icon: target.icon,
+        commands: target.commands,
         lastSession: recentProject.lastSession,
       );
     }
@@ -266,6 +282,10 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
     ];
     final byDirectory = <String, ProjectTarget>{};
     for (final target in allTargets) {
+      if (_hiddenProjectDirectories.contains(target.directory) &&
+          _selectedTarget?.directory != target.directory) {
+        continue;
+      }
       byDirectory.putIfAbsent(target.directory, () => target);
     }
     final pinned = byDirectory.values

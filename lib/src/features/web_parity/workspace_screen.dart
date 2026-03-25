@@ -20,6 +20,7 @@ import '../chat/prompt_attachment_service.dart';
 import '../chat/session_context_insights.dart';
 import '../commands/command_service.dart';
 import '../files/file_models.dart';
+import '../projects/project_catalog_service.dart';
 import '../projects/project_models.dart';
 import '../requests/request_models.dart';
 import '../settings/agent_service.dart';
@@ -38,6 +39,7 @@ class WebParityWorkspaceScreen extends StatefulWidget {
     this.sessionId,
     this.ptyServiceFactory,
     this.attachmentPicker,
+    this.projectCatalogService,
     super.key,
   });
 
@@ -45,6 +47,7 @@ class WebParityWorkspaceScreen extends StatefulWidget {
   final String? sessionId;
   final PtyService Function()? ptyServiceFactory;
   final Future<List<PromptAttachment>> Function()? attachmentPicker;
+  final ProjectCatalogService? projectCatalogService;
 
   @override
   State<WebParityWorkspaceScreen> createState() =>
@@ -89,12 +92,17 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   bool _promptSubmitInFlight = false;
   late String _activeDirectory;
   String? _activeRouteSessionId;
+  late final ProjectCatalogService _projectCatalogService;
+  late final bool _ownsProjectCatalogService;
 
   @override
   void initState() {
     super.initState();
     _activeDirectory = widget.directory;
     _activeRouteSessionId = widget.sessionId;
+    _projectCatalogService =
+        widget.projectCatalogService ?? ProjectCatalogService();
+    _ownsProjectCatalogService = widget.projectCatalogService == null;
     _timelineScrollController.addListener(_handleTimelineScroll);
   }
 
@@ -154,6 +162,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     _timelineScrollController.removeListener(_handleTimelineScroll);
     _timelineScrollController.dispose();
     _ptyService?.dispose();
+    if (_ownsProjectCatalogService) {
+      _projectCatalogService.dispose();
+    }
     super.dispose();
   }
 
@@ -939,6 +950,124 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     });
   }
 
+  Future<void> _editProject(ProjectTarget project) async {
+    final profile = _profile;
+    if (profile == null) {
+      return;
+    }
+    final draft = await showDialog<_ProjectEditDraft>(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) => _EditProjectDialog(project: project),
+    );
+    if (draft == null) {
+      return;
+    }
+
+    final normalizedName = draft.name.trim();
+    final folderName = projectDisplayLabel(project.directory);
+    final savedName = normalizedName.isEmpty || normalizedName == folderName
+        ? null
+        : normalizedName;
+    final nextIcon = draft.icon?.effectiveImage == null &&
+            (draft.icon?.color?.trim().isEmpty ?? true)
+        ? null
+        : draft.icon;
+    final nextCommands = draft.startup.trim().isEmpty
+        ? null
+        : ProjectCommandsInfo(start: draft.startup.trim());
+
+    final nextTarget = await _saveProjectEdit(
+      project: project,
+      savedName: savedName,
+      icon: nextIcon,
+      commands: nextCommands,
+    );
+    if (nextTarget == null) {
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+
+    await AppScope.of(context).persistProjectUpdate(
+      profile: profile,
+      target: nextTarget,
+    );
+  }
+
+  Future<ProjectTarget?> _saveProjectEdit({
+    required ProjectTarget project,
+    required String? savedName,
+    required ProjectIconInfo? icon,
+    required ProjectCommandsInfo? commands,
+  }) async {
+    final projectId = project.id?.trim();
+    if (projectId != null &&
+        projectId.isNotEmpty &&
+        projectId.toLowerCase() != 'global') {
+      try {
+        return await _projectCatalogService.updateProject(
+          profile: _profile!,
+          project: project,
+          name: savedName,
+          icon: icon,
+          commands: commands,
+        );
+      } catch (error) {
+        if (!mounted) {
+          return null;
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to update project: $error')),
+        );
+        return null;
+      }
+    }
+
+    return project.copyWith(
+      label: projectDisplayLabel(project.directory, name: savedName),
+      name: savedName,
+      icon: icon,
+      commands: commands,
+      clearName: savedName == null,
+      clearIcon: icon == null,
+      clearCommands: commands == null,
+    );
+  }
+
+  Future<void> _removeProject(
+    WorkspaceController controller,
+    ProjectTarget project, {
+    required bool compact,
+  }) async {
+    final profile = _profile;
+    if (profile == null) {
+      return;
+    }
+    final remainingProjects = controller.availableProjects
+        .where((item) => item.directory != project.directory)
+        .toList(growable: false);
+    await AppScope.of(
+      context,
+    ).hideProject(profile: profile, directory: project.directory);
+
+    if (!mounted) {
+      return;
+    }
+
+    if (project.directory != _currentDirectory) {
+      return;
+    }
+
+    if (remainingProjects.isEmpty) {
+      Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+      return;
+    }
+
+    await _selectProjectInPlace(remainingProjects.first, compact: compact);
+  }
+
   @override
   Widget build(BuildContext context) {
     final appController = AppScope.of(context);
@@ -999,6 +1128,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
           statuses: controller.statuses,
           onSelectProject: (project) =>
               unawaited(_selectProjectInPlace(project, compact: compact)),
+          onEditProject: (project) => unawaited(_editProject(project)),
+          onRemoveProject: (project) => unawaited(
+            _removeProject(controller, project, compact: compact),
+          ),
           onSelectSession: (sessionId) {
             unawaited(
               _selectSessionInPlace(controller, sessionId, compact: compact),
@@ -2521,6 +2654,8 @@ class _WorkspaceSidebar extends StatelessWidget {
     required this.sessions,
     required this.statuses,
     required this.onSelectProject,
+    required this.onEditProject,
+    required this.onRemoveProject,
     required this.onSelectSession,
     required this.onNewSession,
     required this.onOpenSettings,
@@ -2532,6 +2667,8 @@ class _WorkspaceSidebar extends StatelessWidget {
   final List<SessionSummary> sessions;
   final Map<String, SessionStatusSummary> statuses;
   final ValueChanged<ProjectTarget> onSelectProject;
+  final ValueChanged<ProjectTarget> onEditProject;
+  final ValueChanged<ProjectTarget> onRemoveProject;
   final ValueChanged<String> onSelectSession;
   final VoidCallback onNewSession;
   final VoidCallback onOpenSettings;
@@ -2562,34 +2699,15 @@ class _WorkspaceSidebar extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(
                           horizontal: AppSpacing.sm,
                         ),
-                        child: InkWell(
+                        child: _ProjectSidebarTile(
                           key: ValueKey<String>(
                             'workspace-project-${project.directory}',
                           ),
-                          onTap: () => onSelectProject(project),
-                          borderRadius: BorderRadius.circular(AppSpacing.md),
-                          child: Container(
-                            height: 48,
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              color: selected
-                                  ? Theme.of(context).colorScheme.primary
-                                        .withValues(alpha: 0.16)
-                                  : surfaces.panelRaised,
-                              borderRadius: BorderRadius.circular(
-                                AppSpacing.md,
-                              ),
-                              border: Border.all(
-                                color: selected
-                                    ? Theme.of(context).colorScheme.primary
-                                    : surfaces.lineSoft,
-                              ),
-                            ),
-                            child: Text(
-                              _projectInitial(project),
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                          ),
+                          project: project,
+                          selected: selected,
+                          onSelect: () => onSelectProject(project),
+                          onEdit: () => onEditProject(project),
+                          onRemove: () => onRemoveProject(project),
                         ),
                       );
                     },
@@ -2690,6 +2808,712 @@ class _WorkspaceSidebar extends StatelessWidget {
   }
 }
 
+class _ProjectSidebarTile extends StatefulWidget {
+  const _ProjectSidebarTile({
+    required this.project,
+    required this.selected,
+    required this.onSelect,
+    required this.onEdit,
+    required this.onRemove,
+    super.key,
+  });
+
+  final ProjectTarget project;
+  final bool selected;
+  final VoidCallback onSelect;
+  final VoidCallback onEdit;
+  final VoidCallback onRemove;
+
+  @override
+  State<_ProjectSidebarTile> createState() => _ProjectSidebarTileState();
+}
+
+class _ProjectSidebarTileState extends State<_ProjectSidebarTile> {
+  Future<void> _showMenu(Offset globalPosition) async {
+    final action = await showGeneralDialog<_ProjectMenuAction>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Dismiss project menu',
+      barrierColor: Colors.transparent,
+      transitionDuration: const Duration(milliseconds: 160),
+      pageBuilder: (dialogContext, animation, secondaryAnimation) {
+        return _ProjectContextMenuOverlay(
+          position: globalPosition,
+          project: widget.project,
+        );
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+          reverseCurve: Curves.easeInCubic,
+        );
+        return FadeTransition(opacity: curved, child: child);
+      },
+    );
+
+    switch (action) {
+      case _ProjectMenuAction.edit:
+        widget.onEdit();
+      case _ProjectMenuAction.remove:
+        widget.onRemove();
+      case null:
+        break;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return GestureDetector(
+      onSecondaryTapDown: (details) => _showMenu(details.globalPosition),
+      onLongPressStart: (details) => _showMenu(details.globalPosition),
+      child: InkWell(
+        onTap: widget.onSelect,
+        borderRadius: BorderRadius.circular(AppSpacing.md),
+        child: Container(
+          height: 48,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: widget.selected
+                ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.16)
+                : surfaces.panelRaised,
+            borderRadius: BorderRadius.circular(AppSpacing.md),
+            border: Border.all(
+              color: widget.selected
+                  ? Theme.of(context).colorScheme.primary
+                  : surfaces.lineSoft,
+            ),
+          ),
+          child: _ProjectAvatar(
+            project: widget.project,
+            size: 38,
+            fontSize: 22,
+            rounded: 10,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+enum _ProjectMenuAction { edit, remove }
+
+class _ProjectContextMenuOverlay extends StatelessWidget {
+  const _ProjectContextMenuOverlay({
+    required this.position,
+    required this.project,
+  });
+
+  final Offset position;
+  final ProjectTarget project;
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    const panelWidth = 236.0;
+    const horizontalInset = 12.0;
+    const verticalInset = 12.0;
+    final maxLeft = math.max(
+      horizontalInset,
+      size.width - panelWidth - horizontalInset,
+    );
+    final left = math.min(position.dx, maxLeft);
+    final top = math.min(position.dy, size.height - 132 - verticalInset);
+
+    return Material(
+      type: MaterialType.transparency,
+      child: Stack(
+        children: <Widget>[
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(context).pop(),
+            ),
+          ),
+          Positioned(
+            left: left,
+            top: math.max(verticalInset, top),
+            child: _ProjectContextMenuPanel(project: project),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProjectContextMenuPanel extends StatelessWidget {
+  const _ProjectContextMenuPanel({required this.project});
+
+  final ProjectTarget project;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        child: Container(
+          constraints: const BoxConstraints(minWidth: 220, maxWidth: 236),
+          decoration: BoxDecoration(
+            color: surfaces.panelRaised.withValues(alpha: 0.82),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            boxShadow: <BoxShadow>[
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.34),
+                blurRadius: 28,
+                offset: const Offset(0, 18),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.xs),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.sm,
+                    AppSpacing.xs,
+                    AppSpacing.sm,
+                    AppSpacing.sm,
+                  ),
+                  child: Row(
+                    children: <Widget>[
+                      _ProjectAvatar(project: project, size: 34, fontSize: 18),
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(
+                        child: Text(
+                          project.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleSmall,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                _ProjectContextMenuItem(
+                  label: 'Edit project',
+                  icon: Icons.edit_rounded,
+                  onTap: () =>
+                      Navigator.of(context).pop(_ProjectMenuAction.edit),
+                ),
+                _ProjectContextMenuItem(
+                  label: 'Delete project',
+                  icon: Icons.delete_outline_rounded,
+                  destructive: true,
+                  onTap: () =>
+                      Navigator.of(context).pop(_ProjectMenuAction.remove),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ProjectContextMenuItem extends StatelessWidget {
+  const _ProjectContextMenuItem({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+    this.destructive = false,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+  final bool destructive;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final color = destructive ? surfaces.danger : theme.colorScheme.onSurface;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.sm,
+            vertical: AppSpacing.sm,
+          ),
+          child: Row(
+            children: <Widget>[
+              Icon(icon, size: 18, color: color),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  label,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: color,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _EditProjectDialog extends StatefulWidget {
+  const _EditProjectDialog({required this.project});
+
+  final ProjectTarget project;
+
+  @override
+  State<_EditProjectDialog> createState() => _EditProjectDialogState();
+}
+
+class _EditProjectDialogState extends State<_EditProjectDialog> {
+  late final TextEditingController _nameController;
+  late final TextEditingController _startupController;
+  late String _selectedColor;
+  String? _iconDataUrl;
+  bool _pickingIcon = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(
+      text: widget.project.name ?? projectDisplayLabel(widget.project.directory),
+    );
+    _startupController = TextEditingController(
+      text: widget.project.commands?.start ?? '',
+    );
+    _selectedColor = widget.project.icon?.color ?? 'pink';
+    _iconDataUrl = widget.project.icon?.effectiveImage;
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _startupController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickIcon() async {
+    if (_pickingIcon) {
+      return;
+    }
+    setState(() {
+      _pickingIcon = true;
+    });
+    try {
+      final image = await openFile(
+        acceptedTypeGroups: const <XTypeGroup>[
+          XTypeGroup(
+            label: 'Images',
+            extensions: <String>[
+              'png',
+              'jpg',
+              'jpeg',
+              'webp',
+              'gif',
+              'bmp',
+              'svg',
+            ],
+          ),
+        ],
+      );
+      if (image == null) {
+        return;
+      }
+      final bytes = await image.readAsBytes();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _iconDataUrl = _dataUrlForFile(image.name, bytes);
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _pickingIcon = false;
+        });
+      }
+    }
+  }
+
+  void _submit() {
+    Navigator.of(context).pop(
+      _ProjectEditDraft(
+        name: _nameController.text,
+        startup: _startupController.text,
+        icon: ProjectIconInfo(
+          url: _iconDataUrl,
+          override: _iconDataUrl,
+          color: _selectedColor,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final hasCustomIcon = _iconDataUrl != null && _iconDataUrl!.isNotEmpty;
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.xl,
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(28),
+        child: BackdropFilter(
+          filter: ui.ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 520),
+            decoration: BoxDecoration(
+              color: surfaces.panel.withValues(alpha: 0.92),
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+              boxShadow: <BoxShadow>[
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.42),
+                  blurRadius: 42,
+                  offset: const Offset(0, 24),
+                ),
+              ],
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.xl),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: Text(
+                            'Edit project',
+                            style: theme.textTheme.titleLarge,
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          icon: const Icon(Icons.close_rounded),
+                          tooltip: 'Close',
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    TextField(
+                      controller: _nameController,
+                      decoration: const InputDecoration(labelText: 'Name'),
+                      autofocus: true,
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    Text(
+                      'Icon',
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: surfaces.muted,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Stack(
+                          children: <Widget>[
+                            InkWell(
+                              onTap: _pickIcon,
+                              borderRadius: BorderRadius.circular(14),
+                              child: Container(
+                                width: 92,
+                                height: 92,
+                                decoration: BoxDecoration(
+                                  color: surfaces.panelRaised,
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(color: surfaces.lineSoft),
+                                ),
+                                alignment: Alignment.center,
+                                child: _ProjectAvatar(
+                                  project: widget.project.copyWith(
+                                    name: _nameController.text.trim().isEmpty
+                                        ? widget.project.name
+                                        : _nameController.text.trim(),
+                                    label: projectDisplayLabel(
+                                      widget.project.directory,
+                                      name: _nameController.text.trim().isEmpty
+                                          ? widget.project.name
+                                          : _nameController.text.trim(),
+                                    ),
+                                    icon: ProjectIconInfo(
+                                      url: _iconDataUrl,
+                                      override: _iconDataUrl,
+                                      color: _selectedColor,
+                                    ),
+                                  ),
+                                  size: 84,
+                                  fontSize: 34,
+                                  rounded: 10,
+                                ),
+                              ),
+                            ),
+                            if (hasCustomIcon)
+                              Positioned(
+                                right: 6,
+                                top: 6,
+                                child: Material(
+                                  color: Colors.black.withValues(alpha: 0.56),
+                                  shape: const CircleBorder(),
+                                  child: InkWell(
+                                    customBorder: const CircleBorder(),
+                                    onTap: () {
+                                      setState(() {
+                                        _iconDataUrl = null;
+                                      });
+                                    },
+                                    child: const Padding(
+                                      padding: EdgeInsets.all(6),
+                                      child: Icon(
+                                        Icons.close_rounded,
+                                        size: 16,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(width: AppSpacing.md),
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.only(top: AppSpacing.xs),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: <Widget>[
+                                Text(
+                                  _pickingIcon
+                                      ? 'Loading image...'
+                                      : 'Click to choose an image',
+                                  style: theme.textTheme.bodyMedium,
+                                ),
+                                const SizedBox(height: AppSpacing.xxs),
+                                Text(
+                                  'Recommended: 128x128px',
+                                  style: theme.textTheme.bodySmall,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (!hasCustomIcon) ...<Widget>[
+                      const SizedBox(height: AppSpacing.lg),
+                      Text(
+                        'Color',
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: surfaces.muted,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      Wrap(
+                        spacing: AppSpacing.sm,
+                        runSpacing: AppSpacing.sm,
+                        children: _projectAvatarColorKeys.map((colorKey) {
+                          final palette = _projectAvatarPalette(colorKey);
+                          final selected = colorKey == _selectedColor;
+                          return InkWell(
+                            onTap: () {
+                              setState(() {
+                                _selectedColor = colorKey;
+                              });
+                            },
+                            borderRadius: BorderRadius.circular(12),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 160),
+                              width: 46,
+                              height: 46,
+                              decoration: BoxDecoration(
+                                color: selected
+                                    ? Colors.white.withValues(alpha: 0.08)
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: selected
+                                      ? Colors.white.withValues(alpha: 0.9)
+                                      : Colors.white.withValues(alpha: 0.06),
+                                  width: selected ? 2 : 1,
+                                ),
+                              ),
+                              padding: const EdgeInsets.all(4),
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: palette.background,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    _projectInitial(
+                                      widget.project.copyWith(
+                                        name: _nameController.text.trim().isEmpty
+                                            ? widget.project.name
+                                            : _nameController.text.trim(),
+                                        label: projectDisplayLabel(
+                                          widget.project.directory,
+                                          name: _nameController.text.trim().isEmpty
+                                              ? widget.project.name
+                                              : _nameController.text.trim(),
+                                        ),
+                                      ),
+                                    ),
+                                    style: theme.textTheme.titleMedium?.copyWith(
+                                      color: palette.foreground,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        }).toList(growable: false),
+                      ),
+                    ],
+                    const SizedBox(height: AppSpacing.lg),
+                    TextField(
+                      controller: _startupController,
+                      maxLines: 3,
+                      minLines: 3,
+                      decoration: const InputDecoration(
+                        labelText: 'Workspace startup script',
+                        hintText: 'e.g. bun install',
+                        helperText:
+                            'Runs after creating a new workspace (worktree).',
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xl),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: <Widget>[
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          child: const Text('Cancel'),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        FilledButton(
+                          onPressed: _submit,
+                          child: const Text('Save'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ProjectEditDraft {
+  const _ProjectEditDraft({
+    required this.name,
+    required this.startup,
+    required this.icon,
+  });
+
+  final String name;
+  final String startup;
+  final ProjectIconInfo? icon;
+}
+
+class _ProjectAvatar extends StatelessWidget {
+  const _ProjectAvatar({
+    required this.project,
+    required this.size,
+    required this.fontSize,
+    this.rounded = 12,
+  });
+
+  final ProjectTarget project;
+  final double size;
+  final double fontSize;
+  final double rounded;
+
+  @override
+  Widget build(BuildContext context) {
+    final image = project.icon?.effectiveImage;
+    final palette = _projectAvatarPalette(project.icon?.color);
+    final initial = _projectInitial(project);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(rounded),
+      child: Container(
+        width: size,
+        height: size,
+        color: palette.background,
+        alignment: Alignment.center,
+        child: image == null
+            ? Text(
+                initial,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontSize: fontSize,
+                  fontWeight: FontWeight.w700,
+                  color: palette.foreground,
+                ),
+              )
+            : _ProjectAvatarImage(image: image),
+      ),
+    );
+  }
+}
+
+class _ProjectAvatarImage extends StatelessWidget {
+  const _ProjectAvatarImage({required this.image});
+
+  final String image;
+
+  @override
+  Widget build(BuildContext context) {
+    UriData? uriData;
+    if (image.startsWith('data:')) {
+      try {
+        uriData = UriData.parse(image);
+      } catch (_) {
+        uriData = null;
+      }
+    }
+    if (uriData != null) {
+      return Image.memory(
+        uriData.contentAsBytes(),
+        width: double.infinity,
+        height: double.infinity,
+        fit: BoxFit.cover,
+      );
+    }
+    return Image.network(
+      image,
+      width: double.infinity,
+      height: double.infinity,
+      fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+    );
+  }
+}
+
 String _projectInitial(ProjectTarget project) {
   String pickCandidate(String value) {
     final trimmed = value.trim();
@@ -2713,6 +3537,40 @@ String _projectInitial(ProjectTarget project) {
     return '?';
   }
   return resolved.characters.first.toUpperCase();
+}
+
+const List<String> _projectAvatarColorKeys = <String>[
+  'pink',
+  'mint',
+  'orange',
+  'purple',
+  'cyan',
+  'lime',
+];
+
+({Color background, Color foreground}) _projectAvatarPalette(String? key) {
+  return switch (key?.trim()) {
+    'pink' => (background: const Color(0xFF5D2448), foreground: const Color(0xFFF6B4E5)),
+    'mint' => (background: const Color(0xFF164740), foreground: const Color(0xFFB8F7E8)),
+    'orange' => (background: const Color(0xFF6A3814), foreground: const Color(0xFFFFC38D)),
+    'purple' => (background: const Color(0xFF4C2D67), foreground: const Color(0xFFD1B0FF)),
+    'cyan' => (background: const Color(0xFF1A4172), foreground: const Color(0xFFA5D4FF)),
+    'lime' => (background: const Color(0xFF42571A), foreground: const Color(0xFFD6F48E)),
+    _ => (background: const Color(0xFF164740), foreground: const Color(0xFFB8F7E8)),
+  };
+}
+
+String _dataUrlForFile(String filename, Uint8List bytes) {
+  final extension = filename.trim().split('.').last.toLowerCase();
+  final mimeType = switch (extension) {
+    'jpg' || 'jpeg' => 'image/jpeg',
+    'webp' => 'image/webp',
+    'gif' => 'image/gif',
+    'bmp' => 'image/bmp',
+    'svg' => 'image/svg+xml',
+    _ => 'image/png',
+  };
+  return 'data:$mimeType;base64,${base64Encode(bytes)}';
 }
 
 SessionSummary? _sessionById(List<SessionSummary> sessions, String? sessionId) {

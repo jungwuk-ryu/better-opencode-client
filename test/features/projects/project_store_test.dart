@@ -34,4 +34,24 @@ void main() {
     expect(pinned.contains('/workspace/demo'), isTrue);
     expect(unpinned.contains('/workspace/demo'), isFalse);
   });
+
+  test('hidden projects are excluded from recent projects until restored', () async {
+    final store = ProjectStore();
+    const target = ProjectTarget(
+      directory: '/workspace/demo',
+      label: 'Demo',
+      source: 'server',
+    );
+
+    await store.recordRecentProject(target);
+    await store.hideProject('/workspace/demo');
+
+    expect(await store.loadRecentProjects(), isEmpty);
+
+    await store.recordRecentProject(target);
+    final recent = await store.loadRecentProjects();
+
+    expect(recent, hasLength(1));
+    expect(recent.single.directory, '/workspace/demo');
+  });
 }

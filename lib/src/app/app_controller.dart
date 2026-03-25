@@ -159,6 +159,41 @@ class WebParityAppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> persistProjectUpdate({
+    required ServerProfile profile,
+    required ProjectTarget target,
+  }) async {
+    await _projectStore.restoreProject(target.directory);
+    _recentProjects = await _projectStore.updateRecentProject(target);
+    final lastWorkspace = await _projectStore.loadLastWorkspace(
+      profile.storageKey,
+    );
+    if (lastWorkspace?.directory == target.directory) {
+      await _projectStore.saveLastWorkspace(
+        serverStorageKey: profile.storageKey,
+        target: target,
+      );
+    }
+    _applyProjectTargetUpdate(profile: profile, target: target);
+    notifyListeners();
+  }
+
+  Future<void> hideProject({
+    required ServerProfile profile,
+    required String directory,
+  }) async {
+    await _projectStore.hideProject(directory);
+    _recentProjects = await _projectStore.loadRecentProjects();
+    final lastWorkspace = await _projectStore.loadLastWorkspace(
+      profile.storageKey,
+    );
+    if (lastWorkspace?.directory == directory) {
+      await _projectStore.clearLastWorkspace(profile.storageKey);
+    }
+    _applyProjectRemoval(profile: profile, directory: directory);
+    notifyListeners();
+  }
+
   bool hasWorkspaceController({
     required ServerProfile profile,
     required String directory,
@@ -193,6 +228,30 @@ class WebParityAppController extends ChangeNotifier {
     required String directory,
   }) {
     return '${profile.storageKey}::$directory';
+  }
+
+  void _applyProjectTargetUpdate({
+    required ServerProfile profile,
+    required ProjectTarget target,
+  }) {
+    for (final entry in _workspaceControllers.entries) {
+      if (!entry.key.startsWith('${profile.storageKey}::')) {
+        continue;
+      }
+      entry.value.applyProjectTargetUpdate(target);
+    }
+  }
+
+  void _applyProjectRemoval({
+    required ServerProfile profile,
+    required String directory,
+  }) {
+    for (final entry in _workspaceControllers.entries) {
+      if (!entry.key.startsWith('${profile.storageKey}::')) {
+        continue;
+      }
+      entry.value.applyProjectRemoval(directory);
+    }
   }
 
   Future<Map<String, ServerProbeReport>> _loadCachedReports(
