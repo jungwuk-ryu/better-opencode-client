@@ -24,6 +24,7 @@ import '../shell/opencode_shell_screen.dart';
 import '../shell/server_workspace_shell_screen.dart';
 
 const _contentMaxWidth = 1480.0;
+// ignore: unused_element
 const _sideColumnWidth = 420.0;
 const _motionFast = Duration(milliseconds: 220);
 const _motionMedium = Duration(milliseconds: 320);
@@ -1155,6 +1156,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _buildPrimaryColumn(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1190,6 +1192,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _buildSideColumn(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

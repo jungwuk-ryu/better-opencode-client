@@ -397,23 +397,19 @@ class _FakeProjectCatalogService extends ProjectCatalogService {
 class _FakeProfileStore extends ServerProfileStore {
   _FakeProfileStore({
     required this.savedProfiles,
-    this.recentConnections = const <RecentConnection>[],
-    this.pinnedProfiles = const <String>{},
   });
 
   final List<ServerProfile> savedProfiles;
-  final List<RecentConnection> recentConnections;
-  final Set<String> pinnedProfiles;
 
   @override
   Future<List<ServerProfile>> load() async => savedProfiles;
 
   @override
   Future<List<RecentConnection>> loadRecentConnections() async =>
-      recentConnections;
+      const <RecentConnection>[];
 
   @override
-  Future<Set<String>> loadPinnedProfiles() async => pinnedProfiles;
+  Future<Set<String>> loadPinnedProfiles() async => const <String>{};
 }
 
 class _FakeCacheStore extends StaleCacheStore {

@@ -5,86 +5,86 @@ import 'app_spacing.dart';
 
 final class AppTheme {
   static ThemeData dark() {
-    const background = Color(0xFF071019);
-    const panel = Color(0xFF0D1722);
-    const panelRaised = Color(0xFF122031);
-    const panelMuted = Color(0xFF0C141E);
-    const panelEmphasis = Color(0xFF16273A);
-    const line = Color(0xFF22344A);
-    const lineSoft = Color(0xFF172433);
-    const accent = Color(0xFFB8D6FF);
-    const accentSoft = Color(0xFF87BDF7);
-    const text = Color(0xFFF5F7FB);
-    const muted = Color(0xFF95A4B8);
-    const success = Color(0xFF8BE39B);
-    const warning = Color(0xFFFFD27A);
-    const danger = Color(0xFFFF8B8B);
+    const background = Color(0xFF0D0E10);
+    const panel = Color(0xFF111315);
+    const panelRaised = Color(0xFF15181B);
+    const panelMuted = Color(0xFF101214);
+    const panelEmphasis = Color(0xFF181B1E);
+    const line = Color(0xFF30343A);
+    const lineSoft = Color(0xFF23272C);
+    const accent = Color(0xFF39C8BA);
+    const accentSoft = Color(0xFF7ADCD3);
+    const text = Color(0xFFEAECEF);
+    const muted = Color(0xFF9BA2AA);
+    const success = Color(0xFF67D98A);
+    const warning = Color(0xFFE2BF76);
+    const danger = Color(0xFFEF8A8A);
 
     final textTheme =
-        GoogleFonts.plusJakartaSansTextTheme(Typography.whiteMountainView)
+        GoogleFonts.ibmPlexSansTextTheme(Typography.whiteMountainView)
             .apply(bodyColor: text, displayColor: text)
             .copyWith(
-              headlineMedium: GoogleFonts.plusJakartaSans(
+              headlineMedium: GoogleFonts.ibmPlexSans(
                 fontSize: 34,
                 fontWeight: FontWeight.w700,
                 letterSpacing: -0.9,
                 height: 1.05,
                 color: text,
               ),
-              headlineSmall: GoogleFonts.plusJakartaSans(
+              headlineSmall: GoogleFonts.ibmPlexSans(
                 fontSize: 28,
                 fontWeight: FontWeight.w700,
                 letterSpacing: -0.7,
                 height: 1.1,
                 color: text,
               ),
-              titleLarge: GoogleFonts.plusJakartaSans(
+              titleLarge: GoogleFonts.ibmPlexSans(
                 fontSize: 20,
                 fontWeight: FontWeight.w700,
                 letterSpacing: -0.35,
                 height: 1.15,
                 color: text,
               ),
-              titleMedium: GoogleFonts.plusJakartaSans(
+              titleMedium: GoogleFonts.ibmPlexSans(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
                 letterSpacing: -0.15,
                 height: 1.2,
                 color: text,
               ),
-              titleSmall: GoogleFonts.plusJakartaSans(
+              titleSmall: GoogleFonts.ibmPlexSans(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
                 letterSpacing: -0.1,
                 height: 1.25,
                 color: text,
               ),
-              bodyLarge: GoogleFonts.plusJakartaSans(
+              bodyLarge: GoogleFonts.ibmPlexSans(
                 fontSize: 15,
                 fontWeight: FontWeight.w500,
                 height: 1.55,
                 color: text,
               ),
-              bodyMedium: GoogleFonts.plusJakartaSans(
+              bodyMedium: GoogleFonts.ibmPlexSans(
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
                 height: 1.5,
                 color: text,
               ),
-              bodySmall: GoogleFonts.plusJakartaSans(
+              bodySmall: GoogleFonts.ibmPlexSans(
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
                 height: 1.45,
                 color: muted,
               ),
-              labelLarge: GoogleFonts.plusJakartaSans(
+              labelLarge: GoogleFonts.ibmPlexSans(
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 0.25,
                 height: 1.2,
                 color: text,
               ),
-              labelMedium: GoogleFonts.plusJakartaSans(
+              labelMedium: GoogleFonts.ibmPlexSans(
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 0.4,

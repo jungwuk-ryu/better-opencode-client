@@ -6990,7 +6990,7 @@ class _ComposerCardState extends State<_ComposerCard> {
                   width: widget.compact ? 220 : 240,
                   child: DropdownButtonFormField<String?>(
                     key: const ValueKey<String>('composer-model-select'),
-                    value: _selectedModelKey,
+                    initialValue: _selectedModelKey,
                     isExpanded: true,
                     decoration: InputDecoration(
                       isDense: true,
@@ -7030,7 +7030,7 @@ class _ComposerCardState extends State<_ComposerCard> {
                   width: widget.compact ? 180 : 200,
                   child: DropdownButtonFormField<String?>(
                     key: const ValueKey<String>('composer-reasoning-select'),
-                    value: _selectedReasoning,
+                    initialValue: _selectedReasoning,
                     isExpanded: true,
                     decoration: InputDecoration(
                       isDense: true,

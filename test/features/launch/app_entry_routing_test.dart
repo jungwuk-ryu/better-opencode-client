@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:opencode_mobile_remote/src/app/app.dart';
+import 'package:opencode_mobile_remote/src/features/web_parity/web_home_screen.dart';
 import 'package:opencode_mobile_remote/src/features/connection/connection_home_screen.dart';
 import 'package:opencode_mobile_remote/src/features/home/workspace_home_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -23,12 +24,13 @@ void main() {
     await tester.pumpWidget(const OpenCodeRemoteApp());
     await tester.pumpAndSettle();
 
-    expect(find.byType(WorkspaceHomeScreen), findsOneWidget);
+    expect(find.byType(WebParityHomeScreen), findsOneWidget);
     expect(find.byType(ConnectionHomeScreen), findsNothing);
-    expect(find.text('OpenCode Remote'), findsOneWidget);
-    expect(find.text('Workspace'), findsOneWidget);
-    expect(find.text('Add server'), findsWidgets);
-    expect(find.text('Projects and sessions'), findsOneWidget);
+    expect(find.byType(WorkspaceHomeScreen), findsNothing);
+    expect(find.text('OpenCode'), findsOneWidget);
+    expect(find.text('Open Project'), findsOneWidget);
+    expect(find.text('Recent Projects'), findsOneWidget);
+    expect(find.text('See Servers'), findsOneWidget);
     expect(find.text('Probe server'), findsNothing);
     expect(find.text('Live capability probe'), findsNothing);
   });

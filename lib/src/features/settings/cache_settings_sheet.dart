@@ -85,7 +85,7 @@ class _CacheSettingsSheetState extends State<CacheSettingsSheet> {
             Text(l10n.cacheSettingsSubtitle),
             const SizedBox(height: AppSpacing.lg),
             DropdownButtonFormField<int>(
-              value: _selectedTtl?.inMilliseconds,
+              initialValue: _selectedTtl?.inMilliseconds,
               decoration: InputDecoration(labelText: l10n.cacheTtlLabel),
               items: _ttlOptions
                   .map(
