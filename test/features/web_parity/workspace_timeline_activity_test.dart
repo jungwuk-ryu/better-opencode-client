@@ -17,7 +17,7 @@ import 'package:opencode_mobile_remote/src/features/web_parity/workspace_screen.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('tool and reasoning rows stay collapsed until tapped', (
+  testWidgets('reasoning stays collapsed while shell output is shown live', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1600, 1000);
@@ -32,6 +32,7 @@ void main() {
     );
     final appController = _StaticAppController(
       profile: profile,
+      initialShellToolPartsExpanded: true,
       workspaceControllerFactory:
           ({required profile, required directory, initialSessionId}) {
             return _TimelineWorkspaceController(
@@ -60,17 +61,13 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.textContaining('Shell Shows staged and unstaged diff'),
-      findsOneWidget,
-    );
-    expect(
       find.byKey(
         const ValueKey<String>('timeline-activity-shimmer-part_reasoning'),
       ),
       findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey<String>('timeline-activity-shimmer-part_tool')),
+      find.byKey(const ValueKey<String>('timeline-shell-shimmer-part_tool')),
       findsOneWidget,
     );
     expect(find.text('Which environment should I target?'), findsNothing);
@@ -78,7 +75,12 @@ void main() {
       find.text('Detailed internal reasoning stays hidden.'),
       findsNothing,
     );
-    expect(find.textContaining(r'git diff --staged && git diff'), findsNothing);
+    expect(find.text('Verify bot runtime module'), findsNothing);
+    expect(find.textContaining(r'$ git diff --staged && git diff'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('timeline-shell-copy-part_tool')),
+      findsOneWidget,
+    );
 
     await tester.tap(
       find.byKey(const ValueKey<String>('timeline-activity-part_reasoning')),
@@ -90,16 +92,59 @@ void main() {
       find.text('Detailed internal reasoning stays hidden.'),
       findsOneWidget,
     );
+  });
 
-    await tester.tap(
-      find.byKey(const ValueKey<String>('timeline-activity-part_tool')),
+  testWidgets('shell output can be collapsed from the workspace setting', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      initialShellToolPartsExpanded: true,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _TimelineWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
     expect(
-      find.textContaining(r'git diff --staged && git diff'),
+      find.textContaining(r'$ git diff --staged && git diff'),
       findsOneWidget,
+    );
+
+    await appController.setShellToolPartsExpanded(false);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(
+      find.textContaining(r'$ git diff --staged && git diff'),
+      findsNothing,
     );
   });
 }
@@ -146,13 +191,25 @@ class _WorkspaceRouteHarness extends StatelessWidget {
 class _StaticAppController extends WebParityAppController {
   _StaticAppController({
     required this.profile,
+    required bool initialShellToolPartsExpanded,
     required WorkspaceControllerFactory workspaceControllerFactory,
-  }) : super(workspaceControllerFactory: workspaceControllerFactory);
+  }) : _shellToolPartsExpanded = initialShellToolPartsExpanded,
+       super(workspaceControllerFactory: workspaceControllerFactory);
 
   final ServerProfile profile;
+  bool _shellToolPartsExpanded;
 
   @override
   ServerProfile? get selectedProfile => profile;
+
+  @override
+  bool get shellToolPartsExpanded => _shellToolPartsExpanded;
+
+  @override
+  Future<void> setShellToolPartsExpanded(bool value) async {
+    _shellToolPartsExpanded = value;
+    notifyListeners();
+  }
 }
 
 class _TimelineWorkspaceController extends WorkspaceController {
@@ -239,8 +296,12 @@ class _TimelineWorkspaceController extends WorkspaceController {
             'state': <String, Object?>{
               'status': 'running',
               'title': 'Shows staged and unstaged diff',
+              'input': <String, Object?>{
+                'description': 'Verify bot runtime module',
+                'command': 'git diff --staged && git diff',
+              },
+              'output': 'M README.md\n M lib/main.dart',
             },
-            'command': r'git diff --staged && git diff',
           },
         ),
       ],

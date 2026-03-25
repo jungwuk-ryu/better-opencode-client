@@ -46,6 +46,8 @@ class WebParityAppController extends ChangeNotifier {
            workspaceControllerFactory ?? _defaultWorkspaceControllerFactory;
 
   static const _selectedProfileKey = 'web_parity.selected_profile';
+  static const _shellToolPartsExpandedKey =
+      'web_parity.shell_tool_parts_expanded';
 
   final ServerProfileStore _profileStore;
   final ProjectStore _projectStore;
@@ -58,6 +60,7 @@ class WebParityAppController extends ChangeNotifier {
   List<ProjectTarget> _recentProjects = const <ProjectTarget>[];
   Map<String, ServerProbeReport> _reports = const <String, ServerProbeReport>{};
   ServerProfile? _selectedProfile;
+  bool _shellToolPartsExpanded = true;
   final Map<String, WorkspaceController> _workspaceControllers =
       <String, WorkspaceController>{};
 
@@ -66,6 +69,7 @@ class WebParityAppController extends ChangeNotifier {
   List<ProjectTarget> get recentProjects => _recentProjects;
   Map<String, ServerProbeReport> get reports => _reports;
   ServerProfile? get selectedProfile => _selectedProfile;
+  bool get shellToolPartsExpanded => _shellToolPartsExpanded;
   ServerProbeReport? get selectedReport {
     final selectedProfile = _selectedProfile;
     if (selectedProfile == null) {
@@ -83,6 +87,8 @@ class WebParityAppController extends ChangeNotifier {
     final reports = await _loadCachedReports(profiles);
     final prefs = await SharedPreferences.getInstance();
     final selectedProfileId = prefs.getString(_selectedProfileKey);
+    final shellToolPartsExpanded =
+        prefs.getBool(_shellToolPartsExpandedKey) ?? true;
 
     ServerProfile? selectedProfile;
     if (selectedProfileId != null) {
@@ -99,6 +105,7 @@ class WebParityAppController extends ChangeNotifier {
     _recentProjects = recentProjects;
     _reports = reports;
     _selectedProfile = selectedProfile;
+    _shellToolPartsExpanded = shellToolPartsExpanded;
     _loading = false;
     notifyListeners();
   }
@@ -113,6 +120,16 @@ class WebParityAppController extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_selectedProfileKey, profile.id);
+  }
+
+  Future<void> setShellToolPartsExpanded(bool value) async {
+    if (_shellToolPartsExpanded == value) {
+      return;
+    }
+    _shellToolPartsExpanded = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_shellToolPartsExpandedKey, value);
   }
 
   Future<void> refreshProbe(ServerProfile profile) async {

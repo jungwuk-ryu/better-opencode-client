@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
@@ -783,6 +784,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                         status: controller.selectedStatus,
                         messages: controller.messages,
                         configSnapshot: controller.configSnapshot,
+                        shellToolPartsExpanded:
+                            appController.shellToolPartsExpanded,
+                        onSetShellToolPartsExpanded:
+                            appController.setShellToolPartsExpanded,
                         terminalOpen: _terminalPanelOpen,
                         onBackHome: () => Navigator.of(
                           context,
@@ -841,6 +846,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                 timelineScrollController:
                                     _timelineScrollController,
                                 compactPane: _compactPane,
+                                shellToolDefaultExpanded:
+                                    appController.shellToolPartsExpanded,
                                 onCompactPaneChanged: (value) {
                                   if (_compactPane == value) {
                                     return;
@@ -926,6 +933,8 @@ class _WorkspaceTopBar extends StatelessWidget {
     required this.status,
     required this.messages,
     required this.configSnapshot,
+    required this.shellToolPartsExpanded,
+    required this.onSetShellToolPartsExpanded,
     required this.terminalOpen,
     required this.onBackHome,
     required this.onToggleTerminal,
@@ -945,6 +954,8 @@ class _WorkspaceTopBar extends StatelessWidget {
   final SessionStatusSummary? status;
   final List<ChatMessage> messages;
   final ConfigSnapshot? configSnapshot;
+  final bool shellToolPartsExpanded;
+  final Future<void> Function(bool value) onSetShellToolPartsExpanded;
   final bool terminalOpen;
   final VoidCallback onBackHome;
   final VoidCallback onToggleTerminal;
@@ -1069,6 +1080,10 @@ class _WorkspaceTopBar extends StatelessWidget {
                       onBackHome();
                     case 'main':
                       onBackToMainSession?.call();
+                    case 'shell-default':
+                      unawaited(
+                        onSetShellToolPartsExpanded(!shellToolPartsExpanded),
+                      );
                     case 'rename':
                       onRename?.call();
                     case 'fork':
@@ -1089,6 +1104,12 @@ class _WorkspaceTopBar extends StatelessWidget {
                       value: 'main',
                       child: Text('Back to Main Session'),
                     ),
+                  const PopupMenuDivider(),
+                  CheckedPopupMenuItem<String>(
+                    value: 'shell-default',
+                    checked: shellToolPartsExpanded,
+                    child: const Text('Expand shell output by default'),
+                  ),
                   const PopupMenuDivider(),
                   const PopupMenuItem<String>(
                     value: 'rename',
@@ -1229,6 +1250,10 @@ class _WorkspaceTopBar extends StatelessWidget {
                 switch (value) {
                   case 'main':
                     onBackToMainSession?.call();
+                  case 'shell-default':
+                    unawaited(
+                      onSetShellToolPartsExpanded(!shellToolPartsExpanded),
+                    );
                   case 'rename':
                     onRename?.call();
                   case 'fork':
@@ -1246,6 +1271,12 @@ class _WorkspaceTopBar extends StatelessWidget {
                     child: Text('Back to Main Session'),
                   ),
                 if (canReturnToMain) const PopupMenuDivider(),
+                CheckedPopupMenuItem<String>(
+                  value: 'shell-default',
+                  checked: shellToolPartsExpanded,
+                  child: const Text('Expand shell output by default'),
+                ),
+                const PopupMenuDivider(),
                 const PopupMenuItem<String>(
                   value: 'rename',
                   child: Text('Rename Session'),
@@ -1731,6 +1762,7 @@ class _WorkspaceBody extends StatelessWidget {
     required this.promptController,
     required this.timelineScrollController,
     required this.compactPane,
+    required this.shellToolDefaultExpanded,
     required this.onCompactPaneChanged,
     required this.onSubmitPrompt,
     required this.onCreateSession,
@@ -1750,6 +1782,7 @@ class _WorkspaceBody extends StatelessWidget {
   final TextEditingController promptController;
   final ScrollController timelineScrollController;
   final _CompactWorkspacePane compactPane;
+  final bool shellToolDefaultExpanded;
   final ValueChanged<_CompactWorkspacePane> onCompactPaneChanged;
   final VoidCallback onSubmitPrompt;
   final Future<void> Function() onCreateSession;
@@ -1795,6 +1828,7 @@ class _WorkspaceBody extends StatelessWidget {
                     error: controller.sessionLoadError,
                     messages: controller.messages,
                     sessions: allSessions,
+                    shellToolDefaultExpanded: shellToolDefaultExpanded,
                     onOpenSession: onOpenSession,
                     onRetry: controller.retrySelectedSessionMessages,
                   ),
@@ -1926,6 +1960,7 @@ class _MessageTimeline extends StatelessWidget {
     required this.error,
     required this.messages,
     required this.sessions,
+    required this.shellToolDefaultExpanded,
     required this.onOpenSession,
     required this.onRetry,
     super.key,
@@ -1937,6 +1972,7 @@ class _MessageTimeline extends StatelessWidget {
   final String? error;
   final List<ChatMessage> messages;
   final List<SessionSummary> sessions;
+  final bool shellToolDefaultExpanded;
   final ValueChanged<String> onOpenSession;
   final Future<void> Function() onRetry;
 
@@ -2004,6 +2040,7 @@ class _MessageTimeline extends StatelessWidget {
                   currentSessionId: currentSessionId,
                   message: message,
                   sessions: sessions,
+                  shellToolDefaultExpanded: shellToolDefaultExpanded,
                   onOpenSession: onOpenSession,
                 ),
               ),
@@ -3989,12 +4026,14 @@ class _TimelineMessage extends StatelessWidget {
     required this.currentSessionId,
     required this.message,
     required this.sessions,
+    required this.shellToolDefaultExpanded,
     required this.onOpenSession,
   });
 
   final String? currentSessionId;
   final ChatMessage message;
   final List<SessionSummary> sessions;
+  final bool shellToolDefaultExpanded;
   final ValueChanged<String> onOpenSession;
 
   @override
@@ -4027,6 +4066,7 @@ class _TimelineMessage extends StatelessWidget {
               currentSessionId: currentSessionId,
               part: part,
               sessions: sessions,
+              shellToolDefaultExpanded: shellToolDefaultExpanded,
               shimmerActive: _activityPartShimmerActive(
                 part,
                 messageIsActive: _messageIsActive(message),
@@ -4044,6 +4084,7 @@ class _TimelinePart extends StatelessWidget {
     required this.currentSessionId,
     required this.part,
     required this.sessions,
+    required this.shellToolDefaultExpanded,
     required this.shimmerActive,
     required this.onOpenSession,
   });
@@ -4051,6 +4092,7 @@ class _TimelinePart extends StatelessWidget {
   final String? currentSessionId;
   final ChatPart part;
   final List<SessionSummary> sessions;
+  final bool shellToolDefaultExpanded;
   final bool shimmerActive;
   final ValueChanged<String> onOpenSession;
 
@@ -4063,6 +4105,17 @@ class _TimelinePart extends StatelessWidget {
       currentSessionId: currentSessionId,
       fallbackSummary: _partSummary(part, body),
     );
+    if (_isShellToolPart(part)) {
+      return _ShellTimelinePart(
+        key: ValueKey<String>('timeline-shell-${part.id}'),
+        partId: part.id,
+        title: _partTitle(part),
+        subtitle: _shellToolSubtitle(part),
+        body: _shellToolBody(part),
+        shimmerActive: shimmerActive,
+        defaultExpanded: shellToolDefaultExpanded,
+      );
+    }
     if (_isToolLikePart(part)) {
       return _TimelineActivityPart(
         key: ValueKey<String>('timeline-activity-${part.id}'),
@@ -4080,6 +4133,223 @@ class _TimelinePart extends StatelessWidget {
       );
     }
     return _StructuredTextBlock(text: body);
+  }
+}
+
+class _ShellTimelinePart extends StatefulWidget {
+  const _ShellTimelinePart({
+    required this.partId,
+    required this.title,
+    required this.subtitle,
+    required this.body,
+    required this.shimmerActive,
+    required this.defaultExpanded,
+    super.key,
+  });
+
+  final String partId;
+  final String title;
+  final String? subtitle;
+  final String body;
+  final bool shimmerActive;
+  final bool defaultExpanded;
+
+  @override
+  State<_ShellTimelinePart> createState() => _ShellTimelinePartState();
+}
+
+class _ShellTimelinePartState extends State<_ShellTimelinePart> {
+  Timer? _copiedTimer;
+  late bool _expanded = widget.defaultExpanded;
+  bool _copied = false;
+
+  @override
+  void didUpdateWidget(covariant _ShellTimelinePart oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.defaultExpanded != widget.defaultExpanded) {
+      _expanded = widget.defaultExpanded;
+    }
+  }
+
+  @override
+  void dispose() {
+    _copiedTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _copyBody() async {
+    if (widget.body.trim().isEmpty) {
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: widget.body));
+    _copiedTimer?.cancel();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _copied = true;
+    });
+    _copiedTimer = Timer(const Duration(seconds: 2), () {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _copied = false;
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final pending = widget.shimmerActive;
+    final subtitle = widget.subtitle?.trim() ?? '';
+    final hasSubtitle = !pending && subtitle.isNotEmpty;
+    final hasBody = widget.body.trim().isNotEmpty;
+    final canToggle = hasBody && !pending;
+    final titleStyle = theme.textTheme.titleSmall?.copyWith(
+      fontWeight: FontWeight.w700,
+      color: theme.colorScheme.onSurface,
+    );
+    final subtitleStyle = theme.textTheme.bodyMedium?.copyWith(
+      height: 1.6,
+      color: surfaces.muted,
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Material(
+          color: Colors.transparent,
+            child: InkWell(
+            key: ValueKey<String>('timeline-shell-header-${widget.partId}'),
+            onTap: canToggle
+                ? () => setState(() => _expanded = !_expanded)
+                : null,
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.xs,
+                vertical: AppSpacing.xxs,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: <Widget>[
+                  Expanded(
+                    child: Wrap(
+                      spacing: AppSpacing.xs,
+                      runSpacing: AppSpacing.xxs,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: <Widget>[
+                        _ShimmeringRichText(
+                          key: ValueKey<String>(
+                            'timeline-shell-shimmer-${widget.partId}',
+                          ),
+                          active: pending,
+                          text: TextSpan(text: widget.title, style: titleStyle),
+                        ),
+                        if (hasSubtitle)
+                          Text(
+                            subtitle,
+                            style: subtitleStyle,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (canToggle)
+                    Padding(
+                      padding: const EdgeInsets.only(left: AppSpacing.sm),
+                      child: Icon(
+                        _expanded
+                            ? Icons.keyboard_arrow_up_rounded
+                            : Icons.keyboard_arrow_down_rounded,
+                        size: 18,
+                        color: surfaces.muted,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        ClipRect(
+          child: AnimatedSize(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            child: !_expanded || !hasBody
+                ? const SizedBox.shrink()
+                : Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(
+                      left: AppSpacing.lg,
+                      top: AppSpacing.sm,
+                    ),
+                    decoration: BoxDecoration(
+                      color: surfaces.panelMuted,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: surfaces.lineSoft),
+                    ),
+                    child: Stack(
+                      children: <Widget>[
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.fromLTRB(
+                            AppSpacing.md,
+                            AppSpacing.md,
+                            56,
+                            AppSpacing.md,
+                          ),
+                          child: Text(
+                            widget.body,
+                            key: ValueKey<String>(
+                              'timeline-shell-body-${widget.partId}',
+                            ),
+                            style: GoogleFonts.ibmPlexMono(
+                              fontSize: 14,
+                              height: 1.5,
+                              color: theme.colorScheme.onSurface,
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          top: AppSpacing.sm,
+                          right: AppSpacing.sm,
+                          child: Tooltip(
+                            message: _copied ? 'Copied' : 'Copy',
+                            waitDuration: const Duration(milliseconds: 100),
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: surfaces.panel,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: surfaces.lineSoft),
+                              ),
+                              child: IconButton(
+                                key: ValueKey<String>(
+                                  'timeline-shell-copy-${widget.partId}',
+                                ),
+                                onPressed: _copyBody,
+                                icon: Icon(
+                                  _copied
+                                      ? Icons.check_rounded
+                                      : Icons.content_copy_rounded,
+                                  size: 16,
+                                ),
+                                visualDensity: VisualDensity.compact,
+                                splashRadius: 18,
+                                tooltip: _copied ? 'Copied' : 'Copy',
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -5179,6 +5449,10 @@ bool _isTodoWriteToolPart(ChatPart part) {
   return part.type == 'tool' && part.tool?.trim().toLowerCase() == 'todowrite';
 }
 
+bool _isShellToolPart(ChatPart part) {
+  return part.type == 'tool' && part.tool?.trim().toLowerCase() == 'bash';
+}
+
 String? _toolStateStatus(ChatPart part) {
   return _nestedValue(part.metadata, const <String>[
     'state',
@@ -5253,6 +5527,54 @@ String _questionToolBody(ChatPart part) {
   }
   return lines.join('\n\n').trim();
 }
+
+String? _shellToolSubtitle(ChatPart part) {
+  return _firstNonEmpty(<String?>[
+    _nestedString(part.metadata, const <String>['state', 'input', 'description']),
+    _nestedString(part.metadata, const <String>['input', 'description']),
+    _nestedString(part.metadata, const <String>['description']),
+    _nestedString(part.metadata, const <String>['state', 'title']),
+  ]);
+}
+
+String _shellToolBody(ChatPart part) {
+  final command = _firstNonEmpty(<String?>[
+    _nestedString(part.metadata, const <String>['state', 'input', 'command']),
+    _nestedString(part.metadata, const <String>['input', 'command']),
+    _nestedString(part.metadata, const <String>['command']),
+  ]);
+  final output = _stringifyShellOutput(
+    _nestedValue(part.metadata, const <String>['state', 'output']) ??
+        _nestedValue(part.metadata, const <String>['output']) ??
+        part.text,
+  );
+  if (command == null || command.isEmpty) {
+    return output;
+  }
+  if (output.isEmpty) {
+    return '\$ $command';
+  }
+  return '\$ $command\n\n$output';
+}
+
+String _stringifyShellOutput(Object? value) {
+  if (value == null) {
+    return '';
+  }
+  final text = switch (value) {
+    final String text => text,
+    final Map value => const JsonEncoder.withIndent(
+      '  ',
+    ).convert(value.cast<Object?, Object?>()),
+    final List value => const JsonEncoder.withIndent('  ').convert(value),
+    _ => value.toString(),
+  };
+  return text.isEmpty ? '' : text.replaceAll(_ansiEscapePattern, '');
+}
+
+final RegExp _ansiEscapePattern = RegExp(
+  r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])',
+);
 
 String? _toolInputSummary(ChatPart part) {
   final tool = part.tool?.trim().toLowerCase();
