@@ -5211,8 +5211,13 @@ class _SidePanel extends StatelessWidget {
             WorkspaceSideTab.files => _FilesPanel(
               bundle: controller.fileBundle,
               loadingPreview: controller.loadingFilePreview,
+              expandedDirectories: controller.expandedFileDirectories,
+              loadingDirectoryPath: controller.loadingFileDirectoryPath,
               onSelectFile: (path) {
                 unawaited(controller.selectFile(path));
+              },
+              onToggleDirectory: (path) {
+                unawaited(controller.toggleFileDirectory(path));
               },
             ),
             WorkspaceSideTab.context => _ContextPanel(
@@ -5264,12 +5269,18 @@ class _FilesPanel extends StatelessWidget {
   const _FilesPanel({
     required this.bundle,
     required this.loadingPreview,
+    required this.expandedDirectories,
+    required this.loadingDirectoryPath,
     required this.onSelectFile,
+    required this.onToggleDirectory,
   });
 
   final FileBrowserBundle? bundle;
   final bool loadingPreview;
+  final Set<String> expandedDirectories;
+  final String? loadingDirectoryPath;
   final ValueChanged<String> onSelectFile;
+  final ValueChanged<String> onToggleDirectory;
 
   @override
   Widget build(BuildContext context) {
@@ -5285,36 +5296,76 @@ class _FilesPanel extends StatelessWidget {
         ),
       );
     }
+    final visibleNodes = _buildVisibleFileNodes(
+      bundle: bundle,
+      expandedDirectories: expandedDirectories,
+      loadingDirectoryPath: loadingDirectoryPath,
+    );
 
     return Column(
       children: <Widget>[
         Expanded(
           child: ListView.separated(
             padding: const EdgeInsets.all(AppSpacing.md),
-            itemCount: bundle.nodes.length,
+            itemCount: visibleNodes.length,
             separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.xs),
             itemBuilder: (context, index) {
-              final node = bundle.nodes[index];
+              final entry = visibleNodes[index];
+              final node = entry.node;
               final selected = node.path == bundle.selectedPath;
+              final isDirectory = node.type == 'directory';
               return ListTile(
                 dense: true,
                 selected: selected,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(AppSpacing.md),
                 ),
+                contentPadding: EdgeInsets.only(
+                  left: AppSpacing.md + (entry.depth * 18.0),
+                  right: AppSpacing.md,
+                ),
                 tileColor: selected
                     ? Theme.of(
                         context,
                       ).colorScheme.primary.withValues(alpha: 0.12)
                     : null,
-                leading: Icon(
-                  node.type == 'directory'
-                      ? Icons.folder_outlined
-                      : Icons.insert_drive_file_outlined,
+                leading: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    SizedBox(
+                      width: 18,
+                      child: isDirectory
+                          ? Icon(
+                              entry.expanded
+                                  ? Icons.expand_more_rounded
+                                  : Icons.chevron_right_rounded,
+                              size: 18,
+                              color: surfaces.muted,
+                            )
+                          : null,
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    Icon(
+                      isDirectory
+                          ? (entry.expanded
+                                ? Icons.folder_open_outlined
+                                : Icons.folder_outlined)
+                          : Icons.insert_drive_file_outlined,
+                    ),
+                  ],
                 ),
                 title: Text(node.name),
                 subtitle: Text(node.path),
-                onTap: () => onSelectFile(node.path),
+                trailing: entry.loading
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : null,
+                onTap: () => isDirectory
+                    ? onToggleDirectory(node.path)
+                    : onSelectFile(node.path),
               );
             },
           ),
@@ -5365,6 +5416,108 @@ class _FilesPanel extends StatelessWidget {
       ],
     );
   }
+}
+
+class _VisibleFileTreeEntry {
+  const _VisibleFileTreeEntry({
+    required this.node,
+    required this.depth,
+    required this.expanded,
+    required this.loading,
+  });
+
+  final FileNodeSummary node;
+  final int depth;
+  final bool expanded;
+  final bool loading;
+}
+
+List<_VisibleFileTreeEntry> _buildVisibleFileNodes({
+  required FileBrowserBundle bundle,
+  required Set<String> expandedDirectories,
+  required String? loadingDirectoryPath,
+}) {
+  final nodesByPath = <String, FileNodeSummary>{};
+  for (final node in bundle.nodes) {
+    nodesByPath[node.path] = node;
+    var parent = _fileNodeParentPath(node.path);
+    while (parent != null && parent.isNotEmpty) {
+      final directoryPath = parent;
+      nodesByPath.putIfAbsent(
+        directoryPath,
+        () => FileNodeSummary(
+          name: _fileNodeLabel(directoryPath),
+          path: directoryPath,
+          type: 'directory',
+          ignored: false,
+        ),
+      );
+      parent = _fileNodeParentPath(parent);
+    }
+  }
+
+  final childrenByParent = <String?, List<FileNodeSummary>>{};
+  for (final node in nodesByPath.values) {
+    childrenByParent
+        .putIfAbsent(_fileNodeParentPath(node.path), () => <FileNodeSummary>[])
+        .add(node);
+  }
+
+  for (final children in childrenByParent.values) {
+    children.sort((left, right) {
+      final leftDirectory = left.type == 'directory';
+      final rightDirectory = right.type == 'directory';
+      if (leftDirectory != rightDirectory) {
+        return leftDirectory ? -1 : 1;
+      }
+      return left.name.toLowerCase().compareTo(right.name.toLowerCase());
+    });
+  }
+
+  final visible = <_VisibleFileTreeEntry>[];
+
+  void visit(String? parentPath, int depth) {
+    final children = childrenByParent[parentPath];
+    if (children == null) {
+      return;
+    }
+    for (final node in children) {
+      final expanded =
+          node.type == 'directory' && expandedDirectories.contains(node.path);
+      visible.add(
+        _VisibleFileTreeEntry(
+          node: node,
+          depth: depth,
+          expanded: expanded,
+          loading: loadingDirectoryPath == node.path,
+        ),
+      );
+      if (expanded) {
+        visit(node.path, depth + 1);
+      }
+    }
+  }
+
+  visit(null, 0);
+  return visible;
+}
+
+String? _fileNodeParentPath(String path) {
+  final normalized = path.replaceAll('\\', '/').trim();
+  final index = normalized.lastIndexOf('/');
+  if (index <= 0) {
+    return null;
+  }
+  return normalized.substring(0, index);
+}
+
+String _fileNodeLabel(String path) {
+  final normalized = path.replaceAll('\\', '/').trim();
+  final index = normalized.lastIndexOf('/');
+  if (index < 0) {
+    return normalized;
+  }
+  return normalized.substring(index + 1);
 }
 
 class _ContextPanel extends StatefulWidget {

@@ -12,16 +12,35 @@ class FileBrowserService {
 
   final http.Client _client;
 
+  Future<List<FileNodeSummary>> fetchNodes({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    String path = '.',
+  }) async {
+    final body = await _getJson(
+      profile: profile,
+      path: '/file',
+      project: project,
+      query: <String, String>{'path': path},
+    );
+    if (body is! List) {
+      return const <FileNodeSummary>[];
+    }
+    return body
+        .whereType<Map>()
+        .map((item) => FileNodeSummary.fromJson(item.cast<String, Object?>()))
+        .toList(growable: false);
+  }
+
   Future<FileBrowserBundle> fetchBundle({
     required ServerProfile profile,
     required ProjectTarget project,
     String searchQuery = '',
   }) async {
-    final nodesBody = await _getJson(
+    final nodes = await fetchNodes(
       profile: profile,
-      path: '/file',
       project: project,
-      query: <String, String>{'path': '.'},
+      path: '.',
     );
     final statusBody = await _getJson(
       profile: profile,
@@ -57,15 +76,6 @@ class FileBrowserService {
             query: <String, String>{'query': searchQuery},
           );
 
-    final nodes = nodesBody is List
-        ? nodesBody
-              .whereType<Map>()
-              .map(
-                (item) =>
-                    FileNodeSummary.fromJson(item.cast<String, Object?>()),
-              )
-              .toList(growable: false)
-        : const <FileNodeSummary>[];
     final statuses = statusBody is List
         ? statusBody
               .whereType<Map>()
@@ -96,16 +106,29 @@ class FileBrowserService {
               .toList(growable: false)
         : const <SymbolSummary>[];
 
-    final selectedPath = searchResults.isNotEmpty
-        ? searchResults.first
-        : (nodes.isNotEmpty ? nodes.first.path : null);
-    final preview = selectedPath == null
-        ? null
-        : await fetchFileContent(
-            profile: profile,
-            project: project,
-            path: selectedPath,
-          );
+    String? selectedPath;
+    if (searchResults.isNotEmpty) {
+      selectedPath = searchResults.first;
+    } else {
+      for (final node in nodes) {
+        if (node.type != 'directory') {
+          selectedPath = node.path;
+          break;
+        }
+      }
+    }
+    FileContentSummary? preview;
+    if (selectedPath != null) {
+      try {
+        preview = await fetchFileContent(
+          profile: profile,
+          project: project,
+          path: selectedPath,
+        );
+      } catch (_) {
+        preview = null;
+      }
+    }
 
     return FileBrowserBundle(
       nodes: nodes,

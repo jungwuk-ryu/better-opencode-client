@@ -15,22 +15,32 @@ void main() {
     baseUri = Uri.parse('http://${server.address.address}:${server.port}');
     server.listen((request) async {
       final body = switch (request.uri.path) {
-        '/file' => [
-          {
-            'name': 'lib',
-            'path': 'lib',
-            'absolute': '/workspace/demo/lib',
-            'type': 'directory',
-            'ignored': false,
-          },
-          {
-            'name': 'README.md',
-            'path': 'README.md',
-            'absolute': '/workspace/demo/README.md',
-            'type': 'file',
-            'ignored': false,
-          },
-        ],
+        '/file' => request.uri.queryParameters['path'] == 'lib'
+            ? [
+                {
+                  'name': 'main.dart',
+                  'path': 'lib/main.dart',
+                  'absolute': '/workspace/demo/lib/main.dart',
+                  'type': 'file',
+                  'ignored': false,
+                },
+              ]
+            : [
+                {
+                  'name': 'lib',
+                  'path': 'lib',
+                  'absolute': '/workspace/demo/lib',
+                  'type': 'directory',
+                  'ignored': false,
+                },
+                {
+                  'name': 'README.md',
+                  'path': 'README.md',
+                  'absolute': '/workspace/demo/README.md',
+                  'type': 'file',
+                  'ignored': false,
+                },
+              ],
         '/file/status' => [
           {'path': 'README.md', 'added': 4, 'removed': 1, 'status': 'modified'},
         ],
@@ -80,6 +90,23 @@ void main() {
     expect(bundle.textMatches.first.path, 'README.md');
     expect(bundle.symbols.first.name, 'main');
     expect(bundle.preview?.content, '# Demo');
+    service.dispose();
+  });
+
+  test('fetches directory nodes for nested folders', () async {
+    final service = FileBrowserService();
+    final nodes = await service.fetchNodes(
+      profile: ServerProfile(
+        id: 'server',
+        label: 'mock',
+        baseUrl: baseUri.toString(),
+      ),
+      project: const ProjectTarget(directory: '/workspace/demo', label: 'Demo'),
+      path: 'lib',
+    );
+
+    expect(nodes, hasLength(1));
+    expect(nodes.single.path, 'lib/main.dart');
     service.dispose();
   });
 }

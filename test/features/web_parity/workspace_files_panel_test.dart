@@ -64,7 +64,63 @@ void main() {
     expect(createdControllers.single.fileBundle?.selectedPath, 'README.md');
     expect(find.text('# README preview'), findsOneWidget);
 
-    await tester.tap(find.text('lib/main.dart').first);
+    await tester.tap(find.text('pubspec.yaml').first);
+    await tester.pumpAndSettle();
+
+    expect(createdControllers.single.selectFileCalls, <String>['pubspec.yaml']);
+    expect(createdControllers.single.fileBundle?.selectedPath, 'pubspec.yaml');
+    expect(find.text('name: demo_workspace'), findsOneWidget);
+  });
+
+  testWidgets('files panel expands folders and reveals nested files', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final createdControllers = <_FilesWorkspaceController>[];
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory: ({
+        required profile,
+        required directory,
+        initialSessionId,
+      }) {
+        final controller = _FilesWorkspaceController(
+          profile: profile,
+          directory: directory,
+          initialSessionId: initialSessionId,
+        );
+        createdControllers.add(controller);
+        return controller;
+      },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('main.dart'), findsNothing);
+
+    await tester.tap(find.text('lib').first);
+    await tester.pumpAndSettle();
+
+    expect(createdControllers.single.toggleDirectoryCalls, <String>['lib']);
+    expect(find.text('main.dart'), findsOneWidget);
+
+    await tester.tap(find.text('main.dart').first);
     await tester.pumpAndSettle();
 
     expect(
@@ -73,6 +129,15 @@ void main() {
     );
     expect(createdControllers.single.fileBundle?.selectedPath, 'lib/main.dart');
     expect(find.text('// lib/main.dart preview'), findsOneWidget);
+
+    await tester.tap(find.text('lib').first);
+    await tester.pumpAndSettle();
+
+    expect(
+      createdControllers.single.toggleDirectoryCalls,
+      <String>['lib', 'lib'],
+    );
+    expect(find.text('main.dart'), findsNothing);
   });
 }
 
@@ -154,15 +219,18 @@ class _FilesWorkspaceController extends WorkspaceController {
 
   static final Map<String, String> _previewByPath = <String, String>{
     'README.md': '# README preview',
+    'pubspec.yaml': 'name: demo_workspace',
     'lib/main.dart': '// lib/main.dart preview',
   };
 
   final List<String> selectFileCalls = <String>[];
+  final List<String> toggleDirectoryCalls = <String>[];
 
   bool _loading = true;
   WorkspaceSideTab _sideTab = WorkspaceSideTab.files;
   String? _selectedSessionId;
   FileBrowserBundle? _fileBundle;
+  Set<String> _expandedDirectories = <String>{};
 
   @override
   bool get loading => _loading;
@@ -197,6 +265,12 @@ class _FilesWorkspaceController extends WorkspaceController {
   bool get loadingFilePreview => false;
 
   @override
+  Set<String> get expandedFileDirectories => _expandedDirectories;
+
+  @override
+  String? get loadingFileDirectoryPath => null;
+
+  @override
   List<TodoItem> get todos => const <TodoItem>[];
 
   @override
@@ -218,9 +292,15 @@ class _FilesWorkspaceController extends WorkspaceController {
           ignored: false,
         ),
         FileNodeSummary(
-          name: 'lib/main.dart',
-          path: 'lib/main.dart',
+          name: 'pubspec.yaml',
+          path: 'pubspec.yaml',
           type: 'file',
+          ignored: false,
+        ),
+        FileNodeSummary(
+          name: 'lib',
+          path: 'lib',
+          type: 'directory',
           ignored: false,
         ),
       ],
@@ -253,6 +333,32 @@ class _FilesWorkspaceController extends WorkspaceController {
         content: _previewByPath[path] ?? '',
       ),
     );
+    notifyListeners();
+  }
+
+  @override
+  Future<void> toggleFileDirectory(String path) async {
+    toggleDirectoryCalls.add(path);
+    if (_expandedDirectories.contains(path)) {
+      _expandedDirectories = <String>{..._expandedDirectories}..remove(path);
+    } else {
+      _expandedDirectories = <String>{..._expandedDirectories, path};
+      if (path == 'lib' &&
+          !(_fileBundle?.nodes.any((node) => node.path == 'lib/main.dart') ??
+              false)) {
+        _fileBundle = _fileBundle?.copyWith(
+          nodes: <FileNodeSummary>[
+            ...?_fileBundle?.nodes,
+            const FileNodeSummary(
+              name: 'main.dart',
+              path: 'lib/main.dart',
+              type: 'file',
+              ignored: false,
+            ),
+          ],
+        );
+      }
+    }
     notifyListeners();
   }
 }

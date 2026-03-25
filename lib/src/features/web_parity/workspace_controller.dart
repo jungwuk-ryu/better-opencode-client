@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
 
@@ -120,6 +121,7 @@ class WorkspaceController extends ChangeNotifier {
   bool _runningTerminal = false;
   bool _terminalOpen = false;
   bool _loadingFilePreview = false;
+  String? _loadingFileDirectoryPath;
   WorkspaceSideTab _sideTab = WorkspaceSideTab.review;
   String? _error;
   String? _sessionLoadError;
@@ -132,6 +134,8 @@ class WorkspaceController extends ChangeNotifier {
   String? _selectedSessionId;
   List<ChatMessage> _messages = const <ChatMessage>[];
   FileBrowserBundle? _fileBundle;
+  Set<String> _expandedFileDirectories = <String>{};
+  Set<String> _loadedFileDirectories = <String>{};
   List<TodoItem> _todos = const <TodoItem>[];
   PendingRequestBundle _pendingRequests = const PendingRequestBundle(
     questions: <QuestionRequestSummary>[],
@@ -157,6 +161,7 @@ class WorkspaceController extends ChangeNotifier {
   bool get runningTerminal => _runningTerminal;
   bool get terminalOpen => _terminalOpen;
   bool get loadingFilePreview => _loadingFilePreview;
+  String? get loadingFileDirectoryPath => _loadingFileDirectoryPath;
   WorkspaceSideTab get sideTab => _sideTab;
   String? get error => _error;
   String? get sessionLoadError => _sessionLoadError;
@@ -169,6 +174,8 @@ class WorkspaceController extends ChangeNotifier {
   String? get selectedSessionId => _selectedSessionId;
   List<ChatMessage> get messages => _messages;
   FileBrowserBundle? get fileBundle => _fileBundle;
+  Set<String> get expandedFileDirectories =>
+      UnmodifiableSetView<String>(_expandedFileDirectories);
   List<TodoItem> get todos => _todos;
   PendingRequestBundle get pendingRequests => _pendingRequests;
   QuestionRequestSummary? get currentQuestionRequest =>
@@ -372,6 +379,9 @@ class WorkspaceController extends ChangeNotifier {
     _messages = const <ChatMessage>[];
     _sessionLoading = false;
     _sessionLoadError = null;
+    _loadingFileDirectoryPath = null;
+    _expandedFileDirectories = <String>{};
+    _loadedFileDirectories = <String>{};
     _todos = const <TodoItem>[];
     _pendingRequests = const PendingRequestBundle(
       questions: <QuestionRequestSummary>[],
@@ -482,6 +492,10 @@ class WorkspaceController extends ChangeNotifier {
       return;
     }
 
+    _expandedFileDirectories = <String>{
+      ..._expandedFileDirectories,
+      ..._ancestorDirectories(trimmed),
+    };
     _loadingFilePreview = !selectingDirectory;
     _fileBundle = bundle.copyWith(selectedPath: trimmed, clearPreview: true);
     _notify();
@@ -516,6 +530,64 @@ class WorkspaceController extends ChangeNotifier {
     } finally {
       if (!_disposed && _fileBundle?.selectedPath == trimmed) {
         _loadingFilePreview = false;
+        _notify();
+      }
+    }
+  }
+
+  Future<void> toggleFileDirectory(String path) async {
+    final project = _project;
+    final bundle = _fileBundle;
+    final trimmed = path.trim();
+    if (project == null || bundle == null || trimmed.isEmpty) {
+      return;
+    }
+
+    if (_expandedFileDirectories.contains(trimmed)) {
+      _expandedFileDirectories = <String>{
+        ..._expandedFileDirectories,
+      }..remove(trimmed);
+      _notify();
+      return;
+    }
+
+    _expandedFileDirectories = <String>{
+      ..._expandedFileDirectories,
+      ..._ancestorDirectories(trimmed),
+      trimmed,
+    };
+    final shouldLoadChildren =
+        !_loadedFileDirectories.contains(trimmed) &&
+        !_hasKnownChildren(bundle.nodes, trimmed);
+    _loadingFileDirectoryPath = shouldLoadChildren ? trimmed : null;
+    _notify();
+
+    if (!shouldLoadChildren) {
+      return;
+    }
+
+    try {
+      final children = await _fileBrowserService.fetchNodes(
+        profile: profile,
+        project: project,
+        path: trimmed,
+      );
+      if (_disposed) {
+        return;
+      }
+      final current = _fileBundle;
+      if (current == null) {
+        return;
+      }
+      _fileBundle = current.copyWith(
+        nodes: _mergeFileNodes(current.nodes, children),
+      );
+      _loadedFileDirectories = <String>{..._loadedFileDirectories, trimmed};
+    } catch (_) {
+      // Keep the folder open even if refreshing its children fails.
+    } finally {
+      if (!_disposed && _loadingFileDirectoryPath == trimmed) {
+        _loadingFileDirectoryPath = null;
         _notify();
       }
     }
@@ -1296,9 +1368,17 @@ class WorkspaceController extends ChangeNotifier {
         project: project,
       );
       _loadingFilePreview = false;
+      _loadingFileDirectoryPath = null;
+      _loadedFileDirectories = <String>{};
+      _expandedFileDirectories = _fileBundle?.selectedPath == null
+          ? <String>{}
+          : _ancestorDirectories(_fileBundle!.selectedPath!);
     } catch (_) {
       _fileBundle = null;
       _loadingFilePreview = false;
+      _loadingFileDirectoryPath = null;
+      _expandedFileDirectories = <String>{};
+      _loadedFileDirectories = <String>{};
     }
     await _loadSessionPanels();
   }
@@ -1611,6 +1691,48 @@ class WorkspaceController extends ChangeNotifier {
       next.insert(0, updated);
     }
     _sessions = next.toList(growable: false);
+  }
+
+  Set<String> _ancestorDirectories(String path) {
+    final ancestors = <String>{};
+    var current = _parentDirectory(path);
+    while (current != null && current.isNotEmpty) {
+      ancestors.add(current);
+      current = _parentDirectory(current);
+    }
+    return ancestors;
+  }
+
+  String? _parentDirectory(String path) {
+    final normalized = path.replaceAll('\\', '/').trim();
+    final index = normalized.lastIndexOf('/');
+    if (index <= 0) {
+      return null;
+    }
+    return normalized.substring(0, index);
+  }
+
+  bool _hasKnownChildren(List<FileNodeSummary> nodes, String directoryPath) {
+    final prefix = '$directoryPath/';
+    for (final node in nodes) {
+      if (node.path.startsWith(prefix)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  List<FileNodeSummary> _mergeFileNodes(
+    List<FileNodeSummary> existing,
+    List<FileNodeSummary> incoming,
+  ) {
+    final byPath = <String, FileNodeSummary>{
+      for (final node in existing) node.path: node,
+      for (final node in incoming) node.path: node,
+    };
+    final merged = byPath.values.toList(growable: false)
+      ..sort((left, right) => left.path.compareTo(right.path));
+    return merged;
   }
 
   void _notify() {
