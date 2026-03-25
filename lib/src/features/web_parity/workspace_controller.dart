@@ -266,6 +266,39 @@ class WorkspaceController extends ChangeNotifier {
     return _statuses[selectedSessionId];
   }
 
+  SessionSummary? get rootSelectedSession =>
+      _rootSessionForId(selectedSessionId);
+
+  List<SessionSummary> get activeChildSessions {
+    final root = rootSelectedSession;
+    if (root == null) {
+      return const <SessionSummary>[];
+    }
+
+    final selectedSessionId = this.selectedSessionId;
+    final sessionTreeIds = _sessionTreeIds(root.id).toSet();
+    final children = sessions
+        .where((session) => session.id != root.id)
+        .where((session) => session.archivedAt == null)
+        .where((session) => sessionTreeIds.contains(session.id))
+        .where((session) => _isActiveStatus(statuses[session.id]))
+        .toList(growable: false);
+
+    children.sort((left, right) {
+      final leftSelected = left.id == selectedSessionId;
+      final rightSelected = right.id == selectedSessionId;
+      if (leftSelected != rightSelected) {
+        return leftSelected ? -1 : 1;
+      }
+      final updated = right.updatedAt.compareTo(left.updatedAt);
+      if (updated != 0) {
+        return updated;
+      }
+      return left.title.toLowerCase().compareTo(right.title.toLowerCase());
+    });
+    return children;
+  }
+
   void selectAgent(String? name) {
     final agent = _findAgent(name) ?? _defaultComposerAgent;
     if (agent == null) {
@@ -1653,7 +1686,7 @@ class WorkspaceController extends ChangeNotifier {
     List<T> requests,
     String Function(T request) sessionIdOf,
   ) {
-    final rootSessionId = _selectedSessionId;
+    final rootSessionId = selectedSessionId;
     if (rootSessionId == null || rootSessionId.isEmpty || requests.isEmpty) {
       return null;
     }
@@ -1669,9 +1702,39 @@ class WorkspaceController extends ChangeNotifier {
     return null;
   }
 
+  SessionSummary? _rootSessionForId(String? sessionId) {
+    final session = _sessionById(sessionId);
+    if (session == null) {
+      return null;
+    }
+
+    var current = session;
+    final seen = <String>{current.id};
+    while (current.parentId != null && current.parentId!.isNotEmpty) {
+      final parent = _sessionById(current.parentId);
+      if (parent == null || !seen.add(parent.id)) {
+        break;
+      }
+      current = parent;
+    }
+    return current;
+  }
+
+  SessionSummary? _sessionById(String? sessionId) {
+    if (sessionId == null || sessionId.isEmpty) {
+      return null;
+    }
+    for (final session in sessions) {
+      if (session.id == sessionId) {
+        return session;
+      }
+    }
+    return null;
+  }
+
   List<String> _sessionTreeIds(String rootSessionId) {
     final childrenByParent = <String, List<String>>{};
-    for (final session in _sessions) {
+    for (final session in sessions) {
       final parentId = session.parentId;
       if (parentId == null || parentId.isEmpty) {
         continue;
@@ -1695,6 +1758,10 @@ class WorkspaceController extends ChangeNotifier {
       }
     }
     return ids;
+  }
+
+  bool _isActiveStatus(SessionStatusSummary? status) {
+    return (status?.type.trim().toLowerCase() ?? 'idle') != 'idle';
   }
 
   ProjectTarget? _matchProject(List<ProjectTarget> projects, String directory) {

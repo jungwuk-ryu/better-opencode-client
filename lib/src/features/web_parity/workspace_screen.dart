@@ -2027,11 +2027,27 @@ class _WorkspaceBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final questionRequest = controller.currentQuestionRequest;
+    final activeChildSessions = controller.activeChildSessions;
     final todoLive =
         (controller.selectedStatus?.type ?? 'idle') != 'idle' ||
         questionRequest != null;
+    void openActiveChildSession(String sessionId) {
+      if (compact && compactPane != _CompactWorkspacePane.session) {
+        onCompactPaneChanged(_CompactWorkspacePane.session);
+      }
+      onOpenSession(sessionId);
+    }
+
+    final activeSubSessionPanel = _ActiveSubSessionPanel(
+      rootSessionId: controller.rootSelectedSession?.id,
+      sessions: activeChildSessions,
+      currentSessionId: controller.selectedSessionId,
+      compact: compact,
+      onOpenSession: openActiveChildSession,
+    );
     final content = Column(
       children: <Widget>[
+        if (!compact) activeSubSessionPanel,
         Expanded(
           child: DecoratedBox(
             decoration: BoxDecoration(
@@ -2122,6 +2138,7 @@ class _WorkspaceBody extends StatelessWidget {
             sideLabel: _compactSideLabel(controller),
             onChanged: onCompactPaneChanged,
           ),
+          activeSubSessionPanel,
           Expanded(
             child: compactPane == _CompactWorkspacePane.session
                 ? content
@@ -2150,6 +2167,392 @@ String _compactSideLabel(WorkspaceController controller) {
     WorkspaceSideTab.files => 'Files',
     WorkspaceSideTab.context => 'Context',
   };
+}
+
+class _ActiveSubSessionPanel extends StatefulWidget {
+  const _ActiveSubSessionPanel({
+    required this.rootSessionId,
+    required this.sessions,
+    required this.currentSessionId,
+    required this.compact,
+    required this.onOpenSession,
+  });
+
+  final String? rootSessionId;
+  final List<SessionSummary> sessions;
+  final String? currentSessionId;
+  final bool compact;
+  final ValueChanged<String> onOpenSession;
+
+  @override
+  State<_ActiveSubSessionPanel> createState() => _ActiveSubSessionPanelState();
+}
+
+class _ActiveSubSessionPanelState extends State<_ActiveSubSessionPanel> {
+  bool _collapsed = false;
+
+  @override
+  void didUpdateWidget(covariant _ActiveSubSessionPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final becameVisible =
+        oldWidget.sessions.isEmpty && widget.sessions.isNotEmpty;
+    if (oldWidget.rootSessionId != widget.rootSessionId || becameVisible) {
+      _collapsed = false;
+    }
+  }
+
+  void _toggleCollapsed() {
+    setState(() {
+      _collapsed = !_collapsed;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final shouldShow = widget.sessions.isNotEmpty;
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 220),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, animation) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+        );
+        return FadeTransition(
+          opacity: curved,
+          child: SizeTransition(
+            sizeFactor: curved,
+            axisAlignment: -1,
+            child: child,
+          ),
+        );
+      },
+      child: !shouldShow
+          ? const SizedBox(
+              key: ValueKey<String>('active-subsessions-panel-hidden'),
+            )
+          : _ActiveSubSessionPanelBody(
+              key: const ValueKey<String>('active-subsessions-panel'),
+              sessions: widget.sessions,
+              currentSessionId: widget.currentSessionId,
+              compact: widget.compact,
+              collapsed: _collapsed,
+              onToggleCollapsed: _toggleCollapsed,
+              onOpenSession: widget.onOpenSession,
+            ),
+    );
+  }
+}
+
+class _ActiveSubSessionPanelBody extends StatelessWidget {
+  const _ActiveSubSessionPanelBody({
+    required this.sessions,
+    required this.currentSessionId,
+    required this.compact,
+    required this.collapsed,
+    required this.onToggleCollapsed,
+    required this.onOpenSession,
+    super.key,
+  });
+
+  final List<SessionSummary> sessions;
+  final String? currentSessionId;
+  final bool compact;
+  final bool collapsed;
+  final VoidCallback onToggleCollapsed;
+  final ValueChanged<String> onOpenSession;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final preview = sessions.take(2).map(_sessionDisplayTitle).join('  •  ');
+    final showPreview = collapsed && !compact && preview.isNotEmpty;
+    final idsSignature = sessions.map((session) => session.id).join('|');
+
+    return Padding(
+      padding: compact
+          ? const EdgeInsets.fromLTRB(
+              AppSpacing.sm,
+              AppSpacing.sm,
+              AppSpacing.sm,
+              0,
+            )
+          : const EdgeInsets.fromLTRB(
+              AppSpacing.md,
+              AppSpacing.md,
+              AppSpacing.md,
+              0,
+            ),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 920),
+          child: Container(
+            decoration: BoxDecoration(
+              color: surfaces.panel,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: surfaces.lineSoft),
+            ),
+            child: Column(
+              children: <Widget>[
+                InkWell(
+                  onTap: onToggleCollapsed,
+                  borderRadius: BorderRadius.circular(18),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.md,
+                      AppSpacing.sm,
+                      AppSpacing.xs,
+                      AppSpacing.sm,
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Icon(
+                            Icons.hub_rounded,
+                            size: 18,
+                            color: theme.colorScheme.primary.withValues(
+                              alpha: 0.92,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Row(
+                                children: <Widget>[
+                                  Expanded(
+                                    child: Text(
+                                      'Sub-agents Running',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: theme.textTheme.titleSmall
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: AppSpacing.xs),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: AppSpacing.xs,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: theme.colorScheme.primary
+                                          .withValues(alpha: 0.16),
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      '${sessions.length}',
+                                      style: theme.textTheme.labelSmall
+                                          ?.copyWith(
+                                            color: theme.colorScheme.primary,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 180),
+                                switchInCurve: Curves.easeOutCubic,
+                                switchOutCurve: Curves.easeInCubic,
+                                child: !showPreview
+                                    ? const SizedBox.shrink()
+                                    : Padding(
+                                        key: const ValueKey<String>(
+                                          'active-subsessions-preview',
+                                        ),
+                                        padding: const EdgeInsets.only(
+                                          top: AppSpacing.xs,
+                                          right: AppSpacing.xs,
+                                        ),
+                                        child: Text(
+                                          preview,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(color: surfaces.muted),
+                                        ),
+                                      ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          key: const ValueKey<String>(
+                            'active-subsessions-toggle-button',
+                          ),
+                          onPressed: onToggleCollapsed,
+                          icon: AnimatedRotation(
+                            turns: collapsed ? 0.5 : 0,
+                            duration: const Duration(milliseconds: 180),
+                            child: Icon(
+                              Icons.keyboard_arrow_down_rounded,
+                              color: surfaces.muted,
+                            ),
+                          ),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints.tightFor(
+                            width: 36,
+                            height: 36,
+                          ),
+                          splashRadius: 18,
+                          tooltip: collapsed ? 'Expand' : 'Collapse',
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                ClipRect(
+                  child: AnimatedSize(
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOutCubic,
+                    child: collapsed
+                        ? const SizedBox.shrink()
+                        : Padding(
+                            padding: const EdgeInsets.fromLTRB(
+                              AppSpacing.md,
+                              0,
+                              AppSpacing.md,
+                              AppSpacing.md,
+                            ),
+                            child: AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 220),
+                              switchInCurve: Curves.easeOutCubic,
+                              switchOutCurve: Curves.easeInCubic,
+                              transitionBuilder: (child, animation) {
+                                final curved = CurvedAnimation(
+                                  parent: animation,
+                                  curve: Curves.easeOutCubic,
+                                );
+                                return FadeTransition(
+                                  opacity: curved,
+                                  child: SizeTransition(
+                                    sizeFactor: curved,
+                                    axisAlignment: -1,
+                                    child: child,
+                                  ),
+                                );
+                              },
+                              child: Wrap(
+                                key: ValueKey<String>(
+                                  'active-subsessions-list-$idsSignature',
+                                ),
+                                spacing: AppSpacing.sm,
+                                runSpacing: AppSpacing.sm,
+                                children: sessions
+                                    .map(
+                                      (session) => _ActiveSubSessionChip(
+                                        session: session,
+                                        selected:
+                                            session.id == currentSessionId,
+                                        compact: compact,
+                                        onTap: () => onOpenSession(session.id),
+                                      ),
+                                    )
+                                    .toList(growable: false),
+                              ),
+                            ),
+                          ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ActiveSubSessionChip extends StatelessWidget {
+  const _ActiveSubSessionChip({
+    required this.session,
+    required this.selected,
+    required this.compact,
+    required this.onTap,
+  });
+
+  final SessionSummary session;
+  final bool selected;
+  final bool compact;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final selectedColor = theme.colorScheme.primary;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        key: ValueKey<String>('active-subsession-chip-${session.id}'),
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          constraints: BoxConstraints(maxWidth: compact ? 320 : 280),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.sm,
+            vertical: AppSpacing.sm,
+          ),
+          decoration: BoxDecoration(
+            color: selected
+                ? selectedColor.withValues(alpha: 0.14)
+                : surfaces.panelRaised.withValues(alpha: 0.9),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: selected
+                  ? selectedColor.withValues(alpha: 0.52)
+                  : surfaces.lineSoft,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: selected ? selectedColor : const Color(0xFF64D7C4),
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  _sessionDisplayTitle(session),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: selected ? selectedColor : null,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+String _sessionDisplayTitle(SessionSummary session) {
+  final title = session.title.trim();
+  if (title.isNotEmpty) {
+    return title;
+  }
+  return session.id;
 }
 
 class _NewSessionView extends StatelessWidget {
