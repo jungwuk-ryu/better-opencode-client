@@ -6,6 +6,7 @@ import '../../core/connection/connection_models.dart';
 import '../../core/network/request_headers.dart';
 import '../projects/project_models.dart';
 import 'chat_models.dart';
+import 'prompt_attachment_models.dart';
 
 class ChatService {
   ChatService({http.Client? client}) : _client = client ?? http.Client();
@@ -62,6 +63,7 @@ class ChatService {
     required ProjectTarget project,
     required String sessionId,
     required String prompt,
+    List<PromptAttachment> attachments = const <PromptAttachment>[],
     String? agent,
     String? providerId,
     String? modelId,
@@ -92,6 +94,14 @@ class ChatService {
     final body = <String, Object?>{
       'parts': <Map<String, Object?>>[
         <String, Object?>{'type': 'text', 'text': prompt},
+        ...attachments.map(
+          (attachment) => <String, Object?>{
+            'type': 'file',
+            'mime': attachment.mime,
+            'filename': attachment.filename,
+            'url': attachment.url,
+          },
+        ),
       ],
     };
     if (agent != null && agent.isNotEmpty) {
@@ -142,6 +152,7 @@ class ChatService {
     required String sessionId,
     required String command,
     String arguments = '',
+    List<PromptAttachment> attachments = const <PromptAttachment>[],
     String? agent,
     String? providerId,
     String? modelId,
@@ -171,6 +182,17 @@ class ChatService {
     final body = <String, Object?>{
       'command': command.trim(),
       'arguments': arguments,
+      if (attachments.isNotEmpty)
+        'parts': attachments
+            .map(
+              (attachment) => <String, Object?>{
+                'type': 'file',
+                'mime': attachment.mime,
+                'filename': attachment.filename,
+                'url': attachment.url,
+              },
+            )
+            .toList(growable: false),
     };
     if (agent != null && agent.isNotEmpty) {
       body['agent'] = agent;

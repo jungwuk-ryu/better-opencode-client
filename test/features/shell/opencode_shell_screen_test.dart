@@ -9,6 +9,7 @@ import 'package:opencode_mobile_remote/src/core/spec/capability_registry.dart';
 import 'package:opencode_mobile_remote/src/core/spec/raw_json_document.dart';
 import 'package:opencode_mobile_remote/src/design_system/app_theme.dart';
 import 'package:opencode_mobile_remote/src/features/chat/chat_models.dart';
+import 'package:opencode_mobile_remote/src/features/chat/prompt_attachment_models.dart';
 import 'package:opencode_mobile_remote/src/features/chat/chat_service.dart';
 import 'package:opencode_mobile_remote/src/core/spec/probe_snapshot.dart';
 import 'package:opencode_mobile_remote/src/features/files/file_browser_service.dart';
@@ -3190,6 +3191,7 @@ class _ControlledChatService extends ChatService {
     required ProjectTarget project,
     required String sessionId,
     required String prompt,
+    List<PromptAttachment> attachments = const <PromptAttachment>[],
     String? agent,
     String? providerId,
     String? modelId,

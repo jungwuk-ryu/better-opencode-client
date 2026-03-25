@@ -8,6 +8,7 @@ import '../../core/network/event_stream_service.dart';
 import '../../core/network/live_event_applier.dart';
 import '../chat/chat_models.dart';
 import '../chat/chat_service.dart';
+import '../chat/prompt_attachment_models.dart';
 import '../chat/session_action_service.dart';
 import '../commands/command_service.dart';
 import '../files/file_browser_service.dart';
@@ -581,9 +582,8 @@ class WorkspaceController extends ChangeNotifier {
     }
 
     if (_expandedFileDirectories.contains(trimmed)) {
-      _expandedFileDirectories = <String>{
-        ..._expandedFileDirectories,
-      }..remove(trimmed);
+      _expandedFileDirectories = <String>{..._expandedFileDirectories}
+        ..remove(trimmed);
       _notify();
       return;
     }
@@ -764,12 +764,17 @@ class WorkspaceController extends ChangeNotifier {
     return 'The server may be offline or responding too slowly.\n$detail';
   }
 
-  Future<String?> submitPrompt(String prompt) async {
+  Future<String?> submitPrompt(
+    String prompt, {
+    List<PromptAttachment> attachments = const <PromptAttachment>[],
+  }) async {
     final trimmed = prompt.trim();
     final project = _project;
     final selectedAgent = this.selectedAgent;
     final selectedModel = this.selectedModel;
-    if (_submittingPrompt || project == null || trimmed.isEmpty) {
+    if (_submittingPrompt ||
+        project == null ||
+        (trimmed.isEmpty && attachments.isEmpty)) {
       return _selectedSessionId;
     }
 
@@ -797,6 +802,7 @@ class WorkspaceController extends ChangeNotifier {
           sessionId: sessionId,
           command: slashCommand.name,
           arguments: slashCommand.arguments,
+          attachments: attachments,
           agent: selectedAgent?.name,
           providerId: selectedModel?.providerId,
           modelId: selectedModel?.modelId,
@@ -808,6 +814,7 @@ class WorkspaceController extends ChangeNotifier {
           project: project,
           sessionId: sessionId,
           prompt: trimmed,
+          attachments: attachments,
           agent: selectedAgent?.name,
           providerId: selectedModel?.providerId,
           modelId: selectedModel?.modelId,

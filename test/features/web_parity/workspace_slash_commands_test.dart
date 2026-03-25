@@ -10,6 +10,7 @@ import 'package:opencode_mobile_remote/src/app/app_scope.dart';
 import 'package:opencode_mobile_remote/src/core/connection/connection_models.dart';
 import 'package:opencode_mobile_remote/src/design_system/app_theme.dart';
 import 'package:opencode_mobile_remote/src/features/chat/chat_models.dart';
+import 'package:opencode_mobile_remote/src/features/chat/prompt_attachment_models.dart';
 import 'package:opencode_mobile_remote/src/features/commands/command_service.dart';
 import 'package:opencode_mobile_remote/src/features/projects/project_models.dart';
 import 'package:opencode_mobile_remote/src/features/settings/agent_service.dart';
@@ -373,7 +374,10 @@ class _SlashWorkspaceController extends WorkspaceController {
   }
 
   @override
-  Future<String?> submitPrompt(String prompt) async {
+  Future<String?> submitPrompt(
+    String prompt, {
+    List<PromptAttachment> attachments = const <PromptAttachment>[],
+  }) async {
     submitPromptCalls += 1;
     return selectedSessionId;
   }
@@ -406,7 +410,10 @@ class _DelayedSubmitWorkspaceController extends _SlashWorkspaceController {
   bool get submittingPrompt => _submitting;
 
   @override
-  Future<String?> submitPrompt(String prompt) async {
+  Future<String?> submitPrompt(
+    String prompt, {
+    List<PromptAttachment> attachments = const <PromptAttachment>[],
+  }) async {
     submitPromptCalls += 1;
     _submitting = true;
     notifyListeners();

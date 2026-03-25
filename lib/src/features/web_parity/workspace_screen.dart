@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
-
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -13,6 +13,8 @@ import '../../core/connection/connection_models.dart';
 import '../../design_system/app_spacing.dart';
 import '../../design_system/app_theme.dart';
 import '../chat/chat_models.dart';
+import '../chat/prompt_attachment_models.dart';
+import '../chat/prompt_attachment_service.dart';
 import '../chat/session_context_insights.dart';
 import '../commands/command_service.dart';
 import '../files/file_models.dart';
@@ -33,12 +35,14 @@ class WebParityWorkspaceScreen extends StatefulWidget {
     required this.directory,
     this.sessionId,
     this.ptyServiceFactory,
+    this.attachmentPicker,
     super.key,
   });
 
   final String directory;
   final String? sessionId;
   final PtyService Function()? ptyServiceFactory;
+  final Future<List<PromptAttachment>> Function()? attachmentPicker;
 
   @override
   State<WebParityWorkspaceScreen> createState() =>
@@ -46,11 +50,15 @@ class WebParityWorkspaceScreen extends StatefulWidget {
 }
 
 class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
+  static final PromptAttachmentService _attachmentService =
+      PromptAttachmentService();
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final ScrollController _timelineScrollController = ScrollController();
   WorkspaceController? _controller;
   ServerProfile? _profile;
   final TextEditingController _promptController = TextEditingController();
+  List<PromptAttachment> _composerAttachments = const <PromptAttachment>[];
+  bool _pickingComposerAttachments = false;
   String? _lastTimelineScopeKey;
   int _lastTimelineMessageCount = 0;
   int _lastTimelineContentSignature = 0;
@@ -530,27 +538,105 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     return signature;
   }
 
+  Future<void> _pickComposerAttachments() async {
+    if (_promptSubmitInFlight || _pickingComposerAttachments) {
+      return;
+    }
+
+    setState(() {
+      _pickingComposerAttachments = true;
+    });
+
+    try {
+      final attachments = widget.attachmentPicker != null
+          ? await widget.attachmentPicker!()
+          : await _pickSystemAttachments();
+      if (!mounted || attachments.isEmpty) {
+        return;
+      }
+      setState(() {
+        _composerAttachments = <PromptAttachment>[
+          ..._composerAttachments,
+          ...attachments,
+        ];
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to attach files: $error')));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _pickingComposerAttachments = false;
+        });
+      }
+    }
+  }
+
+  Future<List<PromptAttachment>> _pickSystemAttachments() async {
+    final files = await openFiles(
+      acceptedTypeGroups: <XTypeGroup>[PromptAttachmentService.pickerTypeGroup],
+    );
+    if (files.isEmpty) {
+      return const <PromptAttachment>[];
+    }
+    final result = await _attachmentService.loadFiles(files);
+    if (!mounted) {
+      return result.attachments;
+    }
+    if (result.rejectedNames.isNotEmpty) {
+      final names = result.rejectedNames.take(3).join(', ');
+      final overflow = result.rejectedNames.length > 3
+          ? ' and ${result.rejectedNames.length - 3} more'
+          : '';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Only images, PDFs, and text files are supported. Skipped: $names$overflow',
+          ),
+        ),
+      );
+    }
+    return result.attachments;
+  }
+
+  void _removeComposerAttachment(String attachmentId) {
+    setState(() {
+      _composerAttachments = _composerAttachments
+          .where((attachment) => attachment.id != attachmentId)
+          .toList(growable: false);
+    });
+  }
+
   Future<void> _submitPrompt() async {
     final controller = _controller;
     final draft = _promptController.text;
+    final attachments = List<PromptAttachment>.from(_composerAttachments);
     if (controller == null ||
         _promptSubmitInFlight ||
         controller.submittingPrompt ||
-        draft.trim().isEmpty) {
+        (draft.trim().isEmpty && attachments.isEmpty)) {
       return;
     }
 
     setState(() {
       _promptSubmitInFlight = true;
+      _composerAttachments = const <PromptAttachment>[];
     });
     _promptController.clear();
 
     try {
-      await controller.submitPrompt(draft);
+      await controller.submitPrompt(draft, attachments: attachments);
     } catch (error) {
       if (!mounted) {
         return;
       }
+      setState(() {
+        _composerAttachments = attachments;
+      });
       _promptController.value = TextEditingValue(
         text: draft,
         selection: TextSelection.collapsed(offset: draft.length),
@@ -846,6 +932,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                 submittingPrompt:
                                     _promptSubmitInFlight ||
                                     controller.submittingPrompt,
+                                pickingAttachments: _pickingComposerAttachments,
+                                attachments: _composerAttachments,
                                 promptController: _promptController,
                                 timelineScrollController:
                                     _timelineScrollController,
@@ -874,6 +962,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                     ),
                                   );
                                 },
+                                onPickAttachments: _pickComposerAttachments,
+                                onRemoveAttachment: _removeComposerAttachment,
                                 onShareSession:
                                     controller.selectedSession == null
                                     ? null
@@ -1799,6 +1889,8 @@ class _WorkspaceBody extends StatelessWidget {
     required this.controller,
     required this.allSessions,
     required this.submittingPrompt,
+    required this.pickingAttachments,
+    required this.attachments,
     required this.promptController,
     required this.timelineScrollController,
     required this.compactPane,
@@ -1808,6 +1900,8 @@ class _WorkspaceBody extends StatelessWidget {
     required this.onSubmitPrompt,
     required this.onCreateSession,
     required this.onOpenSession,
+    required this.onPickAttachments,
+    required this.onRemoveAttachment,
     required this.onToggleTerminal,
     required this.terminalPanelOpen,
     required this.terminalPanel,
@@ -1820,6 +1914,8 @@ class _WorkspaceBody extends StatelessWidget {
   final WorkspaceController controller;
   final List<SessionSummary> allSessions;
   final bool submittingPrompt;
+  final bool pickingAttachments;
+  final List<PromptAttachment> attachments;
   final TextEditingController promptController;
   final ScrollController timelineScrollController;
   final _CompactWorkspacePane compactPane;
@@ -1829,6 +1925,8 @@ class _WorkspaceBody extends StatelessWidget {
   final VoidCallback onSubmitPrompt;
   final Future<void> Function() onCreateSession;
   final ValueChanged<String> onOpenSession;
+  final Future<void> Function() onPickAttachments;
+  final ValueChanged<String> onRemoveAttachment;
   final Future<void> Function() onToggleTerminal;
   final bool terminalPanelOpen;
   final Widget? terminalPanel;
@@ -1900,6 +1998,8 @@ class _WorkspaceBody extends StatelessWidget {
           _PromptComposer(
             controller: promptController,
             submitting: submittingPrompt,
+            pickingAttachments: pickingAttachments,
+            attachments: attachments,
             agents: controller.composerAgents,
             models: controller.composerModels,
             selectedAgentName: controller.selectedAgentName,
@@ -1911,6 +2011,8 @@ class _WorkspaceBody extends StatelessWidget {
             onSelectModel: controller.selectModel,
             onSelectReasoning: controller.selectReasoning,
             onCreateSession: onCreateSession,
+            onPickAttachments: onPickAttachments,
+            onRemoveAttachment: onRemoveAttachment,
             onShareSession: onShareSession,
             onUnshareSession: onUnshareSession,
             onSummarizeSession: onSummarizeSession,
@@ -2167,6 +2269,8 @@ class _PromptComposer extends StatefulWidget {
   const _PromptComposer({
     required this.controller,
     required this.submitting,
+    required this.pickingAttachments,
+    required this.attachments,
     required this.agents,
     required this.models,
     required this.selectedAgentName,
@@ -2178,6 +2282,8 @@ class _PromptComposer extends StatefulWidget {
     required this.onSelectModel,
     required this.onSelectReasoning,
     required this.onCreateSession,
+    required this.onPickAttachments,
+    required this.onRemoveAttachment,
     required this.onToggleTerminal,
     required this.onSelectSideTab,
     required this.onSubmit,
@@ -2190,6 +2296,8 @@ class _PromptComposer extends StatefulWidget {
 
   final TextEditingController controller;
   final bool submitting;
+  final bool pickingAttachments;
+  final List<PromptAttachment> attachments;
   final List<AgentDefinition> agents;
   final List<WorkspaceComposerModelOption> models;
   final String? selectedAgentName;
@@ -2201,6 +2309,8 @@ class _PromptComposer extends StatefulWidget {
   final ValueChanged<String?> onSelectModel;
   final ValueChanged<String?> onSelectReasoning;
   final Future<void> Function() onCreateSession;
+  final Future<void> Function() onPickAttachments;
+  final ValueChanged<String> onRemoveAttachment;
   final Future<void> Function() onToggleTerminal;
   final ValueChanged<WorkspaceSideTab> onSelectSideTab;
   final VoidCallback onSubmit;
@@ -2215,7 +2325,8 @@ class _PromptComposer extends StatefulWidget {
 class _PromptComposerState extends State<_PromptComposer> {
   final FocusNode _focusNode = FocusNode();
 
-  bool get _canSubmit => widget.controller.text.trim().isNotEmpty;
+  bool get _canSubmit =>
+      widget.controller.text.trim().isNotEmpty || widget.attachments.isNotEmpty;
 
   @override
   void initState() {
@@ -2659,6 +2770,13 @@ class _PromptComposerState extends State<_PromptComposer> {
                   ),
                   const SizedBox(height: AppSpacing.md),
                 ],
+                if (widget.attachments.isNotEmpty) ...<Widget>[
+                  _ComposerAttachmentStrip(
+                    attachments: widget.attachments,
+                    onRemove: widget.onRemoveAttachment,
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                ],
                 TextField(
                   key: const ValueKey<String>('composer-text-field'),
                   controller: widget.controller,
@@ -2681,7 +2799,16 @@ class _PromptComposerState extends State<_PromptComposer> {
                 const SizedBox(height: AppSpacing.sm),
                 Row(
                   children: <Widget>[
-                    _ComposerIconButton(icon: Icons.add_rounded, onTap: () {}),
+                    _ComposerIconButton(
+                      key: const ValueKey<String>('composer-attach-button'),
+                      icon: Icons.add_rounded,
+                      onTap: widget.submitting || widget.pickingAttachments
+                          ? null
+                          : () {
+                              unawaited(widget.onPickAttachments());
+                            },
+                      busy: widget.pickingAttachments,
+                    ),
                     const SizedBox(width: AppSpacing.sm),
                     Expanded(
                       child: SingleChildScrollView(
@@ -2883,6 +3010,117 @@ class _PromptComposerState extends State<_PromptComposer> {
         titleBuilder: (item) => item.label,
         subtitleBuilder: (item) => item.value,
         valueOf: (item) => item.value,
+      ),
+    );
+  }
+}
+
+class _ComposerAttachmentStrip extends StatelessWidget {
+  const _ComposerAttachmentStrip({
+    required this.attachments,
+    required this.onRemove,
+  });
+
+  final List<PromptAttachment> attachments;
+  final ValueChanged<String> onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Wrap(
+        spacing: AppSpacing.sm,
+        runSpacing: AppSpacing.sm,
+        children: attachments
+            .map(
+              (attachment) => _ComposerAttachmentTile(
+                key: ValueKey<String>('composer-attachment-${attachment.id}'),
+                attachment: attachment,
+                onRemove: () => onRemove(attachment.id),
+              ),
+            )
+            .toList(growable: false),
+      ),
+    );
+  }
+}
+
+class _ComposerAttachmentTile extends StatelessWidget {
+  const _ComposerAttachmentTile({
+    required this.attachment,
+    required this.onRemove,
+    super.key,
+  });
+
+  final PromptAttachment attachment;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final previewBytes = _attachmentDataBytes(attachment.url);
+    return Container(
+      width: attachment.isImage ? 112 : 200,
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: surfaces.panelMuted,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: surfaces.lineSoft),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          if (attachment.isImage && previewBytes != null)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.memory(
+                previewBytes,
+                width: 44,
+                height: 44,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) =>
+                    _AttachmentIcon(mime: attachment.mime),
+              ),
+            )
+          else
+            _AttachmentIcon(mime: attachment.mime),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  attachment.filename,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _attachmentLabel(attachment.mime),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          InkWell(
+            key: ValueKey<String>(
+              'composer-attachment-remove-${attachment.id}',
+            ),
+            onTap: onRemove,
+            borderRadius: BorderRadius.circular(999),
+            child: const Padding(
+              padding: EdgeInsets.all(2),
+              child: Icon(Icons.close_rounded, size: 16),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -4091,6 +4329,10 @@ class _TimelineMessage extends StatelessWidget {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final isUser = message.info.role == 'user';
     if (isUser) {
+      final attachments = message.parts
+          .where(_isAttachmentFilePart)
+          .toList(growable: false);
+      final text = _messageBody(message);
       return Align(
         alignment: Alignment.centerRight,
         child: Container(
@@ -4101,7 +4343,17 @@ class _TimelineMessage extends StatelessWidget {
             borderRadius: BorderRadius.circular(18),
             border: Border.all(color: surfaces.lineSoft),
           ),
-          child: _InlineCodeText(text: _messageBody(message)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              if (attachments.isNotEmpty)
+                _UserMessageAttachmentGrid(attachments: attachments),
+              if (attachments.isNotEmpty && text.trim().isNotEmpty)
+                const SizedBox(height: AppSpacing.md),
+              if (text.trim().isNotEmpty) _InlineCodeText(text: text),
+            ],
+          ),
         ),
       );
     }
@@ -4174,6 +4426,9 @@ class _TimelinePart extends StatelessWidget {
       currentSessionId: currentSessionId,
       fallbackSummary: _partSummary(part, body),
     );
+    if (_isAttachmentFilePart(part)) {
+      return _UserMessageAttachmentTile(part: part);
+    }
     if (_isShellToolPart(part)) {
       return _ShellTimelinePart(
         key: ValueKey<String>('timeline-shell-${part.id}'),
@@ -4202,6 +4457,113 @@ class _TimelinePart extends StatelessWidget {
       );
     }
     return _StructuredTextBlock(text: body);
+  }
+}
+
+class _UserMessageAttachmentGrid extends StatelessWidget {
+  const _UserMessageAttachmentGrid({required this.attachments});
+
+  final List<ChatPart> attachments;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: AppSpacing.sm,
+      runSpacing: AppSpacing.sm,
+      children: attachments
+          .map((part) => _UserMessageAttachmentTile(part: part))
+          .toList(growable: false),
+    );
+  }
+}
+
+class _UserMessageAttachmentTile extends StatelessWidget {
+  const _UserMessageAttachmentTile({required this.part});
+
+  final ChatPart part;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final url = _attachmentPartUrl(part);
+    final mime = _attachmentPartMime(part) ?? 'application/octet-stream';
+    final filename = _attachmentPartFilename(part);
+    final previewBytes = url == null ? null : _attachmentDataBytes(url);
+    return Container(
+      width: mime.startsWith('image/') ? 164 : 220,
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: surfaces.panel,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: surfaces.lineSoft),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (mime.startsWith('image/') && previewBytes != null)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.memory(
+                previewBytes,
+                width: double.infinity,
+                height: 100,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => SizedBox(
+                  width: double.infinity,
+                  height: 100,
+                  child: Center(child: _AttachmentIcon(mime: mime)),
+                ),
+              ),
+            )
+          else
+            _AttachmentIcon(mime: mime),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            filename,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            _attachmentLabel(mime),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AttachmentIcon extends StatelessWidget {
+  const _AttachmentIcon({required this.mime});
+
+  final String mime;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final icon = switch (mime) {
+      final value when value.startsWith('image/') => Icons.image_outlined,
+      'application/pdf' => Icons.picture_as_pdf_outlined,
+      'text/plain' => Icons.description_outlined,
+      _ => Icons.attach_file_rounded,
+    };
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        color: surfaces.panelRaised,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: surfaces.lineSoft),
+      ),
+      child: Icon(icon, size: 22, color: surfaces.muted),
+    );
   }
 }
 
@@ -5539,6 +5901,7 @@ String _titleCase(String value) {
 
 String _messageBody(ChatMessage message) {
   return message.parts
+      .where((part) => part.type == 'text')
       .map(_partText)
       .where((value) => value.isNotEmpty)
       .join('\n\n');
@@ -5749,6 +6112,66 @@ bool _shouldAnimateStreamingText(ChatPart part, bool messageIsActive) {
   }
   return part.metadata['_streaming'] == true ||
       part.metadata.containsKey('content');
+}
+
+bool _isAttachmentFilePart(ChatPart part) {
+  return part.type == 'file' && (_attachmentPartUrl(part)?.isNotEmpty ?? false);
+}
+
+String? _attachmentPartUrl(ChatPart part) {
+  final value = part.metadata['url']?.toString().trim();
+  if (value == null || value.isEmpty) {
+    return null;
+  }
+  return value;
+}
+
+String? _attachmentPartMime(ChatPart part) {
+  final value = part.metadata['mime']?.toString().trim();
+  if (value == null || value.isEmpty) {
+    return null;
+  }
+  return value;
+}
+
+String _attachmentPartFilename(ChatPart part) {
+  final value = part.filename?.trim();
+  if (value != null && value.isNotEmpty) {
+    return value;
+  }
+  final metadataValue = part.metadata['filename']?.toString().trim();
+  if (metadataValue != null && metadataValue.isNotEmpty) {
+    return metadataValue;
+  }
+  return 'Attachment';
+}
+
+Uint8List? _attachmentDataBytes(String url) {
+  if (!url.startsWith('data:')) {
+    return null;
+  }
+  final commaIndex = url.indexOf(',');
+  if (commaIndex == -1 || commaIndex == url.length - 1) {
+    return null;
+  }
+  try {
+    return base64Decode(url.substring(commaIndex + 1));
+  } catch (_) {
+    return null;
+  }
+}
+
+String _attachmentLabel(String mime) {
+  if (mime.startsWith('image/')) {
+    return mime.replaceFirst('image/', '').toUpperCase();
+  }
+  if (mime == 'application/pdf') {
+    return 'PDF';
+  }
+  if (mime == 'text/plain') {
+    return 'Text file';
+  }
+  return mime;
 }
 
 String _resolvedRawPartText(ChatPart part) {

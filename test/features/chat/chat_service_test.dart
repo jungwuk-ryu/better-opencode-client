@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:opencode_mobile_remote/src/core/connection/connection_models.dart';
 import 'package:opencode_mobile_remote/src/features/chat/chat_service.dart';
+import 'package:opencode_mobile_remote/src/features/chat/prompt_attachment_models.dart';
 import 'package:opencode_mobile_remote/src/features/projects/project_models.dart';
 
 void main() {
@@ -236,6 +237,41 @@ void main() {
     service.dispose();
   });
 
+  test('sends file attachments alongside a prompt message', () async {
+    final service = ChatService();
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'mock',
+      baseUrl: baseUri.toString(),
+    );
+
+    await service.sendMessage(
+      profile: profile,
+      project: const ProjectTarget(directory: '/workspace/demo', label: 'Demo'),
+      sessionId: 'ses_2',
+      prompt: 'Review this file',
+      attachments: const <PromptAttachment>[
+        PromptAttachment(
+          id: 'att_1',
+          filename: 'notes.txt',
+          mime: 'text/plain',
+          url: 'data:text/plain;base64,SGVsbG8=',
+        ),
+      ],
+    );
+
+    expect(lastPromptBody?['parts'], <Map<String, Object?>>[
+      <String, Object?>{'type': 'text', 'text': 'Review this file'},
+      <String, Object?>{
+        'type': 'file',
+        'mime': 'text/plain',
+        'filename': 'notes.txt',
+        'url': 'data:text/plain;base64,SGVsbG8=',
+      },
+    ]);
+    service.dispose();
+  });
+
   test('sends a slash command message', () async {
     final service = ChatService();
     final profile = ServerProfile(
@@ -264,6 +300,40 @@ void main() {
     expect(lastCommandBody?['agent'], 'Sisyphus');
     expect(lastCommandBody?['model'], 'openai/gpt-5.4');
     expect(lastCommandBody?['variant'], 'medium');
+    service.dispose();
+  });
+
+  test('sends file attachments with slash commands', () async {
+    final service = ChatService();
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'mock',
+      baseUrl: baseUri.toString(),
+    );
+
+    await service.sendCommand(
+      profile: profile,
+      project: const ProjectTarget(directory: '/workspace/demo', label: 'Demo'),
+      sessionId: 'ses_2',
+      command: 'share',
+      attachments: const <PromptAttachment>[
+        PromptAttachment(
+          id: 'att_1',
+          filename: 'diagram.png',
+          mime: 'image/png',
+          url: 'data:image/png;base64,AA==',
+        ),
+      ],
+    );
+
+    expect(lastCommandBody?['parts'], <Map<String, Object?>>[
+      <String, Object?>{
+        'type': 'file',
+        'mime': 'image/png',
+        'filename': 'diagram.png',
+        'url': 'data:image/png;base64,AA==',
+      },
+    ]);
     service.dispose();
   });
 }
