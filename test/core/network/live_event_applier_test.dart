@@ -82,6 +82,25 @@ void main() {
     expect(updated.single.parts.single.text, 'final');
   });
 
+  test('message.part.updated treats content payloads as text parts', () {
+    final updated = applyMessagePartUpdatedEvent(
+      const <ChatMessage>[],
+      <String, Object?>{
+        'part': <String, Object?>{
+          'id': 'prt_content',
+          'messageID': 'msg_1',
+          'sessionID': 'ses_1',
+          'type': 'text',
+          'content': 'streamed content',
+        },
+      },
+      selectedSessionId: 'ses_1',
+    );
+
+    expect(updated, hasLength(1));
+    expect(updated.single.parts.single.text, 'streamed content');
+  });
+
   test('message.part.updated ignores events without a matching session id', () {
     final updated = applyMessagePartUpdatedEvent(
       const <ChatMessage>[],

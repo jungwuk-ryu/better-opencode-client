@@ -327,7 +327,7 @@ class ChatPart {
     return ChatPart(
       id: (json['id'] as String?) ?? '',
       type: (json['type'] as String?) ?? 'unknown',
-      text: json['text'] as String?,
+      text: json['text']?.toString() ?? json['content']?.toString(),
       tool: json['tool'] as String?,
       filename: json['filename'] as String?,
       messageId: json['messageID'] as String?,

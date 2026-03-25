@@ -320,10 +320,14 @@ ChatPart _mergePart(
   required String fallbackMessageId,
   required String? fallbackSessionId,
 }) {
+  final hasStreamingText =
+      json.containsKey('text') || json.containsKey('content');
   return ChatPart(
     id: json['id']?.toString() ?? current?.id ?? '',
     type: json['type']?.toString() ?? current?.type ?? 'unknown',
-    text: json.containsKey('text') ? json['text']?.toString() : current?.text,
+    text: hasStreamingText
+        ? (json['text'] ?? json['content'])?.toString()
+        : current?.text,
     tool: json.containsKey('tool') ? json['tool']?.toString() : current?.tool,
     filename: json.containsKey('filename')
         ? json['filename']?.toString()
@@ -336,7 +340,11 @@ ChatPart _mergePart(
         json['sessionID']?.toString() ??
         current?.sessionId ??
         fallbackSessionId,
-    metadata: <String, Object?>{...?current?.metadata, ...json},
+    metadata: <String, Object?>{
+      ...?current?.metadata,
+      ...json,
+      if (hasStreamingText) '_streaming': true,
+    },
   );
 }
 

@@ -1452,7 +1452,7 @@ class _SessionContextUsageRing extends StatelessWidget {
       (null, _, _) => 'Context window usage unavailable',
       (final usage?, final total?, final limit?) =>
         '$usage% of context window used '
-        '(${numberFormat.format(total)} / ${numberFormat.format(limit)} tokens)',
+            '(${numberFormat.format(total)} / ${numberFormat.format(limit)} tokens)',
       (final usage?, _, _) => '$usage% of context window used',
     };
 
@@ -1470,7 +1470,10 @@ class _SessionContextUsageRing extends StatelessWidget {
               DecoratedBox(
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  border: Border.all(color: surfaces.lineSoft, width: strokeWidth),
+                  border: Border.all(
+                    color: surfaces.lineSoft,
+                    width: strokeWidth,
+                  ),
                 ),
               ),
               if (percent != null)
@@ -1487,7 +1490,9 @@ class _SessionContextUsageRing extends StatelessWidget {
               Center(
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: color.withValues(alpha: percent == null ? 0.28 : 0.85),
+                    color: color.withValues(
+                      alpha: percent == null ? 0.28 : 0.85,
+                    ),
                     shape: BoxShape.circle,
                   ),
                   child: SizedBox(
@@ -1657,12 +1662,13 @@ class _WorkspaceSidebar extends StatelessWidget {
                                   active: statusType != 'idle',
                                   text: TextSpan(
                                     text: title,
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodyMedium?.copyWith(
-                                      fontWeight: FontWeight.w600,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
                                   ),
                                 ),
                                 onTap: () => onSelectSession(session.id),
@@ -4067,6 +4073,7 @@ class _TimelineMessage extends StatelessWidget {
               part: part,
               sessions: sessions,
               shellToolDefaultExpanded: shellToolDefaultExpanded,
+              textStreamingActive: _messageIsActive(message),
               shimmerActive: _activityPartShimmerActive(
                 part,
                 messageIsActive: _messageIsActive(message),
@@ -4085,6 +4092,7 @@ class _TimelinePart extends StatelessWidget {
     required this.part,
     required this.sessions,
     required this.shellToolDefaultExpanded,
+    required this.textStreamingActive,
     required this.shimmerActive,
     required this.onOpenSession,
   });
@@ -4093,12 +4101,24 @@ class _TimelinePart extends StatelessWidget {
   final ChatPart part;
   final List<SessionSummary> sessions;
   final bool shellToolDefaultExpanded;
+  final bool textStreamingActive;
   final bool shimmerActive;
   final ValueChanged<String> onOpenSession;
 
   @override
   Widget build(BuildContext context) {
     final body = _partText(part);
+    if (part.type == 'text') {
+      if (body.trim().isEmpty) {
+        return const SizedBox.shrink();
+      }
+      return _StreamingTextPart(
+        key: ValueKey<String>('timeline-streaming-text-${part.id}'),
+        partId: part.id,
+        text: body,
+        animate: _shouldAnimateStreamingText(part, textStreamingActive),
+      );
+    }
     final linkedSession = _partLinkedSession(
       part,
       sessions: sessions,
@@ -4222,7 +4242,7 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
       children: <Widget>[
         Material(
           color: Colors.transparent,
-            child: InkWell(
+          child: InkWell(
             key: ValueKey<String>('timeline-shell-header-${widget.partId}'),
             onTap: canToggle
                 ? () => setState(() => _expanded = !_expanded)
@@ -4706,6 +4726,223 @@ class _StructuredTextBlock extends StatelessWidget {
           .toList(growable: false),
     );
   }
+}
+
+class _StreamingTextPart extends StatefulWidget {
+  const _StreamingTextPart({
+    required this.partId,
+    required this.text,
+    required this.animate,
+    super.key,
+  });
+
+  final String partId;
+  final String text;
+  final bool animate;
+
+  @override
+  State<_StreamingTextPart> createState() => _StreamingTextPartState();
+}
+
+class _StreamingTextPartState extends State<_StreamingTextPart> {
+  static const Duration _revealStep = Duration(milliseconds: 55);
+  static const Duration _fadeDuration = Duration(milliseconds: 220);
+
+  late _StreamingWordSequence _sequence;
+  late int _visibleChunkCount;
+  int? _revealingChunkIndex;
+  int _animationEpoch = 0;
+  Timer? _revealTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _sequence = _tokenizeStreamingWords(widget.text);
+    if (widget.animate &&
+        widget.text.trim().isNotEmpty &&
+        _sequence.chunks.isNotEmpty) {
+      _visibleChunkCount = 1;
+      _revealingChunkIndex = 0;
+      _animationEpoch = 1;
+      _scheduleReveal();
+      return;
+    }
+    _visibleChunkCount = _sequence.chunks.length;
+    _revealingChunkIndex = null;
+  }
+
+  @override
+  void didUpdateWidget(covariant _StreamingTextPart oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final nextSequence = _tokenizeStreamingWords(widget.text);
+    final appendOnly = oldWidget.text.isEmpty
+        ? widget.text.trim().isNotEmpty
+        : widget.text.startsWith(oldWidget.text);
+    if (!widget.animate || widget.text.trim().isEmpty || !appendOnly) {
+      _cancelRevealTimer();
+      _sequence = nextSequence;
+      _visibleChunkCount = nextSequence.chunks.length;
+      _revealingChunkIndex = null;
+      return;
+    }
+
+    _sequence = nextSequence;
+    if (_visibleChunkCount > _sequence.chunks.length) {
+      _visibleChunkCount = _sequence.chunks.length;
+    }
+    if (_visibleChunkCount < _sequence.chunks.length) {
+      _revealNextChunk(immediate: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _cancelRevealTimer();
+    super.dispose();
+  }
+
+  void _cancelRevealTimer() {
+    _revealTimer?.cancel();
+    _revealTimer = null;
+  }
+
+  void _scheduleReveal() {
+    if (_revealTimer != null || _visibleChunkCount >= _sequence.chunks.length) {
+      return;
+    }
+    _revealTimer = Timer(_revealStep, () {
+      _revealTimer = null;
+      if (!mounted) {
+        return;
+      }
+      _revealNextChunk();
+    });
+  }
+
+  void _revealNextChunk({bool immediate = false}) {
+    if (_visibleChunkCount >= _sequence.chunks.length) {
+      _cancelRevealTimer();
+      return;
+    }
+    void update() {
+      _revealingChunkIndex = _visibleChunkCount;
+      _visibleChunkCount += 1;
+      _animationEpoch += 1;
+    }
+
+    if (immediate) {
+      setState(update);
+    } else {
+      setState(update);
+    }
+    _scheduleReveal();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.animate || widget.text.trim().isEmpty) {
+      return _StructuredTextBlock(text: widget.text);
+    }
+
+    final theme = Theme.of(context);
+    final baseStyle = theme.textTheme.bodyLarge?.copyWith(height: 1.8);
+    final transparentStyle = (baseStyle ?? const TextStyle()).copyWith(
+      color: Colors.transparent,
+    );
+    final spans = <InlineSpan>[];
+    if (_sequence.leadingWhitespace.isNotEmpty) {
+      spans.add(TextSpan(text: _sequence.leadingWhitespace));
+    }
+    for (var index = 0; index < _visibleChunkCount; index += 1) {
+      final chunk = _sequence.chunks[index];
+      if (_revealingChunkIndex == index) {
+        final revealEpoch = _animationEpoch;
+        spans.add(
+          WidgetSpan(
+            alignment: PlaceholderAlignment.baseline,
+            baseline: TextBaseline.alphabetic,
+            child: TweenAnimationBuilder<double>(
+              key: ValueKey<String>(
+                'streaming-text-fade-${widget.partId}-$index-$_animationEpoch',
+              ),
+              tween: Tween<double>(begin: 0, end: 1),
+              duration: _fadeDuration,
+              curve: Curves.easeOutCubic,
+              onEnd: () {
+                if (!mounted ||
+                    _revealingChunkIndex != index ||
+                    _animationEpoch != revealEpoch) {
+                  return;
+                }
+                setState(() {
+                  if (_revealingChunkIndex == index &&
+                      _animationEpoch == revealEpoch) {
+                    _revealingChunkIndex = null;
+                  }
+                });
+              },
+              child: Text(
+                chunk.text,
+                key: ValueKey<String>(
+                  'streaming-text-chunk-${widget.partId}-$index',
+                ),
+                style: baseStyle,
+              ),
+              builder: (context, value, child) {
+                return Opacity(opacity: value, child: child);
+              },
+            ),
+          ),
+        );
+      } else {
+        spans.add(TextSpan(text: chunk.text));
+      }
+    }
+    for (
+      var index = _visibleChunkCount;
+      index < _sequence.chunks.length;
+      index += 1
+    ) {
+      spans.add(
+        TextSpan(text: _sequence.chunks[index].text, style: transparentStyle),
+      );
+    }
+
+    return Text.rich(
+      TextSpan(style: baseStyle, children: spans),
+      key: ValueKey<String>('streaming-text-${widget.partId}'),
+    );
+  }
+}
+
+class _StreamingWordSequence {
+  const _StreamingWordSequence({
+    required this.leadingWhitespace,
+    required this.chunks,
+  });
+
+  final String leadingWhitespace;
+  final List<_StreamingWordChunk> chunks;
+}
+
+class _StreamingWordChunk {
+  const _StreamingWordChunk({required this.text});
+
+  final String text;
+}
+
+_StreamingWordSequence _tokenizeStreamingWords(String text) {
+  final leadingMatch = RegExp(r'^\s*').firstMatch(text);
+  final leadingWhitespace = leadingMatch?.group(0) ?? '';
+  final body = text.substring(leadingWhitespace.length);
+  final matches = RegExp(r'\S+\s*').allMatches(body);
+  final chunks = matches
+      .map((match) => _StreamingWordChunk(text: match.group(0) ?? ''))
+      .toList(growable: false);
+  return _StreamingWordSequence(
+    leadingWhitespace: leadingWhitespace,
+    chunks: chunks,
+  );
 }
 
 class _ParagraphBlock extends StatelessWidget {
@@ -5278,6 +5515,9 @@ bool _activityPartShimmerActive(
 }
 
 String _partText(ChatPart part) {
+  if (part.type == 'text') {
+    return _resolvedRawPartText(part);
+  }
   if (_isQuestionToolPart(part)) {
     final formatted = _questionToolBody(part);
     if (formatted.isNotEmpty) {
@@ -5429,6 +5669,9 @@ String _toolTitle(String? tool) {
 }
 
 bool _shouldRenderTimelinePart(ChatPart part) {
+  if (part.type == 'text') {
+    return _resolvedRawPartText(part).trim().isNotEmpty;
+  }
   if (_isTodoWriteToolPart(part)) {
     return false;
   }
@@ -5439,6 +5682,30 @@ bool _shouldRenderTimelinePart(ChatPart part) {
     }
   }
   return true;
+}
+
+bool _shouldAnimateStreamingText(ChatPart part, bool messageIsActive) {
+  if (!messageIsActive || part.type != 'text') {
+    return false;
+  }
+  return part.metadata['_streaming'] == true ||
+      part.metadata.containsKey('content');
+}
+
+String _resolvedRawPartText(ChatPart part) {
+  final textCandidate = part.text;
+  if (textCandidate != null && textCandidate.trim().isNotEmpty) {
+    return textCandidate;
+  }
+  final metadataText = part.metadata['text']?.toString();
+  if (metadataText != null && metadataText.trim().isNotEmpty) {
+    return metadataText;
+  }
+  final content = part.metadata['content']?.toString();
+  if (content != null && content.trim().isNotEmpty) {
+    return content;
+  }
+  return '';
 }
 
 bool _isQuestionToolPart(ChatPart part) {
@@ -5530,7 +5797,11 @@ String _questionToolBody(ChatPart part) {
 
 String? _shellToolSubtitle(ChatPart part) {
   return _firstNonEmpty(<String?>[
-    _nestedString(part.metadata, const <String>['state', 'input', 'description']),
+    _nestedString(part.metadata, const <String>[
+      'state',
+      'input',
+      'description',
+    ]),
     _nestedString(part.metadata, const <String>['input', 'description']),
     _nestedString(part.metadata, const <String>['description']),
     _nestedString(part.metadata, const <String>['state', 'title']),
@@ -5899,10 +6170,12 @@ class _ReviewPanel extends StatelessWidget {
             itemBuilder: (context, index) {
               final item = statuses[index];
               final statusColor = _reviewStatusColor(item.status, surfaces);
-              final addedColor =
-                  item.added > 0 ? surfaces.success : surfaces.muted;
-              final removedColor =
-                  item.removed > 0 ? surfaces.danger : surfaces.muted;
+              final addedColor = item.added > 0
+                  ? surfaces.success
+                  : surfaces.muted;
+              final removedColor = item.removed > 0
+                  ? surfaces.danger
+                  : surfaces.muted;
               final selected = item.path == selectedPath;
               return ListTile(
                 selected: selected,
@@ -6246,7 +6519,8 @@ class _FilesPanelState extends State<_FilesPanel> {
               child: ListView.separated(
                 padding: const EdgeInsets.all(AppSpacing.md),
                 itemCount: visibleNodes.length,
-                separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.xs),
+                separatorBuilder: (_, _) =>
+                    const SizedBox(height: AppSpacing.xs),
                 itemBuilder: (context, index) {
                   final entry = visibleNodes[index];
                   final node = entry.node;
@@ -6320,7 +6594,9 @@ class _FilesPanelState extends State<_FilesPanel> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     GestureDetector(
-                      key: const ValueKey<String>('files-preview-resize-handle'),
+                      key: const ValueKey<String>(
+                        'files-preview-resize-handle',
+                      ),
                       behavior: HitTestBehavior.opaque,
                       onVerticalDragUpdate: (details) {
                         _resizePreview(details.delta.dy, availableHeight);
