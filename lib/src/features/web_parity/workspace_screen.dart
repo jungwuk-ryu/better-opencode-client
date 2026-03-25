@@ -4633,6 +4633,7 @@ class _MessageTimeline extends StatelessWidget {
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final theme = Theme.of(context);
+    final orderedMessages = _orderedTimelineMessages(messages);
     if (loading && messages.isEmpty) {
       return const _TimelineStatusCard(
         icon: SizedBox(
@@ -4707,11 +4708,11 @@ class _MessageTimeline extends StatelessWidget {
                   AppSpacing.xl,
                   AppSpacing.lg,
                 ),
-                itemCount: messages.length,
+                itemCount: orderedMessages.length,
                 separatorBuilder: (_, _) =>
                     const SizedBox(height: AppSpacing.xl),
                 itemBuilder: (context, index) {
-                  final message = messages[index];
+                  final message = orderedMessages[index];
                   return Center(
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 860),
@@ -6986,15 +6987,14 @@ class _TimelineMessage extends StatelessWidget {
       );
     }
 
+    final orderedParts = _orderedTimelineParts(
+      message,
+      showProgressDetails: timelineProgressDetailsVisible,
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (final part in message.parts.where(
-          (part) => _shouldRenderTimelinePart(
-            part,
-            showProgressDetails: timelineProgressDetailsVisible,
-          ),
-        ))
+        for (final part in orderedParts)
           Padding(
             padding: const EdgeInsets.only(bottom: AppSpacing.md),
             child: _TimelinePart(
@@ -8577,8 +8577,71 @@ String _messageBody(ChatMessage message) {
       .join('\n\n');
 }
 
+List<ChatMessage> _orderedTimelineMessages(List<ChatMessage> messages) {
+  if (messages.length <= 1) {
+    return messages;
+  }
+  final leading = <ChatMessage>[];
+  final trailingActive = <ChatMessage>[];
+  for (final message in messages) {
+    if (_messageHasPinnedLiveParts(message)) {
+      trailingActive.add(message);
+    } else {
+      leading.add(message);
+    }
+  }
+  if (trailingActive.isEmpty || leading.isEmpty) {
+    return messages;
+  }
+  return <ChatMessage>[...leading, ...trailingActive];
+}
+
 bool _messageIsActive(ChatMessage message) {
   return message.info.role == 'assistant' && message.info.completedAt == null;
+}
+
+bool _messageHasPinnedLiveParts(ChatMessage message) {
+  if (message.info.role != 'assistant') {
+    return false;
+  }
+  for (final part in message.parts) {
+    if (_activityPartShimmerActive(part, messageIsActive: true) ||
+        _shouldAnimateStreamingText(part, true)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+List<ChatPart> _orderedTimelineParts(
+  ChatMessage message, {
+  required bool showProgressDetails,
+}) {
+  final visible = message.parts
+      .where(
+        (part) => _shouldRenderTimelinePart(
+          part,
+          showProgressDetails: showProgressDetails,
+        ),
+      )
+      .toList(growable: false);
+  if (visible.length <= 1 || !_messageIsActive(message)) {
+    return visible;
+  }
+
+  final leading = <ChatPart>[];
+  final trailingActive = <ChatPart>[];
+  for (final part in visible) {
+    if (_activityPartShimmerActive(part, messageIsActive: true)) {
+      trailingActive.add(part);
+    } else {
+      leading.add(part);
+    }
+  }
+  if (trailingActive.isEmpty || leading.isEmpty) {
+    return visible;
+  }
+  return <ChatPart>[...leading, ...trailingActive];
 }
 
 bool _activityPartShimmerActive(

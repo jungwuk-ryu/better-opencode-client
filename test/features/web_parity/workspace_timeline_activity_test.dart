@@ -98,6 +98,24 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('release-checklist'), findsOneWidget);
+    expect(
+      tester
+          .getTopLeft(
+            find.byKey(
+              const ValueKey<String>('timeline-activity-part_reasoning'),
+            ),
+          )
+          .dy,
+      greaterThan(
+        tester
+            .getTopLeft(
+              find.byKey(
+                const ValueKey<String>('timeline-compaction-part_compaction'),
+              ),
+            )
+            .dy,
+      ),
+    );
 
     await tester.tap(
       find.byKey(const ValueKey<String>('timeline-activity-part_reasoning')),
