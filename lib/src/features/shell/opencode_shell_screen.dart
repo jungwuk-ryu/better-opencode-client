@@ -4916,8 +4916,14 @@ class _ChatCanvasState extends State<_ChatCanvas> {
       if (position == null) {
         return;
       }
-      _programmaticScrollDepth += 1;
       final target = position.maxScrollExtent;
+      if (!target.isFinite) {
+        return;
+      }
+      if ((position.pixels - target).abs() <= 1) {
+        return;
+      }
+      _programmaticScrollDepth += 1;
       position.jumpTo(target);
       _completeProgrammaticScroll();
     });
@@ -4932,8 +4938,14 @@ class _ChatCanvasState extends State<_ChatCanvas> {
       if (position == null) {
         return;
       }
+      final target = _lastKnownOffset
+          .clamp(0.0, position.maxScrollExtent)
+          .toDouble();
+      if ((position.pixels - target).abs() <= 1) {
+        return;
+      }
       _programmaticScrollDepth += 1;
-      position.jumpTo(_lastKnownOffset.clamp(0, position.maxScrollExtent));
+      position.jumpTo(target);
       _completeProgrammaticScroll();
     });
   }
@@ -5155,7 +5167,7 @@ class _ChatCanvasState extends State<_ChatCanvas> {
       onPointerSignal: (_) => _manualScrollInProgress = true,
       child: NotificationListener<ScrollNotification>(
         onNotification: _handleScrollNotification,
-        child: ListView.separated(
+        child: ListView(
           key: const ValueKey<String>('chat-message-list'),
           controller: _scrollController,
           padding: const EdgeInsets.fromLTRB(
@@ -5164,16 +5176,26 @@ class _ChatCanvasState extends State<_ChatCanvas> {
             AppSpacing.md,
             AppSpacing.lg,
           ),
-          itemCount: parts.length,
-          separatorBuilder: (context, index) =>
-              const SizedBox(height: AppSpacing.md),
-          itemBuilder: (context, index) {
-            final item = parts[index];
-            return ChatPartView(message: item.message, part: item.part);
-          },
+          // The shell already keeps the visible chat window in memory.
+          // Using eager children here gives desktop scrollbars stable extents.
+          children: _buildMessageChildren(parts),
         ),
       ),
     );
+  }
+
+  List<Widget> _buildMessageChildren(
+    List<({ChatMessageInfo message, ChatPart part})> parts,
+  ) {
+    final children = <Widget>[];
+    for (var index = 0; index < parts.length; index += 1) {
+      if (index > 0) {
+        children.add(const SizedBox(height: AppSpacing.md));
+      }
+      final item = parts[index];
+      children.add(ChatPartView(message: item.message, part: item.part));
+    }
+    return children;
   }
 
   List<({ChatMessageInfo message, ChatPart part})> _flattenedParts(
