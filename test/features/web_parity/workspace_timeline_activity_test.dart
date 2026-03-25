@@ -52,7 +52,8 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
 
     expect(
       find.textContaining('Thinking Reviewing git workflow'),
@@ -60,6 +61,16 @@ void main() {
     );
     expect(
       find.textContaining('Shell Shows staged and unstaged diff'),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        const ValueKey<String>('timeline-activity-shimmer-part_reasoning'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('timeline-activity-shimmer-part_tool')),
       findsOneWidget,
     );
     expect(find.text('Which environment should I target?'), findsNothing);
@@ -72,7 +83,8 @@ void main() {
     await tester.tap(
       find.byKey(const ValueKey<String>('timeline-activity-part_reasoning')),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
 
     expect(
       find.text('Detailed internal reasoning stays hidden.'),
@@ -82,7 +94,8 @@ void main() {
     await tester.tap(
       find.byKey(const ValueKey<String>('timeline-activity-part_tool')),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
 
     expect(
       find.textContaining(r'git diff --staged && git diff'),
@@ -224,6 +237,7 @@ class _TimelineWorkspaceController extends WorkspaceController {
           tool: 'bash',
           metadata: const <String, Object?>{
             'state': <String, Object?>{
+              'status': 'running',
               'title': 'Shows staged and unstaged diff',
             },
             'command': r'git diff --staged && git diff',

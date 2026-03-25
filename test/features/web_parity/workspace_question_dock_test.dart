@@ -50,20 +50,22 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
 
     expect(find.text('1 of 1 questions'), findsOneWidget);
     expect(find.text('Which execution path should I use?'), findsOneWidget);
     expect(find.text('Ask anything...'), findsNothing);
 
     await tester.tap(find.text('Cron/Container'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
 
     await tester.tap(
       find.byKey(const ValueKey<String>('question-dock-submit')),
     );
     await tester.pump();
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 250));
 
     expect(workspaceController.submittedAnswers, <List<String>>[
       <String>['Cron/Container'],

@@ -50,7 +50,8 @@ void main() {
           ),
         ),
       );
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
 
       expect(find.text('0 of 2 todos completed'), findsOneWidget);
       expect(find.text('Planning session gap list'), findsOneWidget);
@@ -60,7 +61,8 @@ void main() {
       await tester.tap(
         find.byKey(const ValueKey<String>('session-todo-toggle-button')),
       );
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
 
       expect(find.text('Append acceptance criteria'), findsNothing);
       expect(find.text('Planning session gap list'), findsOneWidget);
@@ -68,7 +70,8 @@ void main() {
       await tester.tap(
         find.byKey(const ValueKey<String>('session-todo-toggle-button')),
       );
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
 
       workspaceController.updateTodos(<TodoItem>[
         const TodoItem(
@@ -84,7 +87,8 @@ void main() {
           priority: 'medium',
         ),
       ]);
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
 
       expect(find.text('1 of 2 todos completed'), findsOneWidget);
 
@@ -92,8 +96,7 @@ void main() {
         const SessionStatusSummary(type: 'idle'),
       );
       await tester.pump();
-      await tester.pump();
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 450));
 
       expect(find.text('1 of 2 todos completed'), findsNothing);
       expect(workspaceController.todos, isEmpty);

@@ -2882,23 +2882,28 @@ class _TimelineMessage extends StatelessWidget {
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: message.parts
-          .where(_shouldRenderTimelinePart)
-          .map(
-            (part) => Padding(
-              padding: const EdgeInsets.only(bottom: AppSpacing.md),
-              child: _TimelinePart(part: part),
+      children: [
+        for (final part in message.parts.where(_shouldRenderTimelinePart))
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.md),
+            child: _TimelinePart(
+              part: part,
+              shimmerActive: _activityPartShimmerActive(
+                part,
+                messageIsActive: _messageIsActive(message),
+              ),
             ),
-          )
-          .toList(growable: false),
+          ),
+      ],
     );
   }
 }
 
 class _TimelinePart extends StatelessWidget {
-  const _TimelinePart({required this.part});
+  const _TimelinePart({required this.part, required this.shimmerActive});
 
   final ChatPart part;
+  final bool shimmerActive;
 
   @override
   Widget build(BuildContext context) {
@@ -2906,9 +2911,11 @@ class _TimelinePart extends StatelessWidget {
     if (_isToolLikePart(part)) {
       return _TimelineActivityPart(
         key: ValueKey<String>('timeline-activity-${part.id}'),
+        shimmerKey: ValueKey<String>('timeline-activity-shimmer-${part.id}'),
         title: _partTitle(part),
         summary: _partSummary(part, body),
         body: body,
+        shimmerActive: shimmerActive,
       );
     }
     return _StructuredTextBlock(text: body);
@@ -2920,12 +2927,16 @@ class _TimelineActivityPart extends StatefulWidget {
     required this.title,
     required this.summary,
     required this.body,
+    required this.shimmerActive,
+    this.shimmerKey,
     super.key,
   });
 
   final String title;
   final String summary;
   final String body;
+  final bool shimmerActive;
+  final Key? shimmerKey;
 
   @override
   State<_TimelineActivityPart> createState() => _TimelineActivityPartState();
@@ -2967,8 +2978,10 @@ class _TimelineActivityPartState extends State<_TimelineActivityPart> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
                   Expanded(
-                    child: Text.rich(
-                      TextSpan(
+                    child: _ShimmeringRichText(
+                      key: widget.shimmerKey,
+                      active: widget.shimmerActive,
+                      text: TextSpan(
                         children: <InlineSpan>[
                           TextSpan(text: widget.title, style: titleStyle),
                           if (widget.summary.isNotEmpty)
@@ -3018,6 +3031,99 @@ class _TimelineActivityPartState extends State<_TimelineActivityPart> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _ShimmeringRichText extends StatefulWidget {
+  const _ShimmeringRichText({
+    required this.text,
+    required this.active,
+    super.key,
+  });
+
+  final InlineSpan text;
+  final bool active;
+
+  @override
+  State<_ShimmeringRichText> createState() => _ShimmeringRichTextState();
+}
+
+class _ShimmeringRichTextState extends State<_ShimmeringRichText>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1400),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _syncAnimation();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ShimmeringRichText oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.active != widget.active) {
+      _syncAnimation();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _syncAnimation() {
+    if (widget.active) {
+      _controller.repeat();
+    } else {
+      _controller.stop();
+      _controller.value = 0;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final child = Text.rich(widget.text);
+    if (!widget.active) {
+      return child;
+    }
+
+    return AnimatedBuilder(
+      animation: _controller,
+      child: child,
+      builder: (context, child) {
+        return ShaderMask(
+          blendMode: BlendMode.srcATop,
+          shaderCallback: (bounds) {
+            final width = bounds.width <= 0 ? 1.0 : bounds.width;
+            final start = (width * 2.4 * _controller.value) - width * 1.2;
+            return LinearGradient(
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+              colors: <Color>[
+                Colors.transparent,
+                Colors.white.withValues(alpha: 0.08),
+                Colors.white.withValues(alpha: 0.78),
+                Colors.white.withValues(alpha: 0.12),
+                Colors.transparent,
+              ],
+              stops: const <double>[0, 0.35, 0.5, 0.65, 1],
+            ).createShader(
+              Rect.fromLTWH(
+                start,
+                0,
+                width * 2.2,
+                bounds.height <= 0 ? 1 : bounds.height,
+              ),
+            );
+          },
+          child: child,
+        );
+      },
     );
   }
 }
@@ -3639,6 +3745,25 @@ String _messageBody(ChatMessage message) {
       .map(_partText)
       .where((value) => value.isNotEmpty)
       .join('\n\n');
+}
+
+bool _messageIsActive(ChatMessage message) {
+  return message.info.role == 'assistant' && message.info.completedAt == null;
+}
+
+bool _activityPartShimmerActive(
+  ChatPart part, {
+  required bool messageIsActive,
+}) {
+  if (part.type == 'tool') {
+    final status = _toolStateStatus(part);
+    return status == 'pending' || status == 'running';
+  }
+
+  return switch (part.type) {
+    'reasoning' || 'agent' || 'subtask' || 'step-start' => messageIsActive,
+    _ => false,
+  };
 }
 
 String _partText(ChatPart part) {
