@@ -223,6 +223,55 @@ void main() {
       expect(controller.currentQuestionRequest?.id, 'req_2');
     },
   );
+
+  test(
+    'controller applies todo updates in real time for the active session',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+
+      expect(controller.todos, isEmpty);
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'todo.updated',
+          properties: <String, Object?>{
+            'sessionID': 'ses_1',
+            'todos': <Object?>[
+              <String, Object?>{
+                'id': 'todo_1',
+                'content': 'Write architecture plan skeleton',
+                'status': 'in_progress',
+                'priority': 'high',
+              },
+              <String, Object?>{
+                'id': 'todo_2',
+                'content': 'Append acceptance criteria',
+                'status': 'pending',
+                'priority': 'medium',
+              },
+            ],
+          },
+        ),
+      );
+
+      expect(controller.todos, hasLength(2));
+      expect(
+        controller.todos.first.content,
+        'Write architecture plan skeleton',
+      );
+      expect(controller.todos.first.status, 'in_progress');
+    },
+  );
 }
 
 WorkspaceController _buildController({

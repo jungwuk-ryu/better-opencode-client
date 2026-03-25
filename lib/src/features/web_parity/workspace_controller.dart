@@ -726,6 +726,14 @@ class WorkspaceController extends ChangeNotifier {
     _notify();
   }
 
+  void clearTodos() {
+    if (_todos.isEmpty) {
+      return;
+    }
+    _todos = const <TodoItem>[];
+    _notify();
+  }
+
   Future<void> _loadComposerState(ProjectTarget project) async {
     ConfigSnapshot? snapshot;
     List<AgentDefinition> agents = const <AgentDefinition>[];

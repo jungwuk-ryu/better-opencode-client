@@ -20,6 +20,7 @@ import '../settings/config_service.dart';
 import '../terminal/pty_models.dart';
 import '../terminal/pty_service.dart';
 import '../terminal/pty_terminal_panel.dart';
+import '../tools/todo_models.dart';
 import 'workspace_controller.dart';
 
 enum _CompactWorkspacePane { session, side }
@@ -1233,6 +1234,9 @@ class _WorkspaceBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final questionRequest = controller.currentQuestionRequest;
+    final todoLive =
+        (controller.selectedStatus?.type ?? 'idle') != 'idle' ||
+        questionRequest != null;
     final content = Column(
       children: <Widget>[
         Expanded(
@@ -1259,6 +1263,17 @@ class _WorkspaceBody extends StatelessWidget {
                   ),
           ),
         ),
+        if (controller.selectedSessionId != null)
+          _SessionTodoDock(
+            key: ValueKey<String>(
+              'session-todo-dock-${controller.selectedSessionId}',
+            ),
+            sessionId: controller.selectedSessionId!,
+            todos: controller.todos,
+            live: todoLive,
+            blocked: questionRequest != null,
+            onClearStale: controller.clearTodos,
+          ),
         if (questionRequest != null)
           _QuestionPromptDock(
             key: ValueKey<String>('question-dock-${questionRequest.id}'),
@@ -2253,6 +2268,507 @@ class _QuestionChoiceTile extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+enum _TodoDockState { hide, clear, open, close }
+
+_TodoDockState _todoDockState({
+  required int count,
+  required bool done,
+  required bool live,
+}) {
+  if (count == 0) {
+    return _TodoDockState.hide;
+  }
+  if (!live) {
+    return _TodoDockState.clear;
+  }
+  if (!done) {
+    return _TodoDockState.open;
+  }
+  return _TodoDockState.close;
+}
+
+class _SessionTodoDock extends StatefulWidget {
+  const _SessionTodoDock({
+    required this.sessionId,
+    required this.todos,
+    required this.live,
+    required this.blocked,
+    required this.onClearStale,
+    super.key,
+  });
+
+  final String sessionId;
+  final List<TodoItem> todos;
+  final bool live;
+  final bool blocked;
+  final VoidCallback onClearStale;
+
+  @override
+  State<_SessionTodoDock> createState() => _SessionTodoDockState();
+}
+
+class _SessionTodoDockState extends State<_SessionTodoDock> {
+  static const Duration _closeDelay = Duration(milliseconds: 400);
+
+  final ScrollController _scrollController = ScrollController();
+  final Map<String, GlobalKey> _itemKeys = <String, GlobalKey>{};
+
+  Timer? _closeTimer;
+  bool _visible = false;
+  bool _closing = false;
+  bool _collapsed = false;
+  bool _stuck = false;
+  bool _clearQueued = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_handleScroll);
+    _syncState(initial: true);
+  }
+
+  @override
+  void didUpdateWidget(covariant _SessionTodoDock oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.sessionId != widget.sessionId) {
+      _collapsed = false;
+      _stuck = false;
+      _clearQueued = false;
+      _cancelCloseTimer();
+    }
+    _syncState();
+  }
+
+  @override
+  void dispose() {
+    _cancelCloseTimer();
+    _scrollController
+      ..removeListener(_handleScroll)
+      ..dispose();
+    super.dispose();
+  }
+
+  bool get _done =>
+      widget.todos.isNotEmpty &&
+      widget.todos.every(
+        (todo) => todo.status == 'completed' || todo.status == 'cancelled',
+      );
+
+  int get _doneCount =>
+      widget.todos.where((todo) => todo.status == 'completed').length;
+
+  TodoItem? get _activeTodo {
+    for (final todo in widget.todos) {
+      if (todo.status == 'in_progress') {
+        return todo;
+      }
+    }
+    for (final todo in widget.todos) {
+      if (todo.status == 'pending') {
+        return todo;
+      }
+    }
+    for (final todo in widget.todos.reversed) {
+      if (todo.status == 'completed') {
+        return todo;
+      }
+    }
+    return widget.todos.isEmpty ? null : widget.todos.first;
+  }
+
+  void _handleScroll() {
+    if (!_scrollController.hasClients) {
+      return;
+    }
+    final stuck = _scrollController.offset > 0;
+    if (stuck == _stuck) {
+      return;
+    }
+    setState(() {
+      _stuck = stuck;
+    });
+  }
+
+  void _syncState({bool initial = false}) {
+    final next = _todoDockState(
+      count: widget.todos.length,
+      done: _done,
+      live: widget.live,
+    );
+
+    if (next == _TodoDockState.hide) {
+      _cancelCloseTimer();
+      if (_visible || _closing) {
+        setState(() {
+          _visible = false;
+          _closing = false;
+        });
+      }
+      return;
+    }
+
+    if (next == _TodoDockState.clear) {
+      _cancelCloseTimer();
+      if (_visible || _closing) {
+        setState(() {
+          _visible = false;
+          _closing = false;
+        });
+      }
+      _scheduleClear();
+      return;
+    }
+
+    if (next == _TodoDockState.open) {
+      _cancelCloseTimer();
+      if (!_visible || _closing) {
+        setState(() {
+          _visible = true;
+          _closing = false;
+        });
+      }
+      if (!_collapsed) {
+        _scheduleEnsureVisible();
+      }
+      return;
+    }
+
+    if (!_visible || !_closing) {
+      setState(() {
+        _visible = true;
+        _closing = true;
+      });
+    }
+    _scheduleClose();
+    if (initial && !_collapsed) {
+      _scheduleEnsureVisible();
+    }
+  }
+
+  void _scheduleClear() {
+    if (_clearQueued || widget.todos.isEmpty) {
+      return;
+    }
+    _clearQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _clearQueued = false;
+      if (!mounted) {
+        return;
+      }
+      widget.onClearStale();
+    });
+  }
+
+  void _cancelCloseTimer() {
+    _closeTimer?.cancel();
+    _closeTimer = null;
+  }
+
+  void _scheduleClose() {
+    if (_closeTimer != null) {
+      return;
+    }
+    _closeTimer = Timer(_closeDelay, () {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _visible = false;
+        _closing = false;
+      });
+      _closeTimer = null;
+    });
+  }
+
+  void _scheduleEnsureVisible() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final activeTodo = _activeTodo;
+      if (!mounted ||
+          _collapsed ||
+          !_visible ||
+          widget.blocked ||
+          activeTodo == null) {
+        return;
+      }
+      final key = _itemKeys[activeTodo.id];
+      final context = key?.currentContext;
+      final renderObject = context?.findRenderObject();
+      if (context == null ||
+          renderObject is! RenderBox ||
+          !renderObject.hasSize ||
+          !_scrollController.hasClients) {
+        return;
+      }
+      Scrollable.ensureVisible(
+        context,
+        alignment: 0.12,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+
+  GlobalKey _keyForTodo(TodoItem todo) {
+    return _itemKeys.putIfAbsent(
+      todo.id,
+      () => GlobalKey(debugLabel: 'todo-${widget.sessionId}-${todo.id}'),
+    );
+  }
+
+  void _toggleCollapsed() {
+    setState(() {
+      _collapsed = !_collapsed;
+    });
+    if (!_collapsed) {
+      _scheduleEnsureVisible();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final progressLabel =
+        '$_doneCount of ${widget.todos.length} todos completed';
+    final preview = _activeTodo?.content.trim() ?? '';
+    final shouldRender = _visible && widget.todos.isNotEmpty && !widget.blocked;
+
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      child: !shouldRender
+          ? const SizedBox.shrink()
+          : Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.md,
+                AppSpacing.sm,
+                AppSpacing.md,
+                0,
+              ),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 920),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: surfaces.panel,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: surfaces.lineSoft),
+                    ),
+                    child: Column(
+                      children: <Widget>[
+                        InkWell(
+                          onTap: _toggleCollapsed,
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(20),
+                            bottom: Radius.circular(20),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(
+                              AppSpacing.md,
+                              AppSpacing.md,
+                              AppSpacing.sm,
+                              AppSpacing.md,
+                            ),
+                            child: Row(
+                              children: <Widget>[
+                                Text(
+                                  progressLabel,
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                if (_collapsed &&
+                                    preview.isNotEmpty) ...<Widget>[
+                                  const SizedBox(width: AppSpacing.sm),
+                                  Expanded(
+                                    child: Text(
+                                      preview,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: theme.textTheme.bodyMedium
+                                          ?.copyWith(
+                                            color: surfaces.muted,
+                                            height: 1.45,
+                                          ),
+                                    ),
+                                  ),
+                                ] else
+                                  const Spacer(),
+                                IconButton(
+                                  key: const ValueKey<String>(
+                                    'session-todo-toggle-button',
+                                  ),
+                                  onPressed: _toggleCollapsed,
+                                  icon: AnimatedRotation(
+                                    turns: _collapsed ? 0.5 : 0,
+                                    duration: const Duration(milliseconds: 180),
+                                    child: Icon(
+                                      Icons.keyboard_arrow_down_rounded,
+                                      color: surfaces.muted,
+                                    ),
+                                  ),
+                                  tooltip: _collapsed ? 'Expand' : 'Collapse',
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        ClipRect(
+                          child: AnimatedSize(
+                            duration: const Duration(milliseconds: 220),
+                            curve: Curves.easeOutCubic,
+                            child: _collapsed
+                                ? const SizedBox.shrink()
+                                : Stack(
+                                    children: <Widget>[
+                                      ConstrainedBox(
+                                        constraints: const BoxConstraints(
+                                          maxHeight: 260,
+                                        ),
+                                        child: SingleChildScrollView(
+                                          controller: _scrollController,
+                                          padding: const EdgeInsets.fromLTRB(
+                                            AppSpacing.md,
+                                            0,
+                                            AppSpacing.md,
+                                            AppSpacing.xl,
+                                          ),
+                                          child: Column(
+                                            key: const ValueKey<String>(
+                                              'session-todo-list',
+                                            ),
+                                            children: widget.todos
+                                                .map(
+                                                  (todo) => Padding(
+                                                    key: _keyForTodo(todo),
+                                                    padding:
+                                                        const EdgeInsets.only(
+                                                          bottom: AppSpacing.sm,
+                                                        ),
+                                                    child: _TodoDockRow(
+                                                      todo: todo,
+                                                    ),
+                                                  ),
+                                                )
+                                                .toList(growable: false),
+                                          ),
+                                        ),
+                                      ),
+                                      IgnorePointer(
+                                        child: AnimatedOpacity(
+                                          duration: const Duration(
+                                            milliseconds: 150,
+                                          ),
+                                          opacity: _stuck ? 1 : 0,
+                                          child: Container(
+                                            height: 16,
+                                            decoration: BoxDecoration(
+                                              borderRadius:
+                                                  const BorderRadius.vertical(
+                                                    top: Radius.circular(20),
+                                                  ),
+                                              gradient: LinearGradient(
+                                                begin: Alignment.topCenter,
+                                                end: Alignment.bottomCenter,
+                                                colors: <Color>[
+                                                  surfaces.panel,
+                                                  surfaces.panel.withValues(
+                                                    alpha: 0,
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+    );
+  }
+}
+
+class _TodoDockRow extends StatelessWidget {
+  const _TodoDockRow({required this.todo});
+
+  final TodoItem todo;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final completed = todo.status == 'completed' || todo.status == 'cancelled';
+    final pending = todo.status == 'pending';
+    final color = completed ? surfaces.muted : theme.colorScheme.onSurface;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: _TodoStatusIcon(status: todo.status),
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        Expanded(
+          child: Text(
+            todo.content,
+            style: theme.textTheme.bodyLarge?.copyWith(
+              color: color,
+              height: 1.45,
+              decoration: completed
+                  ? TextDecoration.lineThrough
+                  : TextDecoration.none,
+              decorationColor: surfaces.muted,
+              decorationThickness: 1.6,
+              fontWeight: pending ? FontWeight.w500 : FontWeight.w400,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _TodoStatusIcon extends StatelessWidget {
+  const _TodoStatusIcon({required this.status});
+
+  final String status;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+
+    final (icon, color) = switch (status) {
+      'completed' => (
+        Icons.check_box_rounded,
+        theme.colorScheme.onSurface.withValues(alpha: 0.72),
+      ),
+      'in_progress' => (
+        Icons.indeterminate_check_box_rounded,
+        theme.colorScheme.primary,
+      ),
+      'cancelled' => (
+        Icons.disabled_by_default_rounded,
+        surfaces.muted.withValues(alpha: 0.8),
+      ),
+      _ => (
+        Icons.check_box_outline_blank_rounded,
+        surfaces.muted.withValues(alpha: 0.7),
+      ),
+    };
+
+    return Icon(icon, size: 18, color: color);
   }
 }
 
@@ -3277,6 +3793,9 @@ String _toolTitle(String? tool) {
 }
 
 bool _shouldRenderTimelinePart(ChatPart part) {
+  if (_isTodoWriteToolPart(part)) {
+    return false;
+  }
   if (_isQuestionToolPart(part)) {
     final status = _toolStateStatus(part);
     if (status == 'pending' || status == 'running') {
@@ -3288,6 +3807,10 @@ bool _shouldRenderTimelinePart(ChatPart part) {
 
 bool _isQuestionToolPart(ChatPart part) {
   return part.type == 'tool' && part.tool?.trim().toLowerCase() == 'question';
+}
+
+bool _isTodoWriteToolPart(ChatPart part) {
+  return part.type == 'tool' && part.tool?.trim().toLowerCase() == 'todowrite';
 }
 
 String? _toolStateStatus(ChatPart part) {
