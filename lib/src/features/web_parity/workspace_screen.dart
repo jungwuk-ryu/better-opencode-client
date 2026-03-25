@@ -16,6 +16,8 @@ import '../terminal/terminal_service.dart';
 import '../tools/todo_models.dart';
 import 'workspace_controller.dart';
 
+enum _CompactWorkspacePane { session, side }
+
 class WebParityWorkspaceScreen extends StatefulWidget {
   const WebParityWorkspaceScreen({
     required this.directory,
@@ -41,6 +43,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   );
   String? _lastTimelineScopeKey;
   int _lastTimelineMessageCount = 0;
+  _CompactWorkspacePane _compactPane = _CompactWorkspacePane.session;
 
   @override
   void didChangeDependencies() {
@@ -59,6 +62,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     }
     _disposeController();
     _profile = profile;
+    _compactPane = _CompactWorkspacePane.session;
     _controller = WorkspaceController(
       profile: profile,
       directory: widget.directory,
@@ -75,6 +79,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       final profile = AppScope.of(context).selectedProfile;
       if (profile != null) {
         _profile = profile;
+        _compactPane = _CompactWorkspacePane.session;
         _controller = WorkspaceController(
           profile: profile,
           directory: widget.directory,
@@ -360,6 +365,15 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                 terminalController: _terminalController,
                                 timelineScrollController:
                                     _timelineScrollController,
+                                compactPane: _compactPane,
+                                onCompactPaneChanged: (value) {
+                                  if (_compactPane == value) {
+                                    return;
+                                  }
+                                  setState(() {
+                                    _compactPane = value;
+                                  });
+                                },
                                 onSubmitPrompt: _submitPrompt,
                                 onRunCommand: () => controller.runTerminalCommand(
                                   _terminalController.text,
@@ -412,6 +426,79 @@ class _WorkspaceTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    if (compact) {
+      return Material(
+        color: surfaces.panel,
+        child: Container(
+          height: 44,
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+          decoration: BoxDecoration(
+            border: Border(bottom: BorderSide(color: surfaces.lineSoft)),
+          ),
+          child: Row(
+            children: <Widget>[
+              IconButton(
+                onPressed: onOpenDrawer,
+                icon: const Icon(Icons.menu_rounded, size: 18),
+                splashRadius: 18,
+              ),
+              const Spacer(),
+              IconButton(
+                onPressed: onToggleTerminal,
+                icon: Icon(
+                  terminalOpen
+                      ? Icons.terminal_rounded
+                      : Icons.crop_free_rounded,
+                  size: 18,
+                ),
+                splashRadius: 18,
+              ),
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.more_horiz_rounded, size: 18),
+                onSelected: (value) {
+                  switch (value) {
+                    case 'home':
+                      onBackHome();
+                    case 'rename':
+                      onRename?.call();
+                    case 'fork':
+                      onFork?.call();
+                    case 'share':
+                      onShare?.call();
+                    case 'delete':
+                      onDelete?.call();
+                  }
+                },
+                itemBuilder: (context) => <PopupMenuEntry<String>>[
+                  const PopupMenuItem<String>(
+                    value: 'home',
+                    child: Text('Back Home'),
+                  ),
+                  const PopupMenuDivider(),
+                  const PopupMenuItem<String>(
+                    value: 'rename',
+                    child: Text('Rename Session'),
+                  ),
+                  const PopupMenuItem<String>(
+                    value: 'fork',
+                    child: Text('Fork Session'),
+                  ),
+                  const PopupMenuItem<String>(
+                    value: 'share',
+                    child: Text('Share Session'),
+                  ),
+                  const PopupMenuDivider(),
+                  const PopupMenuItem<String>(
+                    value: 'delete',
+                    child: Text('Delete Session'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return Material(
       color: surfaces.panel,
       child: Padding(
@@ -687,6 +774,8 @@ class _WorkspaceBody extends StatelessWidget {
     required this.promptController,
     required this.terminalController,
     required this.timelineScrollController,
+    required this.compactPane,
+    required this.onCompactPaneChanged,
     required this.onSubmitPrompt,
     required this.onRunCommand,
   });
@@ -696,6 +785,8 @@ class _WorkspaceBody extends StatelessWidget {
   final TextEditingController promptController;
   final TextEditingController terminalController;
   final ScrollController timelineScrollController;
+  final _CompactWorkspacePane compactPane;
+  final ValueChanged<_CompactWorkspacePane> onCompactPaneChanged;
   final VoidCallback onSubmitPrompt;
   final VoidCallback onRunCommand;
 
@@ -747,8 +838,16 @@ class _WorkspaceBody extends StatelessWidget {
     if (compact) {
       return Column(
         children: <Widget>[
-          Expanded(child: content),
-          SizedBox(height: 320, child: sidePanel),
+          _CompactPaneSwitcher(
+            activePane: compactPane,
+            sideLabel: _compactSideLabel(controller),
+            onChanged: onCompactPaneChanged,
+          ),
+          Expanded(
+            child: compactPane == _CompactWorkspacePane.session
+                ? content
+                : sidePanel,
+          ),
         ],
       );
     }
@@ -761,6 +860,16 @@ class _WorkspaceBody extends StatelessWidget {
       ],
     );
   }
+}
+
+String _compactSideLabel(WorkspaceController controller) {
+  final reviewCount = controller.fileBundle?.statuses.length ?? 0;
+  return switch (controller.sideTab) {
+    WorkspaceSideTab.review when reviewCount > 0 => '$reviewCount Files Changed',
+    WorkspaceSideTab.review => 'Review',
+    WorkspaceSideTab.files => 'Files',
+    WorkspaceSideTab.context => 'Context',
+  };
 }
 
 class _NewSessionView extends StatelessWidget {
@@ -934,6 +1043,91 @@ class _PromptComposer extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CompactPaneSwitcher extends StatelessWidget {
+  const _CompactPaneSwitcher({
+    required this.activePane,
+    required this.sideLabel,
+    required this.onChanged,
+  });
+
+  final _CompactWorkspacePane activePane;
+  final String sideLabel;
+  final ValueChanged<_CompactWorkspacePane> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return Container(
+      height: 52,
+      decoration: BoxDecoration(
+        color: surfaces.panel,
+        border: Border(
+          bottom: BorderSide(color: surfaces.lineSoft),
+        ),
+      ),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: _CompactPaneButton(
+              label: 'Session',
+              selected: activePane == _CompactWorkspacePane.session,
+              onTap: () => onChanged(_CompactWorkspacePane.session),
+            ),
+          ),
+          Container(width: 1, color: surfaces.lineSoft),
+          Expanded(
+            child: _CompactPaneButton(
+              label: sideLabel,
+              selected: activePane == _CompactWorkspacePane.side,
+              onTap: () => onChanged(_CompactWorkspacePane.side),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CompactPaneButton extends StatelessWidget {
+  const _CompactPaneButton({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              color: selected
+                  ? Theme.of(context).colorScheme.onSurface
+                  : Colors.transparent,
+              width: 1.5,
+            ),
+          ),
+        ),
+        child: Text(
+          label,
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            color: selected ? null : surfaces.muted,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
           ),
         ),
       ),
