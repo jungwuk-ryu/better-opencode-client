@@ -781,6 +781,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                         session: selectedSession,
                         mainSession: mainSession,
                         status: controller.selectedStatus,
+                        messages: controller.messages,
+                        configSnapshot: controller.configSnapshot,
                         terminalOpen: _terminalPanelOpen,
                         onBackHome: () => Navigator.of(
                           context,
@@ -922,6 +924,8 @@ class _WorkspaceTopBar extends StatelessWidget {
     required this.session,
     required this.mainSession,
     required this.status,
+    required this.messages,
+    required this.configSnapshot,
     required this.terminalOpen,
     required this.onBackHome,
     required this.onToggleTerminal,
@@ -939,6 +943,8 @@ class _WorkspaceTopBar extends StatelessWidget {
   final SessionSummary? session;
   final SessionSummary? mainSession;
   final SessionStatusSummary? status;
+  final List<ChatMessage> messages;
+  final ConfigSnapshot? configSnapshot;
   final bool terminalOpen;
   final VoidCallback onBackHome;
   final VoidCallback onToggleTerminal;
@@ -951,6 +957,7 @@ class _WorkspaceTopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final rootSession = mainSession;
     final canReturnToMain =
@@ -958,16 +965,41 @@ class _WorkspaceTopBar extends StatelessWidget {
         rootSession != null &&
         session!.id != rootSession.id &&
         onBackToMainSession != null;
+    final busy = _isActiveSessionStatus(status);
+    final title = _sessionHeaderTitle(session, project);
+    final metrics = getSessionContextMetrics(
+      messages: messages,
+      providerCatalog: configSnapshot?.providerCatalog,
+    );
+    final contextSnapshot = metrics.context;
+    final titleStyle = compact
+        ? theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w700,
+            overflow: TextOverflow.ellipsis,
+          )
+        : theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w700,
+            overflow: TextOverflow.ellipsis,
+          );
+    final metaParts = <String>[
+      if (profile != null && profile!.effectiveLabel.trim().isNotEmpty)
+        profile!.effectiveLabel.trim(),
+      if (project?.directory.trim().isNotEmpty == true) project!.directory,
+    ];
     if (compact) {
       return Material(
         color: surfaces.panel,
         child: Container(
-          height: 44,
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+          constraints: const BoxConstraints(minHeight: 60),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.xs,
+            vertical: AppSpacing.xxs,
+          ),
           decoration: BoxDecoration(
             border: Border(bottom: BorderSide(color: surfaces.lineSoft)),
           ),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: <Widget>[
               IconButton(
                 onPressed: onOpenDrawer,
@@ -988,17 +1020,37 @@ class _WorkspaceTopBar extends StatelessWidget {
                   splashRadius: 18,
                 ),
               Expanded(
-                child: Text(
-                  session?.title.isNotEmpty == true
-                      ? session!.title
-                      : (project?.label ?? 'Session'),
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.xxs,
+                  ),
+                  child: _SessionIdentity(
+                    compact: true,
+                    title: title,
+                    titleKey: ValueKey<String>(
+                      'session-header-title-${session?.id ?? 'new'}',
+                    ),
+                    titleStyle: titleStyle,
+                    busy: busy,
+                    busyKey: ValueKey<String>(
+                      'session-header-busy-${session?.id ?? 'new'}',
+                    ),
+                  ),
                 ),
               ),
+              if (session != null)
+                Padding(
+                  padding: const EdgeInsets.only(right: AppSpacing.xxs),
+                  child: _SessionContextUsageRing(
+                    key: ValueKey<String>(
+                      'session-header-context-ring-${session!.id}',
+                    ),
+                    usagePercent: contextSnapshot?.usagePercent,
+                    totalTokens: contextSnapshot?.totalTokens,
+                    contextLimit: contextSnapshot?.contextLimit,
+                    compact: true,
+                  ),
+                ),
               IconButton(
                 onPressed: onToggleTerminal,
                 icon: Icon(
@@ -1070,6 +1122,7 @@ class _WorkspaceTopBar extends StatelessWidget {
           vertical: AppSpacing.sm,
         ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: <Widget>[
             if (compact)
               IconButton(
@@ -1125,27 +1178,44 @@ class _WorkspaceTopBar extends StatelessWidget {
                         ),
                       ),
                     ),
-                  Text(
-                    session?.title.isNotEmpty == true
-                        ? session!.title
-                        : (project?.label ?? 'Project'),
-                    style: Theme.of(context).textTheme.titleLarge,
-                    overflow: TextOverflow.ellipsis,
+                  _SessionIdentity(
+                    compact: false,
+                    title: title,
+                    titleKey: ValueKey<String>(
+                      'session-header-title-${session?.id ?? 'new'}',
+                    ),
+                    titleStyle: titleStyle,
+                    busy: busy,
+                    busyKey: ValueKey<String>(
+                      'session-header-busy-${session?.id ?? 'new'}',
+                    ),
                   ),
-                  Text(
-                    [
-                      profile?.effectiveLabel,
-                      project?.directory,
-                      if (status != null) status!.type,
-                    ].whereType<String>().join('  •  '),
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  if (metaParts.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: AppSpacing.xxs),
+                      child: Text(
+                        metaParts.join('  •  '),
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                 ],
               ),
             ),
+            if (session != null)
+              Padding(
+                padding: const EdgeInsets.only(right: AppSpacing.sm),
+                child: _SessionContextUsageRing(
+                  key: ValueKey<String>(
+                    'session-header-context-ring-${session!.id}',
+                  ),
+                  usagePercent: contextSnapshot?.usagePercent,
+                  totalTokens: contextSnapshot?.totalTokens,
+                  contextLimit: contextSnapshot?.contextLimit,
+                ),
+              ),
             IconButton(
               onPressed: onToggleTerminal,
               icon: Icon(
@@ -1196,6 +1266,207 @@ class _WorkspaceTopBar extends StatelessWidget {
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SessionIdentity extends StatelessWidget {
+  const _SessionIdentity({
+    required this.compact,
+    required this.title,
+    required this.titleKey,
+    required this.titleStyle,
+    required this.busy,
+    required this.busyKey,
+  });
+
+  final bool compact;
+  final String title;
+  final Key titleKey;
+  final TextStyle? titleStyle;
+  final bool busy;
+  final Key busyKey;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return Row(
+      children: <Widget>[
+        _SessionGlyph(compact: compact),
+        SizedBox(width: compact ? AppSpacing.sm : AppSpacing.md),
+        Expanded(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              _ShimmeringRichText(
+                key: titleKey,
+                active: busy,
+                text: TextSpan(text: title, style: titleStyle),
+              ),
+              if (busy)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Container(
+                    key: busyKey,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.xs,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.primary.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(AppSpacing.md),
+                      border: Border.all(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.primary.withValues(alpha: 0.28),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.primary,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.xxs),
+                        Text(
+                          'Busy',
+                          style: Theme.of(context).textTheme.labelMedium
+                              ?.copyWith(
+                                color: surfaces.accentSoft,
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SessionGlyph extends StatelessWidget {
+  const _SessionGlyph({required this.compact});
+
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final size = compact ? 3.0 : 4.0;
+    final gap = compact ? 2.0 : 2.5;
+    final accent = Theme.of(context).colorScheme.primary;
+    return SizedBox(
+      width: compact ? 16 : 18,
+      height: compact ? 16 : 18,
+      child: Wrap(
+        spacing: gap,
+        runSpacing: gap,
+        children: List<Widget>.generate(9, (index) {
+          final highlight = <int>{1, 3, 4, 5, 7}.contains(index);
+          return DecoratedBox(
+            decoration: BoxDecoration(
+              color: (highlight ? accent : surfaces.lineSoft).withValues(
+                alpha: highlight ? 0.8 : 0.7,
+              ),
+              borderRadius: BorderRadius.circular(1.5),
+            ),
+            child: SizedBox(width: size, height: size),
+          );
+        }),
+      ),
+    );
+  }
+}
+
+class _SessionContextUsageRing extends StatelessWidget {
+  const _SessionContextUsageRing({
+    required this.usagePercent,
+    required this.totalTokens,
+    required this.contextLimit,
+    this.compact = false,
+    super.key,
+  });
+
+  final int? usagePercent;
+  final int? totalTokens;
+  final int? contextLimit;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final locale = Localizations.localeOf(context).toLanguageTag();
+    final numberFormat = NumberFormat.decimalPattern(locale);
+    final percent = usagePercent?.clamp(0, 100);
+    final value = percent == null ? 0.0 : percent / 100;
+    final color = _sessionContextUsageColor(percent, theme, surfaces);
+    final strokeWidth = compact ? 2.8 : 3.2;
+    final size = compact ? 24.0 : 28.0;
+    final tooltip = switch ((percent, totalTokens, contextLimit)) {
+      (null, _, _) => 'Context window usage unavailable',
+      (final usage?, final total?, final limit?) =>
+        '$usage% of context window used '
+        '(${numberFormat.format(total)} / ${numberFormat.format(limit)} tokens)',
+      (final usage?, _, _) => '$usage% of context window used',
+    };
+
+    return Tooltip(
+      message: tooltip,
+      waitDuration: const Duration(milliseconds: 120),
+      child: Semantics(
+        label: tooltip,
+        child: SizedBox(
+          width: size,
+          height: size,
+          child: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: surfaces.lineSoft, width: strokeWidth),
+                ),
+              ),
+              if (percent != null)
+                Padding(
+                  padding: const EdgeInsets.all(0.5),
+                  child: CircularProgressIndicator(
+                    value: value,
+                    strokeWidth: strokeWidth,
+                    backgroundColor: Colors.transparent,
+                    color: color,
+                    strokeCap: StrokeCap.round,
+                  ),
+                ),
+              Center(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: percent == null ? 0.28 : 0.85),
+                    shape: BoxShape.circle,
+                  ),
+                  child: SizedBox(
+                    width: compact ? 4 : 5,
+                    height: compact ? 4 : 5,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1433,6 +1704,22 @@ SessionSummary? _rootSessionFor(
     current = parent;
   }
   return current;
+}
+
+bool _isActiveSessionStatus(SessionStatusSummary? status) {
+  return (status?.type.trim().toLowerCase() ?? 'idle') != 'idle';
+}
+
+String _sessionHeaderTitle(SessionSummary? session, ProjectTarget? project) {
+  final sessionTitle = session?.title.trim();
+  if (sessionTitle != null && sessionTitle.isNotEmpty) {
+    return sessionTitle;
+  }
+  final projectLabel = project?.label.trim();
+  if (projectLabel != null && projectLabel.isNotEmpty) {
+    return projectLabel;
+  }
+  return 'Session';
 }
 
 class _WorkspaceBody extends StatelessWidget {
@@ -6462,6 +6749,23 @@ Color _breakdownColor(SessionContextBreakdownKey key, AppSurfaces surfaces) {
     SessionContextBreakdownKey.tool => surfaces.warning,
     SessionContextBreakdownKey.other => surfaces.muted,
   };
+}
+
+Color _sessionContextUsageColor(
+  int? usagePercent,
+  ThemeData theme,
+  AppSurfaces surfaces,
+) {
+  if (usagePercent == null) {
+    return surfaces.muted;
+  }
+  if (usagePercent >= 90) {
+    return surfaces.danger;
+  }
+  if (usagePercent >= 75) {
+    return surfaces.warning;
+  }
+  return theme.colorScheme.primary;
 }
 
 class _WorkspaceError extends StatelessWidget {
