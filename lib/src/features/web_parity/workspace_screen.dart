@@ -1494,9 +1494,12 @@ class _WorkspaceBody extends StatelessWidget {
                     ),
                     controller: timelineScrollController,
                     currentSessionId: controller.selectedSessionId,
+                    loading: controller.sessionLoading,
+                    error: controller.sessionLoadError,
                     messages: controller.messages,
                     sessions: allSessions,
                     onOpenSession: onOpenSession,
+                    onRetry: controller.retrySelectedSessionMessages,
                   ),
           ),
         ),
@@ -1622,28 +1625,59 @@ class _MessageTimeline extends StatelessWidget {
   const _MessageTimeline({
     required this.controller,
     required this.currentSessionId,
+    required this.loading,
+    required this.error,
     required this.messages,
     required this.sessions,
     required this.onOpenSession,
+    required this.onRetry,
     super.key,
   });
 
   final ScrollController controller;
   final String? currentSessionId;
+  final bool loading;
+  final String? error;
   final List<ChatMessage> messages;
   final List<SessionSummary> sessions;
   final ValueChanged<String> onOpenSession;
+  final Future<void> Function() onRetry;
 
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final theme = Theme.of(context);
+    if (loading) {
+      return const _TimelineStatusCard(
+        icon: SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+        title: 'Loading messages...',
+        message: 'Connecting to the server and loading this session.',
+      );
+    }
+    if (error != null) {
+      return _TimelineStatusCard(
+        icon: Icon(
+          Icons.wifi_tethering_error_rounded,
+          color: theme.colorScheme.error,
+          size: 22,
+        ),
+        title: 'Couldn\'t load this session',
+        message: error!,
+        action: OutlinedButton(
+          onPressed: () => unawaited(onRetry()),
+          child: const Text('Retry'),
+        ),
+      );
+    }
     if (messages.isEmpty) {
       return Center(
         child: Text(
           'No messages yet.',
-          style: Theme.of(
-            context,
-          ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
+          style: theme.textTheme.bodyMedium?.copyWith(color: surfaces.muted),
         ),
       );
     }
@@ -1678,6 +1712,69 @@ class _MessageTimeline extends StatelessWidget {
               ),
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+class _TimelineStatusCard extends StatelessWidget {
+  const _TimelineStatusCard({
+    required this.icon,
+    required this.title,
+    required this.message,
+    this.action,
+  });
+
+  final Widget icon;
+  final String title;
+  final String message;
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.xl),
+          child: Container(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            decoration: BoxDecoration(
+              color: surfaces.panelMuted,
+              borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
+              border: Border.all(color: surfaces.lineSoft),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                icon,
+                const SizedBox(height: AppSpacing.md),
+                Text(
+                  title,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  message,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: surfaces.muted,
+                    height: 1.55,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                if (action != null) ...<Widget>[
+                  const SizedBox(height: AppSpacing.md),
+                  action!,
+                ],
+              ],
+            ),
+          ),
         ),
       ),
     );

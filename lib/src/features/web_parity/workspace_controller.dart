@@ -115,12 +115,14 @@ class WorkspaceController extends ChangeNotifier {
 
   bool _disposed = false;
   bool _loading = true;
+  bool _sessionLoading = false;
   bool _submittingPrompt = false;
   bool _runningTerminal = false;
   bool _terminalOpen = false;
   bool _loadingFilePreview = false;
   WorkspaceSideTab _sideTab = WorkspaceSideTab.review;
   String? _error;
+  String? _sessionLoadError;
   String? _actionNotice;
   ProjectTarget? _project;
   List<ProjectTarget> _availableProjects = const <ProjectTarget>[];
@@ -147,14 +149,17 @@ class WorkspaceController extends ChangeNotifier {
   String? _serverDefaultModelKey;
   String? _serverDefaultReasoning;
   int _promptRefreshRevision = 0;
+  int _sessionLoadRevision = 0;
 
   bool get loading => _loading;
+  bool get sessionLoading => _sessionLoading;
   bool get submittingPrompt => _submittingPrompt;
   bool get runningTerminal => _runningTerminal;
   bool get terminalOpen => _terminalOpen;
   bool get loadingFilePreview => _loadingFilePreview;
   WorkspaceSideTab get sideTab => _sideTab;
   String? get error => _error;
+  String? get sessionLoadError => _sessionLoadError;
   String? get actionNotice => _actionNotice;
   ProjectTarget? get project => _project;
   List<ProjectTarget> get availableProjects => _availableProjects;
@@ -337,14 +342,17 @@ class WorkspaceController extends ChangeNotifier {
           _sessionIdHintForProject(resolvedProject, bundle.sessions);
 
       if (_selectedSessionId != null) {
-        _messages = await _chatService.fetchMessages(
-          profile: profile,
+        await _loadSelectedSessionMessages(
           project: resolvedProject,
           sessionId: _selectedSessionId!,
+          loadPanels: false,
+          persistHint: false,
+          notifyOnStart: false,
         );
-        _restoreComposerSelectionFromMessages();
       } else {
         _messages = const <ChatMessage>[];
+        _sessionLoading = false;
+        _sessionLoadError = null;
         _applyDefaultComposerSelection();
       }
 
@@ -362,6 +370,8 @@ class WorkspaceController extends ChangeNotifier {
     _project = project;
     _selectedSessionId = null;
     _messages = const <ChatMessage>[];
+    _sessionLoading = false;
+    _sessionLoadError = null;
     _todos = const <TodoItem>[];
     _pendingRequests = const PendingRequestBundle(
       questions: <QuestionRequestSummary>[],
@@ -388,13 +398,17 @@ class WorkspaceController extends ChangeNotifier {
         bundle.selectedSessionId ??
         _sessionIdHintForProject(project, bundle.sessions);
     if (_selectedSessionId != null) {
-      _messages = await _chatService.fetchMessages(
-        profile: profile,
+      await _loadSelectedSessionMessages(
         project: project,
         sessionId: _selectedSessionId!,
+        loadPanels: false,
+        persistHint: false,
+        notifyOnStart: false,
       );
-      _restoreComposerSelectionFromMessages();
     } else {
+      _messages = const <ChatMessage>[];
+      _sessionLoading = false;
+      _sessionLoadError = null;
       _applyDefaultComposerSelection();
     }
     await _loadProjectPanels();
@@ -408,23 +422,39 @@ class WorkspaceController extends ChangeNotifier {
     }
     _selectedSessionId = sessionId;
     _messages = const <ChatMessage>[];
+    _sessionLoading = false;
+    _sessionLoadError = null;
     _todos = const <TodoItem>[];
     _notify();
 
     if (sessionId == null || sessionId.isEmpty) {
+      _sessionLoading = false;
+      _sessionLoadError = null;
       _applyDefaultComposerSelection();
+      _notify();
       return;
     }
 
-    _messages = await _chatService.fetchMessages(
-      profile: profile,
+    await _loadSelectedSessionMessages(
       project: _project!,
       sessionId: sessionId,
+      loadPanels: true,
+      persistHint: true,
     );
-    _restoreComposerSelectionFromMessages();
-    await _loadSessionPanels();
-    await _persistSessionHint(sessionId);
-    _notify();
+  }
+
+  Future<void> retrySelectedSessionMessages() async {
+    final project = _project;
+    final sessionId = _selectedSessionId;
+    if (project == null || sessionId == null || sessionId.isEmpty) {
+      return;
+    }
+    await _loadSelectedSessionMessages(
+      project: project,
+      sessionId: sessionId,
+      loadPanels: true,
+      persistHint: true,
+    );
   }
 
   Future<void> selectFile(String path) async {
@@ -489,6 +519,81 @@ class WorkspaceController extends ChangeNotifier {
         _notify();
       }
     }
+  }
+
+  Future<void> _loadSelectedSessionMessages({
+    required ProjectTarget project,
+    required String sessionId,
+    required bool loadPanels,
+    required bool persistHint,
+    bool notifyOnStart = true,
+  }) async {
+    final revision = ++_sessionLoadRevision;
+    _sessionLoading = true;
+    _sessionLoadError = null;
+    _todos = const <TodoItem>[];
+    if (notifyOnStart) {
+      _notify();
+    }
+
+    try {
+      final messages = await _chatService.fetchMessages(
+        profile: profile,
+        project: project,
+        sessionId: sessionId,
+      );
+      if (_isStaleSessionLoad(revision, sessionId)) {
+        return;
+      }
+
+      _messages = messages;
+      if (_messages.isEmpty) {
+        _applyDefaultComposerSelection();
+      } else {
+        _restoreComposerSelectionFromMessages();
+      }
+
+      if (loadPanels) {
+        await _loadSessionPanels();
+        if (_isStaleSessionLoad(revision, sessionId)) {
+          return;
+        }
+      }
+
+      if (persistHint) {
+        await _persistSessionHint(sessionId);
+        if (_isStaleSessionLoad(revision, sessionId)) {
+          return;
+        }
+      }
+
+      _sessionLoading = false;
+      _sessionLoadError = null;
+      _notify();
+    } catch (error) {
+      if (_isStaleSessionLoad(revision, sessionId)) {
+        return;
+      }
+      _messages = const <ChatMessage>[];
+      _sessionLoading = false;
+      _sessionLoadError = _describeSessionLoadError(error);
+      _applyDefaultComposerSelection();
+      _notify();
+    }
+  }
+
+  bool _isStaleSessionLoad(int revision, String sessionId) {
+    return _disposed ||
+        revision != _sessionLoadRevision ||
+        _selectedSessionId != sessionId;
+  }
+
+  String _describeSessionLoadError(Object error) {
+    final detail = error.toString().trim();
+    if (detail.isEmpty) {
+      return 'The server may be offline or responding too slowly. Please try again.';
+    }
+    return 'The server may be offline or responding too slowly.\n$detail';
   }
 
   Future<String?> submitPrompt(String prompt) async {
@@ -579,6 +684,8 @@ class WorkspaceController extends ChangeNotifier {
 
     if (_selectedSessionId == sessionId && messages != null) {
       _messages = messages;
+      _sessionLoading = false;
+      _sessionLoadError = null;
       _restoreComposerSelectionFromMessages();
     }
 
@@ -628,6 +735,8 @@ class WorkspaceController extends ChangeNotifier {
     _replaceSession(created);
     _selectedSessionId = created.id;
     _messages = const <ChatMessage>[];
+    _sessionLoading = false;
+    _sessionLoadError = null;
     _todos = const <TodoItem>[];
     _statuses = <String, SessionStatusSummary>{
       ..._statuses,
@@ -704,13 +813,14 @@ class WorkspaceController extends ChangeNotifier {
     );
     _sessions = <SessionSummary>[forked, ..._sessions];
     _selectedSessionId = forked.id;
-    _messages = await _chatService.fetchMessages(
-      profile: profile,
+    _messages = const <ChatMessage>[];
+    await _loadSelectedSessionMessages(
       project: project,
       sessionId: forked.id,
+      loadPanels: true,
+      persistHint: true,
     );
     _actionNotice = 'Forked session into "${forked.title}".';
-    await _loadSessionPanels();
     _notify();
   }
 
@@ -777,14 +887,20 @@ class WorkspaceController extends ChangeNotifier {
         .where((session) => session.id != sessionId)
         .toList(growable: false);
     _selectedSessionId = _sessions.isEmpty ? null : _sessions.first.id;
-    _messages = _selectedSessionId == null
-        ? const <ChatMessage>[]
-        : await _chatService.fetchMessages(
-            profile: profile,
-            project: project,
-            sessionId: _selectedSessionId!,
-          );
-    await _loadSessionPanels();
+    if (_selectedSessionId == null) {
+      _messages = const <ChatMessage>[];
+      _sessionLoading = false;
+      _sessionLoadError = null;
+      await _loadSessionPanels();
+    } else {
+      _messages = const <ChatMessage>[];
+      await _loadSelectedSessionMessages(
+        project: project,
+        sessionId: _selectedSessionId!,
+        loadPanels: true,
+        persistHint: true,
+      );
+    }
     _actionNotice = 'Session deleted.';
     _notify();
   }
@@ -805,11 +921,16 @@ class WorkspaceController extends ChangeNotifier {
         sessionId: sessionId,
         command: command.trim(),
       );
-      _messages = await _chatService.fetchMessages(
-        profile: profile,
-        project: project,
-        sessionId: sessionId,
-      );
+      try {
+        _messages = await _chatService.fetchMessages(
+          profile: profile,
+          project: project,
+          sessionId: sessionId,
+        );
+        _sessionLoadError = null;
+      } catch (error) {
+        _sessionLoadError = _describeSessionLoadError(error);
+      }
     } finally {
       _runningTerminal = false;
       _notify();
@@ -1252,23 +1373,38 @@ class WorkspaceController extends ChangeNotifier {
     } else if (type == 'session.status') {
       _statuses = applySessionStatusEvent(_statuses, event.properties);
     } else if (type == 'message.updated') {
-      _messages = applyMessageUpdatedEvent(
+      final nextMessages = applyMessageUpdatedEvent(
         _messages,
         event.properties,
         selectedSessionId: _selectedSessionId,
       );
+      if (!identical(nextMessages, _messages)) {
+        _sessionLoading = false;
+        _sessionLoadError = null;
+      }
+      _messages = nextMessages;
     } else if (type == 'message.part.updated') {
-      _messages = applyMessagePartUpdatedEvent(
+      final nextMessages = applyMessagePartUpdatedEvent(
         _messages,
         event.properties,
         selectedSessionId: _selectedSessionId,
       );
+      if (!identical(nextMessages, _messages)) {
+        _sessionLoading = false;
+        _sessionLoadError = null;
+      }
+      _messages = nextMessages;
     } else if (type == 'message.removed') {
-      _messages = applyMessageRemovedEvent(
+      final nextMessages = applyMessageRemovedEvent(
         _messages,
         event.properties,
         selectedSessionId: _selectedSessionId,
       );
+      if (!identical(nextMessages, _messages)) {
+        _sessionLoading = false;
+        _sessionLoadError = null;
+      }
+      _messages = nextMessages;
     } else if (type == 'todo.updated') {
       _todos = applyTodoUpdatedEvent(
         _todos,

@@ -272,12 +272,122 @@ void main() {
       expect(controller.todos.first.status, 'in_progress');
     },
   );
+
+  test(
+    'controller surfaces a session load error without failing the whole workspace',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_1',
+              title: 'Initial session',
+              createdAt: 1710000001000,
+              updatedAt: 1710000005000,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{
+            'ses_1': SessionStatusSummary(type: 'idle'),
+          },
+          messages: const <ChatMessage>[],
+          selectedSessionId: 'ses_1',
+        ),
+        fetchMessagesHandler:
+            ({required profile, required project, required sessionId}) async {
+              throw Exception('connection timed out');
+            },
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+
+      expect(controller.error, isNull);
+      expect(controller.selectedSessionId, 'ses_1');
+      expect(controller.sessionLoading, isFalse);
+      expect(controller.sessionLoadError, contains('responding too slowly'));
+      expect(controller.messages, isEmpty);
+    },
+  );
+
+  test(
+    'controller can retry loading the selected session after a failure',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      var attempts = 0;
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_1',
+              title: 'Initial session',
+              createdAt: 1710000001000,
+              updatedAt: 1710000005000,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{
+            'ses_1': SessionStatusSummary(type: 'idle'),
+          },
+          messages: const <ChatMessage>[],
+          selectedSessionId: 'ses_1',
+        ),
+        fetchMessagesHandler:
+            ({required profile, required project, required sessionId}) async {
+              attempts += 1;
+              if (attempts == 1) {
+                throw Exception('server offline');
+              }
+              return <ChatMessage>[
+                ChatMessage(
+                  info: const ChatMessageInfo(
+                    id: 'msg_1',
+                    role: 'assistant',
+                    sessionId: 'ses_1',
+                  ),
+                  parts: const <ChatPart>[
+                    ChatPart(
+                      id: 'part_1',
+                      type: 'text',
+                      text: 'Recovered message',
+                    ),
+                  ],
+                ),
+              ];
+            },
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+      expect(controller.sessionLoadError, isNotNull);
+      expect(controller.messages, isEmpty);
+
+      await controller.retrySelectedSessionMessages();
+
+      expect(controller.sessionLoadError, isNull);
+      expect(controller.sessionLoading, isFalse);
+      expect(controller.messages, hasLength(1));
+      expect(controller.messages.single.parts.single.text, 'Recovered message');
+    },
+  );
 }
 
 WorkspaceController _buildController({
   required ServerProfile profile,
   required ProjectTarget project,
   required _ControlledEventStreamService eventStreamService,
+  ChatService? chatService,
   List<SessionSummary>? initialSessions,
   String? initialSelectedSessionId,
   PendingRequestBundle pendingBundle = const PendingRequestBundle(
@@ -298,16 +408,18 @@ WorkspaceController _buildController({
   return WorkspaceController(
     profile: profile,
     directory: project.directory,
-    chatService: _FakeChatService(
-      bundle: ChatSessionBundle(
-        sessions: sessions,
-        statuses: const <String, SessionStatusSummary>{
-          'ses_1': SessionStatusSummary(type: 'idle'),
-        },
-        messages: const <ChatMessage>[],
-        selectedSessionId: initialSelectedSessionId ?? 'ses_1',
-      ),
-    ),
+    chatService:
+        chatService ??
+        _FakeChatService(
+          bundle: ChatSessionBundle(
+            sessions: sessions,
+            statuses: const <String, SessionStatusSummary>{
+              'ses_1': SessionStatusSummary(type: 'idle'),
+            },
+            messages: const <ChatMessage>[],
+            selectedSessionId: initialSelectedSessionId ?? 'ses_1',
+          ),
+        ),
     projectCatalogService: _FakeProjectCatalogService(project),
     projectStore: _MemoryProjectStore(),
     fileBrowserService: _FakeFileBrowserService(),
@@ -437,9 +549,15 @@ class _MemoryProjectStore extends ProjectStore {
 }
 
 class _FakeChatService extends ChatService {
-  _FakeChatService({required this.bundle});
+  _FakeChatService({required this.bundle, this.fetchMessagesHandler});
 
   final ChatSessionBundle bundle;
+  final Future<List<ChatMessage>> Function({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String sessionId,
+  })?
+  fetchMessagesHandler;
 
   @override
   Future<ChatSessionBundle> fetchBundle({
@@ -455,6 +573,10 @@ class _FakeChatService extends ChatService {
     required ProjectTarget project,
     required String sessionId,
   }) async {
+    final handler = fetchMessagesHandler;
+    if (handler != null) {
+      return handler(profile: profile, project: project, sessionId: sessionId);
+    }
     return const <ChatMessage>[];
   }
 
