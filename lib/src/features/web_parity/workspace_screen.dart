@@ -661,7 +661,7 @@ class _WorkspaceSidebar extends StatelessWidget {
                               ),
                             ),
                             child: Text(
-                              _projectInitial(project.label),
+                              _projectInitial(project),
                               style: Theme.of(context).textTheme.titleMedium,
                             ),
                           ),
@@ -759,12 +759,27 @@ class _WorkspaceSidebar extends StatelessWidget {
   }
 }
 
-String _projectInitial(String label) {
-  final trimmed = label.trim();
-  if (trimmed.isEmpty) {
+String _projectInitial(ProjectTarget project) {
+  String pickCandidate(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      return '';
+    }
+    final normalized = trimmed.replaceAll('\\', '/');
+    final segments = normalized.split('/').where((segment) => segment.isNotEmpty);
+    if (segments.isNotEmpty) {
+      return segments.last;
+    }
+    return trimmed;
+  }
+
+  final candidate = pickCandidate(project.label);
+  final fallback = pickCandidate(project.directory);
+  final resolved = candidate.isNotEmpty ? candidate : fallback;
+  if (resolved.isEmpty) {
     return '?';
   }
-  return trimmed.characters.first.toUpperCase();
+  return resolved.characters.first.toUpperCase();
 }
 
 class _WorkspaceBody extends StatelessWidget {
