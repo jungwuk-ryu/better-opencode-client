@@ -34,24 +34,24 @@ void main() {
     );
     final appController = _StaticAppController(
       profile: profile,
-      workspaceControllerFactory: ({
-        required profile,
-        required directory,
-        initialSessionId,
-      }) {
-        return _ContextWorkspaceController(
-          profile: profile,
-          directory: directory,
-          initialSessionId: initialSessionId,
-        );
-      },
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _ContextWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
     );
     addTearDown(appController.dispose);
 
     await tester.pumpWidget(
       _WorkspaceRouteHarness(
         controller: appController,
-        initialRoute: buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -75,7 +75,21 @@ void main() {
     await tester.tap(find.byType(ExpansionTile).last);
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('"providerID": "openai"'), findsOneWidget);
+    final rawTile = tester.widget<Container>(
+      find.byKey(
+        const ValueKey<String>('context-raw-message-tile-msg_assistant_1'),
+      ),
+    );
+    final rawTileDecoration = rawTile.decoration! as BoxDecoration;
+    expect(rawTileDecoration.color, Colors.transparent);
+    expect(
+      find.byKey(
+        const ValueKey<String>('context-raw-message-content-msg_assistant_1'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('"providerID"'), findsOneWidget);
+    expect(find.textContaining('"openai"'), findsOneWidget);
     expect(find.textContaining('"parts"'), findsOneWidget);
   });
 }
@@ -156,9 +170,7 @@ class _ContextWorkspaceController extends WorkspaceController {
   );
 
   static final ConfigSnapshot _snapshot = ConfigSnapshot(
-    config: RawJsonDocument(<String, Object?>{
-      'model': 'openai/gpt-5.4',
-    }),
+    config: RawJsonDocument(<String, Object?>{'model': 'openai/gpt-5.4'}),
     providerConfig: RawJsonDocument(<String, Object?>{
       'providers': <Map<String, Object?>>[
         <String, Object?>{
@@ -232,9 +244,7 @@ class _ContextWorkspaceController extends WorkspaceController {
   ProjectTarget? get project => _projectTarget;
 
   @override
-  List<ProjectTarget> get availableProjects => <ProjectTarget>[
-    _projectTarget,
-  ];
+  List<ProjectTarget> get availableProjects => <ProjectTarget>[_projectTarget];
 
   @override
   List<SessionSummary> get sessions => <SessionSummary>[_session];

@@ -5603,67 +5603,85 @@ class _ContextRawMessageTile extends StatelessWidget {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
     return Container(
+      key: ValueKey<String>('context-raw-message-tile-${message.info.id}'),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: surfaces.panelMuted,
+        color: Colors.transparent,
         borderRadius: BorderRadius.circular(AppSpacing.md),
         border: Border.all(color: surfaces.lineSoft),
       ),
       child: Theme(
         data: theme.copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
+          backgroundColor: Colors.transparent,
+          collapsedBackgroundColor: Colors.transparent,
+          shape: const Border(),
+          collapsedShape: const Border(),
           tilePadding: const EdgeInsets.symmetric(
             horizontal: AppSpacing.md,
-            vertical: 2,
+            vertical: 4,
           ),
-          childrenPadding: const EdgeInsets.fromLTRB(
-            AppSpacing.md,
-            0,
-            AppSpacing.md,
-            AppSpacing.md,
-          ),
+          childrenPadding: EdgeInsets.zero,
           iconColor: surfaces.muted,
           collapsedIconColor: surfaces.muted,
-          title: Column(
+          title: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Text.rich(
-                TextSpan(
-                  text: message.info.role,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurface,
-                  ),
-                  children: <InlineSpan>[
-                    TextSpan(
-                      text: ' • ${message.info.id}',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: surfaces.muted,
-                      ),
+              Expanded(
+                child: Text.rich(
+                  TextSpan(
+                    text: message.info.role,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurface,
                     ),
-                  ],
+                    children: <InlineSpan>[
+                      TextSpan(
+                        text: ' • ${message.info.id}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: surfaces.muted,
+                        ),
+                      ),
+                    ],
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(height: 2),
-              Text(
-                timestampLabel,
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: surfaces.muted,
+              const SizedBox(width: AppSpacing.sm),
+              Flexible(
+                child: Text(
+                  timestampLabel,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: surfaces.muted,
+                  ),
+                  textAlign: TextAlign.right,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
           ),
           children: <Widget>[
             Container(
+              key: ValueKey<String>(
+                'context-raw-message-content-${message.info.id}',
+              ),
               width: double.infinity,
-              padding: const EdgeInsets.all(AppSpacing.md),
+              margin: const EdgeInsets.fromLTRB(
+                AppSpacing.md,
+                0,
+                AppSpacing.md,
+                AppSpacing.md,
+              ),
+              clipBehavior: Clip.antiAlias,
               decoration: BoxDecoration(
-                color: theme.scaffoldBackgroundColor,
+                color: surfaces.background,
                 borderRadius: BorderRadius.circular(AppSpacing.md),
                 border: Border.all(color: surfaces.lineSoft),
               ),
+              padding: const EdgeInsets.all(AppSpacing.md),
               child: Text(
-                formatRawSessionMessage(message),
+                _wrapRawMessageForDisplay(formatRawSessionMessage(message)),
                 style: GoogleFonts.ibmPlexMono(
                   fontSize: 11,
                   height: 1.5,
@@ -5684,6 +5702,38 @@ String _formatContextNumber(int? value, NumberFormat formatter) {
   }
   return formatter.format(value);
 }
+
+String _wrapRawMessageForDisplay(String value) {
+  if (value.isEmpty) {
+    return value;
+  }
+
+  final buffer = StringBuffer();
+  for (final rune in value.runes) {
+    final character = String.fromCharCode(rune);
+    buffer.write(character);
+    if (_rawMessageBreakCharacters.contains(character)) {
+      buffer.write('\u200B');
+    }
+  }
+  return buffer.toString();
+}
+
+const Set<String> _rawMessageBreakCharacters = <String>{
+  '/',
+  '\\',
+  '_',
+  '-',
+  '.',
+  ':',
+  ',',
+  ')',
+  '(',
+  ']',
+  '[',
+  '}',
+  '{',
+};
 
 String _formatContextPercent(int? value, NumberFormat formatter) {
   if (value == null) {
