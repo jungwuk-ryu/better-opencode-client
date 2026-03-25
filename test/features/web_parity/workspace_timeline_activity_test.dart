@@ -33,6 +33,7 @@ void main() {
     final appController = _StaticAppController(
       profile: profile,
       initialShellToolPartsExpanded: true,
+      initialTimelineProgressDetailsVisible: false,
       workspaceControllerFactory:
           ({required profile, required directory, initialSessionId}) {
             return _TimelineWorkspaceController(
@@ -75,8 +76,23 @@ void main() {
       find.text('Detailed internal reasoning stays hidden.'),
       findsNothing,
     );
+    expect(
+      find.byKey(const ValueKey<String>('timeline-activity-part_step_start')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('timeline-activity-part_step_finish')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('timeline-activity-part_todo')),
+      findsNothing,
+    );
     expect(find.text('Verify bot runtime module'), findsNothing);
-    expect(find.textContaining(r'$ git diff --staged && git diff'), findsOneWidget);
+    expect(
+      find.textContaining(r'$ git diff --staged && git diff'),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const ValueKey<String>('timeline-shell-copy-part_tool')),
       findsOneWidget,
@@ -110,6 +126,7 @@ void main() {
     final appController = _StaticAppController(
       profile: profile,
       initialShellToolPartsExpanded: true,
+      initialTimelineProgressDetailsVisible: false,
       workspaceControllerFactory:
           ({required profile, required directory, initialSessionId}) {
             return _TimelineWorkspaceController(
@@ -147,6 +164,82 @@ void main() {
       findsNothing,
     );
   });
+
+  testWidgets(
+    'step and to-do details stay hidden by default and can be shown from settings',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        initialShellToolPartsExpanded: true,
+        initialTimelineProgressDetailsVisible: false,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              return _TimelineWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+            },
+      );
+      addTearDown(appController.dispose);
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          initialRoute: buildWorkspaceRoute(
+            '/workspace/demo',
+            sessionId: 'ses_1',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      expect(
+        find.byKey(const ValueKey<String>('timeline-activity-part_step_start')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>('timeline-activity-part_step_finish'),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('timeline-activity-part_todo')),
+        findsNothing,
+      );
+
+      await appController.setTimelineProgressDetailsVisible(true);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      expect(
+        find.byKey(const ValueKey<String>('timeline-activity-part_step_start')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>('timeline-activity-part_step_finish'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('timeline-activity-part_todo')),
+        findsOneWidget,
+      );
+    },
+  );
 }
 
 class _WorkspaceRouteHarness extends StatelessWidget {
@@ -192,12 +285,15 @@ class _StaticAppController extends WebParityAppController {
   _StaticAppController({
     required this.profile,
     required bool initialShellToolPartsExpanded,
+    required bool initialTimelineProgressDetailsVisible,
     required WorkspaceControllerFactory workspaceControllerFactory,
   }) : _shellToolPartsExpanded = initialShellToolPartsExpanded,
+       _timelineProgressDetailsVisible = initialTimelineProgressDetailsVisible,
        super(workspaceControllerFactory: workspaceControllerFactory);
 
   final ServerProfile profile;
   bool _shellToolPartsExpanded;
+  bool _timelineProgressDetailsVisible;
 
   @override
   ServerProfile? get selectedProfile => profile;
@@ -206,8 +302,17 @@ class _StaticAppController extends WebParityAppController {
   bool get shellToolPartsExpanded => _shellToolPartsExpanded;
 
   @override
+  bool get timelineProgressDetailsVisible => _timelineProgressDetailsVisible;
+
+  @override
   Future<void> setShellToolPartsExpanded(bool value) async {
     _shellToolPartsExpanded = value;
+    notifyListeners();
+  }
+
+  @override
+  Future<void> setTimelineProgressDetailsVisible(bool value) async {
+    _timelineProgressDetailsVisible = value;
     notifyListeners();
   }
 }
@@ -302,6 +407,37 @@ class _TimelineWorkspaceController extends WorkspaceController {
               },
               'output': 'M README.md\n M lib/main.dart',
             },
+          },
+        ),
+        const ChatPart(
+          id: 'part_step_start',
+          type: 'step-start',
+          metadata: <String, Object?>{
+            'title': 'Planning implementation steps',
+            'description': 'Draft the next sequence of changes.',
+          },
+        ),
+        const ChatPart(
+          id: 'part_step_finish',
+          type: 'step-finish',
+          metadata: <String, Object?>{
+            'reason': 'Completed milestone checkpoint',
+            'message': 'Ready to move on to the next task.',
+          },
+        ),
+        const ChatPart(
+          id: 'part_todo',
+          type: 'tool',
+          tool: 'todowrite',
+          metadata: <String, Object?>{
+            'todos': <Object?>[
+              <String, Object?>{
+                'id': 'todo_1',
+                'content': 'Ship the timeline update',
+                'status': 'in_progress',
+                'priority': 'high',
+              },
+            ],
           },
         ),
       ],

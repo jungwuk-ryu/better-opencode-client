@@ -788,6 +788,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                             appController.shellToolPartsExpanded,
                         onSetShellToolPartsExpanded:
                             appController.setShellToolPartsExpanded,
+                        timelineProgressDetailsVisible:
+                            appController.timelineProgressDetailsVisible,
+                        onSetTimelineProgressDetailsVisible:
+                            appController.setTimelineProgressDetailsVisible,
                         terminalOpen: _terminalPanelOpen,
                         onBackHome: () => Navigator.of(
                           context,
@@ -848,6 +852,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                 compactPane: _compactPane,
                                 shellToolDefaultExpanded:
                                     appController.shellToolPartsExpanded,
+                                timelineProgressDetailsVisible: appController
+                                    .timelineProgressDetailsVisible,
                                 onCompactPaneChanged: (value) {
                                   if (_compactPane == value) {
                                     return;
@@ -935,6 +941,8 @@ class _WorkspaceTopBar extends StatelessWidget {
     required this.configSnapshot,
     required this.shellToolPartsExpanded,
     required this.onSetShellToolPartsExpanded,
+    required this.timelineProgressDetailsVisible,
+    required this.onSetTimelineProgressDetailsVisible,
     required this.terminalOpen,
     required this.onBackHome,
     required this.onToggleTerminal,
@@ -956,6 +964,8 @@ class _WorkspaceTopBar extends StatelessWidget {
   final ConfigSnapshot? configSnapshot;
   final bool shellToolPartsExpanded;
   final Future<void> Function(bool value) onSetShellToolPartsExpanded;
+  final bool timelineProgressDetailsVisible;
+  final Future<void> Function(bool value) onSetTimelineProgressDetailsVisible;
   final bool terminalOpen;
   final VoidCallback onBackHome;
   final VoidCallback onToggleTerminal;
@@ -1084,6 +1094,12 @@ class _WorkspaceTopBar extends StatelessWidget {
                       unawaited(
                         onSetShellToolPartsExpanded(!shellToolPartsExpanded),
                       );
+                    case 'timeline-progress-details':
+                      unawaited(
+                        onSetTimelineProgressDetailsVisible(
+                          !timelineProgressDetailsVisible,
+                        ),
+                      );
                     case 'rename':
                       onRename?.call();
                     case 'fork':
@@ -1109,6 +1125,13 @@ class _WorkspaceTopBar extends StatelessWidget {
                     value: 'shell-default',
                     checked: shellToolPartsExpanded,
                     child: const Text('Expand shell output by default'),
+                  ),
+                  CheckedPopupMenuItem<String>(
+                    value: 'timeline-progress-details',
+                    checked: timelineProgressDetailsVisible,
+                    child: const Text(
+                      'Show to-do and step details in timeline',
+                    ),
                   ),
                   const PopupMenuDivider(),
                   const PopupMenuItem<String>(
@@ -1254,6 +1277,12 @@ class _WorkspaceTopBar extends StatelessWidget {
                     unawaited(
                       onSetShellToolPartsExpanded(!shellToolPartsExpanded),
                     );
+                  case 'timeline-progress-details':
+                    unawaited(
+                      onSetTimelineProgressDetailsVisible(
+                        !timelineProgressDetailsVisible,
+                      ),
+                    );
                   case 'rename':
                     onRename?.call();
                   case 'fork':
@@ -1275,6 +1304,11 @@ class _WorkspaceTopBar extends StatelessWidget {
                   value: 'shell-default',
                   checked: shellToolPartsExpanded,
                   child: const Text('Expand shell output by default'),
+                ),
+                CheckedPopupMenuItem<String>(
+                  value: 'timeline-progress-details',
+                  checked: timelineProgressDetailsVisible,
+                  child: const Text('Show to-do and step details in timeline'),
                 ),
                 const PopupMenuDivider(),
                 const PopupMenuItem<String>(
@@ -1769,6 +1803,7 @@ class _WorkspaceBody extends StatelessWidget {
     required this.timelineScrollController,
     required this.compactPane,
     required this.shellToolDefaultExpanded,
+    required this.timelineProgressDetailsVisible,
     required this.onCompactPaneChanged,
     required this.onSubmitPrompt,
     required this.onCreateSession,
@@ -1789,6 +1824,7 @@ class _WorkspaceBody extends StatelessWidget {
   final ScrollController timelineScrollController;
   final _CompactWorkspacePane compactPane;
   final bool shellToolDefaultExpanded;
+  final bool timelineProgressDetailsVisible;
   final ValueChanged<_CompactWorkspacePane> onCompactPaneChanged;
   final VoidCallback onSubmitPrompt;
   final Future<void> Function() onCreateSession;
@@ -1835,6 +1871,8 @@ class _WorkspaceBody extends StatelessWidget {
                     messages: controller.messages,
                     sessions: allSessions,
                     shellToolDefaultExpanded: shellToolDefaultExpanded,
+                    timelineProgressDetailsVisible:
+                        timelineProgressDetailsVisible,
                     onOpenSession: onOpenSession,
                     onRetry: controller.retrySelectedSessionMessages,
                   ),
@@ -1967,6 +2005,7 @@ class _MessageTimeline extends StatelessWidget {
     required this.messages,
     required this.sessions,
     required this.shellToolDefaultExpanded,
+    required this.timelineProgressDetailsVisible,
     required this.onOpenSession,
     required this.onRetry,
     super.key,
@@ -1979,6 +2018,7 @@ class _MessageTimeline extends StatelessWidget {
   final List<ChatMessage> messages;
   final List<SessionSummary> sessions;
   final bool shellToolDefaultExpanded;
+  final bool timelineProgressDetailsVisible;
   final ValueChanged<String> onOpenSession;
   final Future<void> Function() onRetry;
 
@@ -2047,6 +2087,8 @@ class _MessageTimeline extends StatelessWidget {
                   message: message,
                   sessions: sessions,
                   shellToolDefaultExpanded: shellToolDefaultExpanded,
+                  timelineProgressDetailsVisible:
+                      timelineProgressDetailsVisible,
                   onOpenSession: onOpenSession,
                 ),
               ),
@@ -4033,6 +4075,7 @@ class _TimelineMessage extends StatelessWidget {
     required this.message,
     required this.sessions,
     required this.shellToolDefaultExpanded,
+    required this.timelineProgressDetailsVisible,
     required this.onOpenSession,
   });
 
@@ -4040,6 +4083,7 @@ class _TimelineMessage extends StatelessWidget {
   final ChatMessage message;
   final List<SessionSummary> sessions;
   final bool shellToolDefaultExpanded;
+  final bool timelineProgressDetailsVisible;
   final ValueChanged<String> onOpenSession;
 
   @override
@@ -4065,7 +4109,12 @@ class _TimelineMessage extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (final part in message.parts.where(_shouldRenderTimelinePart))
+        for (final part in message.parts.where(
+          (part) => _shouldRenderTimelinePart(
+            part,
+            showProgressDetails: timelineProgressDetailsVisible,
+          ),
+        ))
           Padding(
             padding: const EdgeInsets.only(bottom: AppSpacing.md),
             child: _TimelinePart(
@@ -5668,11 +5717,14 @@ String _toolTitle(String? tool) {
   };
 }
 
-bool _shouldRenderTimelinePart(ChatPart part) {
+bool _shouldRenderTimelinePart(
+  ChatPart part, {
+  required bool showProgressDetails,
+}) {
   if (part.type == 'text') {
     return _resolvedRawPartText(part).trim().isNotEmpty;
   }
-  if (_isTodoWriteToolPart(part)) {
+  if (_isProgressDetailPart(part) && !showProgressDetails) {
     return false;
   }
   if (_isQuestionToolPart(part)) {
@@ -5682,6 +5734,13 @@ bool _shouldRenderTimelinePart(ChatPart part) {
     }
   }
   return true;
+}
+
+bool _isProgressDetailPart(ChatPart part) {
+  if (_isTodoWriteToolPart(part)) {
+    return true;
+  }
+  return part.type == 'step-start' || part.type == 'step-finish';
 }
 
 bool _shouldAnimateStreamingText(ChatPart part, bool messageIsActive) {

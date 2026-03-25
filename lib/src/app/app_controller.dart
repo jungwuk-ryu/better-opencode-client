@@ -48,6 +48,8 @@ class WebParityAppController extends ChangeNotifier {
   static const _selectedProfileKey = 'web_parity.selected_profile';
   static const _shellToolPartsExpandedKey =
       'web_parity.shell_tool_parts_expanded';
+  static const _timelineProgressDetailsVisibleKey =
+      'web_parity.timeline_progress_details_visible';
 
   final ServerProfileStore _profileStore;
   final ProjectStore _projectStore;
@@ -61,6 +63,7 @@ class WebParityAppController extends ChangeNotifier {
   Map<String, ServerProbeReport> _reports = const <String, ServerProbeReport>{};
   ServerProfile? _selectedProfile;
   bool _shellToolPartsExpanded = true;
+  bool _timelineProgressDetailsVisible = false;
   final Map<String, WorkspaceController> _workspaceControllers =
       <String, WorkspaceController>{};
 
@@ -70,6 +73,7 @@ class WebParityAppController extends ChangeNotifier {
   Map<String, ServerProbeReport> get reports => _reports;
   ServerProfile? get selectedProfile => _selectedProfile;
   bool get shellToolPartsExpanded => _shellToolPartsExpanded;
+  bool get timelineProgressDetailsVisible => _timelineProgressDetailsVisible;
   ServerProbeReport? get selectedReport {
     final selectedProfile = _selectedProfile;
     if (selectedProfile == null) {
@@ -89,6 +93,8 @@ class WebParityAppController extends ChangeNotifier {
     final selectedProfileId = prefs.getString(_selectedProfileKey);
     final shellToolPartsExpanded =
         prefs.getBool(_shellToolPartsExpandedKey) ?? true;
+    final timelineProgressDetailsVisible =
+        prefs.getBool(_timelineProgressDetailsVisibleKey) ?? false;
 
     ServerProfile? selectedProfile;
     if (selectedProfileId != null) {
@@ -106,6 +112,7 @@ class WebParityAppController extends ChangeNotifier {
     _reports = reports;
     _selectedProfile = selectedProfile;
     _shellToolPartsExpanded = shellToolPartsExpanded;
+    _timelineProgressDetailsVisible = timelineProgressDetailsVisible;
     _loading = false;
     notifyListeners();
   }
@@ -130,6 +137,16 @@ class WebParityAppController extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_shellToolPartsExpandedKey, value);
+  }
+
+  Future<void> setTimelineProgressDetailsVisible(bool value) async {
+    if (_timelineProgressDetailsVisible == value) {
+      return;
+    }
+    _timelineProgressDetailsVisible = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_timelineProgressDetailsVisibleKey, value);
   }
 
   Future<void> refreshProbe(ServerProfile profile) async {
