@@ -71,6 +71,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   int _lastTimelineContentSignature = 0;
   bool _lastTimelineLoading = false;
   bool _timelineWasNearBottom = true;
+  String? _forcedTimelineBottomScopeKey;
   String? _timelineBottomLockScopeKey;
   double? _timelineBottomLockLastExtent;
   int _timelineBottomLockStableFrames = 0;
@@ -527,7 +528,18 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     _lastTimelineContentSignature = 0;
     _lastTimelineLoading = false;
     _timelineWasNearBottom = true;
+    _forcedTimelineBottomScopeKey = null;
     _clearTimelineBottomLock();
+  }
+
+  void _forceTimelineBottomForSession(String? sessionId) {
+    final trimmed = sessionId?.trim();
+    if (trimmed == null || trimmed.isEmpty) {
+      _forcedTimelineBottomScopeKey = null;
+      return;
+    }
+    _forcedTimelineBottomScopeKey = '$_currentDirectory::$trimmed';
+    _timelineWasNearBottom = true;
   }
 
   void _scheduleTimelineSync(WorkspaceController controller) {
@@ -546,10 +558,24 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
           !controller.sessionLoading &&
           messageCount > 0 &&
           _lastTimelineScopeKey == scopeKey;
+      final forceBottomLock = _forcedTimelineBottomScopeKey == scopeKey;
       final messageCountChanged = _lastTimelineMessageCount != messageCount;
       final contentChanged =
           _lastTimelineContentSignature != contentSignature ||
           messageCountChanged;
+
+      if (messageCount > 0 &&
+          (sessionChanged || sessionLoadFinished || forceBottomLock)) {
+        _beginTimelineBottomLock(scopeKey);
+        if (forceBottomLock) {
+          _forcedTimelineBottomScopeKey = null;
+        }
+      } else if (forceBottomLock &&
+          !controller.sessionLoading &&
+          messageCount == 0) {
+        _forcedTimelineBottomScopeKey = null;
+      }
+
       final position = _timelineScrollController.position;
       if (!position.hasContentDimensions) {
         return;
@@ -558,12 +584,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
           !position.hasPixels ||
           (position.maxScrollExtent - position.pixels) <= 120;
       final shouldFollowTimeline =
+          forceBottomLock ||
           sessionChanged ||
           (contentChanged && (_timelineWasNearBottom || nearBottomNow));
-
-      if (messageCount > 0 && (sessionChanged || sessionLoadFinished)) {
-        _beginTimelineBottomLock(scopeKey);
-      }
 
       if (shouldFollowTimeline) {
         final target = position.maxScrollExtent;
@@ -905,6 +928,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     String sessionId, {
     required bool compact,
   }) async {
+    _forceTimelineBottomForSession(sessionId);
     if (compact && (_scaffoldKey.currentState?.isDrawerOpen ?? false)) {
       Navigator.of(context).pop();
       await Future<void>.delayed(Duration.zero);

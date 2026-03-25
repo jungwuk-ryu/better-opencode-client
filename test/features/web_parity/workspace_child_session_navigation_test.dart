@@ -91,6 +91,88 @@ void main() {
       expect(find.text('hello from main session'), findsOneWidget);
     },
   );
+
+  testWidgets(
+    'returning from a child session keeps the parent timeline pinned to the bottom',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final createdControllers = <_AsyncChildSessionWorkspaceController>[];
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              final controller = _AsyncChildSessionWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+              createdControllers.add(controller);
+              return controller;
+            },
+      );
+      addTearDown(appController.dispose);
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          initialRoute: buildWorkspaceRoute(
+            '/workspace/demo',
+            sessionId: 'ses_root',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.pumpAndSettle();
+
+      final controller = createdControllers.single;
+      final listFinder = find.byKey(
+        const PageStorageKey<String>('web-parity-message-timeline'),
+      );
+      ScrollPosition position() =>
+          tester.widget<ListView>(listFinder).controller!.position;
+
+      expect(position().maxScrollExtent, greaterThan(0));
+      expect(position().pixels, closeTo(position().maxScrollExtent, 96));
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('timeline-activity-link-part_task')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+      await tester.pumpAndSettle();
+
+      expect(controller.selectSessionCalls, contains('ses_child'));
+      expect(find.text('child session output'), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('workspace-back-to-main-session-link'),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.pumpAndSettle();
+
+      expect(controller.selectSessionCalls, contains('ses_root'));
+      expect(find.text('parent session footer'), findsOneWidget);
+      expect(position().maxScrollExtent, greaterThan(0));
+      expect(position().pixels, closeTo(position().maxScrollExtent, 96));
+    },
+  );
 }
 
 class _WorkspaceRouteHarness extends StatelessWidget {
@@ -290,7 +372,7 @@ class _ChildSessionWorkspaceController extends WorkspaceController {
           ),
         ],
       ),
-      const ChatMessage(
+      ChatMessage(
         info: ChatMessageInfo(
           id: 'msg_root_assistant',
           role: 'assistant',
@@ -334,4 +416,201 @@ class _FakePtyService extends PtyService {
   }) async {
     return const <PtySessionInfo>[];
   }
+}
+
+class _AsyncChildSessionWorkspaceController extends WorkspaceController {
+  _AsyncChildSessionWorkspaceController({
+    required super.profile,
+    required super.directory,
+    super.initialSessionId,
+  });
+
+  static const ProjectTarget _projectTarget = ProjectTarget(
+    directory: '/workspace/demo',
+    label: 'Demo',
+    source: 'server',
+    vcs: 'git',
+    branch: 'main',
+  );
+
+  static final List<SessionSummary> _sessions = <SessionSummary>[
+    SessionSummary(
+      id: 'ses_root',
+      directory: '/workspace/demo',
+      title: 'Main Session',
+      version: '1',
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(1710000001000),
+    ),
+    SessionSummary(
+      id: 'ses_child',
+      directory: '/workspace/demo',
+      title: 'Bootstrap repo tooling',
+      version: '1',
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(1710000002000),
+      parentId: 'ses_root',
+    ),
+  ];
+
+  static final Map<String, SessionStatusSummary> _statuses =
+      <String, SessionStatusSummary>{
+        'ses_root': const SessionStatusSummary(type: 'idle'),
+        'ses_child': const SessionStatusSummary(type: 'idle'),
+      };
+
+  bool _loading = true;
+  String? _selectedSessionId;
+  List<ChatMessage> _messages = const <ChatMessage>[];
+
+  final List<String?> selectSessionCalls = <String?>[];
+
+  @override
+  bool get loading => _loading;
+
+  @override
+  ProjectTarget? get project => _projectTarget;
+
+  @override
+  List<ProjectTarget> get availableProjects => const <ProjectTarget>[
+    _projectTarget,
+  ];
+
+  @override
+  List<SessionSummary> get sessions => _sessions;
+
+  @override
+  List<SessionSummary> get visibleSessions => _sessions
+      .where((session) => session.parentId == null)
+      .toList(growable: false);
+
+  @override
+  Map<String, SessionStatusSummary> get statuses => _statuses;
+
+  @override
+  String? get selectedSessionId => _selectedSessionId;
+
+  @override
+  SessionSummary? get selectedSession {
+    final selectedSessionId = _selectedSessionId;
+    if (selectedSessionId == null) {
+      return null;
+    }
+    for (final session in _sessions) {
+      if (session.id == selectedSessionId) {
+        return session;
+      }
+    }
+    return null;
+  }
+
+  @override
+  SessionStatusSummary? get selectedStatus {
+    final selectedSessionId = _selectedSessionId;
+    if (selectedSessionId == null) {
+      return null;
+    }
+    return _statuses[selectedSessionId];
+  }
+
+  @override
+  List<ChatMessage> get messages => _messages;
+
+  @override
+  Future<void> load() async {
+    _selectedSessionId = initialSessionId ?? 'ses_root';
+    notifyListeners();
+    await Future<void>.delayed(const Duration(milliseconds: 24));
+    _messages = _messageListFor(_selectedSessionId);
+    _loading = false;
+    notifyListeners();
+  }
+
+  @override
+  Future<void> selectSession(String? sessionId) async {
+    selectSessionCalls.add(sessionId);
+    _selectedSessionId = sessionId;
+    _messages = const <ChatMessage>[];
+    notifyListeners();
+    await Future<void>.delayed(const Duration(milliseconds: 24));
+    _messages = _messageListFor(sessionId);
+    notifyListeners();
+  }
+
+  List<ChatMessage> _messageListFor(String? sessionId) {
+    if (sessionId == 'ses_child') {
+      return <ChatMessage>[
+        const ChatMessage(
+          info: ChatMessageInfo(
+            id: 'msg_child',
+            role: 'assistant',
+            sessionId: 'ses_child',
+          ),
+          parts: <ChatPart>[
+            ChatPart(
+              id: 'part_child',
+              type: 'text',
+              text: 'child session output',
+            ),
+          ],
+        ),
+      ];
+    }
+    return <ChatMessage>[
+      const ChatMessage(
+        info: ChatMessageInfo(
+          id: 'msg_root_user',
+          role: 'user',
+          sessionId: 'ses_root',
+        ),
+        parts: <ChatPart>[
+          ChatPart(
+            id: 'part_root_user',
+            type: 'text',
+            text: 'please delegate bootstrap repo tooling',
+          ),
+        ],
+      ),
+      ChatMessage(
+        info: ChatMessageInfo(
+          id: 'msg_root_assistant',
+          role: 'assistant',
+          sessionId: 'ses_root',
+        ),
+        parts: <ChatPart>[
+          ChatPart(
+            id: 'part_root_text',
+            type: 'text',
+            text: 'hello from main session\n\n${_LongRootSessionText.value}',
+          ),
+          ChatPart(
+            id: 'part_task',
+            type: 'tool',
+            tool: 'task',
+            metadata: <String, Object?>{
+              'state': <String, Object?>{
+                'status': 'completed',
+                'input': <String, Object?>{
+                  'description': 'Bootstrap repo tooling',
+                },
+                'metadata': <String, Object?>{'sessionId': 'ses_child'},
+              },
+              'command': 'delegate bootstrap repo tooling',
+            },
+          ),
+          ChatPart(
+            id: 'part_root_footer',
+            type: 'text',
+            text: 'parent session footer',
+          ),
+        ],
+      ),
+    ];
+  }
+}
+
+class _LongRootSessionText {
+  static final String value = List<String>.generate(
+    160,
+    (index) =>
+        'parent session line $index with enough content to wrap across the timeline width.',
+  ).join('\n');
 }
