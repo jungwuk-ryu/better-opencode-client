@@ -12,6 +12,7 @@ import '../chat/session_action_service.dart';
 import '../commands/command_service.dart';
 import '../files/file_browser_service.dart';
 import '../files/file_models.dart';
+import '../files/review_diff_service.dart';
 import '../projects/project_catalog_service.dart';
 import '../projects/project_models.dart';
 import '../projects/project_store.dart';
@@ -53,6 +54,7 @@ class WorkspaceController extends ChangeNotifier {
     ProjectCatalogService? projectCatalogService,
     ProjectStore? projectStore,
     FileBrowserService? fileBrowserService,
+    ReviewDiffService? reviewDiffService,
     TodoService? todoService,
     RequestService? requestService,
     EventStreamService? eventStreamService,
@@ -66,6 +68,7 @@ class WorkspaceController extends ChangeNotifier {
            projectCatalogService ?? ProjectCatalogService(),
        _projectStore = projectStore ?? ProjectStore(),
        _fileBrowserService = fileBrowserService ?? FileBrowserService(),
+       _reviewDiffService = reviewDiffService ?? ReviewDiffService(),
        _todoService = todoService ?? TodoService(),
        _requestService = requestService ?? RequestService(),
        _eventStreamService = eventStreamService ?? EventStreamService(),
@@ -77,6 +80,7 @@ class WorkspaceController extends ChangeNotifier {
        _ownsChatService = chatService == null,
        _ownsProjectCatalogService = projectCatalogService == null,
        _ownsFileBrowserService = fileBrowserService == null,
+       _ownsReviewDiffService = reviewDiffService == null,
        _ownsTodoService = todoService == null,
        _ownsRequestService = requestService == null,
        _ownsEventStreamService = eventStreamService == null,
@@ -94,6 +98,7 @@ class WorkspaceController extends ChangeNotifier {
   final ProjectCatalogService _projectCatalogService;
   final ProjectStore _projectStore;
   final FileBrowserService _fileBrowserService;
+  final ReviewDiffService _reviewDiffService;
   final TodoService _todoService;
   final RequestService _requestService;
   final EventStreamService _eventStreamService;
@@ -105,6 +110,7 @@ class WorkspaceController extends ChangeNotifier {
   final bool _ownsChatService;
   final bool _ownsProjectCatalogService;
   final bool _ownsFileBrowserService;
+  final bool _ownsReviewDiffService;
   final bool _ownsTodoService;
   final bool _ownsRequestService;
   final bool _ownsEventStreamService;
@@ -122,9 +128,11 @@ class WorkspaceController extends ChangeNotifier {
   bool _terminalOpen = false;
   bool _loadingFilePreview = false;
   String? _loadingFileDirectoryPath;
+  bool _loadingReviewDiff = false;
   WorkspaceSideTab _sideTab = WorkspaceSideTab.review;
   String? _error;
   String? _sessionLoadError;
+  String? _reviewDiffError;
   String? _actionNotice;
   ProjectTarget? _project;
   List<ProjectTarget> _availableProjects = const <ProjectTarget>[];
@@ -136,6 +144,8 @@ class WorkspaceController extends ChangeNotifier {
   FileBrowserBundle? _fileBundle;
   Set<String> _expandedFileDirectories = <String>{};
   Set<String> _loadedFileDirectories = <String>{};
+  String? _selectedReviewPath;
+  FileDiffSummary? _reviewDiff;
   List<TodoItem> _todos = const <TodoItem>[];
   PendingRequestBundle _pendingRequests = const PendingRequestBundle(
     questions: <QuestionRequestSummary>[],
@@ -154,6 +164,7 @@ class WorkspaceController extends ChangeNotifier {
   String? _serverDefaultReasoning;
   int _promptRefreshRevision = 0;
   int _sessionLoadRevision = 0;
+  int _reviewDiffRevision = 0;
 
   bool get loading => _loading;
   bool get sessionLoading => _sessionLoading;
@@ -162,9 +173,11 @@ class WorkspaceController extends ChangeNotifier {
   bool get terminalOpen => _terminalOpen;
   bool get loadingFilePreview => _loadingFilePreview;
   String? get loadingFileDirectoryPath => _loadingFileDirectoryPath;
+  bool get loadingReviewDiff => _loadingReviewDiff;
   WorkspaceSideTab get sideTab => _sideTab;
   String? get error => _error;
   String? get sessionLoadError => _sessionLoadError;
+  String? get reviewDiffError => _reviewDiffError;
   String? get actionNotice => _actionNotice;
   ProjectTarget? get project => _project;
   List<ProjectTarget> get availableProjects => _availableProjects;
@@ -176,6 +189,8 @@ class WorkspaceController extends ChangeNotifier {
   FileBrowserBundle? get fileBundle => _fileBundle;
   Set<String> get expandedFileDirectories =>
       UnmodifiableSetView<String>(_expandedFileDirectories);
+  String? get selectedReviewPath => _selectedReviewPath;
+  FileDiffSummary? get reviewDiff => _reviewDiff;
   List<TodoItem> get todos => _todos;
   PendingRequestBundle get pendingRequests => _pendingRequests;
   QuestionRequestSummary? get currentQuestionRequest =>
@@ -382,6 +397,10 @@ class WorkspaceController extends ChangeNotifier {
     _loadingFileDirectoryPath = null;
     _expandedFileDirectories = <String>{};
     _loadedFileDirectories = <String>{};
+    _loadingReviewDiff = false;
+    _reviewDiffError = null;
+    _selectedReviewPath = null;
+    _reviewDiff = null;
     _todos = const <TodoItem>[];
     _pendingRequests = const PendingRequestBundle(
       questions: <QuestionRequestSummary>[],
@@ -435,6 +454,9 @@ class WorkspaceController extends ChangeNotifier {
     _sessionLoading = false;
     _sessionLoadError = null;
     _todos = const <TodoItem>[];
+    _loadingReviewDiff = false;
+    _reviewDiffError = null;
+    _reviewDiff = null;
     _notify();
 
     if (sessionId == null || sessionId.isEmpty) {
@@ -465,6 +487,21 @@ class WorkspaceController extends ChangeNotifier {
       loadPanels: true,
       persistHint: true,
     );
+  }
+
+  Future<void> selectReviewFile(String path) async {
+    final project = _project;
+    final trimmed = path.trim();
+    if (project == null || trimmed.isEmpty) {
+      return;
+    }
+    if (_selectedReviewPath == trimmed &&
+        _reviewDiff != null &&
+        _reviewDiffError == null &&
+        !_loadingReviewDiff) {
+      return;
+    }
+    await _loadReviewDiff(path: trimmed, project: project);
   }
 
   Future<void> selectFile(String path) async {
@@ -588,6 +625,65 @@ class WorkspaceController extends ChangeNotifier {
     } finally {
       if (!_disposed && _loadingFileDirectoryPath == trimmed) {
         _loadingFileDirectoryPath = null;
+        _notify();
+      }
+    }
+  }
+
+  Future<void> _loadReviewDiff({
+    required String path,
+    required ProjectTarget project,
+  }) async {
+    FileStatusSummary? status;
+    for (final item in _fileBundle?.statuses ?? const <FileStatusSummary>[]) {
+      if (item.path == path) {
+        status = item;
+        break;
+      }
+    }
+    if (status == null) {
+      _selectedReviewPath = path;
+      _reviewDiff = null;
+      _reviewDiffError = 'Could not find diff metadata for this file.';
+      _loadingReviewDiff = false;
+      _notify();
+      return;
+    }
+
+    final revision = ++_reviewDiffRevision;
+    _selectedReviewPath = path;
+    _reviewDiff = null;
+    _reviewDiffError = null;
+    _loadingReviewDiff = true;
+    _notify();
+
+    try {
+      final diff = await _reviewDiffService.fetchDiff(
+        profile: profile,
+        project: project,
+        status: status,
+      );
+      if (_disposed ||
+          revision != _reviewDiffRevision ||
+          _selectedReviewPath != path) {
+        return;
+      }
+      _reviewDiff = diff;
+      _reviewDiffError = null;
+    } catch (error) {
+      if (_disposed ||
+          revision != _reviewDiffRevision ||
+          _selectedReviewPath != path) {
+        return;
+      }
+      _reviewDiff = null;
+      _reviewDiffError =
+          'Couldn\'t load the diff for this file.\n${error.toString().trim()}';
+    } finally {
+      if (!_disposed &&
+          revision == _reviewDiffRevision &&
+          _selectedReviewPath == path) {
+        _loadingReviewDiff = false;
         _notify();
       }
     }
@@ -1373,14 +1469,27 @@ class WorkspaceController extends ChangeNotifier {
       _expandedFileDirectories = _fileBundle?.selectedPath == null
           ? <String>{}
           : _ancestorDirectories(_fileBundle!.selectedPath!);
+      final statuses = _fileBundle?.statuses ?? const <FileStatusSummary>[];
+      _selectedReviewPath = statuses.isEmpty ? null : statuses.first.path;
+      _reviewDiff = null;
+      _reviewDiffError = null;
+      _loadingReviewDiff = false;
     } catch (_) {
       _fileBundle = null;
       _loadingFilePreview = false;
       _loadingFileDirectoryPath = null;
       _expandedFileDirectories = <String>{};
       _loadedFileDirectories = <String>{};
+      _selectedReviewPath = null;
+      _reviewDiff = null;
+      _reviewDiffError = null;
+      _loadingReviewDiff = false;
     }
     await _loadSessionPanels();
+    final selectedReviewPath = _selectedReviewPath;
+    if (_fileBundle != null && selectedReviewPath != null) {
+      unawaited(_loadReviewDiff(path: selectedReviewPath, project: project));
+    }
   }
 
   Future<void> _loadSessionPanels() async {
@@ -1754,6 +1863,9 @@ class WorkspaceController extends ChangeNotifier {
     }
     if (_ownsFileBrowserService) {
       _fileBrowserService.dispose();
+    }
+    if (_ownsReviewDiffService) {
+      _reviewDiffService.dispose();
     }
     if (_ownsTodoService) {
       _todoService.dispose();

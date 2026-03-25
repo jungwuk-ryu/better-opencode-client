@@ -77,6 +77,27 @@ class FileContentSummary {
   };
 }
 
+class FileDiffSummary {
+  const FileDiffSummary({required this.path, required this.content});
+
+  final String path;
+  final String content;
+
+  bool get isEmpty => content.trim().isEmpty;
+
+  factory FileDiffSummary.fromJson(Map<String, Object?> json) {
+    return FileDiffSummary(
+      path: (json['path'] as String?) ?? '',
+      content: (json['content'] as String?) ?? '',
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'path': path,
+    'content': content,
+  };
+}
+
 class TextMatchSummary {
   const TextMatchSummary({required this.path, required this.lines});
 

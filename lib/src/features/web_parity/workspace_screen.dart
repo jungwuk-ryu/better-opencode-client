@@ -5207,6 +5207,13 @@ class _SidePanel extends StatelessWidget {
               statuses:
                   controller.fileBundle?.statuses ??
                   const <FileStatusSummary>[],
+              selectedPath: controller.selectedReviewPath,
+              diff: controller.reviewDiff,
+              loadingDiff: controller.loadingReviewDiff,
+              diffError: controller.reviewDiffError,
+              onSelectFile: (path) {
+                unawaited(controller.selectReviewFile(path));
+              },
             ),
             WorkspaceSideTab.files => _FilesPanel(
               bundle: controller.fileBundle,
@@ -5233,14 +5240,26 @@ class _SidePanel extends StatelessWidget {
 }
 
 class _ReviewPanel extends StatelessWidget {
-  const _ReviewPanel({required this.statuses});
+  const _ReviewPanel({
+    required this.statuses,
+    required this.selectedPath,
+    required this.diff,
+    required this.loadingDiff,
+    required this.diffError,
+    required this.onSelectFile,
+  });
 
   final List<FileStatusSummary> statuses;
+  final String? selectedPath;
+  final FileDiffSummary? diff;
+  final bool loadingDiff;
+  final String? diffError;
+  final ValueChanged<String> onSelectFile;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final surfaces = theme.extension<AppSurfaces>()!;
     if (statuses.isEmpty) {
       return Center(
         child: Text(
@@ -5251,61 +5270,169 @@ class _ReviewPanel extends StatelessWidget {
         ),
       );
     }
-    return ListView.separated(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      itemCount: statuses.length,
-      separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.xs),
-      itemBuilder: (context, index) {
-        final item = statuses[index];
-        final statusColor = _reviewStatusColor(item.status, surfaces);
-        final addedColor = item.added > 0 ? surfaces.success : surfaces.muted;
-        final removedColor =
-            item.removed > 0 ? surfaces.danger : surfaces.muted;
-        return ListTile(
-          leading: Icon(
-            _reviewStatusIcon(item.status),
-            color: statusColor,
-            size: 18,
+    return Column(
+      children: <Widget>[
+        Expanded(
+          child: ListView.separated(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            itemCount: statuses.length,
+            separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.xs),
+            itemBuilder: (context, index) {
+              final item = statuses[index];
+              final statusColor = _reviewStatusColor(item.status, surfaces);
+              final addedColor =
+                  item.added > 0 ? surfaces.success : surfaces.muted;
+              final removedColor =
+                  item.removed > 0 ? surfaces.danger : surfaces.muted;
+              final selected = item.path == selectedPath;
+              return ListTile(
+                selected: selected,
+                tileColor: selected
+                    ? theme.colorScheme.primary.withValues(alpha: 0.12)
+                    : null,
+                leading: Icon(
+                  _reviewStatusIcon(item.status),
+                  color: statusColor,
+                  size: 18,
+                ),
+                title: Text(
+                  item.path,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                subtitle: Text.rich(
+                  key: ValueKey<String>('review-status-${item.path}'),
+                  TextSpan(
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: surfaces.muted,
+                    ),
+                    children: <InlineSpan>[
+                      TextSpan(
+                        text: item.status,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: statusColor,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const TextSpan(text: '  •  '),
+                      TextSpan(
+                        text: '+${item.added}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: addedColor,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const TextSpan(text: '  '),
+                      TextSpan(
+                        text: '-${item.removed}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: removedColor,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                onTap: () => onSelectFile(item.path),
+              );
+            },
           ),
-          title: Text(
-            item.path,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w600,
+        ),
+        if (selectedPath != null)
+          Container(
+            height: 280,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              border: Border(top: BorderSide(color: surfaces.lineSoft)),
             ),
-          ),
-          subtitle: Text.rich(
-            key: ValueKey<String>('review-status-${item.path}'),
-            TextSpan(
-              style: theme.textTheme.bodySmall?.copyWith(color: surfaces.muted),
-              children: <InlineSpan>[
-                TextSpan(
-                  text: item.status,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: statusColor,
-                    fontWeight: FontWeight.w700,
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                  child: Text(
+                    selectedPath!,
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: surfaces.muted,
+                    ),
                   ),
                 ),
-                const TextSpan(text: '  •  '),
-                TextSpan(
-                  text: '+${item.added}',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: addedColor,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const TextSpan(text: '  '),
-                TextSpan(
-                  text: '-${item.removed}',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: removedColor,
-                    fontWeight: FontWeight.w700,
-                  ),
+                Expanded(
+                  child: loadingDiff
+                      ? const Center(child: CircularProgressIndicator())
+                      : diffError != null
+                      ? Center(
+                          child: Text(
+                            diffError!,
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: surfaces.muted,
+                            ),
+                          ),
+                        )
+                      : diff == null || diff!.isEmpty
+                      ? Center(
+                          child: Text(
+                            'No diff output for this file.',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: surfaces.muted,
+                            ),
+                          ),
+                        )
+                      : _ReviewDiffView(diff: diff!),
                 ),
               ],
             ),
           ),
-        );
-      },
+      ],
+    );
+  }
+}
+
+class _ReviewDiffView extends StatelessWidget {
+  const _ReviewDiffView({required this.diff});
+
+  final FileDiffSummary diff;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: surfaces.panelMuted,
+        borderRadius: BorderRadius.circular(AppSpacing.md),
+        border: Border.all(color: surfaces.lineSoft),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minWidth: constraints.maxWidth),
+              child: SingleChildScrollView(
+                child: SelectableText.rich(
+                  TextSpan(
+                    children: _buildReviewDiffSpans(
+                      diff.content,
+                      theme: theme,
+                      surfaces: surfaces,
+                    ),
+                  ),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontFamily: 'monospace',
+                    height: 1.45,
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 }
@@ -5348,6 +5475,69 @@ IconData _reviewStatusIcon(String status) {
     default:
       return Icons.description_outlined;
   }
+}
+
+List<InlineSpan> _buildReviewDiffSpans(
+  String content, {
+  required ThemeData theme,
+  required AppSurfaces surfaces,
+}) {
+  if (content.isEmpty) {
+    return const <InlineSpan>[];
+  }
+
+  final lines = content.split('\n');
+  final spans = <InlineSpan>[];
+  for (var index = 0; index < lines.length; index += 1) {
+    final line = lines[index];
+    final style = _reviewDiffLineStyle(line, theme: theme, surfaces: surfaces);
+    spans.add(TextSpan(text: line, style: style));
+    if (index != lines.length - 1) {
+      spans.add(const TextSpan(text: '\n'));
+    }
+  }
+  return spans;
+}
+
+TextStyle? _reviewDiffLineStyle(
+  String line, {
+  required ThemeData theme,
+  required AppSurfaces surfaces,
+}) {
+  final base = theme.textTheme.bodySmall?.copyWith(
+    fontFamily: 'monospace',
+    height: 1.45,
+    color: theme.colorScheme.onSurface,
+  );
+  if (line.startsWith('+++') || line.startsWith('---')) {
+    return base?.copyWith(color: surfaces.warning, fontWeight: FontWeight.w700);
+  }
+  if (line.startsWith('@@')) {
+    return base?.copyWith(
+      color: theme.colorScheme.primary,
+      fontWeight: FontWeight.w700,
+    );
+  }
+  if (line.startsWith('diff --git') ||
+      line.startsWith('index ') ||
+      line.startsWith('new file') ||
+      line.startsWith('deleted file') ||
+      line.startsWith('rename ')) {
+    return base?.copyWith(color: surfaces.warning);
+  }
+  if (line.startsWith('+') && !line.startsWith('+++')) {
+    return base?.copyWith(
+      color: surfaces.success,
+      backgroundColor: surfaces.success.withValues(alpha: 0.08),
+    );
+  }
+  if (line.startsWith('-') && !line.startsWith('---')) {
+    return base?.copyWith(
+      color: surfaces.danger,
+      backgroundColor: surfaces.danger.withValues(alpha: 0.08),
+    );
+  }
+  return base;
 }
 
 class _FilesPanel extends StatefulWidget {
