@@ -6585,7 +6585,7 @@ bool _isToolLikePart(ChatPart part) {
 
 String _partTitle(ChatPart part) {
   return switch (part.type) {
-    'tool' => _toolTitle(part.tool),
+    'tool' => _toolTitle(part),
     'reasoning' => 'Thinking',
     'step-start' => 'Step',
     'step-finish' => 'Step Result',
@@ -6599,8 +6599,8 @@ String _partTitle(ChatPart part) {
   };
 }
 
-String _toolTitle(String? tool) {
-  final value = tool?.trim().toLowerCase();
+String _toolTitle(ChatPart part) {
+  final value = part.tool?.trim().toLowerCase();
   return switch (value) {
     null || '' => 'Tool',
     'bash' => 'Shell',
@@ -6611,8 +6611,19 @@ String _toolTitle(String? tool) {
     'webfetch' => 'Web Fetch',
     'codesearch' => 'Code Search',
     'todowrite' => 'To-dos',
+    'skill' => _skillToolName(part) ?? 'Skill',
     final other => _titleCase(other),
   };
+}
+
+String? _skillToolName(ChatPart part) {
+  return _firstNonEmpty(<String?>[
+    _nestedString(part.metadata, const <String>['state', 'input', 'name']),
+    _nestedString(part.metadata, const <String>['input', 'name']),
+    _nestedString(part.metadata, const <String>['name']),
+    _nestedString(part.metadata, const <String>['state', 'name']),
+    _nestedString(part.metadata, const <String>['state', 'title']),
+  ]);
 }
 
 bool _shouldRenderTimelinePart(

@@ -97,6 +97,7 @@ void main() {
       find.byKey(const ValueKey<String>('timeline-shell-copy-part_tool')),
       findsOneWidget,
     );
+    expect(find.textContaining('release-checklist'), findsOneWidget);
 
     await tester.tap(
       find.byKey(const ValueKey<String>('timeline-activity-part_reasoning')),
@@ -459,6 +460,20 @@ class _TimelineWorkspaceController extends WorkspaceController {
                 'command': 'git diff --staged && git diff',
               },
               'output': 'M README.md\n M lib/main.dart',
+            },
+          },
+        ),
+        const ChatPart(
+          id: 'part_skill',
+          type: 'tool',
+          tool: 'skill',
+          metadata: <String, Object?>{
+            'state': <String, Object?>{
+              'status': 'completed',
+              'input': <String, Object?>{
+                'name': 'release-checklist',
+                'description': 'Review the release safety checklist',
+              },
             },
           },
         ),
