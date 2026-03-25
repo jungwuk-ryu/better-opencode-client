@@ -189,6 +189,68 @@ void main() {
     final resizedHeight = tester.getSize(panelFinder).height;
     expect(resizedHeight, greaterThan(initialHeight));
   });
+
+  testWidgets('review panel uses diff-style colors for file status text', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory: ({
+        required profile,
+        required directory,
+        initialSessionId,
+      }) {
+        return _FilesWorkspaceController(
+          profile: profile,
+          directory: directory,
+          initialSessionId: initialSessionId,
+        );
+      },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Review'));
+    await tester.pumpAndSettle();
+
+    final statusText = tester.widget<Text>(
+      find.byKey(const ValueKey<String>('review-status-README.md')),
+    );
+    final statusSpans = (statusText.textSpan! as TextSpan).children!
+        .whereType<TextSpan>()
+        .toList(growable: false);
+    final surfaces = AppTheme.dark().extension<AppSurfaces>()!;
+
+    expect(
+      statusSpans.firstWhere((span) => span.text == 'modified').style?.color,
+      surfaces.warning,
+    );
+    expect(
+      statusSpans.firstWhere((span) => span.text == '+4').style?.color,
+      surfaces.success,
+    );
+    expect(
+      statusSpans.firstWhere((span) => span.text == '-1').style?.color,
+      surfaces.danger,
+    );
+  });
 }
 
 class _WorkspaceRouteHarness extends StatelessWidget {
@@ -357,7 +419,20 @@ class _FilesWorkspaceController extends WorkspaceController {
       searchResults: const <String>[],
       textMatches: const <TextMatchSummary>[],
       symbols: const <SymbolSummary>[],
-      statuses: const <FileStatusSummary>[],
+      statuses: const <FileStatusSummary>[
+        FileStatusSummary(
+          path: 'README.md',
+          status: 'modified',
+          added: 4,
+          removed: 1,
+        ),
+        FileStatusSummary(
+          path: 'lib/main.dart',
+          status: 'added',
+          added: 22,
+          removed: 0,
+        ),
+      ],
       preview: const FileContentSummary(
         type: 'text',
         content: '# README preview',

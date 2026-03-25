@@ -5239,6 +5239,7 @@ class _ReviewPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     if (statuses.isEmpty) {
       return Center(
@@ -5256,12 +5257,96 @@ class _ReviewPanel extends StatelessWidget {
       separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.xs),
       itemBuilder: (context, index) {
         final item = statuses[index];
+        final statusColor = _reviewStatusColor(item.status, surfaces);
+        final addedColor = item.added > 0 ? surfaces.success : surfaces.muted;
+        final removedColor =
+            item.removed > 0 ? surfaces.danger : surfaces.muted;
         return ListTile(
-          title: Text(item.path),
-          subtitle: Text('${item.status}  •  +${item.added}  -${item.removed}'),
+          leading: Icon(
+            _reviewStatusIcon(item.status),
+            color: statusColor,
+            size: 18,
+          ),
+          title: Text(
+            item.path,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          subtitle: Text.rich(
+            key: ValueKey<String>('review-status-${item.path}'),
+            TextSpan(
+              style: theme.textTheme.bodySmall?.copyWith(color: surfaces.muted),
+              children: <InlineSpan>[
+                TextSpan(
+                  text: item.status,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: statusColor,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const TextSpan(text: '  •  '),
+                TextSpan(
+                  text: '+${item.added}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: addedColor,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const TextSpan(text: '  '),
+                TextSpan(
+                  text: '-${item.removed}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: removedColor,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
         );
       },
     );
+  }
+}
+
+Color _reviewStatusColor(String status, AppSurfaces surfaces) {
+  switch (status.toLowerCase()) {
+    case 'added':
+    case 'created':
+    case 'untracked':
+    case 'copied':
+      return surfaces.success;
+    case 'deleted':
+    case 'removed':
+      return surfaces.danger;
+    case 'modified':
+    case 'changed':
+    case 'renamed':
+    case 'typechange':
+      return surfaces.warning;
+    default:
+      return surfaces.muted;
+  }
+}
+
+IconData _reviewStatusIcon(String status) {
+  switch (status.toLowerCase()) {
+    case 'added':
+    case 'created':
+    case 'untracked':
+    case 'copied':
+      return Icons.add_circle_outline_rounded;
+    case 'deleted':
+    case 'removed':
+      return Icons.remove_circle_outline_rounded;
+    case 'modified':
+    case 'changed':
+    case 'renamed':
+    case 'typechange':
+      return Icons.change_circle_outlined;
+    default:
+      return Icons.description_outlined;
   }
 }
 
