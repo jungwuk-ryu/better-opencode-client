@@ -59,6 +59,10 @@ void main() {
     expect(find.text('Context Limit'), findsOneWidget);
     expect(find.text('1,050,000'), findsOneWidget);
     expect(find.text('Context Breakdown'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('context-breakdown-bar')),
+      findsOneWidget,
+    );
     expect(find.textContaining('Tool Calls'), findsWidgets);
     expect(find.text('System Prompt'), findsOneWidget);
     expect(find.text('OpenAI'), findsOneWidget);

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -5436,24 +5437,7 @@ class _ContextPanelState extends State<_ContextPanel> {
                 ),
               ),
               const SizedBox(height: AppSpacing.sm),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(999),
-                child: SizedBox(
-                  height: 8,
-                  child: Row(
-                    children: breakdown
-                        .map(
-                          (segment) => Expanded(
-                            flex: segment.tokens,
-                            child: ColoredBox(
-                              color: _breakdownColor(segment.key, surfaces),
-                            ),
-                          ),
-                        )
-                        .toList(growable: false),
-                  ),
-                ),
-              ),
+              _ContextBreakdownBar(segments: breakdown),
               const SizedBox(height: AppSpacing.sm),
               Wrap(
                 spacing: AppSpacing.md,
@@ -5585,6 +5569,60 @@ class _ContextStat extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _ContextBreakdownBar extends StatelessWidget {
+  const _ContextBreakdownBar({required this.segments});
+
+  final List<SessionContextBreakdownSegment> segments;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return Container(
+      key: const ValueKey<String>('context-breakdown-bar'),
+      height: 14,
+      decoration: BoxDecoration(
+        color: surfaces.panelMuted,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: surfaces.lineSoft),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.maxWidth;
+          if (width <= 0 || segments.isEmpty) {
+            return const SizedBox.shrink();
+          }
+
+          var offset = 0.0;
+          final children = <Widget>[];
+          for (var index = 0; index < segments.length; index += 1) {
+            final segment = segments[index];
+            final segmentWidth = index == segments.length - 1
+                ? math.max(0.0, width - offset)
+                : math.max(0.0, width * (segment.widthPercent / 100));
+            if (segmentWidth <= 0) {
+              continue;
+            }
+            children.add(
+              Positioned(
+                left: offset,
+                top: 0,
+                bottom: 0,
+                width: segmentWidth,
+                child: ColoredBox(
+                  color: _breakdownColor(segment.key, surfaces),
+                ),
+              ),
+            );
+            offset += segmentWidth;
+          }
+          return Stack(children: children);
+        },
+      ),
     );
   }
 }
