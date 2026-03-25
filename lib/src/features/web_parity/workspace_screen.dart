@@ -5265,7 +5265,7 @@ class _ReviewPanel extends StatelessWidget {
   }
 }
 
-class _FilesPanel extends StatelessWidget {
+class _FilesPanel extends StatefulWidget {
   const _FilesPanel({
     required this.bundle,
     required this.loadingPreview,
@@ -5283,9 +5283,37 @@ class _FilesPanel extends StatelessWidget {
   final ValueChanged<String> onToggleDirectory;
 
   @override
+  State<_FilesPanel> createState() => _FilesPanelState();
+}
+
+class _FilesPanelState extends State<_FilesPanel> {
+  static const double _defaultPreviewHeight = 220;
+  static const double _minPreviewHeight = 140;
+  static const double _minTreeHeight = 180;
+
+  double _previewHeight = _defaultPreviewHeight;
+
+  void _resizePreview(double deltaDy, double availableHeight) {
+    final maxPreviewHeight = (availableHeight - _minTreeHeight).clamp(
+      _minPreviewHeight,
+      availableHeight,
+    );
+    final next = (_previewHeight - deltaDy).clamp(
+      _minPreviewHeight,
+      maxPreviewHeight,
+    );
+    if (next == _previewHeight) {
+      return;
+    }
+    setState(() {
+      _previewHeight = next;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
-    final bundle = this.bundle;
+    final bundle = widget.bundle;
     if (bundle == null) {
       return Center(
         child: Text(
@@ -5298,122 +5326,216 @@ class _FilesPanel extends StatelessWidget {
     }
     final visibleNodes = _buildVisibleFileNodes(
       bundle: bundle,
-      expandedDirectories: expandedDirectories,
-      loadingDirectoryPath: loadingDirectoryPath,
+      expandedDirectories: widget.expandedDirectories,
+      loadingDirectoryPath: widget.loadingDirectoryPath,
     );
+    final hasPreview = bundle.selectedPath != null || bundle.preview != null;
 
-    return Column(
-      children: <Widget>[
-        Expanded(
-          child: ListView.separated(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            itemCount: visibleNodes.length,
-            separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.xs),
-            itemBuilder: (context, index) {
-              final entry = visibleNodes[index];
-              final node = entry.node;
-              final selected = node.path == bundle.selectedPath;
-              final isDirectory = node.type == 'directory';
-              return ListTile(
-                dense: true,
-                selected: selected,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AppSpacing.md),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableHeight = constraints.maxHeight.isFinite
+            ? constraints.maxHeight
+            : 700.0;
+        final previewHeight = hasPreview
+            ? _previewHeight.clamp(
+                _minPreviewHeight,
+                (availableHeight - _minTreeHeight).clamp(
+                  _minPreviewHeight,
+                  availableHeight,
                 ),
-                contentPadding: EdgeInsets.only(
-                  left: AppSpacing.md + (entry.depth * 18.0),
-                  right: AppSpacing.md,
-                ),
-                tileColor: selected
-                    ? Theme.of(
-                        context,
-                      ).colorScheme.primary.withValues(alpha: 0.12)
-                    : null,
-                leading: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    SizedBox(
-                      width: 18,
-                      child: isDirectory
-                          ? Icon(
-                              entry.expanded
-                                  ? Icons.expand_more_rounded
-                                  : Icons.chevron_right_rounded,
-                              size: 18,
-                              color: surfaces.muted,
-                            )
-                          : null,
+              )
+            : 0.0;
+
+        return Column(
+          children: <Widget>[
+            Expanded(
+              child: ListView.separated(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                itemCount: visibleNodes.length,
+                separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.xs),
+                itemBuilder: (context, index) {
+                  final entry = visibleNodes[index];
+                  final node = entry.node;
+                  final selected = node.path == bundle.selectedPath;
+                  final isDirectory = node.type == 'directory';
+                  return ListTile(
+                    dense: true,
+                    selected: selected,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(AppSpacing.md),
                     ),
-                    const SizedBox(width: AppSpacing.xs),
-                    Icon(
-                      isDirectory
-                          ? (entry.expanded
-                                ? Icons.folder_open_outlined
-                                : Icons.folder_outlined)
-                          : Icons.insert_drive_file_outlined,
+                    contentPadding: EdgeInsets.only(
+                      left: AppSpacing.md + (entry.depth * 18.0),
+                      right: AppSpacing.md,
+                    ),
+                    tileColor: selected
+                        ? Theme.of(
+                            context,
+                          ).colorScheme.primary.withValues(alpha: 0.12)
+                        : null,
+                    leading: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        SizedBox(
+                          width: 18,
+                          child: isDirectory
+                              ? Icon(
+                                  entry.expanded
+                                      ? Icons.expand_more_rounded
+                                      : Icons.chevron_right_rounded,
+                                  size: 18,
+                                  color: surfaces.muted,
+                                )
+                              : null,
+                        ),
+                        const SizedBox(width: AppSpacing.xs),
+                        Icon(
+                          isDirectory
+                              ? (entry.expanded
+                                    ? Icons.folder_open_outlined
+                                    : Icons.folder_outlined)
+                              : Icons.insert_drive_file_outlined,
+                        ),
+                      ],
+                    ),
+                    title: Text(node.name),
+                    subtitle: Text(node.path),
+                    trailing: entry.loading
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : null,
+                    onTap: () => isDirectory
+                        ? widget.onToggleDirectory(node.path)
+                        : widget.onSelectFile(node.path),
+                  );
+                },
+              ),
+            ),
+            if (hasPreview)
+              Container(
+                key: const ValueKey<String>('files-preview-panel'),
+                height: previewHeight,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  border: Border(top: BorderSide(color: surfaces.lineSoft)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    GestureDetector(
+                      key: const ValueKey<String>('files-preview-resize-handle'),
+                      behavior: HitTestBehavior.opaque,
+                      onVerticalDragUpdate: (details) {
+                        _resizePreview(details.delta.dy, availableHeight);
+                      },
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.resizeUpDown,
+                        child: SizedBox(
+                          height: 20,
+                          width: double.infinity,
+                          child: Center(
+                            child: Container(
+                              width: 42,
+                              height: 4,
+                              decoration: BoxDecoration(
+                                color: surfaces.muted.withValues(alpha: 0.75),
+                                borderRadius: BorderRadius.circular(
+                                  AppSpacing.pillRadius,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          AppSpacing.md,
+                          0,
+                          AppSpacing.md,
+                          AppSpacing.md,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            if (bundle.selectedPath != null)
+                              Padding(
+                                padding: const EdgeInsets.only(
+                                  bottom: AppSpacing.sm,
+                                ),
+                                child: Text(
+                                  bundle.selectedPath!,
+                                  style: Theme.of(context).textTheme.labelMedium
+                                      ?.copyWith(color: surfaces.muted),
+                                ),
+                              ),
+                            Expanded(
+                              child: widget.loadingPreview
+                                  ? const Center(
+                                      child: CircularProgressIndicator(),
+                                    )
+                                  : bundle.preview == null
+                                  ? Center(
+                                      child: Text(
+                                        'Preview unavailable for this item.',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodyMedium
+                                            ?.copyWith(color: surfaces.muted),
+                                      ),
+                                    )
+                                  : Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.all(
+                                        AppSpacing.md,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: surfaces.panelMuted,
+                                        borderRadius: BorderRadius.circular(
+                                          AppSpacing.md,
+                                        ),
+                                        border: Border.all(
+                                          color: surfaces.lineSoft,
+                                        ),
+                                      ),
+                                      child: LayoutBuilder(
+                                        builder: (context, previewConstraints) {
+                                          return SingleChildScrollView(
+                                            child: ConstrainedBox(
+                                              constraints: BoxConstraints(
+                                                minWidth:
+                                                    previewConstraints.maxWidth,
+                                              ),
+                                              child: SelectableText(
+                                                bundle.preview!.content,
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .bodySmall
+                                                    ?.copyWith(
+                                                      fontFamily: 'monospace',
+                                                      height: 1.45,
+                                                    ),
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ],
                 ),
-                title: Text(node.name),
-                subtitle: Text(node.path),
-                trailing: entry.loading
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : null,
-                onTap: () => isDirectory
-                    ? onToggleDirectory(node.path)
-                    : onSelectFile(node.path),
-              );
-            },
-          ),
-        ),
-        if (bundle.selectedPath != null || bundle.preview != null)
-          Container(
-            height: 180,
-            width: double.infinity,
-            padding: const EdgeInsets.all(AppSpacing.md),
-            decoration: BoxDecoration(
-              border: Border(top: BorderSide(color: surfaces.lineSoft)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                if (bundle.selectedPath != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                    child: Text(
-                      bundle.selectedPath!,
-                      style: Theme.of(
-                        context,
-                      ).textTheme.labelMedium?.copyWith(color: surfaces.muted),
-                    ),
-                  ),
-                Expanded(
-                  child: loadingPreview
-                      ? const Center(child: CircularProgressIndicator())
-                      : bundle.preview == null
-                      ? Center(
-                          child: Text(
-                            'Preview unavailable for this item.',
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(color: surfaces.muted),
-                          ),
-                        )
-                      : SingleChildScrollView(
-                          child: SelectableText(
-                            bundle.preview!.content,
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(fontFamily: 'monospace'),
-                          ),
-                        ),
-                ),
-              ],
-            ),
-          ),
-      ],
+              ),
+          ],
+        );
+      },
     );
   }
 }
