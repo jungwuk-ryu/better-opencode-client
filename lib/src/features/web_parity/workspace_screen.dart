@@ -531,15 +531,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     if (controller == null) {
       return;
     }
-    final sessionId = await controller.submitPrompt(_promptController.text);
+    await controller.submitPrompt(_promptController.text);
     _promptController.clear();
-    if (!mounted || sessionId == null) {
-      return;
-    }
-    final route = buildWorkspaceRoute(widget.directory, sessionId: sessionId);
-    if (ModalRoute.of(context)?.settings.name != route) {
-      Navigator.of(context).pushReplacementNamed(route);
-    }
   }
 
   Future<void> _renameSelectedSession(WorkspaceController controller) async {
@@ -580,13 +573,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
 
   Future<void> _createNewSession(WorkspaceController controller) async {
     try {
-      final created = await controller.createEmptySession();
-      if (!mounted || created == null) {
-        return;
-      }
-      Navigator.of(context).pushReplacementNamed(
-        buildWorkspaceRoute(widget.directory, sessionId: created.id),
-      );
+      await controller.createEmptySession();
     } catch (error) {
       if (!mounted) {
         return;
@@ -611,6 +598,21 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _selectSessionInPlace(
+    WorkspaceController controller,
+    String sessionId, {
+    required bool compact,
+  }) async {
+    if (compact && (_scaffoldKey.currentState?.isDrawerOpen ?? false)) {
+      Navigator.of(context).pop();
+      await Future<void>.delayed(Duration.zero);
+      if (!mounted) {
+        return;
+      }
+    }
+    await controller.selectSession(sessionId);
   }
 
   @override
@@ -662,7 +664,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
             MediaQuery.sizeOf(context).width < AppSpacing.wideLayoutBreakpoint;
         final sidebar = _WorkspaceSidebar(
           currentDirectory: widget.directory,
-          currentSessionId: widget.sessionId,
+          currentSessionId: controller.selectedSessionId,
           projects: controller.availableProjects,
           sessions: controller.visibleSessions,
           statuses: controller.statuses,
@@ -672,8 +674,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
             ).pushReplacementNamed(buildWorkspaceRoute(project.directory));
           },
           onSelectSession: (sessionId) {
-            Navigator.of(context).pushReplacementNamed(
-              buildWorkspaceRoute(widget.directory, sessionId: sessionId),
+            unawaited(
+              _selectSessionInPlace(controller, sessionId, compact: compact),
             );
           },
           onNewSession: () => _createNewSession(controller),
@@ -716,38 +718,13 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                             ? null
                             : () async {
                                 await controller.forkSelectedSession();
-                                if (!context.mounted ||
-                                    controller.selectedSessionId == null) {
-                                  return;
-                                }
-                                Navigator.of(context).pushReplacementNamed(
-                                  buildWorkspaceRoute(
-                                    widget.directory,
-                                    sessionId: controller.selectedSessionId,
-                                  ),
-                                );
                               },
                         onShare: controller.selectedSession == null
                             ? null
                             : controller.shareSelectedSession,
                         onDelete: controller.selectedSession == null
                             ? null
-                            : () async {
-                                await controller.deleteSelectedSession();
-                                if (!context.mounted) {
-                                  return;
-                                }
-                                final nextRoute =
-                                    controller.selectedSessionId == null
-                                    ? buildWorkspaceRoute(widget.directory)
-                                    : buildWorkspaceRoute(
-                                        widget.directory,
-                                        sessionId: controller.selectedSessionId,
-                                      );
-                                Navigator.of(
-                                  context,
-                                ).pushReplacementNamed(nextRoute);
-                              },
+                            : controller.deleteSelectedSession,
                       ),
                       Expanded(
                         child: controller.loading

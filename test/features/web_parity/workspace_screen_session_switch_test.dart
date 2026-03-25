@@ -20,68 +20,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-    'switching sessions reuses the directory controller instead of reloading catalogs',
-    (tester) async {
-      final createdControllers = <_RecordingWorkspaceController>[];
-      final profile = ServerProfile(
-        id: 'server',
-        label: 'Mock',
-        baseUrl: 'http://localhost:3000',
-      );
-      final appController = _StaticAppController(
-        profile: profile,
-        workspaceControllerFactory: ({
-          required profile,
-          required directory,
-          initialSessionId,
-        }) {
-          final controller = _RecordingWorkspaceController(
-            profile: profile,
-            directory: directory,
-            initialSessionId: initialSessionId,
-          );
-          createdControllers.add(controller);
-          return controller;
-        },
-      );
-      addTearDown(appController.dispose);
-
-      final navigatorKey = GlobalKey<NavigatorState>();
-
-      await tester.pumpWidget(
-        _WorkspaceRouteHarness(
-          controller: appController,
-          navigatorKey: navigatorKey,
-          initialRoute: '/',
-        ),
-      );
-      navigatorKey.currentState!.pushNamed(
-        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
-      );
-      await tester.pumpAndSettle();
-
-      expect(createdControllers, hasLength(1));
-      expect(createdControllers.single.loadCount, 1);
-      expect(createdControllers.single.selectSessionCalls, isEmpty);
-      expect(createdControllers.single.selectedSessionId, 'ses_1');
-      expect(find.byType(WebParityWorkspaceScreen), findsOneWidget);
-      expect(find.text('Ask anything...'), findsOneWidget);
-
-      navigatorKey.currentState!.pushReplacementNamed(
-        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_2'),
-      );
-      await tester.pumpAndSettle();
-
-      expect(createdControllers, hasLength(1));
-      expect(createdControllers.single.loadCount, 1);
-      expect(createdControllers.single.selectSessionCalls, <String?>['ses_2']);
-      expect(createdControllers.single.selectedSessionId, 'ses_2');
-      expect(find.byType(WebParityWorkspaceScreen), findsOneWidget);
-    },
-  );
-
-  testWidgets(
-    'new session button creates a fresh session and routes to it',
+    'switching sessions keeps the same page and reuses the directory controller',
     (tester) async {
       tester.view.physicalSize = const Size(1600, 1000);
       tester.view.devicePixelRatio = 1;
@@ -96,19 +35,16 @@ void main() {
       );
       final appController = _StaticAppController(
         profile: profile,
-        workspaceControllerFactory: ({
-          required profile,
-          required directory,
-          initialSessionId,
-        }) {
-          final controller = _RecordingWorkspaceController(
-            profile: profile,
-            directory: directory,
-            initialSessionId: initialSessionId,
-          );
-          createdControllers.add(controller);
-          return controller;
-        },
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              final controller = _RecordingWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+              createdControllers.add(controller);
+              return controller;
+            },
       );
       addTearDown(appController.dispose);
 
@@ -129,15 +65,83 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(createdControllers, hasLength(1));
-      await tester.tap(find.widgetWithIcon(IconButton, Icons.add_rounded).first);
+      expect(createdControllers.single.loadCount, 1);
+      expect(createdControllers.single.selectSessionCalls, isEmpty);
+      expect(createdControllers.single.selectedSessionId, 'ses_1');
+      expect(find.byType(WebParityWorkspaceScreen), findsOneWidget);
+      expect(find.text('Ask anything...'), findsOneWidget);
+      expect(find.text('hello from one'), findsOneWidget);
+
+      final initialRouteName = observer.lastRouteName;
+
+      await tester.tap(find.text('Session Two'));
+      await tester.pumpAndSettle();
+
+      expect(createdControllers, hasLength(1));
+      expect(createdControllers.single.loadCount, 1);
+      expect(createdControllers.single.selectSessionCalls, <String?>['ses_2']);
+      expect(createdControllers.single.selectedSessionId, 'ses_2');
+      expect(find.text('hello from two'), findsOneWidget);
+      expect(observer.lastRouteName, initialRouteName);
+      expect(find.byType(WebParityWorkspaceScreen), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'new session button creates a fresh session without replacing the page',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final createdControllers = <_RecordingWorkspaceController>[];
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              final controller = _RecordingWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+              createdControllers.add(controller);
+              return controller;
+            },
+      );
+      addTearDown(appController.dispose);
+
+      final navigatorKey = GlobalKey<NavigatorState>();
+      final observer = _RecordingNavigatorObserver();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          navigatorKey: navigatorKey,
+          navigatorObservers: <NavigatorObserver>[observer],
+          initialRoute: '/',
+        ),
+      );
+      navigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+      );
+      await tester.pumpAndSettle();
+      final initialRouteName = observer.lastRouteName;
+
+      expect(createdControllers, hasLength(1));
+      await tester.tap(
+        find.widgetWithIcon(IconButton, Icons.add_rounded).first,
+      );
       await tester.pumpAndSettle();
 
       expect(createdControllers.single.createEmptySessionCalls, 1);
       expect(createdControllers.single.selectedSessionId, 'ses_new');
-      expect(
-        observer.lastRouteName,
-        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_new'),
-      );
+      expect(observer.lastRouteName, initialRouteName);
       expect(find.text('Fresh session'), findsAtLeastNWidgets(1));
     },
   );
@@ -158,19 +162,16 @@ void main() {
       );
       final appController = _StaticAppController(
         profile: profile,
-        workspaceControllerFactory: ({
-          required profile,
-          required directory,
-          initialSessionId,
-        }) {
-          final controller = _StreamingWorkspaceController(
-            profile: profile,
-            directory: directory,
-            initialSessionId: initialSessionId,
-          );
-          createdControllers.add(controller);
-          return controller;
-        },
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              final controller = _StreamingWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+              createdControllers.add(controller);
+              return controller;
+            },
       );
       addTearDown(appController.dispose);
 
@@ -192,8 +193,10 @@ void main() {
       final listFinder = find.byKey(
         const PageStorageKey<String>('web-parity-message-timeline'),
       );
-      final initialPosition =
-          tester.widget<ListView>(listFinder).controller!.position;
+      final initialPosition = tester
+          .widget<ListView>(listFinder)
+          .controller!
+          .position;
       final initialMaxExtent = initialPosition.maxScrollExtent;
 
       expect(initialMaxExtent, greaterThan(0));
@@ -206,8 +209,10 @@ void main() {
       await tester.pump(const Duration(milliseconds: 250));
       await tester.pumpAndSettle();
 
-      final updatedPosition =
-          tester.widget<ListView>(listFinder).controller!.position;
+      final updatedPosition = tester
+          .widget<ListView>(listFinder)
+          .controller!
+          .position;
       expect(updatedPosition.maxScrollExtent, greaterThan(initialMaxExtent));
       expect(
         updatedPosition.pixels,
@@ -492,9 +497,7 @@ class _StreamingWorkspaceController extends WorkspaceController {
     final last = next.removeLast();
     final updatedParts = List<ChatPart>.from(last.parts);
     final lastPart = updatedParts.removeLast();
-    updatedParts.add(
-      lastPart.copyWith(text: '${lastPart.text ?? ''}$extra'),
-    );
+    updatedParts.add(lastPart.copyWith(text: '${lastPart.text ?? ''}$extra'));
     next.add(last.copyWith(parts: updatedParts));
     _messages = next;
     notifyListeners();
@@ -508,17 +511,9 @@ class _StreamingWorkspaceController extends WorkspaceController {
         '$role message $index with enough content to wrap across lines.',
       ).join(' ');
       return ChatMessage(
-        info: ChatMessageInfo(
-          id: 'msg_$index',
-          role: role,
-          sessionId: 'ses_1',
-        ),
+        info: ChatMessageInfo(id: 'msg_$index', role: role, sessionId: 'ses_1'),
         parts: <ChatPart>[
-          ChatPart(
-            id: 'part_$index',
-            type: 'text',
-            text: text,
-          ),
+          ChatPart(id: 'part_$index', type: 'text', text: text),
         ],
       );
     });
