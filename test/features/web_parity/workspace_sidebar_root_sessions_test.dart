@@ -6,6 +6,9 @@ import 'package:opencode_mobile_remote/src/app/app_controller.dart';
 import 'package:opencode_mobile_remote/src/app/app_routes.dart';
 import 'package:opencode_mobile_remote/src/app/app_scope.dart';
 import 'package:opencode_mobile_remote/src/core/connection/connection_models.dart';
+import 'package:opencode_mobile_remote/src/core/network/opencode_server_probe.dart';
+import 'package:opencode_mobile_remote/src/core/spec/capability_registry.dart';
+import 'package:opencode_mobile_remote/src/core/spec/probe_snapshot.dart';
 import 'package:opencode_mobile_remote/src/design_system/app_theme.dart';
 import 'package:opencode_mobile_remote/src/features/chat/chat_models.dart';
 import 'package:opencode_mobile_remote/src/features/projects/project_models.dart';
@@ -32,24 +35,24 @@ void main() {
     );
     final appController = _StaticAppController(
       profile: profile,
-      workspaceControllerFactory: ({
-        required profile,
-        required directory,
-        initialSessionId,
-      }) {
-        return _SidebarWorkspaceController(
-          profile: profile,
-          directory: directory,
-          initialSessionId: initialSessionId,
-        );
-      },
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _SidebarWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
     );
     addTearDown(appController.dispose);
 
     await tester.pumpWidget(
       _WorkspaceRouteHarness(
         controller: appController,
-        initialRoute: buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
       ),
     );
     await tester.pump();
@@ -64,6 +67,73 @@ void main() {
       find.byKey(const ValueKey<String>('sidebar-session-shimmer-ses_1')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('sidebar settings opens a real workspace settings sheet', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      shellToolPartsExpandedValue: true,
+      timelineProgressDetailsVisibleValue: false,
+      report: _readyReport,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _SidebarWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(find.byIcon(Icons.help_outline_rounded), findsNothing);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('workspace-sidebar-settings-button')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 240));
+
+    expect(
+      find.byKey(const ValueKey<String>('workspace-settings-sheet')),
+      findsOneWidget,
+    );
+    expect(find.text('Workspace Settings'), findsOneWidget);
+    expect(find.text('Manage Servers'), findsOneWidget);
+    expect(find.text('Ready'), findsOneWidget);
+
+    final shellSwitch = find.descendant(
+      of: find.byKey(const ValueKey<String>('workspace-settings-shell-toggle')),
+      matching: find.byType(Switch),
+    );
+    await tester.tap(shellSwitch);
+    await tester.pump();
+
+    expect(appController.shellToolPartsExpanded, isFalse);
   });
 }
 
@@ -109,14 +179,62 @@ class _WorkspaceRouteHarness extends StatelessWidget {
 class _StaticAppController extends WebParityAppController {
   _StaticAppController({
     required this.profile,
+    this.report,
+    this.shellToolPartsExpandedValue = true,
+    this.timelineProgressDetailsVisibleValue = false,
     required WorkspaceControllerFactory workspaceControllerFactory,
   }) : super(workspaceControllerFactory: workspaceControllerFactory);
 
   final ServerProfile profile;
+  final ServerProbeReport? report;
+  bool shellToolPartsExpandedValue;
+  bool timelineProgressDetailsVisibleValue;
 
   @override
   ServerProfile? get selectedProfile => profile;
+
+  @override
+  ServerProbeReport? get selectedReport => report;
+
+  @override
+  bool get shellToolPartsExpanded => shellToolPartsExpandedValue;
+
+  @override
+  bool get timelineProgressDetailsVisible =>
+      timelineProgressDetailsVisibleValue;
+
+  @override
+  Future<void> setShellToolPartsExpanded(bool value) async {
+    shellToolPartsExpandedValue = value;
+    notifyListeners();
+  }
+
+  @override
+  Future<void> setTimelineProgressDetailsVisible(bool value) async {
+    timelineProgressDetailsVisibleValue = value;
+    notifyListeners();
+  }
 }
+
+final ProbeSnapshot _readySnapshot = ProbeSnapshot(
+  name: 'OpenCode',
+  version: '1.0.0',
+  paths: <String>{'/global/health', '/config', '/agent'},
+  endpoints: <String, ProbeEndpointResult>{},
+  config: const <String, Object?>{},
+  providerConfig: const <String, Object?>{},
+);
+
+final ServerProbeReport _readyReport = ServerProbeReport(
+  snapshot: _readySnapshot,
+  capabilityRegistry: CapabilityRegistry.fromSnapshot(_readySnapshot),
+  classification: ConnectionProbeClassification.ready,
+  summary: 'Server is ready for web parity features.',
+  checkedAt: DateTime.fromMillisecondsSinceEpoch(1710000000000),
+  missingCapabilities: const <String>[],
+  discoveredExperimentalPaths: const <String>[],
+  sseReady: true,
+);
 
 class _SidebarWorkspaceController extends WorkspaceController {
   _SidebarWorkspaceController({

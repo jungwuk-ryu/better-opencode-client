@@ -8,9 +8,11 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
+import '../../app/app_controller.dart';
 import '../../app/app_routes.dart';
 import '../../app/app_scope.dart';
 import '../../core/connection/connection_models.dart';
+import '../../core/network/opencode_server_probe.dart';
 import '../../design_system/app_spacing.dart';
 import '../../design_system/app_theme.dart';
 import '../chat/chat_models.dart';
@@ -831,18 +833,30 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     }
   }
 
-  void _showPlaceholderDialog(String title, String body) {
-    showDialog<void>(
+  Future<void> _openWorkspaceSettingsSheet(
+    WebParityAppController appController,
+    WorkspaceController controller,
+  ) async {
+    final profile = appController.selectedProfile;
+    await showModalBottomSheet<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title),
-        content: Text(body),
-        actions: <Widget>[
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
-          ),
-        ],
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => FractionallySizedBox(
+        heightFactor: 0.8,
+        child: _WorkspaceSettingsSheet(
+          appController: appController,
+          profile: profile,
+          report: appController.selectedReport,
+          project: controller.project,
+          onManageServers: () {
+            Navigator.of(context).pop();
+            Navigator.of(
+              this.context,
+            ).pushNamedAndRemoveUntil('/', (route) => false);
+          },
+        ),
       ),
     );
   }
@@ -931,14 +945,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
             );
           },
           onNewSession: () => _createNewSession(controller),
-          onOpenSettings: () => _showPlaceholderDialog(
-            'Settings',
-            'Use "See Servers" on the home screen to manage connections while the parity shell is being completed.',
-          ),
-          onOpenHelp: () => _showPlaceholderDialog(
-            'Help',
-            'OpenCode Web parity is now organized around Home, Project, and Session routes.',
-          ),
+          onOpenSettings: () =>
+              _openWorkspaceSettingsSheet(appController, controller),
         );
 
         return Scaffold(
@@ -1746,6 +1754,499 @@ class _SessionOverflowMenuItem extends StatelessWidget {
   }
 }
 
+class _WorkspaceSettingsSheet extends StatefulWidget {
+  const _WorkspaceSettingsSheet({
+    required this.appController,
+    required this.onManageServers,
+    this.profile,
+    this.report,
+    this.project,
+  });
+
+  final WebParityAppController appController;
+  final ServerProfile? profile;
+  final ServerProbeReport? report;
+  final ProjectTarget? project;
+  final VoidCallback onManageServers;
+
+  @override
+  State<_WorkspaceSettingsSheet> createState() =>
+      _WorkspaceSettingsSheetState();
+}
+
+class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
+  bool _refreshingProbe = false;
+
+  Future<void> _refreshProbe() async {
+    final profile = widget.profile;
+    if (profile == null || _refreshingProbe) {
+      return;
+    }
+    setState(() {
+      _refreshingProbe = true;
+    });
+    try {
+      await widget.appController.refreshProbe(profile);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to refresh server status: $error')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _refreshingProbe = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+
+    return AnimatedBuilder(
+      animation: widget.appController,
+      builder: (context, _) {
+        final profile = widget.appController.selectedProfile ?? widget.profile;
+        final report = widget.appController.selectedReport ?? widget.report;
+        final statusMeta = _workspaceSettingsStatusMeta(
+          theme,
+          surfaces,
+          report,
+        );
+        final currentProject = widget.project;
+
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.md,
+            AppSpacing.lg,
+            AppSpacing.md,
+            AppSpacing.md,
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(28),
+            child: BackdropFilter(
+              filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+              child: Container(
+                key: const ValueKey<String>('workspace-settings-sheet'),
+                decoration: BoxDecoration(
+                  color: surfaces.panelRaised.withValues(alpha: 0.94),
+                  borderRadius: BorderRadius.circular(28),
+                  border: Border.all(color: surfaces.lineSoft),
+                ),
+                child: Column(
+                  children: <Widget>[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.lg,
+                        AppSpacing.lg,
+                        AppSpacing.md,
+                        AppSpacing.md,
+                      ),
+                      child: Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: <Widget>[
+                                Text(
+                                  'Workspace Settings',
+                                  style: theme.textTheme.titleLarge?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: AppSpacing.xxs),
+                                Text(
+                                  'Adjust workspace behavior and inspect the current server connection.',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: surfaces.muted,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            icon: const Icon(Icons.close_rounded),
+                            tooltip: 'Close settings',
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    Expanded(
+                      child: ListView(
+                        padding: const EdgeInsets.fromLTRB(
+                          AppSpacing.lg,
+                          AppSpacing.md,
+                          AppSpacing.lg,
+                          AppSpacing.lg,
+                        ),
+                        children: <Widget>[
+                          _WorkspaceSettingsSection(
+                            title: 'Server',
+                            child: _WorkspaceSettingsCard(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: <Widget>[
+                                  Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: <Widget>[
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: <Widget>[
+                                            Text(
+                                              profile?.effectiveLabel ??
+                                                  'No server selected',
+                                              style: theme.textTheme.titleMedium
+                                                  ?.copyWith(
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                            ),
+                                            const SizedBox(
+                                              height: AppSpacing.xxs,
+                                            ),
+                                            Text(
+                                              report?.summary ??
+                                                  profile?.normalizedBaseUrl ??
+                                                  'Return to Home to choose a server.',
+                                              style: theme.textTheme.bodyMedium
+                                                  ?.copyWith(
+                                                    color: surfaces.muted,
+                                                  ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: AppSpacing.sm),
+                                      _WorkspaceSettingsStatusChip(
+                                        label: statusMeta.label,
+                                        color: statusMeta.color,
+                                      ),
+                                    ],
+                                  ),
+                                  if (currentProject != null) ...<Widget>[
+                                    const SizedBox(height: AppSpacing.md),
+                                    _WorkspaceSettingsMetaRow(
+                                      label: 'Project',
+                                      value: currentProject.directory,
+                                    ),
+                                  ],
+                                  if (profile != null) ...<Widget>[
+                                    const SizedBox(height: AppSpacing.md),
+                                    Wrap(
+                                      spacing: AppSpacing.sm,
+                                      runSpacing: AppSpacing.sm,
+                                      children: <Widget>[
+                                        OutlinedButton.icon(
+                                          key: const ValueKey<String>(
+                                            'workspace-settings-refresh-probe-button',
+                                          ),
+                                          onPressed: _refreshingProbe
+                                              ? null
+                                              : _refreshProbe,
+                                          icon: _refreshingProbe
+                                              ? const SizedBox.square(
+                                                  dimension: 16,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                      ),
+                                                )
+                                              : const Icon(
+                                                  Icons.refresh_rounded,
+                                                ),
+                                          label: const Text('Refresh Status'),
+                                        ),
+                                        FilledButton.icon(
+                                          key: const ValueKey<String>(
+                                            'workspace-settings-manage-servers-button',
+                                          ),
+                                          onPressed: widget.onManageServers,
+                                          icon: const Icon(
+                                            Icons.storage_rounded,
+                                          ),
+                                          label: const Text('Manage Servers'),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.lg),
+                          _WorkspaceSettingsSection(
+                            title: 'Timeline',
+                            child: _WorkspaceSettingsCard(
+                              child: Column(
+                                children: <Widget>[
+                                  _WorkspaceSettingsToggleRow(
+                                    key: const ValueKey<String>(
+                                      'workspace-settings-shell-toggle',
+                                    ),
+                                    title: 'Expand shell output by default',
+                                    subtitle:
+                                        'Show live shell command details immediately in the timeline.',
+                                    value: widget
+                                        .appController
+                                        .shellToolPartsExpanded,
+                                    onChanged: (value) {
+                                      unawaited(
+                                        widget.appController
+                                            .setShellToolPartsExpanded(value),
+                                      );
+                                    },
+                                  ),
+                                  const SizedBox(height: AppSpacing.sm),
+                                  _WorkspaceSettingsToggleRow(
+                                    key: const ValueKey<String>(
+                                      'workspace-settings-progress-toggle',
+                                    ),
+                                    title:
+                                        'Show to-do and step details in timeline',
+                                    subtitle:
+                                        'Display internal progress events directly in the chat stream.',
+                                    value: widget
+                                        .appController
+                                        .timelineProgressDetailsVisible,
+                                    onChanged: (value) {
+                                      unawaited(
+                                        widget.appController
+                                            .setTimelineProgressDetailsVisible(
+                                              value,
+                                            ),
+                                      );
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _WorkspaceSettingsSection extends StatelessWidget {
+  const _WorkspaceSettingsSection({required this.title, required this.child});
+
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          title,
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            color: surfaces.muted,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        child,
+      ],
+    );
+  }
+}
+
+class _WorkspaceSettingsCard extends StatelessWidget {
+  const _WorkspaceSettingsCard({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: surfaces.panel.withValues(alpha: 0.82),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: surfaces.lineSoft),
+      ),
+      child: child,
+    );
+  }
+}
+
+class _WorkspaceSettingsToggleRow extends StatelessWidget {
+  const _WorkspaceSettingsToggleRow({
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.onChanged,
+    super.key,
+  });
+
+  final String title;
+  final String subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
+      ),
+      decoration: BoxDecoration(
+        color: surfaces.panelRaised.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: surfaces.lineSoft),
+      ),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  title,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: AppSpacing.xxs),
+                Text(
+                  subtitle,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Switch.adaptive(value: value, onChanged: onChanged),
+        ],
+      ),
+    );
+  }
+}
+
+class _WorkspaceSettingsMetaRow extends StatelessWidget {
+  const _WorkspaceSettingsMetaRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          label,
+          style: Theme.of(
+            context,
+          ).textTheme.labelMedium?.copyWith(color: surfaces.muted),
+        ),
+        const SizedBox(height: AppSpacing.xxs),
+        Text(
+          value,
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+        ),
+      ],
+    );
+  }
+}
+
+class _WorkspaceSettingsStatusMeta {
+  const _WorkspaceSettingsStatusMeta({
+    required this.label,
+    required this.color,
+  });
+
+  final String label;
+  final Color color;
+}
+
+_WorkspaceSettingsStatusMeta _workspaceSettingsStatusMeta(
+  ThemeData theme,
+  AppSurfaces surfaces,
+  ServerProbeReport? report,
+) {
+  final classification = report?.classification;
+  return switch (classification) {
+    ConnectionProbeClassification.ready => _WorkspaceSettingsStatusMeta(
+      label: 'Ready',
+      color: theme.colorScheme.primary,
+    ),
+    ConnectionProbeClassification.authFailure => _WorkspaceSettingsStatusMeta(
+      label: 'Auth Required',
+      color: surfaces.warning,
+    ),
+    ConnectionProbeClassification.unsupportedCapabilities =>
+      _WorkspaceSettingsStatusMeta(label: 'Partial', color: surfaces.warning),
+    ConnectionProbeClassification.specFetchFailure ||
+    ConnectionProbeClassification.connectivityFailure =>
+      _WorkspaceSettingsStatusMeta(
+        label: 'Unavailable',
+        color: surfaces.danger,
+      ),
+    null => _WorkspaceSettingsStatusMeta(
+      label: 'Unknown',
+      color: surfaces.muted,
+    ),
+  };
+}
+
+class _WorkspaceSettingsStatusChip extends StatelessWidget {
+  const _WorkspaceSettingsStatusChip({
+    required this.label,
+    required this.color,
+  });
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.xs,
+      ),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.26)),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelMedium?.copyWith(color: color),
+      ),
+    );
+  }
+}
+
 class _SessionIdentity extends StatelessWidget {
   const _SessionIdentity({
     required this.compact,
@@ -1963,7 +2464,6 @@ class _WorkspaceSidebar extends StatelessWidget {
     required this.onSelectSession,
     required this.onNewSession,
     required this.onOpenSettings,
-    required this.onOpenHelp,
   });
 
   final String currentDirectory;
@@ -1975,7 +2475,6 @@ class _WorkspaceSidebar extends StatelessWidget {
   final ValueChanged<String> onSelectSession;
   final VoidCallback onNewSession;
   final VoidCallback onOpenSettings;
-  final VoidCallback onOpenHelp;
 
   @override
   Widget build(BuildContext context) {
@@ -2034,13 +2533,12 @@ class _WorkspaceSidebar extends StatelessWidget {
                   ),
                 ),
                 IconButton(
+                  key: const ValueKey<String>(
+                    'workspace-sidebar-settings-button',
+                  ),
                   onPressed: onOpenSettings,
                   icon: const Icon(Icons.settings_rounded),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                IconButton(
-                  onPressed: onOpenHelp,
-                  icon: const Icon(Icons.help_outline_rounded),
+                  tooltip: 'Workspace settings',
                 ),
                 const SizedBox(height: AppSpacing.md),
               ],
