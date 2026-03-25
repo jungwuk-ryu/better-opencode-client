@@ -731,9 +731,14 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         _scheduleRouteSessionSync();
         final compact =
             MediaQuery.sizeOf(context).width < AppSpacing.wideLayoutBreakpoint;
+        final selectedSession = controller.selectedSession;
+        final mainSession = _rootSessionFor(
+          controller.sessions,
+          selectedSession,
+        );
         final sidebar = _WorkspaceSidebar(
           currentDirectory: widget.directory,
-          currentSessionId: controller.selectedSessionId,
+          currentSessionId: mainSession?.id ?? controller.selectedSessionId,
           projects: controller.availableProjects,
           sessions: controller.visibleSessions,
           statuses: controller.statuses,
@@ -772,7 +777,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                         compact: compact,
                         profile: appController.selectedProfile,
                         project: controller.project,
-                        session: controller.selectedSession,
+                        session: selectedSession,
+                        mainSession: mainSession,
                         status: controller.selectedStatus,
                         terminalOpen: _terminalPanelOpen,
                         onBackHome: () => Navigator.of(
@@ -782,6 +788,20 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                             ? () => _scaffoldKey.currentState?.openDrawer()
                             : null,
                         onToggleTerminal: _toggleTerminalPanel,
+                        onBackToMainSession:
+                            selectedSession != null &&
+                                mainSession != null &&
+                                selectedSession.id != mainSession.id
+                            ? () {
+                                unawaited(
+                                  _selectSessionInPlace(
+                                    controller,
+                                    mainSession.id,
+                                    compact: compact,
+                                  ),
+                                );
+                              }
+                            : null,
                         onRename: () => _renameSelectedSession(controller),
                         onFork: controller.selectedSession == null
                             ? null
@@ -810,6 +830,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                             : _WorkspaceBody(
                                 compact: compact,
                                 controller: controller,
+                                allSessions: controller.sessions,
                                 submittingPrompt:
                                     _promptSubmitInFlight ||
                                     controller.submittingPrompt,
@@ -828,6 +849,15 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                 onSubmitPrompt: _submitPrompt,
                                 onCreateSession: () =>
                                     _createNewSession(controller),
+                                onOpenSession: (sessionId) {
+                                  unawaited(
+                                    _selectSessionInPlace(
+                                      controller,
+                                      sessionId,
+                                      compact: compact,
+                                    ),
+                                  );
+                                },
                                 onShareSession:
                                     controller.selectedSession == null
                                     ? null
@@ -889,11 +919,13 @@ class _WorkspaceTopBar extends StatelessWidget {
     required this.profile,
     required this.project,
     required this.session,
+    required this.mainSession,
     required this.status,
     required this.terminalOpen,
     required this.onBackHome,
     required this.onToggleTerminal,
     this.onOpenDrawer,
+    this.onBackToMainSession,
     this.onRename,
     this.onFork,
     this.onShare,
@@ -904,11 +936,13 @@ class _WorkspaceTopBar extends StatelessWidget {
   final ServerProfile? profile;
   final ProjectTarget? project;
   final SessionSummary? session;
+  final SessionSummary? mainSession;
   final SessionStatusSummary? status;
   final bool terminalOpen;
   final VoidCallback onBackHome;
   final VoidCallback onToggleTerminal;
   final VoidCallback? onOpenDrawer;
+  final VoidCallback? onBackToMainSession;
   final VoidCallback? onRename;
   final VoidCallback? onFork;
   final VoidCallback? onShare;
@@ -917,6 +951,12 @@ class _WorkspaceTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final rootSession = mainSession;
+    final canReturnToMain =
+        session != null &&
+        rootSession != null &&
+        session!.id != rootSession.id &&
+        onBackToMainSession != null;
     if (compact) {
       return Material(
         color: surfaces.panel,
@@ -933,7 +973,31 @@ class _WorkspaceTopBar extends StatelessWidget {
                 icon: const Icon(Icons.menu_rounded, size: 18),
                 splashRadius: 18,
               ),
-              const Spacer(),
+              if (canReturnToMain)
+                IconButton(
+                  key: const ValueKey<String>(
+                    'workspace-back-to-main-session-button',
+                  ),
+                  tooltip: 'Back to main session',
+                  onPressed: onBackToMainSession,
+                  icon: const Icon(
+                    Icons.subdirectory_arrow_left_rounded,
+                    size: 18,
+                  ),
+                  splashRadius: 18,
+                ),
+              Expanded(
+                child: Text(
+                  session?.title.isNotEmpty == true
+                      ? session!.title
+                      : (project?.label ?? 'Session'),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                ),
+              ),
               IconButton(
                 onPressed: onToggleTerminal,
                 icon: Icon(
@@ -950,6 +1014,8 @@ class _WorkspaceTopBar extends StatelessWidget {
                   switch (value) {
                     case 'home':
                       onBackHome();
+                    case 'main':
+                      onBackToMainSession?.call();
                     case 'rename':
                       onRename?.call();
                     case 'fork':
@@ -965,6 +1031,11 @@ class _WorkspaceTopBar extends StatelessWidget {
                     value: 'home',
                     child: Text('Back Home'),
                   ),
+                  if (canReturnToMain)
+                    const PopupMenuItem<String>(
+                      value: 'main',
+                      child: Text('Back to Main Session'),
+                    ),
                   const PopupMenuDivider(),
                   const PopupMenuItem<String>(
                     value: 'rename',
@@ -1012,6 +1083,47 @@ class _WorkspaceTopBar extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
+                  if (canReturnToMain)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: AppSpacing.xxs),
+                      child: InkWell(
+                        key: const ValueKey<String>(
+                          'workspace-back-to-main-session-link',
+                        ),
+                        onTap: onBackToMainSession,
+                        borderRadius: BorderRadius.circular(AppSpacing.sm),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.xs,
+                            vertical: 2,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              Icon(
+                                Icons.subdirectory_arrow_left_rounded,
+                                size: 14,
+                                color: surfaces.muted,
+                              ),
+                              const SizedBox(width: AppSpacing.xxs),
+                              Flexible(
+                                child: Text(
+                                  rootSession.title.isNotEmpty
+                                      ? rootSession.title
+                                      : 'Main session',
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: surfaces.muted,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
                   Text(
                     session?.title.isNotEmpty == true
                         ? session!.title
@@ -1044,6 +1156,8 @@ class _WorkspaceTopBar extends StatelessWidget {
             PopupMenuButton<String>(
               onSelected: (value) {
                 switch (value) {
+                  case 'main':
+                    onBackToMainSession?.call();
                   case 'rename':
                     onRename?.call();
                   case 'fork':
@@ -1055,6 +1169,12 @@ class _WorkspaceTopBar extends StatelessWidget {
                 }
               },
               itemBuilder: (context) => <PopupMenuEntry<String>>[
+                if (canReturnToMain)
+                  const PopupMenuItem<String>(
+                    value: 'main',
+                    child: Text('Back to Main Session'),
+                  ),
+                if (canReturnToMain) const PopupMenuDivider(),
                 const PopupMenuItem<String>(
                   value: 'rename',
                   child: Text('Rename Session'),
@@ -1272,10 +1392,43 @@ String _projectInitial(ProjectTarget project) {
   return resolved.characters.first.toUpperCase();
 }
 
+SessionSummary? _sessionById(List<SessionSummary> sessions, String? sessionId) {
+  if (sessionId == null || sessionId.isEmpty) {
+    return null;
+  }
+  for (final session in sessions) {
+    if (session.id == sessionId) {
+      return session;
+    }
+  }
+  return null;
+}
+
+SessionSummary? _rootSessionFor(
+  List<SessionSummary> sessions,
+  SessionSummary? session,
+) {
+  if (session == null) {
+    return null;
+  }
+
+  var current = session;
+  final seen = <String>{current.id};
+  while (current.parentId != null && current.parentId!.isNotEmpty) {
+    final parent = _sessionById(sessions, current.parentId);
+    if (parent == null || !seen.add(parent.id)) {
+      break;
+    }
+    current = parent;
+  }
+  return current;
+}
+
 class _WorkspaceBody extends StatelessWidget {
   const _WorkspaceBody({
     required this.compact,
     required this.controller,
+    required this.allSessions,
     required this.submittingPrompt,
     required this.promptController,
     required this.timelineScrollController,
@@ -1283,6 +1436,7 @@ class _WorkspaceBody extends StatelessWidget {
     required this.onCompactPaneChanged,
     required this.onSubmitPrompt,
     required this.onCreateSession,
+    required this.onOpenSession,
     required this.onToggleTerminal,
     required this.terminalPanelOpen,
     required this.terminalPanel,
@@ -1293,6 +1447,7 @@ class _WorkspaceBody extends StatelessWidget {
 
   final bool compact;
   final WorkspaceController controller;
+  final List<SessionSummary> allSessions;
   final bool submittingPrompt;
   final TextEditingController promptController;
   final ScrollController timelineScrollController;
@@ -1300,6 +1455,7 @@ class _WorkspaceBody extends StatelessWidget {
   final ValueChanged<_CompactWorkspacePane> onCompactPaneChanged;
   final VoidCallback onSubmitPrompt;
   final Future<void> Function() onCreateSession;
+  final ValueChanged<String> onOpenSession;
   final Future<void> Function() onToggleTerminal;
   final bool terminalPanelOpen;
   final Widget? terminalPanel;
@@ -1336,7 +1492,10 @@ class _WorkspaceBody extends StatelessWidget {
                       'timeline-${controller.selectedSessionId ?? 'new'}',
                     ),
                     controller: timelineScrollController,
+                    currentSessionId: controller.selectedSessionId,
                     messages: controller.messages,
+                    sessions: allSessions,
+                    onOpenSession: onOpenSession,
                   ),
           ),
         ),
@@ -1461,12 +1620,18 @@ class _NewSessionView extends StatelessWidget {
 class _MessageTimeline extends StatelessWidget {
   const _MessageTimeline({
     required this.controller,
+    required this.currentSessionId,
     required this.messages,
+    required this.sessions,
+    required this.onOpenSession,
     super.key,
   });
 
   final ScrollController controller;
+  final String? currentSessionId;
   final List<ChatMessage> messages;
+  final List<SessionSummary> sessions;
+  final ValueChanged<String> onOpenSession;
 
   @override
   Widget build(BuildContext context) {
@@ -1503,7 +1668,12 @@ class _MessageTimeline extends StatelessWidget {
             return Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 860),
-                child: _TimelineMessage(message: message),
+                child: _TimelineMessage(
+                  currentSessionId: currentSessionId,
+                  message: message,
+                  sessions: sessions,
+                  onOpenSession: onOpenSession,
+                ),
               ),
             );
           },
@@ -3420,9 +3590,17 @@ class _CompactPaneButton extends StatelessWidget {
 }
 
 class _TimelineMessage extends StatelessWidget {
-  const _TimelineMessage({required this.message});
+  const _TimelineMessage({
+    required this.currentSessionId,
+    required this.message,
+    required this.sessions,
+    required this.onOpenSession,
+  });
 
+  final String? currentSessionId;
   final ChatMessage message;
+  final List<SessionSummary> sessions;
+  final ValueChanged<String> onOpenSession;
 
   @override
   Widget build(BuildContext context) {
@@ -3451,11 +3629,14 @@ class _TimelineMessage extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(bottom: AppSpacing.md),
             child: _TimelinePart(
+              currentSessionId: currentSessionId,
               part: part,
+              sessions: sessions,
               shimmerActive: _activityPartShimmerActive(
                 part,
                 messageIsActive: _messageIsActive(message),
               ),
+              onOpenSession: onOpenSession,
             ),
           ),
       ],
@@ -3464,22 +3645,43 @@ class _TimelineMessage extends StatelessWidget {
 }
 
 class _TimelinePart extends StatelessWidget {
-  const _TimelinePart({required this.part, required this.shimmerActive});
+  const _TimelinePart({
+    required this.currentSessionId,
+    required this.part,
+    required this.sessions,
+    required this.shimmerActive,
+    required this.onOpenSession,
+  });
 
+  final String? currentSessionId;
   final ChatPart part;
+  final List<SessionSummary> sessions;
   final bool shimmerActive;
+  final ValueChanged<String> onOpenSession;
 
   @override
   Widget build(BuildContext context) {
     final body = _partText(part);
+    final linkedSession = _partLinkedSession(
+      part,
+      sessions: sessions,
+      currentSessionId: currentSessionId,
+      fallbackSummary: _partSummary(part, body),
+    );
     if (_isToolLikePart(part)) {
       return _TimelineActivityPart(
         key: ValueKey<String>('timeline-activity-${part.id}'),
         shimmerKey: ValueKey<String>('timeline-activity-shimmer-${part.id}'),
         title: _partTitle(part),
-        summary: _partSummary(part, body),
+        summary: linkedSession?.label ?? _partSummary(part, body),
         body: body,
         shimmerActive: shimmerActive,
+        summaryTapKey: linkedSession == null
+            ? null
+            : ValueKey<String>('timeline-activity-link-${part.id}'),
+        onSummaryTap: linkedSession == null
+            ? null
+            : () => onOpenSession(linkedSession.sessionId),
       );
     }
     return _StructuredTextBlock(text: body);
@@ -3492,6 +3694,8 @@ class _TimelineActivityPart extends StatefulWidget {
     required this.summary,
     required this.body,
     required this.shimmerActive,
+    this.summaryTapKey,
+    this.onSummaryTap,
     this.shimmerKey,
     super.key,
   });
@@ -3500,6 +3704,8 @@ class _TimelineActivityPart extends StatefulWidget {
   final String summary;
   final String body;
   final bool shimmerActive;
+  final Key? summaryTapKey;
+  final VoidCallback? onSummaryTap;
   final Key? shimmerKey;
 
   @override
@@ -3514,6 +3720,8 @@ class _TimelineActivityPartState extends State<_TimelineActivityPart> {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
     final canExpand = widget.body.trim().isNotEmpty;
+    final hasLinkedSummary =
+        widget.onSummaryTap != null && widget.summary.trim().isNotEmpty;
     final titleStyle = theme.textTheme.titleSmall?.copyWith(
       fontWeight: FontWeight.w700,
       color: theme.colorScheme.onSurface,
@@ -3522,55 +3730,121 @@ class _TimelineActivityPartState extends State<_TimelineActivityPart> {
       height: 1.6,
       color: surfaces.muted,
     );
+    final summaryLinkStyle = summaryStyle?.copyWith(
+      color: theme.colorScheme.primary,
+      decoration: TextDecoration.underline,
+      decorationColor: theme.colorScheme.primary.withValues(alpha: 0.9),
+    );
+
+    Widget buildTitleOnly() {
+      final titleText = _ShimmeringRichText(
+        key: widget.shimmerKey,
+        active: widget.shimmerActive,
+        text: TextSpan(text: widget.title, style: titleStyle),
+      );
+      if (!canExpand) {
+        return titleText;
+      }
+      return InkWell(
+        onTap: () => setState(() => _expanded = !_expanded),
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+          child: titleText,
+        ),
+      );
+    }
+
+    Widget buildHeaderText() {
+      if (!hasLinkedSummary) {
+        return _ShimmeringRichText(
+          key: widget.shimmerKey,
+          active: widget.shimmerActive,
+          text: TextSpan(
+            children: <InlineSpan>[
+              TextSpan(text: widget.title, style: titleStyle),
+              if (widget.summary.isNotEmpty)
+                TextSpan(text: ' ${widget.summary}', style: summaryStyle),
+            ],
+          ),
+        );
+      }
+
+      return Wrap(
+        spacing: AppSpacing.xs,
+        runSpacing: AppSpacing.xxs,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: <Widget>[
+          buildTitleOnly(),
+          InkWell(
+            key: widget.summaryTapKey,
+            onTap: widget.onSummaryTap,
+            borderRadius: BorderRadius.circular(10),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+              child: Text(widget.summary, style: summaryLinkStyle),
+            ),
+          ),
+        ],
+      );
+    }
+
+    final headerContent = Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.xs,
+        vertical: AppSpacing.xxs,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Expanded(child: buildHeaderText()),
+          if (canExpand) ...<Widget>[
+            const SizedBox(width: AppSpacing.sm),
+            if (hasLinkedSummary)
+              InkWell(
+                onTap: () => setState(() => _expanded = !_expanded),
+                borderRadius: BorderRadius.circular(10),
+                child: Padding(
+                  padding: const EdgeInsets.all(2),
+                  child: Icon(
+                    _expanded
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    size: 18,
+                    color: surfaces.muted,
+                  ),
+                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.all(2),
+                child: Icon(
+                  _expanded
+                      ? Icons.keyboard_arrow_up_rounded
+                      : Icons.keyboard_arrow_down_rounded,
+                  size: 18,
+                  color: surfaces.muted,
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         Material(
           color: Colors.transparent,
-          child: InkWell(
-            onTap: canExpand
-                ? () => setState(() => _expanded = !_expanded)
-                : null,
-            borderRadius: BorderRadius.circular(12),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.xs,
-                vertical: AppSpacing.xxs,
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Expanded(
-                    child: _ShimmeringRichText(
-                      key: widget.shimmerKey,
-                      active: widget.shimmerActive,
-                      text: TextSpan(
-                        children: <InlineSpan>[
-                          TextSpan(text: widget.title, style: titleStyle),
-                          if (widget.summary.isNotEmpty)
-                            TextSpan(
-                              text: ' ${widget.summary}',
-                              style: summaryStyle,
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  if (canExpand) ...<Widget>[
-                    const SizedBox(width: AppSpacing.sm),
-                    Icon(
-                      _expanded
-                          ? Icons.keyboard_arrow_up_rounded
-                          : Icons.keyboard_arrow_down_rounded,
-                      size: 18,
-                      color: surfaces.muted,
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
+          child: hasLinkedSummary
+              ? headerContent
+              : InkWell(
+                  onTap: canExpand
+                      ? () => setState(() => _expanded = !_expanded)
+                      : null,
+                  borderRadius: BorderRadius.circular(12),
+                  child: headerContent,
+                ),
         ),
         ClipRect(
           child: AnimatedSize(
@@ -4620,6 +4894,70 @@ String? _toolInputSummary(ChatPart part) {
     ]),
     _ => null,
   };
+}
+
+class _LinkedSessionSummary {
+  const _LinkedSessionSummary({required this.sessionId, required this.label});
+
+  final String sessionId;
+  final String label;
+}
+
+_LinkedSessionSummary? _partLinkedSession(
+  ChatPart part, {
+  required List<SessionSummary> sessions,
+  required String? currentSessionId,
+  required String fallbackSummary,
+}) {
+  final type = part.type.trim().toLowerCase();
+  final tool = part.tool?.trim().toLowerCase();
+  final isChildSessionPart =
+      (type == 'tool' && tool == 'task') ||
+      type == 'agent' ||
+      type == 'subtask';
+  if (!isChildSessionPart) {
+    return null;
+  }
+
+  final sessionId = _firstNonEmpty(<String?>[
+    _nestedString(part.metadata, const <String>[
+      'state',
+      'metadata',
+      'sessionId',
+    ]),
+    _nestedString(part.metadata, const <String>[
+      'state',
+      'metadata',
+      'sessionID',
+    ]),
+    _nestedString(part.metadata, const <String>['metadata', 'sessionId']),
+    _nestedString(part.metadata, const <String>['metadata', 'sessionID']),
+    _nestedString(part.metadata, const <String>['sessionId']),
+    _nestedString(part.metadata, const <String>['sessionID']),
+  ]);
+  if (sessionId == null || sessionId.isEmpty || sessionId == currentSessionId) {
+    return null;
+  }
+
+  final session = _sessionById(sessions, sessionId);
+  final label = _firstNonEmpty(<String?>[
+    if (type == 'tool' && tool == 'task')
+      _nestedString(part.metadata, const <String>[
+        'state',
+        'input',
+        'description',
+      ]),
+    _nestedString(part.metadata, const <String>['description']),
+    _nestedString(part.metadata, const <String>['summary']),
+    fallbackSummary,
+    session?.title,
+    sessionId,
+  ]);
+  if (label == null || label.isEmpty) {
+    return null;
+  }
+
+  return _LinkedSessionSummary(sessionId: sessionId, label: label);
 }
 
 Object? _nestedValue(Map<String, Object?> source, List<String> path) {
