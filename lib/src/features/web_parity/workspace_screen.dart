@@ -1256,9 +1256,10 @@ class _WorkspaceTopBar extends StatelessWidget {
                 icon: Icon(
                   terminalOpen
                       ? Icons.terminal_rounded
-                      : Icons.crop_free_rounded,
+                      : Icons.terminal_outlined,
                   size: 18,
                 ),
+                tooltip: terminalOpen ? 'Hide terminal' : 'Show terminal',
                 splashRadius: 18,
               ),
               PopupMenuButton<String>(
@@ -1443,9 +1444,10 @@ class _WorkspaceTopBar extends StatelessWidget {
               onPressed: onToggleTerminal,
               icon: Icon(
                 terminalOpen
-                    ? Icons.terminal_outlined
-                    : Icons.keyboard_command_key_rounded,
+                    ? Icons.terminal_rounded
+                    : Icons.terminal_outlined,
               ),
+              tooltip: terminalOpen ? 'Hide terminal' : 'Show terminal',
             ),
             PopupMenuButton<String>(
               onSelected: (value) {
