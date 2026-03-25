@@ -969,7 +969,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     final savedName = normalizedName.isEmpty || normalizedName == folderName
         ? null
         : normalizedName;
-    final nextIcon = draft.icon?.effectiveImage == null &&
+    final nextIcon =
+        draft.icon?.effectiveImage == null &&
             (draft.icon?.color?.trim().isEmpty ?? true)
         ? null
         : draft.icon;
@@ -990,10 +991,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       return;
     }
 
-    await AppScope.of(context).persistProjectUpdate(
-      profile: profile,
-      target: nextTarget,
-    );
+    await AppScope.of(
+      context,
+    ).persistProjectUpdate(profile: profile, target: nextTarget);
   }
 
   Future<ProjectTarget?> _saveProjectEdit({
@@ -1122,16 +1122,17 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         );
         final sidebar = _WorkspaceSidebar(
           currentDirectory: _currentDirectory,
-          currentSessionId: mainSession?.id ?? controller.selectedSessionId,
+          currentSessionId: controller.selectedSessionId,
+          project: controller.project,
           projects: controller.availableProjects,
           sessions: controller.visibleSessions,
+          allSessions: controller.sessions,
           statuses: controller.statuses,
           onSelectProject: (project) =>
               unawaited(_selectProjectInPlace(project, compact: compact)),
           onEditProject: (project) => unawaited(_editProject(project)),
-          onRemoveProject: (project) => unawaited(
-            _removeProject(controller, project, compact: compact),
-          ),
+          onRemoveProject: (project) =>
+              unawaited(_removeProject(controller, project, compact: compact)),
           onSelectSession: (sessionId) {
             unawaited(
               _selectSessionInPlace(controller, sessionId, compact: compact),
@@ -2650,8 +2651,10 @@ class _WorkspaceSidebar extends StatelessWidget {
   const _WorkspaceSidebar({
     required this.currentDirectory,
     required this.currentSessionId,
+    required this.project,
     required this.projects,
     required this.sessions,
+    required this.allSessions,
     required this.statuses,
     required this.onSelectProject,
     required this.onEditProject,
@@ -2663,8 +2666,10 @@ class _WorkspaceSidebar extends StatelessWidget {
 
   final String currentDirectory;
   final String? currentSessionId;
+  final ProjectTarget? project;
   final List<ProjectTarget> projects;
   final List<SessionSummary> sessions;
+  final List<SessionSummary> allSessions;
   final Map<String, SessionStatusSummary> statuses;
   final ValueChanged<ProjectTarget> onSelectProject;
   final ValueChanged<ProjectTarget> onEditProject;
@@ -2675,7 +2680,16 @@ class _WorkspaceSidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final currentProject =
+        project ?? _projectForDirectory(projects, currentDirectory);
+    final sessionEntries = _buildSidebarSessionEntries(
+      roots: sessions,
+      allSessions: allSessions,
+      statuses: statuses,
+      selectedSessionId: currentSessionId,
+    );
 
     return SizedBox(
       width: 340,
@@ -2732,68 +2746,107 @@ class _WorkspaceSidebar extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  Row(
-                    children: <Widget>[
-                      Expanded(
-                        child: Text(
-                          'Sessions',
-                          style: Theme.of(context).textTheme.titleMedium,
+                  if (currentProject != null) ...<Widget>[
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Text(
+                                currentProject.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.titleLarge?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                currentProject.directory,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.ibmPlexMono(
+                                  fontSize: 12,
+                                  color: surfaces.muted,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
+                        const SizedBox(width: AppSpacing.sm),
+                        _SidebarProjectMenuButton(
+                          project: currentProject,
+                          onEdit: () => onEditProject(currentProject),
+                          onRemove: () => onRemoveProject(currentProject),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                  ] else ...<Widget>[
+                    Text(
+                      projectDisplayLabel(currentDirectory),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
                       ),
-                      IconButton(
-                        onPressed: onNewSession,
-                        icon: const Icon(Icons.add_rounded),
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                  ],
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      key: const ValueKey<String>(
+                        'workspace-sidebar-new-session-button',
                       ),
-                    ],
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: theme.colorScheme.onSurface,
+                        alignment: Alignment.centerLeft,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.md,
+                          vertical: AppSpacing.md,
+                        ),
+                        textStyle: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                        side: BorderSide(color: surfaces.lineSoft),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        backgroundColor: surfaces.panel,
+                      ),
+                      onPressed: onNewSession,
+                      icon: const Icon(Icons.edit_note_rounded, size: 18),
+                      label: const Text('New session'),
+                    ),
                   ),
-                  const SizedBox(height: AppSpacing.sm),
+                  const SizedBox(height: AppSpacing.md),
                   Expanded(
-                    child: sessions.isEmpty
+                    child: sessionEntries.isEmpty
                         ? Text(
                             'Start a new session to begin.',
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(color: surfaces.muted),
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: surfaces.muted,
+                            ),
                           )
                         : ListView.separated(
-                            itemCount: sessions.length,
+                            itemCount: sessionEntries.length,
                             separatorBuilder: (_, _) =>
                                 const SizedBox(height: AppSpacing.xs),
                             itemBuilder: (context, index) {
-                              final session = sessions[index];
-                              final selected = session.id == currentSessionId;
-                              final statusType =
-                                  statuses[session.id]?.type ?? 'idle';
-                              final title = session.title.isEmpty
-                                  ? 'Untitled session'
-                                  : session.title;
-                              return ListTile(
-                                selected: selected,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(
-                                    AppSpacing.md,
-                                  ),
+                              final entry = sessionEntries[index];
+                              return _SidebarSessionTreeRow(
+                                key: ValueKey<String>(
+                                  'workspace-session-entry-${entry.session.id}-${entry.depth}',
                                 ),
-                                tileColor: selected
-                                    ? Theme.of(context).colorScheme.primary
-                                          .withValues(alpha: 0.12)
-                                    : null,
-                                title: _ShimmeringRichText(
-                                  key: ValueKey<String>(
-                                    'sidebar-session-shimmer-${session.id}',
-                                  ),
-                                  active: statusType != 'idle',
-                                  text: TextSpan(
-                                    text: title,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodyMedium
-                                        ?.copyWith(
-                                          fontWeight: FontWeight.w600,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                  ),
-                                ),
-                                onTap: () => onSelectSession(session.id),
+                                entry: entry,
+                                project: currentProject,
+                                status: statuses[entry.session.id],
+                                selected: entry.session.id == currentSessionId,
+                                onTap: () => onSelectSession(entry.session.id),
                               );
                             },
                           ),
@@ -2804,6 +2857,85 @@ class _WorkspaceSidebar extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+Future<_ProjectMenuAction?> _showProjectContextMenu({
+  required BuildContext context,
+  required Offset position,
+  required ProjectTarget project,
+}) {
+  return showGeneralDialog<_ProjectMenuAction>(
+    context: context,
+    barrierDismissible: true,
+    barrierLabel: 'Dismiss project menu',
+    barrierColor: Colors.transparent,
+    transitionDuration: const Duration(milliseconds: 160),
+    pageBuilder: (dialogContext, animation, secondaryAnimation) {
+      return _ProjectContextMenuOverlay(position: position, project: project);
+    },
+    transitionBuilder: (context, animation, secondaryAnimation, child) {
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
+      );
+      return FadeTransition(opacity: curved, child: child);
+    },
+  );
+}
+
+class _SidebarProjectMenuButton extends StatelessWidget {
+  const _SidebarProjectMenuButton({
+    required this.project,
+    required this.onEdit,
+    required this.onRemove,
+  });
+
+  final ProjectTarget project;
+  final VoidCallback onEdit;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return Builder(
+      builder: (buttonContext) {
+        return IconButton(
+          key: const ValueKey<String>('workspace-sidebar-project-menu-button'),
+          tooltip: 'Project menu',
+          onPressed: () async {
+            final renderObject = buttonContext.findRenderObject();
+            if (renderObject is! RenderBox) {
+              return;
+            }
+            final origin = renderObject.localToGlobal(Offset.zero);
+            final action = await _showProjectContextMenu(
+              context: context,
+              position: Offset(
+                origin.dx + renderObject.size.width - 220,
+                origin.dy + renderObject.size.height + 8,
+              ),
+              project: project,
+            );
+            switch (action) {
+              case _ProjectMenuAction.edit:
+                onEdit();
+              case _ProjectMenuAction.remove:
+                onRemove();
+              case null:
+                break;
+            }
+          },
+          splashRadius: 18,
+          icon: Icon(
+            Icons.more_horiz_rounded,
+            color: surfaces.muted,
+            size: 20,
+          ),
+        );
+      },
     );
   }
 }
@@ -2830,26 +2962,10 @@ class _ProjectSidebarTile extends StatefulWidget {
 
 class _ProjectSidebarTileState extends State<_ProjectSidebarTile> {
   Future<void> _showMenu(Offset globalPosition) async {
-    final action = await showGeneralDialog<_ProjectMenuAction>(
+    final action = await _showProjectContextMenu(
       context: context,
-      barrierDismissible: true,
-      barrierLabel: 'Dismiss project menu',
-      barrierColor: Colors.transparent,
-      transitionDuration: const Duration(milliseconds: 160),
-      pageBuilder: (dialogContext, animation, secondaryAnimation) {
-        return _ProjectContextMenuOverlay(
-          position: globalPosition,
-          project: widget.project,
-        );
-      },
-      transitionBuilder: (context, animation, secondaryAnimation, child) {
-        final curved = CurvedAnimation(
-          parent: animation,
-          curve: Curves.easeOutCubic,
-          reverseCurve: Curves.easeInCubic,
-        );
-        return FadeTransition(opacity: curved, child: child);
-      },
+      position: globalPosition,
+      project: widget.project,
     );
 
     switch (action) {
@@ -2890,6 +3006,124 @@ class _ProjectSidebarTileState extends State<_ProjectSidebarTile> {
             size: 38,
             fontSize: 22,
             rounded: 10,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SidebarSessionEntry {
+  const _SidebarSessionEntry({
+    required this.session,
+    required this.depth,
+    required this.rootId,
+  });
+
+  final SessionSummary session;
+  final int depth;
+  final String rootId;
+}
+
+class _SidebarSessionTreeRow extends StatelessWidget {
+  const _SidebarSessionTreeRow({
+    required this.entry,
+    required this.project,
+    required this.status,
+    required this.selected,
+    required this.onTap,
+    super.key,
+  });
+
+  final _SidebarSessionEntry entry;
+  final ProjectTarget? project;
+  final SessionStatusSummary? status;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final title = entry.session.title.trim().isEmpty
+        ? 'Untitled session'
+        : entry.session.title.trim();
+    final active = _isActiveSessionStatus(status);
+    final isRoot = entry.depth == 0;
+    final indent = entry.depth * 18.0;
+
+    return Padding(
+      padding: EdgeInsets.only(left: indent),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: Ink(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm,
+              vertical: AppSpacing.sm,
+            ),
+            decoration: BoxDecoration(
+              color: selected
+                  ? theme.colorScheme.primary.withValues(alpha: 0.12)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Row(
+              children: <Widget>[
+                SizedBox(
+                  width: 22,
+                  child: Center(
+                    child: isRoot
+                        ? (project != null
+                              ? _ProjectAvatar(
+                                  project: project!,
+                                  size: 16,
+                                  fontSize: 10,
+                                  rounded: 5,
+                                )
+                              : Container(
+                                  width: 6,
+                                  height: 6,
+                                  decoration: BoxDecoration(
+                                    color: theme.colorScheme.primary,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ))
+                        : Container(
+                            width: 10,
+                            height: 2,
+                            decoration: BoxDecoration(
+                              color: surfaces.muted,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                          ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: _ShimmeringRichText(
+                    key: ValueKey<String>(
+                      'sidebar-session-shimmer-${entry.session.id}',
+                    ),
+                    active: active,
+                    text: TextSpan(
+                      text: title,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: isRoot ? FontWeight.w600 : FontWeight.w500,
+                        color: selected
+                            ? theme.colorScheme.onSurface
+                            : theme.colorScheme.onSurface.withValues(
+                                alpha: isRoot ? 0.96 : 0.9,
+                              ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -3090,7 +3324,8 @@ class _EditProjectDialogState extends State<_EditProjectDialog> {
   void initState() {
     super.initState();
     _nameController = TextEditingController(
-      text: widget.project.name ?? projectDisplayLabel(widget.project.directory),
+      text:
+          widget.project.name ?? projectDisplayLabel(widget.project.directory),
     );
     _startupController = TextEditingController(
       text: widget.project.commands?.start ?? '',
@@ -3331,63 +3566,74 @@ class _EditProjectDialogState extends State<_EditProjectDialog> {
                       Wrap(
                         spacing: AppSpacing.sm,
                         runSpacing: AppSpacing.sm,
-                        children: _projectAvatarColorKeys.map((colorKey) {
-                          final palette = _projectAvatarPalette(colorKey);
-                          final selected = colorKey == _selectedColor;
-                          return InkWell(
-                            onTap: () {
-                              setState(() {
-                                _selectedColor = colorKey;
-                              });
-                            },
-                            borderRadius: BorderRadius.circular(12),
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 160),
-                              width: 46,
-                              height: 46,
-                              decoration: BoxDecoration(
-                                color: selected
-                                    ? Colors.white.withValues(alpha: 0.08)
-                                    : Colors.transparent,
+                        children: _projectAvatarColorKeys
+                            .map((colorKey) {
+                              final palette = _projectAvatarPalette(colorKey);
+                              final selected = colorKey == _selectedColor;
+                              return InkWell(
+                                onTap: () {
+                                  setState(() {
+                                    _selectedColor = colorKey;
+                                  });
+                                },
                                 borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: selected
-                                      ? Colors.white.withValues(alpha: 0.9)
-                                      : Colors.white.withValues(alpha: 0.06),
-                                  width: selected ? 2 : 1,
-                                ),
-                              ),
-                              padding: const EdgeInsets.all(4),
-                              child: DecoratedBox(
-                                decoration: BoxDecoration(
-                                  color: palette.background,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    _projectInitial(
-                                      widget.project.copyWith(
-                                        name: _nameController.text.trim().isEmpty
-                                            ? widget.project.name
-                                            : _nameController.text.trim(),
-                                        label: projectDisplayLabel(
-                                          widget.project.directory,
-                                          name: _nameController.text.trim().isEmpty
-                                              ? widget.project.name
-                                              : _nameController.text.trim(),
-                                        ),
-                                      ),
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 160),
+                                  width: 46,
+                                  height: 46,
+                                  decoration: BoxDecoration(
+                                    color: selected
+                                        ? Colors.white.withValues(alpha: 0.08)
+                                        : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: selected
+                                          ? Colors.white.withValues(alpha: 0.9)
+                                          : Colors.white.withValues(
+                                              alpha: 0.06,
+                                            ),
+                                      width: selected ? 2 : 1,
                                     ),
-                                    style: theme.textTheme.titleMedium?.copyWith(
-                                      color: palette.foreground,
-                                      fontWeight: FontWeight.w700,
+                                  ),
+                                  padding: const EdgeInsets.all(4),
+                                  child: DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      color: palette.background,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Center(
+                                      child: Text(
+                                        _projectInitial(
+                                          widget.project.copyWith(
+                                            name:
+                                                _nameController.text
+                                                    .trim()
+                                                    .isEmpty
+                                                ? widget.project.name
+                                                : _nameController.text.trim(),
+                                            label: projectDisplayLabel(
+                                              widget.project.directory,
+                                              name:
+                                                  _nameController.text
+                                                      .trim()
+                                                      .isEmpty
+                                                  ? widget.project.name
+                                                  : _nameController.text.trim(),
+                                            ),
+                                          ),
+                                        ),
+                                        style: theme.textTheme.titleMedium
+                                            ?.copyWith(
+                                              color: palette.foreground,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
-                            ),
-                          );
-                        }).toList(growable: false),
+                              );
+                            })
+                            .toList(growable: false),
                       ),
                     ],
                     const SizedBox(height: AppSpacing.lg),
@@ -3550,13 +3796,34 @@ const List<String> _projectAvatarColorKeys = <String>[
 
 ({Color background, Color foreground}) _projectAvatarPalette(String? key) {
   return switch (key?.trim()) {
-    'pink' => (background: const Color(0xFF5D2448), foreground: const Color(0xFFF6B4E5)),
-    'mint' => (background: const Color(0xFF164740), foreground: const Color(0xFFB8F7E8)),
-    'orange' => (background: const Color(0xFF6A3814), foreground: const Color(0xFFFFC38D)),
-    'purple' => (background: const Color(0xFF4C2D67), foreground: const Color(0xFFD1B0FF)),
-    'cyan' => (background: const Color(0xFF1A4172), foreground: const Color(0xFFA5D4FF)),
-    'lime' => (background: const Color(0xFF42571A), foreground: const Color(0xFFD6F48E)),
-    _ => (background: const Color(0xFF164740), foreground: const Color(0xFFB8F7E8)),
+    'pink' => (
+      background: const Color(0xFF5D2448),
+      foreground: const Color(0xFFF6B4E5),
+    ),
+    'mint' => (
+      background: const Color(0xFF164740),
+      foreground: const Color(0xFFB8F7E8),
+    ),
+    'orange' => (
+      background: const Color(0xFF6A3814),
+      foreground: const Color(0xFFFFC38D),
+    ),
+    'purple' => (
+      background: const Color(0xFF4C2D67),
+      foreground: const Color(0xFFD1B0FF),
+    ),
+    'cyan' => (
+      background: const Color(0xFF1A4172),
+      foreground: const Color(0xFFA5D4FF),
+    ),
+    'lime' => (
+      background: const Color(0xFF42571A),
+      foreground: const Color(0xFFD6F48E),
+    ),
+    _ => (
+      background: const Color(0xFF164740),
+      foreground: const Color(0xFFB8F7E8),
+    ),
   };
 }
 
@@ -3571,6 +3838,79 @@ String _dataUrlForFile(String filename, Uint8List bytes) {
     _ => 'image/png',
   };
   return 'data:$mimeType;base64,${base64Encode(bytes)}';
+}
+
+ProjectTarget? _projectForDirectory(
+  List<ProjectTarget> projects,
+  String currentDirectory,
+) {
+  for (final project in projects) {
+    if (project.directory == currentDirectory) {
+      return project;
+    }
+  }
+  return null;
+}
+
+List<_SidebarSessionEntry> _buildSidebarSessionEntries({
+  required List<SessionSummary> roots,
+  required List<SessionSummary> allSessions,
+  required Map<String, SessionStatusSummary> statuses,
+  required String? selectedSessionId,
+}) {
+  final childrenByParent = <String, List<SessionSummary>>{};
+  for (final session in allSessions) {
+    final parentId = session.parentId;
+    if (parentId == null || parentId.isEmpty || session.archivedAt != null) {
+      continue;
+    }
+    childrenByParent
+        .putIfAbsent(parentId, () => <SessionSummary>[])
+        .add(session);
+  }
+
+  int compareSessions(SessionSummary left, SessionSummary right) {
+    final leftSelected = left.id == selectedSessionId;
+    final rightSelected = right.id == selectedSessionId;
+    if (leftSelected != rightSelected) {
+      return leftSelected ? -1 : 1;
+    }
+    final leftActive = _isActiveSessionStatus(statuses[left.id]);
+    final rightActive = _isActiveSessionStatus(statuses[right.id]);
+    if (leftActive != rightActive) {
+      return leftActive ? -1 : 1;
+    }
+    final updated = right.updatedAt.compareTo(left.updatedAt);
+    if (updated != 0) {
+      return updated;
+    }
+    return left.title.toLowerCase().compareTo(right.title.toLowerCase());
+  }
+
+  for (final children in childrenByParent.values) {
+    children.sort(compareSessions);
+  }
+
+  final entries = <_SidebarSessionEntry>[];
+  final seen = <String>{};
+
+  void visit(SessionSummary session, int depth, String rootId) {
+    if (!seen.add(session.id)) {
+      return;
+    }
+    entries.add(
+      _SidebarSessionEntry(session: session, depth: depth, rootId: rootId),
+    );
+    for (final child
+        in childrenByParent[session.id] ?? const <SessionSummary>[]) {
+      visit(child, depth + 1, rootId);
+    }
+  }
+
+  for (final root in roots) {
+    visit(root, 0, root.id);
+  }
+  return entries;
 }
 
 SessionSummary? _sessionById(List<SessionSummary> sessions, String? sessionId) {

@@ -135,7 +135,9 @@ void main() {
 
       expect(createdControllers, hasLength(1));
       await tester.tap(
-        find.widgetWithIcon(IconButton, Icons.add_rounded).first,
+        find.byKey(
+          const ValueKey<String>('workspace-sidebar-new-session-button'),
+        ),
       );
       await tester.pumpAndSettle();
 
@@ -197,9 +199,7 @@ void main() {
       final initialRouteName = observer.lastRouteName;
 
       await tester.tap(
-        find.byKey(
-          const ValueKey<String>('workspace-project-/workspace/lab'),
-        ),
+        find.byKey(const ValueKey<String>('workspace-project-/workspace/lab')),
       );
       await tester.pumpAndSettle();
 
@@ -212,9 +212,7 @@ void main() {
       expect(find.text('hello from lab'), findsOneWidget);
 
       await tester.tap(
-        find.byKey(
-          const ValueKey<String>('workspace-project-/workspace/demo'),
-        ),
+        find.byKey(const ValueKey<String>('workspace-project-/workspace/demo')),
       );
       await tester.pumpAndSettle();
 

@@ -28,7 +28,9 @@ void main() {
     SharedPreferences.setMockInitialValues(<String, Object>{});
   });
 
-  testWidgets('sidebar only shows user-created root sessions', (tester) async {
+  testWidgets('sidebar shows project header and nested session tree', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1600, 1000);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -64,9 +66,23 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
 
+    expect(find.text('Demo'), findsOneWidget);
+    expect(find.text('/workspace/demo'), findsOneWidget);
+    expect(find.text('New session'), findsOneWidget);
+    expect(
+      find.byKey(
+        const ValueKey<String>('workspace-sidebar-project-menu-button'),
+      ),
+      findsOneWidget,
+    );
     expect(find.text('Root session'), findsAtLeastNWidgets(1));
     expect(find.text('Another root session'), findsAtLeastNWidgets(1));
-    expect(find.text('Nested subagent session'), findsNothing);
+    expect(find.text('Nested subagent session'), findsAtLeastNWidgets(1));
+    expect(
+      find.byKey(const ValueKey<String>('workspace-session-entry-ses_child-1')),
+      findsOneWidget,
+    );
+    expect(find.text('Sessions'), findsNothing);
     expect(find.text('idle'), findsNothing);
     expect(find.text('busy'), findsNothing);
     expect(
@@ -201,8 +217,7 @@ void main() {
 
     expect(find.text('Edit project'), findsAtLeastNWidgets(1));
     final nameField = find.byWidgetPredicate(
-      (widget) =>
-          widget is TextField && widget.decoration?.labelText == 'Name',
+      (widget) => widget is TextField && widget.decoration?.labelText == 'Name',
     );
     final startupField = find.byWidgetPredicate(
       (widget) =>
@@ -215,8 +230,9 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 220));
 
-    final updatedProject = controllerInstance.availableProjects
-        .firstWhere((project) => project.directory == '/workspace/lab');
+    final updatedProject = controllerInstance.availableProjects.firstWhere(
+      (project) => project.directory == '/workspace/lab',
+    );
     expect(updatedProject.name, 'Lab Renamed');
     expect(updatedProject.commands?.start, 'bun install');
 
@@ -466,7 +482,9 @@ class _EditableSidebarWorkspaceController extends _SidebarWorkspaceController {
   @override
   void applyProjectTargetUpdate(ProjectTarget target, {bool notify = true}) {
     _projects = _projects
-        .map((project) => project.directory == target.directory ? target : project)
+        .map(
+          (project) => project.directory == target.directory ? target : project,
+        )
         .toList(growable: false);
     if (notify) {
       notifyListeners();
