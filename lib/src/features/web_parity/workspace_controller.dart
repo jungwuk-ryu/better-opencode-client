@@ -399,10 +399,12 @@ class WorkspaceController extends ChangeNotifier {
       );
       _sessions = bundle.sessions;
       _statuses = bundle.statuses;
-      _selectedSessionId =
-          initialSessionId ??
-          bundle.selectedSessionId ??
-          _sessionIdHintForProject(resolvedProject, bundle.sessions);
+      _selectedSessionId = _resolveSessionSelection(
+        requestedSessionId: initialSessionId,
+        bundleSelectedSessionId: bundle.selectedSessionId,
+        project: resolvedProject,
+        sessions: bundle.sessions,
+      );
 
       if (_selectedSessionId != null) {
         await _loadSelectedSessionMessages(
@@ -465,9 +467,12 @@ class WorkspaceController extends ChangeNotifier {
     );
     _sessions = bundle.sessions;
     _statuses = bundle.statuses;
-    _selectedSessionId =
-        bundle.selectedSessionId ??
-        _sessionIdHintForProject(project, bundle.sessions);
+    _selectedSessionId = _resolveSessionSelection(
+      requestedSessionId: null,
+      bundleSelectedSessionId: bundle.selectedSessionId,
+      project: project,
+      sessions: bundle.sessions,
+    );
     if (_selectedSessionId != null) {
       await _loadSelectedSessionMessages(
         project: project,
@@ -1704,13 +1709,14 @@ class WorkspaceController extends ChangeNotifier {
       _project = target;
     }
     _availableProjects = _availableProjects
-        .map((project) => project.directory == target.directory ? target : project)
+        .map(
+          (project) => project.directory == target.directory ? target : project,
+        )
         .toList(growable: false);
     final exists = _availableProjects.any(
       (project) => project.directory == target.directory,
     );
-    if (!exists &&
-        !_hiddenProjectDirectories.contains(target.directory)) {
+    if (!exists && !_hiddenProjectDirectories.contains(target.directory)) {
       _availableProjects = <ProjectTarget>[
         target,
         ..._availableProjects,
@@ -1722,7 +1728,10 @@ class WorkspaceController extends ChangeNotifier {
   }
 
   void applyProjectRemoval(String directory, {bool notify = true}) {
-    _hiddenProjectDirectories = <String>{..._hiddenProjectDirectories, directory};
+    _hiddenProjectDirectories = <String>{
+      ..._hiddenProjectDirectories,
+      directory,
+    };
     _availableProjects = _availableProjects
         .where((project) => project.directory != directory)
         .toList(growable: false);
@@ -1824,9 +1833,9 @@ class WorkspaceController extends ChangeNotifier {
 
   List<ProjectTarget> _mergeProjects(
     ProjectCatalog catalog,
-    List<ProjectTarget> recentProjects,
-    {required Set<String> hiddenProjects}
-  ) {
+    List<ProjectTarget> recentProjects, {
+    required Set<String> hiddenProjects,
+  }) {
     final byDirectory = <String, ProjectTarget>{};
 
     void add(ProjectTarget target) {
@@ -1882,21 +1891,62 @@ class WorkspaceController extends ChangeNotifier {
     return values;
   }
 
+  String? _resolveSessionSelection({
+    required String? requestedSessionId,
+    required String? bundleSelectedSessionId,
+    required ProjectTarget project,
+    required List<SessionSummary> sessions,
+  }) {
+    bool exists(String? sessionId) {
+      if (sessionId == null || sessionId.isEmpty) {
+        return false;
+      }
+      return sessions.any(
+        (session) => session.id == sessionId && session.archivedAt == null,
+      );
+    }
+
+    if (exists(requestedSessionId)) {
+      return requestedSessionId;
+    }
+    if (exists(bundleSelectedSessionId)) {
+      return bundleSelectedSessionId;
+    }
+    return _sessionIdHintForProject(project, sessions);
+  }
+
   String? _sessionIdHintForProject(
     ProjectTarget project,
     List<SessionSummary> sessions,
   ) {
+    final activeSessions = sessions
+        .where((session) => session.archivedAt == null)
+        .toList(growable: false);
     final visibleSessions = _visibleRootSessions(sessions);
+    final hintId = project.lastSession?.id?.trim();
+    if (hintId != null && hintId.isNotEmpty) {
+      for (final session in activeSessions) {
+        if (session.id == hintId) {
+          return session.id;
+        }
+      }
+    }
     final hint = project.lastSession?.title?.trim();
     if (hint == null || hint.isEmpty) {
-      return visibleSessions.isEmpty ? null : visibleSessions.first.id;
+      if (visibleSessions.isNotEmpty) {
+        return visibleSessions.first.id;
+      }
+      return activeSessions.isEmpty ? null : activeSessions.first.id;
     }
-    for (final session in visibleSessions) {
+    for (final session in activeSessions) {
       if (session.title.trim() == hint) {
         return session.id;
       }
     }
-    return visibleSessions.isEmpty ? null : visibleSessions.first.id;
+    if (visibleSessions.isNotEmpty) {
+      return visibleSessions.first.id;
+    }
+    return activeSessions.isEmpty ? null : activeSessions.first.id;
   }
 
   List<SessionSummary> _visibleRootSessions(List<SessionSummary> sessions) {
@@ -1926,7 +1976,11 @@ class WorkspaceController extends ChangeNotifier {
         branch: project.branch,
         icon: project.icon,
         commands: project.commands,
-        lastSession: ProjectSessionHint(title: session?.title, status: status),
+        lastSession: ProjectSessionHint(
+          id: sessionId,
+          title: session?.title,
+          status: status,
+        ),
       ),
     );
   }

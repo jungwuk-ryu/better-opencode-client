@@ -59,7 +59,9 @@ class ProjectCommandsInfo {
   }
 
   ProjectCommandsInfo copyWith({String? start, bool clearStart = false}) {
-    return ProjectCommandsInfo(start: clearStart ? null : (start ?? this.start));
+    return ProjectCommandsInfo(
+      start: clearStart ? null : (start ?? this.start),
+    );
   }
 }
 
@@ -180,8 +182,9 @@ class VcsInfo {
 }
 
 class ProjectSessionHint {
-  const ProjectSessionHint({this.title, this.status});
+  const ProjectSessionHint({this.id, this.title, this.status});
 
+  final String? id;
   final String? title;
   final String? status;
 }
@@ -229,11 +232,13 @@ class ProjectTarget {
     'branch': branch,
     'icon': icon?.toJson(),
     'commands': commands?.toJson(),
+    'lastSessionId': lastSession?.id,
     'lastSessionTitle': lastSession?.title,
     'lastSessionStatus': lastSession?.status,
   };
 
   factory ProjectTarget.fromJson(Map<String, Object?> json) {
+    final id = json['lastSessionId'] as String?;
     final title = json['lastSessionTitle'] as String?;
     final status = json['lastSessionStatus'] as String?;
     return ProjectTarget(
@@ -254,9 +259,9 @@ class ProjectTarget {
               (json['commands'] as Map).cast<String, Object?>(),
             )
           : null,
-      lastSession: title == null && status == null
+      lastSession: id == null && title == null && status == null
           ? null
-          : ProjectSessionHint(title: title, status: status),
+          : ProjectSessionHint(id: id, title: title, status: status),
     );
   }
 

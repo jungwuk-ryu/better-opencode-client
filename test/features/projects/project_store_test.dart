@@ -35,23 +35,50 @@ void main() {
     expect(unpinned.contains('/workspace/demo'), isFalse);
   });
 
-  test('hidden projects are excluded from recent projects until restored', () async {
+  test(
+    'hidden projects are excluded from recent projects until restored',
+    () async {
+      final store = ProjectStore();
+      const target = ProjectTarget(
+        directory: '/workspace/demo',
+        label: 'Demo',
+        source: 'server',
+      );
+
+      await store.recordRecentProject(target);
+      await store.hideProject('/workspace/demo');
+
+      expect(await store.loadRecentProjects(), isEmpty);
+
+      await store.recordRecentProject(target);
+      final recent = await store.loadRecentProjects();
+
+      expect(recent, hasLength(1));
+      expect(recent.single.directory, '/workspace/demo');
+    },
+  );
+
+  test('last workspace preserves the last session id hint', () async {
     final store = ProjectStore();
     const target = ProjectTarget(
       directory: '/workspace/demo',
       label: 'Demo',
       source: 'server',
+      lastSession: ProjectSessionHint(
+        id: 'ses_saved',
+        title: 'Saved session',
+        status: 'busy',
+      ),
     );
 
-    await store.recordRecentProject(target);
-    await store.hideProject('/workspace/demo');
+    await store.saveLastWorkspace(
+      serverStorageKey: 'server::demo',
+      target: target,
+    );
+    final restored = await store.loadLastWorkspace('server::demo');
 
-    expect(await store.loadRecentProjects(), isEmpty);
-
-    await store.recordRecentProject(target);
-    final recent = await store.loadRecentProjects();
-
-    expect(recent, hasLength(1));
-    expect(recent.single.directory, '/workspace/demo');
+    expect(restored?.lastSession?.id, 'ses_saved');
+    expect(restored?.lastSession?.title, 'Saved session');
+    expect(restored?.lastSession?.status, 'busy');
   });
 }

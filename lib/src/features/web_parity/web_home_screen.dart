@@ -35,6 +35,68 @@ class WebParityHomeScreen extends StatefulWidget {
 class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
   late final ProjectStore _projectStore = widget.projectStore ?? ProjectStore();
 
+  Future<ProjectTarget> _resolveNavigationTarget(
+    WebParityAppController controller,
+    ProjectTarget target,
+  ) async {
+    final selectedProfile = controller.selectedProfile;
+    if (selectedProfile == null) {
+      return target;
+    }
+
+    ProjectSessionHint? remembered = target.lastSession;
+    if (remembered?.id == null || remembered!.id!.trim().isEmpty) {
+      final lastWorkspace = await _projectStore.loadLastWorkspace(
+        selectedProfile.storageKey,
+      );
+      if (lastWorkspace?.directory == target.directory &&
+          lastWorkspace?.lastSession != null) {
+        remembered = lastWorkspace!.lastSession;
+      }
+    }
+
+    if (remembered?.id == null || remembered!.id!.trim().isEmpty) {
+      for (final item in controller.recentProjects) {
+        if (item.directory == target.directory && item.lastSession != null) {
+          remembered = item.lastSession;
+          break;
+        }
+      }
+    }
+
+    if (remembered == null) {
+      return target;
+    }
+    return target.copyWith(lastSession: remembered);
+  }
+
+  Future<void> _openResolvedProject(
+    WebParityAppController controller,
+    ProjectTarget target,
+  ) async {
+    final selectedProfile = controller.selectedProfile;
+    if (selectedProfile == null) {
+      await _openServers(controller);
+      return;
+    }
+
+    final resolvedTarget = await _resolveNavigationTarget(controller, target);
+    await _projectStore.recordRecentProject(resolvedTarget);
+    await _projectStore.saveLastWorkspace(
+      serverStorageKey: selectedProfile.storageKey,
+      target: resolvedTarget,
+    );
+    if (!mounted) {
+      return;
+    }
+    Navigator.of(context).pushNamed(
+      buildWorkspaceRoute(
+        resolvedTarget.directory,
+        sessionId: _preferredSessionId(resolvedTarget),
+      ),
+    );
+  }
+
   Future<void> _openProjectPicker(WebParityAppController controller) async {
     final selectedProfile = controller.selectedProfile;
     if (selectedProfile == null) {
@@ -55,16 +117,7 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
     if (target == null || !mounted) {
       return;
     }
-
-    await _projectStore.recordRecentProject(target);
-    await _projectStore.saveLastWorkspace(
-      serverStorageKey: selectedProfile.storageKey,
-      target: target,
-    );
-    if (!mounted) {
-      return;
-    }
-    Navigator.of(context).pushNamed(buildWorkspaceRoute(target.directory));
+    await _openResolvedProject(controller, target);
   }
 
   Future<void> _openServers(WebParityAppController controller) async {
@@ -88,20 +141,7 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
     WebParityAppController controller,
     ProjectTarget target,
   ) async {
-    final selectedProfile = controller.selectedProfile;
-    if (selectedProfile == null) {
-      await _openServers(controller);
-      return;
-    }
-    await _projectStore.recordRecentProject(target);
-    await _projectStore.saveLastWorkspace(
-      serverStorageKey: selectedProfile.storageKey,
-      target: target,
-    );
-    if (!mounted) {
-      return;
-    }
-    Navigator.of(context).pushNamed(buildWorkspaceRoute(target.directory));
+    await _openResolvedProject(controller, target);
   }
 
   @override
@@ -123,7 +163,9 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
                 colors: <Color>[
                   surfaces.background,
                   Color.alphaBlend(
-                    Theme.of(context).colorScheme.primary.withValues(alpha: 0.05),
+                    Theme.of(
+                      context,
+                    ).colorScheme.primary.withValues(alpha: 0.05),
                     surfaces.panel,
                   ),
                 ],
@@ -168,7 +210,9 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
                                       style: Theme.of(context)
                                           .textTheme
                                           .headlineMedium
-                                          ?.copyWith(fontWeight: FontWeight.w800),
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w800,
+                                          ),
                                     ),
                                     const SizedBox(height: AppSpacing.sm),
                                     Text(
@@ -181,8 +225,11 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
                                     ),
                                     const SizedBox(height: AppSpacing.lg),
                                     FilledButton.icon(
-                                      onPressed: () => _openProjectPicker(controller),
-                                      icon: const Icon(Icons.folder_open_rounded),
+                                      onPressed: () =>
+                                          _openProjectPicker(controller),
+                                      icon: const Icon(
+                                        Icons.folder_open_rounded,
+                                      ),
                                       label: const Text('Open Project'),
                                     ),
                                   ],
@@ -206,6 +253,14 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
       },
     );
   }
+}
+
+String? _preferredSessionId(ProjectTarget target) {
+  final sessionId = target.lastSession?.id?.trim();
+  if (sessionId == null || sessionId.isEmpty) {
+    return null;
+  }
+  return sessionId;
 }
 
 class _RecentProjectsSection extends StatelessWidget {
@@ -297,8 +352,9 @@ class _ServerPill extends StatelessWidget {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final color = switch (report?.classification) {
       ConnectionProbeClassification.ready => surfaces.success,
-      ConnectionProbeClassification.authFailure =>
-        Theme.of(context).colorScheme.secondary,
+      ConnectionProbeClassification.authFailure => Theme.of(
+        context,
+      ).colorScheme.secondary,
       ConnectionProbeClassification.unsupportedCapabilities => surfaces.warning,
       ConnectionProbeClassification.specFetchFailure => surfaces.warning,
       ConnectionProbeClassification.connectivityFailure => surfaces.danger,
@@ -384,9 +440,7 @@ class _ServersSheet extends StatelessWidget {
                     ? Center(
                         child: Text(
                           'No saved servers yet.',
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodyMedium
+                          style: Theme.of(context).textTheme.bodyMedium
                               ?.copyWith(color: surfaces.muted),
                         ),
                       )
@@ -423,14 +477,16 @@ class _ServersSheet extends StatelessWidget {
                   Expanded(
                     child: OutlinedButton.icon(
                       onPressed: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (context) => ConnectionHomeScreen(
-                              flavor: flavor,
-                              localeController: localeController,
-                            ),
-                          ),
-                        ).then((_) => controller.reload());
+                        Navigator.of(context)
+                            .push(
+                              MaterialPageRoute<void>(
+                                builder: (context) => ConnectionHomeScreen(
+                                  flavor: flavor,
+                                  localeController: localeController,
+                                ),
+                              ),
+                            )
+                            .then((_) => controller.reload());
                       },
                       icon: const Icon(Icons.settings_input_antenna_rounded),
                       label: const Text('Manage Servers'),
@@ -456,8 +512,9 @@ class _StatusDot extends StatelessWidget {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final color = switch (report?.classification) {
       ConnectionProbeClassification.ready => surfaces.success,
-      ConnectionProbeClassification.authFailure =>
-        Theme.of(context).colorScheme.secondary,
+      ConnectionProbeClassification.authFailure => Theme.of(
+        context,
+      ).colorScheme.secondary,
       ConnectionProbeClassification.unsupportedCapabilities => surfaces.warning,
       ConnectionProbeClassification.specFetchFailure => surfaces.warning,
       ConnectionProbeClassification.connectivityFailure => surfaces.danger,
