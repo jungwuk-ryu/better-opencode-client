@@ -115,12 +115,12 @@ class PtyTerminalPanel extends StatelessWidget {
                             onAction: creating ? null : onCreateSession,
                           );
                         }
-                        return _PtyTerminalView(
-                          key: ValueKey<String>('pty-${activeSession.id}'),
+                        return _PtyTerminalViewport(
                           profile: profile,
                           directory: directory,
                           service: service,
-                          session: activeSession,
+                          sessions: sessions,
+                          activeSessionId: activeSession.id,
                           onTitleChanged: onTitleChanged,
                           onSessionMissing: onSessionMissing,
                         );
@@ -262,7 +262,9 @@ class _PtySessionTab extends StatelessWidget {
                 width: 8,
                 height: 8,
                 decoration: BoxDecoration(
-                  color: session.isRunning ? colorScheme.primary : surfaces.muted,
+                  color: session.isRunning
+                      ? colorScheme.primary
+                      : surfaces.muted,
                   shape: BoxShape.circle,
                 ),
               ),
@@ -369,6 +371,79 @@ class _PtyTerminalView extends StatefulWidget {
 
   @override
   State<_PtyTerminalView> createState() => _PtyTerminalViewState();
+}
+
+class _PtyTerminalViewport extends StatefulWidget {
+  const _PtyTerminalViewport({
+    required this.profile,
+    required this.directory,
+    required this.service,
+    required this.sessions,
+    required this.activeSessionId,
+    required this.onTitleChanged,
+    required this.onSessionMissing,
+  });
+
+  final ServerProfile profile;
+  final String directory;
+  final PtyService service;
+  final List<PtySessionInfo> sessions;
+  final String activeSessionId;
+  final void Function(String id, String title) onTitleChanged;
+  final ValueChanged<String> onSessionMissing;
+
+  @override
+  State<_PtyTerminalViewport> createState() => _PtyTerminalViewportState();
+}
+
+class _PtyTerminalViewportState extends State<_PtyTerminalViewport> {
+  final Set<String> _mountedSessionIds = <String>{};
+
+  @override
+  void initState() {
+    super.initState();
+    _mountedSessionIds.add(widget.activeSessionId);
+  }
+
+  @override
+  void didUpdateWidget(covariant _PtyTerminalViewport oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _mountedSessionIds.add(widget.activeSessionId);
+    final validIds = widget.sessions.map((session) => session.id).toSet();
+    _mountedSessionIds.removeWhere(
+      (sessionId) => !validIds.contains(sessionId),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mountedSessions = widget.sessions
+        .where((session) => _mountedSessionIds.contains(session.id))
+        .toList(growable: false);
+    final activeIndex = mountedSessions.indexWhere(
+      (session) => session.id == widget.activeSessionId,
+    );
+    if (mountedSessions.isEmpty || activeIndex == -1) {
+      return const SizedBox.shrink();
+    }
+
+    return IndexedStack(
+      index: activeIndex,
+      children: mountedSessions
+          .map(
+            (session) => _PtyTerminalView(
+              key: ValueKey<String>('pty-${session.id}'),
+              profile: widget.profile,
+              directory: widget.directory,
+              service: widget.service,
+              session: session,
+              onTitleChanged: widget.onTitleChanged,
+              onSessionMissing: widget.onSessionMissing,
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
 }
 
 class _PtyTerminalViewState extends State<_PtyTerminalView> {
@@ -554,12 +629,7 @@ class _PtyTerminalViewState extends State<_PtyTerminalView> {
     } catch (_) {}
   }
 
-  void _handleResize(
-    int width,
-    int height,
-    int pixelWidth,
-    int pixelHeight,
-  ) {
+  void _handleResize(int width, int height, int pixelWidth, int pixelHeight) {
     if (width <= 0 || height <= 0) {
       return;
     }
@@ -624,85 +694,86 @@ class _PtyTerminalViewState extends State<_PtyTerminalView> {
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final statusTone = widget.session.isRunning
+        ? Theme.of(context).colorScheme.primary
+        : surfaces.muted;
+    final connectionTone = _reconnecting
+        ? Theme.of(context).colorScheme.primary
+        : surfaces.warning;
 
-    return Stack(
-      children: <Widget>[
-        DecoratedBox(
-          decoration: BoxDecoration(color: surfaces.panel),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.md,
-                  AppSpacing.sm,
-                  AppSpacing.md,
-                  AppSpacing.xs,
-                ),
-                child: Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: Text(
-                        widget.session.cwd,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: surfaces.muted,
-                          fontFamily: GoogleFonts.ibmPlexMono().fontFamily,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+    return DecoratedBox(
+      decoration: BoxDecoration(color: surfaces.panel),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.md,
+              AppSpacing.sm,
+              AppSpacing.md,
+              AppSpacing.xs,
+            ),
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    widget.session.cwd,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: surfaces.muted,
+                      fontFamily: GoogleFonts.ibmPlexMono().fontFamily,
                     ),
-                    const SizedBox(width: AppSpacing.sm),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Wrap(
+                  spacing: AppSpacing.xs,
+                  runSpacing: AppSpacing.xs,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: <Widget>[
+                    if (_connectionNotice != null)
+                      _TerminalStatusChip(
+                        label: _connectionNotice!,
+                        tone: connectionTone,
+                      ),
                     _TerminalStatusChip(
                       label: widget.session.isRunning ? 'live' : 'exited',
-                      tone: widget.session.isRunning
-                          ? Theme.of(context).colorScheme.primary
-                          : surfaces.muted,
+                      tone: statusTone,
                     ),
                   ],
                 ),
-              ),
-              Expanded(
-                child: TerminalView(
-                  _terminal,
-                  controller: _terminalController,
-                  scrollController: _scrollController,
-                  autoResize: true,
-                  autofocus: true,
-                  backgroundOpacity: 1,
-                  theme: _buildTheme(context),
-                  textStyle: TerminalStyle(
-                    fontFamily: GoogleFonts.ibmPlexMono().fontFamily ?? 'Menlo',
-                    fontFamilyFallback: const <String>[
-                      'Menlo',
-                      'Monaco',
-                      'Consolas',
-                      'Courier New',
-                      'monospace',
-                    ],
-                    fontSize: 13,
-                    height: 1.25,
-                  ),
-                  onSecondaryTapDown: (details, offset) {
-                    unawaited(_handleSecondaryTap());
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-        if (_connectionNotice != null)
-          Positioned(
-            top: AppSpacing.sm,
-            right: AppSpacing.sm,
-            child: _TerminalStatusChip(
-              label: _connectionNotice!,
-              tone: _reconnecting
-                  ? Theme.of(context).colorScheme.primary
-                  : surfaces.warning,
+              ],
             ),
           ),
-      ],
+          Expanded(
+            child: TerminalView(
+              _terminal,
+              controller: _terminalController,
+              scrollController: _scrollController,
+              autoResize: true,
+              autofocus: true,
+              backgroundOpacity: 1,
+              theme: _buildTheme(context),
+              textStyle: TerminalStyle(
+                fontFamily: GoogleFonts.ibmPlexMono().fontFamily ?? 'Menlo',
+                fontFamilyFallback: const <String>[
+                  'Menlo',
+                  'Monaco',
+                  'Consolas',
+                  'Courier New',
+                  'monospace',
+                ],
+                fontSize: 13,
+                height: 1.25,
+              ),
+              onSecondaryTapDown: (details, offset) {
+                unawaited(_handleSecondaryTap());
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 
