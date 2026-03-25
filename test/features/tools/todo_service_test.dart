@@ -24,18 +24,16 @@ void main() {
         utf8.encode(
           jsonEncode([
             {
-              'id': 'todo-1',
               'content': 'Fetch session state',
               'status': 'in_progress',
               'priority': 'high',
             },
-            {'id': null, 'content': 'Broken todo', 'status': 'pending'},
             {
-              'id': 'todo-2',
               'content': 'Render parts',
               'status': 'pending',
               'priority': 'medium',
             },
+            {'status': 'pending', 'priority': 'low'},
           ]),
         ),
       );
@@ -60,7 +58,10 @@ void main() {
     );
 
     expect(todos.length, 2);
-    expect(todos.map((item) => item.id), <String>['todo-1', 'todo-2']);
+    expect(todos.map((item) => item.id), <String>[
+      'todo_0_fetch_session_state',
+      'todo_1_render_parts',
+    ]);
     expect(todos.first.status, 'in_progress');
     service.dispose();
   });

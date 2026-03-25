@@ -1003,10 +1003,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
               .toList(growable: false);
       final todos = cachedTodos == null
           ? const <TodoItem>[]
-          : ((jsonDecode(cachedTodos.payloadJson) as List)
-                    .cast<Map<String, Object?>>())
-                .map(TodoItem.fromJson)
-                .toList(growable: false);
+          : TodoItem.listFromJson(jsonDecode(cachedTodos.payloadJson) as List);
       setState(() {
         _selectedSessionId = sessionId;
         _messages = messages;
@@ -1114,11 +1111,9 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       return;
     }
     if (cached != null) {
-      final todos =
-          ((jsonDecode(cached.payloadJson) as List)
-                  .cast<Map<String, Object?>>())
-              .map(TodoItem.fromJson)
-              .toList(growable: false);
+      final todos = TodoItem.listFromJson(
+        jsonDecode(cached.payloadJson) as List,
+      );
       setState(() {
         _todos = todos;
       });

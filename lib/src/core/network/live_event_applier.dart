@@ -238,10 +238,7 @@ List<TodoItem> applyTodoUpdatedEvent(
 
   final rawTodos = properties['todos'];
   if (rawTodos is List) {
-    return rawTodos
-        .whereType<Map>()
-        .map((item) => TodoItem.fromJson(item.cast<String, Object?>()))
-        .toList(growable: false);
+    return TodoItem.listFromJson(rawTodos);
   }
 
   final todoId = properties['todoID']?.toString();

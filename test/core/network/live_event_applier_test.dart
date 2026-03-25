@@ -169,7 +169,6 @@ void main() {
         'sessionID': 'ses_1',
         'todos': <Map<String, Object?>>[
           <String, Object?>{
-            'id': 'todo_2',
             'content': 'Ship update',
             'status': 'completed',
             'priority': 'medium',
@@ -178,7 +177,8 @@ void main() {
       }, selectedSessionId: 'ses_1');
 
       expect(patched.single.status, 'in_progress');
-      expect(replaced.single.id, 'todo_2');
+      expect(replaced.single.id, 'todo_0_ship_update');
+      expect(replaced.single.content, 'Ship update');
     },
   );
 }
