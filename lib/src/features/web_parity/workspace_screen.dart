@@ -9,7 +9,6 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
 import '../../app/app_controller.dart';
-import '../../app/app_routes.dart';
 import '../../app/app_scope.dart';
 import '../../core/connection/connection_models.dart';
 import '../../core/network/opencode_server_probe.dart';
@@ -88,12 +87,18 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   String? _pendingSessionRouteId;
   int _sessionRouteSyncRevision = 0;
   bool _promptSubmitInFlight = false;
+  late String _activeDirectory;
+  String? _activeRouteSessionId;
 
   @override
   void initState() {
     super.initState();
+    _activeDirectory = widget.directory;
+    _activeRouteSessionId = widget.sessionId;
     _timelineScrollController.addListener(_handleTimelineScroll);
   }
+
+  String get _currentDirectory => _activeDirectory;
 
   @override
   void didChangeDependencies() {
@@ -106,65 +111,40 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       _resetRouteSessionSync();
       return;
     }
-    final hadCachedController = appController.hasWorkspaceController(
-      profile: profile,
-      directory: widget.directory,
-    );
-    final nextController = appController.obtainWorkspaceController(
-      profile: profile,
-      directory: widget.directory,
-      initialSessionId: widget.sessionId,
-    );
-    final bindingChanged =
-        !identical(_controller, nextController) ||
-        _profile?.storageKey != profile.storageKey;
-
-    _controller = nextController;
-    _profile = profile;
-
-    if (!bindingChanged) {
+    if (_controller != null && _profile?.storageKey == profile.storageKey) {
       return;
     }
-
-    _compactPane = _CompactWorkspacePane.session;
-    _resetTerminalState(profile);
-    if (hadCachedController) {
-      _queueRouteSessionSync(widget.sessionId);
-    } else {
-      _resetRouteSessionSync();
-    }
+    _bindWorkspace(
+      appController: appController,
+      profile: profile,
+      directory: _activeDirectory,
+      routeSessionId: _activeRouteSessionId,
+    );
   }
 
   @override
   void didUpdateWidget(covariant WebParityWorkspaceScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.directory != widget.directory) {
-      _disposeController();
-      _resetRouteSessionSync();
-      final appController = AppScope.of(context);
-      final profile = appController.selectedProfile;
-      if (profile != null) {
-        final hadCachedController = appController.hasWorkspaceController(
-          profile: profile,
-          directory: widget.directory,
-        );
-        _controller = appController.obtainWorkspaceController(
-          profile: profile,
-          directory: widget.directory,
-          initialSessionId: widget.sessionId,
-        );
-        _profile = profile;
-        _compactPane = _CompactWorkspacePane.session;
-        _resetTerminalState(profile);
-        if (hadCachedController) {
-          _queueRouteSessionSync(widget.sessionId);
-        }
-      }
+    if (oldWidget.directory == widget.directory &&
+        oldWidget.sessionId == widget.sessionId) {
       return;
     }
-    if (oldWidget.sessionId != widget.sessionId) {
-      _queueRouteSessionSync(widget.sessionId);
+    _activeDirectory = widget.directory;
+    _activeRouteSessionId = widget.sessionId;
+    final appController = AppScope.of(context);
+    final profile = appController.selectedProfile;
+    if (profile == null) {
+      _disposeController();
+      _profile = null;
+      _resetRouteSessionSync();
+      return;
     }
+    _bindWorkspace(
+      appController: appController,
+      profile: profile,
+      directory: _activeDirectory,
+      routeSessionId: _activeRouteSessionId,
+    );
   }
 
   @override
@@ -179,6 +159,44 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
 
   void _disposeController() {
     _controller = null;
+  }
+
+  void _bindWorkspace({
+    required WebParityAppController appController,
+    required ServerProfile profile,
+    required String directory,
+    String? routeSessionId,
+  }) {
+    final hadCachedController = appController.hasWorkspaceController(
+      profile: profile,
+      directory: directory,
+    );
+    final nextController = appController.obtainWorkspaceController(
+      profile: profile,
+      directory: directory,
+      initialSessionId: routeSessionId,
+    );
+    final bindingChanged =
+        !identical(_controller, nextController) ||
+        _profile?.storageKey != profile.storageKey ||
+        _activeDirectory != directory;
+
+    _controller = nextController;
+    _profile = profile;
+    _activeDirectory = directory;
+    _activeRouteSessionId = routeSessionId;
+
+    if (bindingChanged) {
+      _compactPane = _CompactWorkspacePane.session;
+      _resetTimelineTracking();
+      _resetTerminalState(profile);
+    }
+
+    if (routeSessionId != null && hadCachedController) {
+      _queueRouteSessionSync(routeSessionId);
+    } else {
+      _resetRouteSessionSync();
+    }
   }
 
   void _resetRouteSessionSync() {
@@ -210,7 +228,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       }
 
       final requestedSessionId = _pendingSessionRouteId;
-      if (controller.selectedSessionId == requestedSessionId) {
+      if (requestedSessionId == null ||
+          controller.selectedSessionId == requestedSessionId) {
         _hasPendingSessionRouteSync = false;
         return;
       }
@@ -258,7 +277,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     try {
       final sessions = await service.listSessions(
         profile: profile,
-        directory: widget.directory,
+        directory: _currentDirectory,
       );
       if (!mounted || epoch != _terminalEpoch) {
         return;
@@ -330,8 +349,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     try {
       final session = await service.createSession(
         profile: profile,
-        directory: widget.directory,
-        cwd: widget.directory,
+        directory: _currentDirectory,
+        cwd: _currentDirectory,
         title: _nextTerminalTitle(_ptySessions),
       );
       if (!mounted) {
@@ -378,7 +397,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     try {
       await service.removeSession(
         profile: profile,
-        directory: widget.directory,
+        directory: _currentDirectory,
         ptyId: ptyId,
       );
     } catch (error) {
@@ -415,7 +434,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     try {
       final updated = await service.updateSession(
         profile: profile,
-        directory: widget.directory,
+        directory: _currentDirectory,
         ptyId: ptyId,
         title: trimmed,
       );
@@ -491,6 +510,15 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         (position.maxScrollExtent - position.pixels) <= 120;
   }
 
+  void _resetTimelineTracking() {
+    _lastTimelineScopeKey = null;
+    _lastTimelineMessageCount = 0;
+    _lastTimelineContentSignature = 0;
+    _lastTimelineLoading = false;
+    _timelineWasNearBottom = true;
+    _clearTimelineBottomLock();
+  }
+
   void _scheduleTimelineSync(WorkspaceController controller) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_timelineScrollController.hasClients) {
@@ -498,7 +526,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       }
 
       final scopeKey =
-          '${widget.directory}::${controller.selectedSessionId ?? 'new'}';
+          '$_currentDirectory::${controller.selectedSessionId ?? 'new'}';
       final messageCount = controller.messages.length;
       final contentSignature = _timelineContentSignature(controller.messages);
       final sessionChanged = _lastTimelineScopeKey != scopeKey;
@@ -586,7 +614,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       final controller = _controller;
       final currentScopeKey = controller == null
           ? null
-          : '${widget.directory}::${controller.selectedSessionId ?? 'new'}';
+          : '$_currentDirectory::${controller.selectedSessionId ?? 'new'}';
       if (currentScopeKey != expectedScopeKey) {
         _clearTimelineBottomLock();
         return;
@@ -876,6 +904,41 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     await controller.selectSession(sessionId);
   }
 
+  Future<void> _selectProjectInPlace(
+    ProjectTarget project, {
+    required bool compact,
+  }) async {
+    final profile = _profile;
+    if (profile == null) {
+      return;
+    }
+    if (project.directory == _currentDirectory) {
+      if (compact && (_scaffoldKey.currentState?.isDrawerOpen ?? false)) {
+        Navigator.of(context).pop();
+      }
+      return;
+    }
+    if (compact && (_scaffoldKey.currentState?.isDrawerOpen ?? false)) {
+      Navigator.of(context).pop();
+      await Future<void>.delayed(Duration.zero);
+      if (!mounted) {
+        return;
+      }
+    }
+
+    final appController = AppScope.of(context);
+    _promptController.clear();
+    _composerAttachments = const <PromptAttachment>[];
+
+    setState(() {
+      _bindWorkspace(
+        appController: appController,
+        profile: profile,
+        directory: project.directory,
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final appController = AppScope.of(context);
@@ -929,16 +992,13 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
           selectedSession,
         );
         final sidebar = _WorkspaceSidebar(
-          currentDirectory: widget.directory,
+          currentDirectory: _currentDirectory,
           currentSessionId: mainSession?.id ?? controller.selectedSessionId,
           projects: controller.availableProjects,
           sessions: controller.visibleSessions,
           statuses: controller.statuses,
-          onSelectProject: (project) {
-            Navigator.of(
-              context,
-            ).pushReplacementNamed(buildWorkspaceRoute(project.directory));
-          },
+          onSelectProject: (project) =>
+              unawaited(_selectProjectInPlace(project, compact: compact)),
           onSelectSession: (sessionId) {
             unawaited(
               _selectSessionInPlace(controller, sessionId, compact: compact),
@@ -1081,7 +1141,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                     ? null
                                     : PtyTerminalPanel(
                                         profile: _profile!,
-                                        directory: widget.directory,
+                                        directory: _currentDirectory,
                                         service: _ptyService!,
                                         sessions: _ptySessions,
                                         activeSessionId: _activePtyId,
@@ -2503,6 +2563,9 @@ class _WorkspaceSidebar extends StatelessWidget {
                           horizontal: AppSpacing.sm,
                         ),
                         child: InkWell(
+                          key: ValueKey<String>(
+                            'workspace-project-${project.directory}',
+                          ),
                           onTap: () => onSelectProject(project),
                           borderRadius: BorderRadius.circular(AppSpacing.md),
                           child: Container(

@@ -147,6 +147,87 @@ void main() {
   );
 
   testWidgets(
+    'switching projects stays on the same page and reuses cached workspace controllers',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final createdControllers = <_RecordingWorkspaceController>[];
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              final controller = _RecordingWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+              createdControllers.add(controller);
+              return controller;
+            },
+      );
+      addTearDown(appController.dispose);
+
+      final navigatorKey = GlobalKey<NavigatorState>();
+      final observer = _RecordingNavigatorObserver();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          navigatorKey: navigatorKey,
+          navigatorObservers: <NavigatorObserver>[observer],
+          initialRoute: '/',
+        ),
+      );
+      navigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+      );
+      await tester.pumpAndSettle();
+
+      expect(createdControllers, hasLength(1));
+      expect(createdControllers.single.loadCount, 1);
+      expect(find.text('hello from one'), findsOneWidget);
+      final initialRouteName = observer.lastRouteName;
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('workspace-project-/workspace/lab'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(createdControllers, hasLength(2));
+      expect(createdControllers.first.loadCount, 1);
+      expect(createdControllers.last.directory, '/workspace/lab');
+      expect(createdControllers.last.loadCount, 1);
+      expect(find.byType(WebParityWorkspaceScreen), findsOneWidget);
+      expect(observer.lastRouteName, initialRouteName);
+      expect(find.text('hello from lab'), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('workspace-project-/workspace/demo'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(createdControllers, hasLength(2));
+      expect(createdControllers.first.loadCount, 1);
+      expect(createdControllers.last.loadCount, 1);
+      expect(find.byType(WebParityWorkspaceScreen), findsOneWidget);
+      expect(observer.lastRouteName, initialRouteName);
+      expect(find.text('hello from one'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
     'timeline stays pinned to bottom when streamed content extends the last message',
     (tester) async {
       tester.view.physicalSize = const Size(1600, 1000);
@@ -345,39 +426,32 @@ class _RecordingWorkspaceController extends WorkspaceController {
     required super.profile,
     required super.directory,
     super.initialSessionId,
-  });
+  }) : _sessions = List<SessionSummary>.from(_seedSessionsFor(directory));
 
-  static final ProjectTarget _projectTarget = const ProjectTarget(
+  static const ProjectTarget _demoProject = ProjectTarget(
     directory: '/workspace/demo',
     label: 'Demo',
     source: 'server',
     vcs: 'git',
     branch: 'main',
   );
-  static final List<ProjectTarget> _availableProjects = <ProjectTarget>[
-    _projectTarget,
-  ];
-  static final List<SessionSummary> _seedSessions = <SessionSummary>[
-    SessionSummary(
-      id: 'ses_1',
-      directory: '/workspace/demo',
-      title: 'Session One',
-      version: '1',
-      updatedAt: DateTime.fromMillisecondsSinceEpoch(1710000001000),
-    ),
-    SessionSummary(
-      id: 'ses_2',
-      directory: '/workspace/demo',
-      title: 'Session Two',
-      version: '1',
-      updatedAt: DateTime.fromMillisecondsSinceEpoch(1710000002000),
-    ),
+  static const ProjectTarget _labProject = ProjectTarget(
+    directory: '/workspace/lab',
+    label: 'Lab',
+    source: 'server',
+    vcs: 'git',
+    branch: 'develop',
+  );
+  static const List<ProjectTarget> _availableProjects = <ProjectTarget>[
+    _demoProject,
+    _labProject,
   ];
   static final Map<String, SessionStatusSummary> _sessionStatuses =
       <String, SessionStatusSummary>{
         'ses_1': const SessionStatusSummary(type: 'idle'),
         'ses_2': const SessionStatusSummary(type: 'idle'),
         'ses_new': const SessionStatusSummary(type: 'idle'),
+        'ses_lab_1': const SessionStatusSummary(type: 'idle'),
       };
 
   int loadCount = 0;
@@ -387,13 +461,16 @@ class _RecordingWorkspaceController extends WorkspaceController {
   bool _loading = true;
   String? _selectedSessionId;
   List<ChatMessage> _messages = const <ChatMessage>[];
-  List<SessionSummary> _sessions = List<SessionSummary>.from(_seedSessions);
+  List<SessionSummary> _sessions;
 
   @override
   bool get loading => _loading;
 
   @override
-  ProjectTarget? get project => _projectTarget;
+  ProjectTarget? get project => switch (directory) {
+    '/workspace/lab' => _labProject,
+    _ => _demoProject,
+  };
 
   @override
   List<ProjectTarget> get availableProjects => _availableProjects;
@@ -463,8 +540,8 @@ class _RecordingWorkspaceController extends WorkspaceController {
   Future<SessionSummary?> createEmptySession({String? title}) async {
     createEmptySessionCalls += 1;
     final created = SessionSummary(
-      id: 'ses_new',
-      directory: '/workspace/demo',
+      id: directory == '/workspace/lab' ? 'ses_lab_new' : 'ses_new',
+      directory: directory,
       title: 'Fresh session',
       version: '1',
       updatedAt: DateTime.fromMillisecondsSinceEpoch(1710000003000),
@@ -480,7 +557,11 @@ class _RecordingWorkspaceController extends WorkspaceController {
     if (sessionId == null) {
       return const <ChatMessage>[];
     }
-    final text = sessionId == 'ses_2' ? 'hello from two' : 'hello from one';
+    final text = switch ((directory, sessionId)) {
+      ('/workspace/demo', 'ses_2') => 'hello from two',
+      ('/workspace/lab', _) => 'hello from lab',
+      _ => 'hello from one',
+    };
     return <ChatMessage>[
       ChatMessage(
         info: ChatMessageInfo(
@@ -493,6 +574,36 @@ class _RecordingWorkspaceController extends WorkspaceController {
         ],
       ),
     ];
+  }
+
+  static List<SessionSummary> _seedSessionsFor(String directory) {
+    return switch (directory) {
+      '/workspace/lab' => <SessionSummary>[
+        SessionSummary(
+          id: 'ses_lab_1',
+          directory: '/workspace/lab',
+          title: 'Lab Session',
+          version: '1',
+          updatedAt: DateTime.fromMillisecondsSinceEpoch(1710000004000),
+        ),
+      ],
+      _ => <SessionSummary>[
+        SessionSummary(
+          id: 'ses_1',
+          directory: '/workspace/demo',
+          title: 'Session One',
+          version: '1',
+          updatedAt: DateTime.fromMillisecondsSinceEpoch(1710000001000),
+        ),
+        SessionSummary(
+          id: 'ses_2',
+          directory: '/workspace/demo',
+          title: 'Session Two',
+          version: '1',
+          updatedAt: DateTime.fromMillisecondsSinceEpoch(1710000002000),
+        ),
+      ],
+    };
   }
 }
 
