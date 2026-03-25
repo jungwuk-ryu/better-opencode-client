@@ -8,6 +8,7 @@ import '../../core/network/live_event_applier.dart';
 import '../chat/chat_models.dart';
 import '../chat/chat_service.dart';
 import '../chat/session_action_service.dart';
+import '../commands/command_service.dart';
 import '../files/file_browser_service.dart';
 import '../files/file_models.dart';
 import '../projects/project_catalog_service.dart';
@@ -58,6 +59,7 @@ class WorkspaceController extends ChangeNotifier {
     SessionActionService? sessionActionService,
     ConfigService? configService,
     AgentService? agentService,
+    CommandService? commandService,
   }) : _chatService = chatService ?? ChatService(),
        _projectCatalogService =
            projectCatalogService ?? ProjectCatalogService(),
@@ -70,6 +72,7 @@ class WorkspaceController extends ChangeNotifier {
        _sessionActionService = sessionActionService ?? SessionActionService(),
        _configService = configService ?? ConfigService(),
        _agentService = agentService ?? AgentService(),
+       _commandService = commandService ?? CommandService(),
        _ownsChatService = chatService == null,
        _ownsProjectCatalogService = projectCatalogService == null,
        _ownsFileBrowserService = fileBrowserService == null,
@@ -79,7 +82,8 @@ class WorkspaceController extends ChangeNotifier {
        _ownsTerminalService = terminalService == null,
        _ownsSessionActionService = sessionActionService == null,
        _ownsConfigService = configService == null,
-       _ownsAgentService = agentService == null;
+       _ownsAgentService = agentService == null,
+       _ownsCommandService = commandService == null;
 
   final ServerProfile profile;
   final String directory;
@@ -96,6 +100,7 @@ class WorkspaceController extends ChangeNotifier {
   final SessionActionService _sessionActionService;
   final ConfigService _configService;
   final AgentService _agentService;
+  final CommandService _commandService;
   final bool _ownsChatService;
   final bool _ownsProjectCatalogService;
   final bool _ownsFileBrowserService;
@@ -106,6 +111,7 @@ class WorkspaceController extends ChangeNotifier {
   final bool _ownsSessionActionService;
   final bool _ownsConfigService;
   final bool _ownsAgentService;
+  final bool _ownsCommandService;
 
   bool _disposed = false;
   bool _loading = true;
@@ -134,6 +140,7 @@ class WorkspaceController extends ChangeNotifier {
   List<AgentDefinition> _composerAgents = const <AgentDefinition>[];
   List<WorkspaceComposerModelOption> _composerModels =
       const <WorkspaceComposerModelOption>[];
+  List<CommandDefinition> _composerCommands = const <CommandDefinition>[];
   String? _selectedAgentName;
   String? _selectedModelKey;
   String? _selectedReasoning;
@@ -172,6 +179,7 @@ class WorkspaceController extends ChangeNotifier {
   ConfigSnapshot? get configSnapshot => _configSnapshot;
   List<AgentDefinition> get composerAgents => _composerAgents;
   List<WorkspaceComposerModelOption> get composerModels => _composerModels;
+  List<CommandDefinition> get composerCommands => _composerCommands;
   String? get selectedAgentName => _selectedAgentName;
   String? get selectedModelKey => _selectedModelKey;
   String? get selectedReasoning => _selectedReasoning;
@@ -506,17 +514,33 @@ class WorkspaceController extends ChangeNotifier {
         _sessions = <SessionSummary>[created, ..._sessions];
       }
 
-      await _chatService.sendMessage(
-        profile: profile,
-        project: project,
-        sessionId: sessionId,
-        prompt: trimmed,
-        agent: selectedAgent?.name,
-        providerId: selectedModel?.providerId,
-        modelId: selectedModel?.modelId,
-        variant: _selectedReasoning,
-        reasoning: _selectedReasoning,
-      );
+      final slashCommand = _parseSlashCommand(trimmed);
+      if (slashCommand != null &&
+          _findComposerCommand(slashCommand.name) != null) {
+        await _chatService.sendCommand(
+          profile: profile,
+          project: project,
+          sessionId: sessionId,
+          command: slashCommand.name,
+          arguments: slashCommand.arguments,
+          agent: selectedAgent?.name,
+          providerId: selectedModel?.providerId,
+          modelId: selectedModel?.modelId,
+          variant: _selectedReasoning,
+        );
+      } else {
+        await _chatService.sendMessage(
+          profile: profile,
+          project: project,
+          sessionId: sessionId,
+          prompt: trimmed,
+          agent: selectedAgent?.name,
+          providerId: selectedModel?.providerId,
+          modelId: selectedModel?.modelId,
+          variant: _selectedReasoning,
+          reasoning: _selectedReasoning,
+        );
+      }
       _messages = await _chatService.fetchMessages(
         profile: profile,
         project: project,
@@ -648,6 +672,39 @@ class WorkspaceController extends ChangeNotifier {
     _notify();
   }
 
+  Future<void> unshareSelectedSession() async {
+    final project = _project;
+    final sessionId = _selectedSessionId;
+    if (project == null || sessionId == null) {
+      return;
+    }
+    await _sessionActionService.unshareSession(
+      profile: profile,
+      project: project,
+      sessionId: sessionId,
+    );
+    _actionNotice = 'Session share link removed.';
+    _notify();
+  }
+
+  Future<void> summarizeSelectedSession() async {
+    final project = _project;
+    final sessionId = _selectedSessionId;
+    final selectedModel = this.selectedModel;
+    if (project == null || sessionId == null || selectedModel == null) {
+      return;
+    }
+    await _sessionActionService.summarizeSession(
+      profile: profile,
+      project: project,
+      sessionId: sessionId,
+      providerId: selectedModel.providerId,
+      modelId: selectedModel.modelId,
+    );
+    _actionNotice = 'Session compaction requested.';
+    _notify();
+  }
+
   Future<void> deleteSelectedSession() async {
     final project = _project;
     final sessionId = _selectedSessionId;
@@ -737,6 +794,7 @@ class WorkspaceController extends ChangeNotifier {
   Future<void> _loadComposerState(ProjectTarget project) async {
     ConfigSnapshot? snapshot;
     List<AgentDefinition> agents = const <AgentDefinition>[];
+    List<CommandDefinition> commands = const <CommandDefinition>[];
 
     try {
       snapshot = await _configService.fetch(profile: profile, project: project);
@@ -750,11 +808,25 @@ class WorkspaceController extends ChangeNotifier {
       agents = const <AgentDefinition>[];
     }
 
+    try {
+      commands = await _commandService.fetchCommands(
+        profile: profile,
+        project: project,
+      );
+    } catch (_) {
+      commands = const <CommandDefinition>[];
+    }
+
     _configSnapshot = snapshot;
     _composerAgents = agents
         .where((agent) => agent.visible)
         .toList(growable: false);
     _composerModels = _buildComposerModelOptions(snapshot);
+    _composerCommands = commands.toList(growable: false)
+      ..sort(
+        (left, right) =>
+            left.name.toLowerCase().compareTo(right.name.toLowerCase()),
+      );
     _serverDefaultModelKey = _resolveDefaultComposerModelKey(snapshot);
     _serverDefaultReasoning = _resolveDefaultComposerReasoning(snapshot);
 
@@ -942,6 +1014,49 @@ class WorkspaceController extends ChangeNotifier {
       }
     }
     return null;
+  }
+
+  CommandDefinition? _findComposerCommand(String? name) {
+    final normalized = name?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return null;
+    }
+    for (final command in _composerCommands) {
+      if (command.name == normalized) {
+        return command;
+      }
+    }
+    return null;
+  }
+
+  _SlashCommandInvocation? _parseSlashCommand(String prompt) {
+    if (!prompt.startsWith('/')) {
+      return null;
+    }
+    final firstLineEnd = prompt.indexOf('\n');
+    final firstLine = firstLineEnd == -1
+        ? prompt
+        : prompt.substring(0, firstLineEnd);
+    if (!firstLine.startsWith('/')) {
+      return null;
+    }
+    final token = firstLine.split(RegExp(r'\s+')).first.trim();
+    if (token.length <= 1) {
+      return null;
+    }
+    final command = token.substring(1).trim();
+    if (command.isEmpty) {
+      return null;
+    }
+    final headArguments = firstLine.substring(token.length).trimLeft();
+    final tailArguments = firstLineEnd == -1
+        ? ''
+        : prompt.substring(firstLineEnd + 1);
+    final arguments = <String>[
+      if (headArguments.isNotEmpty) headArguments,
+      if (tailArguments.isNotEmpty) tailArguments,
+    ].join('\n');
+    return _SlashCommandInvocation(name: command, arguments: arguments);
   }
 
   String? _normalizeModelKey({String? providerId, String? modelId}) {
@@ -1357,6 +1472,16 @@ class WorkspaceController extends ChangeNotifier {
     if (_ownsAgentService) {
       _agentService.dispose();
     }
+    if (_ownsCommandService) {
+      _commandService.dispose();
+    }
     super.dispose();
   }
+}
+
+class _SlashCommandInvocation {
+  const _SlashCommandInvocation({required this.name, required this.arguments});
+
+  final String name;
+  final String arguments;
 }

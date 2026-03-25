@@ -10,9 +10,11 @@ void main() {
   late HttpServer server;
   late Uri baseUri;
   Map<String, Object?>? lastPromptBody;
+  Map<String, Object?>? lastCommandBody;
 
   setUp(() async {
     lastPromptBody = null;
+    lastCommandBody = null;
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     baseUri = Uri.parse('http://${server.address.address}:${server.port}');
     server.listen((request) async {
@@ -24,6 +26,11 @@ void main() {
           request.method == 'POST' &&
           decodedBody is Map) {
         lastPromptBody = decodedBody.cast<String, Object?>();
+      }
+      if (request.uri.path == '/session/ses_2/command' &&
+          request.method == 'POST' &&
+          decodedBody is Map) {
+        lastCommandBody = decodedBody.cast<String, Object?>();
       }
       final body = switch (request.uri.path) {
         '/session' when request.method == 'POST' => {
@@ -96,6 +103,18 @@ void main() {
             {'id': 'prt_4', 'type': 'text', 'text': 'ok'},
           ],
         },
+        '/session/ses_2/command' when request.method == 'POST' => {
+          'info': {
+            'id': 'msg_4',
+            'role': 'assistant',
+            'sessionID': 'ses_2',
+            'providerID': 'openai',
+            'modelID': 'gpt-5',
+          },
+          'parts': [
+            {'id': 'prt_5', 'type': 'text', 'text': 'command ok'},
+          ],
+        },
         '/session/ses_bad/message' => [
           {
             'info': {'id': 'msg_good', 'role': 'assistant'},
@@ -126,32 +145,38 @@ void main() {
     await server.close(force: true);
   });
 
-  test('fetches sessions while defaulting selection to the first root session', () async {
-    final service = ChatService();
-    final bundle = await service.fetchBundle(
-      profile: ServerProfile(
-        id: 'server',
-        label: 'mock',
-        baseUrl: baseUri.toString(),
-      ),
-      project: const ProjectTarget(directory: '/workspace/demo', label: 'Demo'),
-    );
+  test(
+    'fetches sessions while defaulting selection to the first root session',
+    () async {
+      final service = ChatService();
+      final bundle = await service.fetchBundle(
+        profile: ServerProfile(
+          id: 'server',
+          label: 'mock',
+          baseUrl: baseUri.toString(),
+        ),
+        project: const ProjectTarget(
+          directory: '/workspace/demo',
+          label: 'Demo',
+        ),
+      );
 
-    expect(bundle.sessions.length, 2);
-    expect(bundle.sessions.map((session) => session.id), <String>[
-      'ses_1',
-      'ses_2',
-    ]);
-    expect(bundle.selectedSessionId, 'ses_1');
-    expect(bundle.statuses['ses_1']?.type, 'busy');
-    expect(bundle.messages.length, 2);
-    expect(bundle.messages.first.info.agent, 'Sisyphus');
-    expect(bundle.messages.first.info.providerId, 'openai');
-    expect(bundle.messages.first.info.modelId, 'gpt-5.4');
-    expect(bundle.messages.first.info.variant, 'medium');
-    expect(bundle.messages.last.parts.last.text, 'done');
-    service.dispose();
-  });
+      expect(bundle.sessions.length, 2);
+      expect(bundle.sessions.map((session) => session.id), <String>[
+        'ses_1',
+        'ses_2',
+      ]);
+      expect(bundle.selectedSessionId, 'ses_1');
+      expect(bundle.statuses['ses_1']?.type, 'busy');
+      expect(bundle.messages.length, 2);
+      expect(bundle.messages.first.info.agent, 'Sisyphus');
+      expect(bundle.messages.first.info.providerId, 'openai');
+      expect(bundle.messages.first.info.modelId, 'gpt-5.4');
+      expect(bundle.messages.first.info.variant, 'medium');
+      expect(bundle.messages.last.parts.last.text, 'done');
+      service.dispose();
+    },
+  );
 
   test('skips malformed messages when loading a session timeline', () async {
     final service = ChatService();
@@ -208,6 +233,37 @@ void main() {
       'providerID': 'openai',
       'modelID': 'gpt-5.4',
     });
+    service.dispose();
+  });
+
+  test('sends a slash command message', () async {
+    final service = ChatService();
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'mock',
+      baseUrl: baseUri.toString(),
+    );
+    const project = ProjectTarget(directory: '/workspace/demo', label: 'Demo');
+
+    final message = await service.sendCommand(
+      profile: profile,
+      project: project,
+      sessionId: 'ses_2',
+      command: 'share',
+      arguments: 'now',
+      agent: 'Sisyphus',
+      providerId: 'openai',
+      modelId: 'gpt-5.4',
+      variant: 'medium',
+    );
+
+    expect(message.info.id, 'msg_4');
+    expect(message.parts.single.text, 'command ok');
+    expect(lastCommandBody?['command'], 'share');
+    expect(lastCommandBody?['arguments'], 'now');
+    expect(lastCommandBody?['agent'], 'Sisyphus');
+    expect(lastCommandBody?['model'], 'openai/gpt-5.4');
+    expect(lastCommandBody?['variant'], 'medium');
     service.dispose();
   });
 }

@@ -136,6 +136,70 @@ class ChatService {
     );
   }
 
+  Future<ChatMessage> sendCommand({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String sessionId,
+    required String command,
+    String arguments = '',
+    String? agent,
+    String? providerId,
+    String? modelId,
+    String? variant,
+  }) async {
+    final baseUri = profile.uriOrNull;
+    if (baseUri == null) {
+      throw const FormatException('Invalid server profile URL.');
+    }
+
+    final headers = buildRequestHeaders(
+      profile,
+      accept: 'application/json',
+      jsonBody: true,
+    );
+    final basePath = switch (baseUri.path) {
+      '' => '/',
+      final value when value.endsWith('/') => value,
+      final value => '$value/',
+    };
+    final uri = baseUri
+        .replace(path: basePath)
+        .resolve('session/$sessionId/command')
+        .replace(
+          queryParameters: <String, String>{'directory': project.directory},
+        );
+    final body = <String, Object?>{
+      'command': command.trim(),
+      'arguments': arguments,
+    };
+    if (agent != null && agent.isNotEmpty) {
+      body['agent'] = agent;
+    }
+    if (providerId != null &&
+        providerId.isNotEmpty &&
+        modelId != null &&
+        modelId.isNotEmpty) {
+      body['model'] = '$providerId/$modelId';
+    }
+    final resolvedVariant = variant?.trim();
+    if (resolvedVariant != null && resolvedVariant.isNotEmpty) {
+      body['variant'] = resolvedVariant;
+    }
+    final response = await _client.post(
+      uri,
+      headers: headers,
+      body: jsonEncode(body),
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw StateError(
+        'Request failed for $uri with status ${response.statusCode}.',
+      );
+    }
+    return ChatMessage.fromJson(
+      (jsonDecode(response.body) as Map).cast<String, Object?>(),
+    );
+  }
+
   Future<ChatSessionBundle> fetchBundle({
     required ServerProfile profile,
     required ProjectTarget project,
@@ -179,9 +243,7 @@ class ChatService {
 
     final visibleSessions = sessions
         .where(
-          (session) =>
-              session.parentId == null &&
-              session.archivedAt == null,
+          (session) => session.parentId == null && session.archivedAt == null,
         )
         .toList(growable: false);
     final selectedSessionId = visibleSessions.isNotEmpty

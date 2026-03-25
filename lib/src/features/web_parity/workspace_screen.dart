@@ -12,6 +12,7 @@ import '../../design_system/app_spacing.dart';
 import '../../design_system/app_theme.dart';
 import '../chat/chat_models.dart';
 import '../chat/session_context_insights.dart';
+import '../commands/command_service.dart';
 import '../files/file_models.dart';
 import '../projects/project_models.dart';
 import '../requests/request_models.dart';
@@ -584,6 +585,45 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     }
   }
 
+  Future<void> _shareSelectedSession(WorkspaceController controller) async {
+    try {
+      await controller.shareSelectedSession();
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to share session: $error')),
+      );
+    }
+  }
+
+  Future<void> _unshareSelectedSession(WorkspaceController controller) async {
+    try {
+      await controller.unshareSelectedSession();
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to unshare session: $error')),
+      );
+    }
+  }
+
+  Future<void> _summarizeSelectedSession(WorkspaceController controller) async {
+    try {
+      await controller.summarizeSelectedSession();
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to compact session: $error')),
+      );
+    }
+  }
+
   void _showPlaceholderDialog(String title, String body) {
     showDialog<void>(
       context: context,
@@ -754,6 +794,22 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                   });
                                 },
                                 onSubmitPrompt: _submitPrompt,
+                                onCreateSession: () =>
+                                    _createNewSession(controller),
+                                onShareSession:
+                                    controller.selectedSession == null
+                                    ? null
+                                    : () => _shareSelectedSession(controller),
+                                onUnshareSession:
+                                    controller.selectedSession == null
+                                    ? null
+                                    : () => _unshareSelectedSession(controller),
+                                onSummarizeSession:
+                                    controller.selectedSession == null
+                                    ? null
+                                    : () =>
+                                          _summarizeSelectedSession(controller),
+                                onToggleTerminal: _toggleTerminalPanel,
                                 terminalPanelOpen: _terminalPanelOpen,
                                 terminalPanel: _ptyService == null
                                     ? null
@@ -1193,8 +1249,13 @@ class _WorkspaceBody extends StatelessWidget {
     required this.compactPane,
     required this.onCompactPaneChanged,
     required this.onSubmitPrompt,
+    required this.onCreateSession,
+    required this.onToggleTerminal,
     required this.terminalPanelOpen,
     required this.terminalPanel,
+    this.onShareSession,
+    this.onUnshareSession,
+    this.onSummarizeSession,
   });
 
   final bool compact;
@@ -1204,8 +1265,13 @@ class _WorkspaceBody extends StatelessWidget {
   final _CompactWorkspacePane compactPane;
   final ValueChanged<_CompactWorkspacePane> onCompactPaneChanged;
   final VoidCallback onSubmitPrompt;
+  final Future<void> Function() onCreateSession;
+  final Future<void> Function() onToggleTerminal;
   final bool terminalPanelOpen;
   final Widget? terminalPanel;
+  final Future<void> Function()? onShareSession;
+  final Future<void> Function()? onUnshareSession;
+  final Future<void> Function()? onSummarizeSession;
 
   @override
   Widget build(BuildContext context) {
@@ -1268,9 +1334,16 @@ class _WorkspaceBody extends StatelessWidget {
             selectedModel: controller.selectedModel,
             selectedReasoning: controller.selectedReasoning,
             reasoningValues: controller.availableReasoningValues,
+            customCommands: controller.composerCommands,
             onSelectAgent: controller.selectAgent,
             onSelectModel: controller.selectModel,
             onSelectReasoning: controller.selectReasoning,
+            onCreateSession: onCreateSession,
+            onShareSession: onShareSession,
+            onUnshareSession: onUnshareSession,
+            onSummarizeSession: onSummarizeSession,
+            onToggleTerminal: onToggleTerminal,
+            onSelectSideTab: controller.setSideTab,
             onSubmit: onSubmitPrompt,
           ),
         if (terminalPanelOpen && terminalPanel != null) terminalPanel!,
@@ -1406,7 +1479,7 @@ class _MessageTimeline extends StatelessWidget {
   }
 }
 
-class _PromptComposer extends StatelessWidget {
+class _PromptComposer extends StatefulWidget {
   const _PromptComposer({
     required this.controller,
     required this.submitting,
@@ -1416,10 +1489,17 @@ class _PromptComposer extends StatelessWidget {
     required this.selectedModel,
     required this.selectedReasoning,
     required this.reasoningValues,
+    required this.customCommands,
     required this.onSelectAgent,
     required this.onSelectModel,
     required this.onSelectReasoning,
+    required this.onCreateSession,
+    required this.onToggleTerminal,
+    required this.onSelectSideTab,
     required this.onSubmit,
+    this.onShareSession,
+    this.onUnshareSession,
+    this.onSummarizeSession,
   });
 
   static const String _defaultReasoningSentinel = '__default_reasoning__';
@@ -1432,15 +1512,328 @@ class _PromptComposer extends StatelessWidget {
   final WorkspaceComposerModelOption? selectedModel;
   final String? selectedReasoning;
   final List<String> reasoningValues;
+  final List<CommandDefinition> customCommands;
   final ValueChanged<String?> onSelectAgent;
   final ValueChanged<String?> onSelectModel;
   final ValueChanged<String?> onSelectReasoning;
+  final Future<void> Function() onCreateSession;
+  final Future<void> Function() onToggleTerminal;
+  final ValueChanged<WorkspaceSideTab> onSelectSideTab;
   final VoidCallback onSubmit;
+  final Future<void> Function()? onShareSession;
+  final Future<void> Function()? onUnshareSession;
+  final Future<void> Function()? onSummarizeSession;
+
+  @override
+  State<_PromptComposer> createState() => _PromptComposerState();
+}
+
+class _PromptComposerState extends State<_PromptComposer> {
+  final FocusNode _focusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_handleComposerChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant _PromptComposer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.controller, widget.controller)) {
+      oldWidget.controller.removeListener(_handleComposerChanged);
+      widget.controller.addListener(_handleComposerChanged);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_handleComposerChanged);
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _handleComposerChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  String? get _slashQuery {
+    final text = widget.controller.text;
+    final firstLine = text.split('\n').first;
+    if (!firstLine.startsWith('/')) {
+      return null;
+    }
+    final body = firstLine.substring(1);
+    if (body.contains(RegExp(r'\s'))) {
+      return null;
+    }
+    return body;
+  }
+
+  List<_ComposerSlashCommand> get _slashCommands {
+    final commands = <_ComposerSlashCommand>[
+      const _ComposerSlashCommand(
+        id: 'builtin.new',
+        trigger: 'new',
+        title: 'New session',
+        description: 'Create a new session',
+        type: _ComposerSlashCommandType.builtin,
+        action: _ComposerBuiltinSlashAction.newSession,
+      ),
+      if (widget.onShareSession != null)
+        const _ComposerSlashCommand(
+          id: 'builtin.share',
+          trigger: 'share',
+          title: 'Share session',
+          description: 'Share this session',
+          type: _ComposerSlashCommandType.builtin,
+          action: _ComposerBuiltinSlashAction.shareSession,
+        ),
+      if (widget.onUnshareSession != null)
+        const _ComposerSlashCommand(
+          id: 'builtin.unshare',
+          trigger: 'unshare',
+          title: 'Unshare session',
+          description: 'Remove the current share link',
+          type: _ComposerSlashCommandType.builtin,
+          action: _ComposerBuiltinSlashAction.unshareSession,
+        ),
+      if (widget.onSummarizeSession != null)
+        const _ComposerSlashCommand(
+          id: 'builtin.compact',
+          trigger: 'compact',
+          title: 'Compact session',
+          description: 'Summarize the session to reduce context size',
+          type: _ComposerSlashCommandType.builtin,
+          action: _ComposerBuiltinSlashAction.compactSession,
+        ),
+      if (widget.models.isNotEmpty)
+        const _ComposerSlashCommand(
+          id: 'builtin.model',
+          trigger: 'model',
+          title: 'Switch model',
+          description: 'Select a different model',
+          type: _ComposerSlashCommandType.builtin,
+          action: _ComposerBuiltinSlashAction.modelPicker,
+        ),
+      if (widget.agents.isNotEmpty)
+        const _ComposerSlashCommand(
+          id: 'builtin.agent',
+          trigger: 'agent',
+          title: 'Switch agent',
+          description: 'Select a different agent',
+          type: _ComposerSlashCommandType.builtin,
+          action: _ComposerBuiltinSlashAction.agentPicker,
+        ),
+      if (widget.selectedModel != null)
+        const _ComposerSlashCommand(
+          id: 'builtin.reasoning',
+          trigger: 'reasoning',
+          title: 'Adjust reasoning',
+          description: 'Choose a different reasoning depth',
+          type: _ComposerSlashCommandType.builtin,
+          action: _ComposerBuiltinSlashAction.reasoningPicker,
+        ),
+      const _ComposerSlashCommand(
+        id: 'builtin.terminal',
+        trigger: 'terminal',
+        title: 'Open terminal',
+        description: 'Toggle the terminal panel',
+        type: _ComposerSlashCommandType.builtin,
+        action: _ComposerBuiltinSlashAction.terminal,
+      ),
+      const _ComposerSlashCommand(
+        id: 'builtin.review',
+        trigger: 'review',
+        title: 'Open review',
+        description: 'Show the review panel',
+        type: _ComposerSlashCommandType.builtin,
+        action: _ComposerBuiltinSlashAction.reviewTab,
+      ),
+      const _ComposerSlashCommand(
+        id: 'builtin.files',
+        trigger: 'files',
+        title: 'Open files',
+        description: 'Show the files panel',
+        type: _ComposerSlashCommandType.builtin,
+        action: _ComposerBuiltinSlashAction.filesTab,
+      ),
+      const _ComposerSlashCommand(
+        id: 'builtin.context',
+        trigger: 'context',
+        title: 'Open context',
+        description: 'Show the context panel',
+        type: _ComposerSlashCommandType.builtin,
+        action: _ComposerBuiltinSlashAction.contextTab,
+      ),
+      ...widget.customCommands.map(
+        (command) => _ComposerSlashCommand(
+          id: 'custom.${command.name}',
+          trigger: command.name,
+          title: command.name,
+          description: command.description,
+          type: _ComposerSlashCommandType.custom,
+          source: command.source,
+        ),
+      ),
+    ];
+    return commands;
+  }
+
+  List<_ComposerSlashCommand> get _filteredSlashCommands {
+    final query = _slashQuery;
+    if (query == null) {
+      return const <_ComposerSlashCommand>[];
+    }
+    final normalized = query.toLowerCase();
+    if (normalized.isEmpty) {
+      return _slashCommands;
+    }
+
+    final exact = <_ComposerSlashCommand>[];
+    final prefix = <_ComposerSlashCommand>[];
+    final partial = <_ComposerSlashCommand>[];
+    for (final command in _slashCommands) {
+      final trigger = command.trigger.toLowerCase();
+      final title = command.title.toLowerCase();
+      final description = command.description?.toLowerCase() ?? '';
+      if (trigger == normalized) {
+        exact.add(command);
+        continue;
+      }
+      if (trigger.startsWith(normalized)) {
+        prefix.add(command);
+        continue;
+      }
+      if (trigger.contains(normalized) ||
+          title.contains(normalized) ||
+          description.contains(normalized)) {
+        partial.add(command);
+      }
+    }
+    return <_ComposerSlashCommand>[...exact, ...prefix, ...partial];
+  }
+
+  _ComposerSlashCommand? get _exactBuiltinSlashCommand {
+    final query = _slashQuery?.trim();
+    if (query == null || query.isEmpty) {
+      return null;
+    }
+    for (final command in _slashCommands) {
+      if (command.type == _ComposerSlashCommandType.builtin &&
+          command.trigger == query) {
+        return command;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _handleSubmit() async {
+    final builtin = _exactBuiltinSlashCommand;
+    if (builtin != null) {
+      await _selectSlashCommand(builtin);
+      return;
+    }
+    widget.onSubmit();
+  }
+
+  Future<void> _selectSlashCommand(_ComposerSlashCommand command) async {
+    if (command.type == _ComposerSlashCommandType.custom) {
+      _applyCustomSlashCommand(command.trigger);
+      return;
+    }
+    await _runBuiltinSlashCommand(command.action!);
+  }
+
+  void _applyCustomSlashCommand(String trigger) {
+    final text = '/$trigger ';
+    widget.controller.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+    _focusNode.requestFocus();
+  }
+
+  void _clearComposer() {
+    widget.controller.value = const TextEditingValue(
+      text: '',
+      selection: TextSelection.collapsed(offset: 0),
+    );
+  }
+
+  Future<void> _runBuiltinSlashCommand(
+    _ComposerBuiltinSlashAction action,
+  ) async {
+    _clearComposer();
+    switch (action) {
+      case _ComposerBuiltinSlashAction.newSession:
+        await widget.onCreateSession();
+        break;
+      case _ComposerBuiltinSlashAction.shareSession:
+        final callback = widget.onShareSession;
+        if (callback != null) {
+          await callback();
+        }
+        break;
+      case _ComposerBuiltinSlashAction.unshareSession:
+        final callback = widget.onUnshareSession;
+        if (callback != null) {
+          await callback();
+        }
+        break;
+      case _ComposerBuiltinSlashAction.compactSession:
+        final callback = widget.onSummarizeSession;
+        if (callback != null) {
+          await callback();
+        }
+        break;
+      case _ComposerBuiltinSlashAction.modelPicker:
+        final selection = await _showModelPicker(context);
+        if (selection != null) {
+          widget.onSelectModel(selection);
+        }
+        break;
+      case _ComposerBuiltinSlashAction.agentPicker:
+        final selection = await _showAgentPicker(context);
+        if (selection != null) {
+          widget.onSelectAgent(selection);
+        }
+        break;
+      case _ComposerBuiltinSlashAction.reasoningPicker:
+        final selection = await _showReasoningPicker(context);
+        if (selection != null) {
+          widget.onSelectReasoning(
+            selection == _PromptComposer._defaultReasoningSentinel
+                ? null
+                : selection,
+          );
+        }
+        break;
+      case _ComposerBuiltinSlashAction.terminal:
+        await widget.onToggleTerminal();
+        break;
+      case _ComposerBuiltinSlashAction.reviewTab:
+        widget.onSelectSideTab(WorkspaceSideTab.review);
+        break;
+      case _ComposerBuiltinSlashAction.filesTab:
+        widget.onSelectSideTab(WorkspaceSideTab.files);
+        break;
+      case _ComposerBuiltinSlashAction.contextTab:
+        widget.onSelectSideTab(WorkspaceSideTab.context);
+        break;
+    }
+    if (mounted) {
+      _focusNode.requestFocus();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
-    final reasoningLabel = _reasoningLabel(selectedReasoning);
+    final reasoningLabel = _reasoningLabel(widget.selectedReasoning);
+    final slashCommands = _filteredSlashCommands;
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.md,
@@ -1467,8 +1860,120 @@ class _PromptComposer extends StatelessWidget {
             ),
             child: Column(
               children: <Widget>[
+                if (slashCommands.isNotEmpty) ...<Widget>[
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 320),
+                    child: DecoratedBox(
+                      key: const ValueKey<String>('composer-slash-popover'),
+                      decoration: BoxDecoration(
+                        color: surfaces.panelMuted,
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: surfaces.lineSoft),
+                      ),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        padding: const EdgeInsets.all(AppSpacing.sm),
+                        itemCount: slashCommands.length,
+                        separatorBuilder: (_, _) =>
+                            const SizedBox(height: AppSpacing.xs),
+                        itemBuilder: (context, index) {
+                          final command = slashCommands[index];
+                          return Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              key: ValueKey<String>(
+                                'composer-slash-option-${command.id}',
+                              ),
+                              borderRadius: BorderRadius.circular(12),
+                              onTap: () => _selectSlashCommand(command),
+                              child: Ink(
+                                decoration: BoxDecoration(
+                                  color: index == 0
+                                      ? surfaces.panel
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: AppSpacing.md,
+                                  vertical: AppSpacing.sm,
+                                ),
+                                child: Row(
+                                  children: <Widget>[
+                                    Expanded(
+                                      child: Row(
+                                        children: <Widget>[
+                                          Text(
+                                            '/${command.trigger}',
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .titleMedium
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                          ),
+                                          if ((command.description ?? '')
+                                              .trim()
+                                              .isNotEmpty) ...<Widget>[
+                                            const SizedBox(
+                                              width: AppSpacing.sm,
+                                            ),
+                                            Expanded(
+                                              child: Text(
+                                                command.description!,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .bodyMedium
+                                                    ?.copyWith(
+                                                      color: surfaces.muted,
+                                                    ),
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                    if (command.type ==
+                                            _ComposerSlashCommandType.custom &&
+                                        command.source != null &&
+                                        command.source !=
+                                            'command') ...<Widget>[
+                                      const SizedBox(width: AppSpacing.sm),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: AppSpacing.sm,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: surfaces.panel,
+                                          borderRadius: BorderRadius.circular(
+                                            999,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          command.source!,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .labelSmall
+                                              ?.copyWith(color: surfaces.muted),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                ],
                 TextField(
-                  controller: controller,
+                  key: const ValueKey<String>('composer-text-field'),
+                  controller: widget.controller,
+                  focusNode: _focusNode,
                   minLines: 3,
                   maxLines: 8,
                   decoration: const InputDecoration(
@@ -1482,7 +1987,7 @@ class _PromptComposer extends StatelessWidget {
                   style: Theme.of(
                     context,
                   ).textTheme.bodyLarge?.copyWith(height: 1.55),
-                  onSubmitted: (_) => onSubmit(),
+                  onSubmitted: (_) => _handleSubmit(),
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 Row(
@@ -1495,36 +2000,36 @@ class _PromptComposer extends StatelessWidget {
                         child: Row(
                           children: <Widget>[
                             _ComposerSelectionPill(
-                              label: selectedAgentName ?? 'Agent',
-                              onTap: agents.isEmpty
+                              label: widget.selectedAgentName ?? 'Agent',
+                              onTap: widget.agents.isEmpty
                                   ? null
                                   : () async {
                                       final selection = await _showAgentPicker(
                                         context,
                                       );
                                       if (selection != null) {
-                                        onSelectAgent(selection);
+                                        widget.onSelectAgent(selection);
                                       }
                                     },
                             ),
                             const SizedBox(width: AppSpacing.xs),
                             _ComposerSelectionPill(
-                              label: selectedModel?.name ?? 'Model',
-                              onTap: models.isEmpty
+                              label: widget.selectedModel?.name ?? 'Model',
+                              onTap: widget.models.isEmpty
                                   ? null
                                   : () async {
                                       final selection = await _showModelPicker(
                                         context,
                                       );
                                       if (selection != null) {
-                                        onSelectModel(selection);
+                                        widget.onSelectModel(selection);
                                       }
                                     },
                             ),
                             const SizedBox(width: AppSpacing.xs),
                             _ComposerSelectionPill(
                               label: reasoningLabel,
-                              onTap: selectedModel == null
+                              onTap: widget.selectedModel == null
                                   ? null
                                   : () async {
                                       final selection =
@@ -1532,8 +2037,10 @@ class _PromptComposer extends StatelessWidget {
                                       if (selection == null) {
                                         return;
                                       }
-                                      onSelectReasoning(
-                                        selection == _defaultReasoningSentinel
+                                      widget.onSelectReasoning(
+                                        selection ==
+                                                _PromptComposer
+                                                    ._defaultReasoningSentinel
                                             ? null
                                             : selection,
                                       );
@@ -1545,10 +2052,11 @@ class _PromptComposer extends StatelessWidget {
                     ),
                     const SizedBox(width: AppSpacing.sm),
                     _ComposerIconButton(
+                      key: const ValueKey<String>('composer-submit-button'),
                       icon: Icons.arrow_upward_rounded,
-                      onTap: submitting ? null : onSubmit,
+                      onTap: widget.submitting ? null : _handleSubmit,
                       filled: true,
-                      busy: submitting,
+                      busy: widget.submitting,
                     ),
                   ],
                 ),
@@ -1568,7 +2076,7 @@ class _PromptComposer extends StatelessWidget {
       builder: (context) => _SearchableSelectionSheet<_AgentChoice>(
         title: 'Select Agent',
         searchHint: 'Search agents',
-        items: agents
+        items: widget.agents
             .map(
               (agent) => _AgentChoice(
                 value: agent.name,
@@ -1577,7 +2085,7 @@ class _PromptComposer extends StatelessWidget {
               ),
             )
             .toList(growable: false),
-        selectedValue: selectedAgentName,
+        selectedValue: widget.selectedAgentName,
         matchesQuery: (item, query) {
           final q = query.toLowerCase();
           return item.title.toLowerCase().contains(q) ||
@@ -1593,7 +2101,7 @@ class _PromptComposer extends StatelessWidget {
 
   Future<String?> _showModelPicker(BuildContext context) {
     final grouped = <String, List<WorkspaceComposerModelOption>>{};
-    for (final model in models) {
+    for (final model in widget.models) {
       grouped
           .putIfAbsent(
             model.providerName,
@@ -1630,7 +2138,7 @@ class _PromptComposer extends StatelessWidget {
             title: 'Select Model',
             searchHint: 'Search models',
             groups: items,
-            selectedValue: selectedModel?.key,
+            selectedValue: widget.selectedModel?.key,
             matchesQuery: (item, query) {
               final q = query.toLowerCase();
               return item.name.toLowerCase().contains(q) ||
@@ -1657,10 +2165,10 @@ class _PromptComposer extends StatelessWidget {
   Future<String?> _showReasoningPicker(BuildContext context) {
     final options = <_ReasoningChoice>[
       const _ReasoningChoice(
-        value: _defaultReasoningSentinel,
+        value: _PromptComposer._defaultReasoningSentinel,
         label: 'Default',
       ),
-      ...reasoningValues.map(
+      ...widget.reasoningValues.map(
         (value) =>
             _ReasoningChoice(value: value, label: _reasoningLabel(value)),
       ),
@@ -1672,7 +2180,9 @@ class _PromptComposer extends StatelessWidget {
         title: 'Reasoning',
         searchHint: 'Search variants',
         items: options,
-        selectedValue: selectedReasoning ?? _defaultReasoningSentinel,
+        selectedValue:
+            widget.selectedReasoning ??
+            _PromptComposer._defaultReasoningSentinel,
         matchesQuery: (item, query) {
           final q = query.toLowerCase();
           return item.label.toLowerCase().contains(q) ||
@@ -1685,6 +2195,42 @@ class _PromptComposer extends StatelessWidget {
       ),
     );
   }
+}
+
+enum _ComposerSlashCommandType { builtin, custom }
+
+enum _ComposerBuiltinSlashAction {
+  newSession,
+  shareSession,
+  unshareSession,
+  compactSession,
+  modelPicker,
+  agentPicker,
+  reasoningPicker,
+  terminal,
+  reviewTab,
+  filesTab,
+  contextTab,
+}
+
+class _ComposerSlashCommand {
+  const _ComposerSlashCommand({
+    required this.id,
+    required this.trigger,
+    required this.title,
+    required this.type,
+    this.description,
+    this.source,
+    this.action,
+  });
+
+  final String id;
+  final String trigger;
+  final String title;
+  final String? description;
+  final _ComposerSlashCommandType type;
+  final String? source;
+  final _ComposerBuiltinSlashAction? action;
 }
 
 class _QuestionPromptDock extends StatefulWidget {
@@ -3262,6 +3808,7 @@ class _ComposerIconButton extends StatelessWidget {
   const _ComposerIconButton({
     required this.icon,
     required this.onTap,
+    super.key,
     this.filled = false,
     this.busy = false,
   });
