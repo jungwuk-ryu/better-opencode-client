@@ -66,6 +66,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   bool _sessionRouteSyncInFlight = false;
   String? _pendingSessionRouteId;
   int _sessionRouteSyncRevision = 0;
+  bool _promptSubmitInFlight = false;
 
   @override
   void initState() {
@@ -529,11 +530,39 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
 
   Future<void> _submitPrompt() async {
     final controller = _controller;
-    if (controller == null) {
+    final draft = _promptController.text;
+    if (controller == null ||
+        _promptSubmitInFlight ||
+        controller.submittingPrompt ||
+        draft.trim().isEmpty) {
       return;
     }
-    await controller.submitPrompt(_promptController.text);
+
+    setState(() {
+      _promptSubmitInFlight = true;
+    });
     _promptController.clear();
+
+    try {
+      await controller.submitPrompt(draft);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      _promptController.value = TextEditingValue(
+        text: draft,
+        selection: TextSelection.collapsed(offset: draft.length),
+      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to send message: $error')));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _promptSubmitInFlight = false;
+        });
+      }
+    }
   }
 
   Future<void> _renameSelectedSession(WorkspaceController controller) async {
@@ -781,6 +810,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                             : _WorkspaceBody(
                                 compact: compact,
                                 controller: controller,
+                                submittingPrompt:
+                                    _promptSubmitInFlight ||
+                                    controller.submittingPrompt,
                                 promptController: _promptController,
                                 timelineScrollController:
                                     _timelineScrollController,
@@ -1244,6 +1276,7 @@ class _WorkspaceBody extends StatelessWidget {
   const _WorkspaceBody({
     required this.compact,
     required this.controller,
+    required this.submittingPrompt,
     required this.promptController,
     required this.timelineScrollController,
     required this.compactPane,
@@ -1260,6 +1293,7 @@ class _WorkspaceBody extends StatelessWidget {
 
   final bool compact;
   final WorkspaceController controller;
+  final bool submittingPrompt;
   final TextEditingController promptController;
   final ScrollController timelineScrollController;
   final _CompactWorkspacePane compactPane;
@@ -1327,7 +1361,7 @@ class _WorkspaceBody extends StatelessWidget {
         else
           _PromptComposer(
             controller: promptController,
-            submitting: controller.submittingPrompt,
+            submitting: submittingPrompt,
             agents: controller.composerAgents,
             models: controller.composerModels,
             selectedAgentName: controller.selectedAgentName,
@@ -1531,6 +1565,8 @@ class _PromptComposer extends StatefulWidget {
 class _PromptComposerState extends State<_PromptComposer> {
   final FocusNode _focusNode = FocusNode();
 
+  bool get _canSubmit => widget.controller.text.trim().isNotEmpty;
+
   @override
   void initState() {
     super.initState();
@@ -1731,6 +1767,9 @@ class _PromptComposerState extends State<_PromptComposer> {
   }
 
   Future<void> _handleSubmit() async {
+    if (widget.submitting || !_canSubmit) {
+      return;
+    }
     final builtin = _exactBuiltinSlashCommand;
     if (builtin != null) {
       await _selectSlashCommand(builtin);
@@ -2054,7 +2093,9 @@ class _PromptComposerState extends State<_PromptComposer> {
                     _ComposerIconButton(
                       key: const ValueKey<String>('composer-submit-button'),
                       icon: Icons.arrow_upward_rounded,
-                      onTap: widget.submitting ? null : _handleSubmit,
+                      onTap: widget.submitting || !_canSubmit
+                          ? null
+                          : _handleSubmit,
                       filled: true,
                       busy: widget.submitting,
                     ),
@@ -3821,12 +3862,19 @@ class _ComposerIconButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final enabled = onTap != null || busy;
     final color = filled
-        ? Theme.of(context).colorScheme.primary
+        ? enabled
+              ? Theme.of(context).colorScheme.primary
+              : surfaces.panelRaised
         : surfaces.panelRaised;
     final foreground = filled
-        ? Theme.of(context).colorScheme.onPrimary
-        : Theme.of(context).colorScheme.onSurface;
+        ? enabled
+              ? Theme.of(context).colorScheme.onPrimary
+              : surfaces.muted
+        : enabled
+        ? Theme.of(context).colorScheme.onSurface
+        : surfaces.muted;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),

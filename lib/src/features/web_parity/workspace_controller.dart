@@ -146,6 +146,7 @@ class WorkspaceController extends ChangeNotifier {
   String? _selectedReasoning;
   String? _serverDefaultModelKey;
   String? _serverDefaultReasoning;
+  int _promptRefreshRevision = 0;
 
   bool get loading => _loading;
   bool get submittingPrompt => _submittingPrompt;
@@ -495,7 +496,7 @@ class WorkspaceController extends ChangeNotifier {
     final project = _project;
     final selectedAgent = this.selectedAgent;
     final selectedModel = this.selectedModel;
-    if (project == null || trimmed.isEmpty) {
+    if (_submittingPrompt || project == null || trimmed.isEmpty) {
       return _selectedSessionId;
     }
 
@@ -541,20 +542,76 @@ class WorkspaceController extends ChangeNotifier {
           reasoning: _selectedReasoning,
         );
       }
-      _messages = await _chatService.fetchMessages(
-        profile: profile,
-        project: project,
-        sessionId: sessionId,
+      final refreshRevision = ++_promptRefreshRevision;
+      unawaited(
+        _refreshAfterPrompt(
+          project: project,
+          sessionId: sessionId,
+          revision: refreshRevision,
+        ),
       );
-      _restoreComposerSelectionFromMessages();
-      _statuses = await _reloadStatuses(project);
-      await _loadSessionPanels();
-      await _persistSessionHint(sessionId);
       return sessionId;
     } finally {
       _submittingPrompt = false;
       _notify();
     }
+  }
+
+  Future<void> _refreshAfterPrompt({
+    required ProjectTarget project,
+    required String sessionId,
+    required int revision,
+  }) async {
+    List<ChatMessage>? messages;
+    try {
+      messages = await _chatService.fetchMessages(
+        profile: profile,
+        project: project,
+        sessionId: sessionId,
+      );
+    } catch (_) {
+      messages = null;
+    }
+
+    if (_disposed || revision != _promptRefreshRevision) {
+      return;
+    }
+
+    if (_selectedSessionId == sessionId && messages != null) {
+      _messages = messages;
+      _restoreComposerSelectionFromMessages();
+    }
+
+    try {
+      final bundle = await _chatService.fetchBundle(
+        profile: profile,
+        project: project,
+      );
+      if (_disposed || revision != _promptRefreshRevision) {
+        return;
+      }
+      _sessions = bundle.sessions;
+      _statuses = bundle.statuses;
+    } catch (_) {
+      if (_disposed || revision != _promptRefreshRevision) {
+        return;
+      }
+    }
+
+    if (_disposed || revision != _promptRefreshRevision) {
+      return;
+    }
+
+    if (_selectedSessionId == sessionId) {
+      await _loadSessionPanels();
+      await _persistSessionHint(sessionId);
+    }
+
+    if (_disposed || revision != _promptRefreshRevision) {
+      return;
+    }
+
+    _notify();
   }
 
   Future<SessionSummary?> createEmptySession({String? title}) async {
@@ -1163,17 +1220,6 @@ class WorkspaceController extends ChangeNotifier {
         permissions: <PermissionRequestSummary>[],
       );
     }
-  }
-
-  Future<Map<String, SessionStatusSummary>> _reloadStatuses(
-    ProjectTarget project,
-  ) async {
-    final bundle = await _chatService.fetchBundle(
-      profile: profile,
-      project: project,
-    );
-    _sessions = bundle.sessions;
-    return bundle.statuses;
   }
 
   Future<void> _connectEvents() async {

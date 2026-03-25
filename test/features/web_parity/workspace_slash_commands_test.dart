@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -131,6 +133,80 @@ void main() {
     expect(workspaceController.submitPromptCalls, 0);
     expect(find.text('Fresh session'), findsAtLeastNWidgets(1));
   });
+
+  testWidgets(
+    'prompt clears immediately, shows busy state, and ignores duplicate taps',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final workspaceController = _DelayedSubmitWorkspaceController(
+        profile: profile,
+        directory: '/workspace/demo',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceController: workspaceController,
+      );
+      addTearDown(appController.dispose);
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          initialRoute: buildWorkspaceRoute(
+            '/workspace/demo',
+            sessionId: 'ses_1',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      final fieldFinder = find.byKey(
+        const ValueKey<String>('composer-text-field'),
+      );
+      final buttonFinder = find.byKey(
+        const ValueKey<String>('composer-submit-button'),
+      );
+
+      await tester.enterText(fieldFinder, 'Ship the fix');
+      await tester.pump();
+
+      await tester.tap(buttonFinder);
+      await tester.tap(buttonFinder);
+      await tester.pump();
+
+      expect(workspaceController.submitPromptCalls, 1);
+      expect(tester.widget<TextField>(fieldFinder).controller?.text, isEmpty);
+      expect(
+        find.descendant(
+          of: buttonFinder,
+          matching: find.byType(CircularProgressIndicator),
+        ),
+        findsOneWidget,
+      );
+
+      workspaceController.completeSubmit();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      expect(
+        find.descendant(
+          of: buttonFinder,
+          matching: find.byType(CircularProgressIndicator),
+        ),
+        findsNothing,
+      );
+      expect(tester.widget<TextField>(fieldFinder).controller?.text, isEmpty);
+    },
+  );
 }
 
 class _WorkspaceRouteHarness extends StatelessWidget {
@@ -314,6 +390,36 @@ class _SlashWorkspaceController extends WorkspaceController {
     );
     notifyListeners();
     return _selectedSession;
+  }
+}
+
+class _DelayedSubmitWorkspaceController extends _SlashWorkspaceController {
+  _DelayedSubmitWorkspaceController({
+    required super.profile,
+    required super.directory,
+  });
+
+  final Completer<String?> _submitCompleter = Completer<String?>();
+  bool _submitting = false;
+
+  @override
+  bool get submittingPrompt => _submitting;
+
+  @override
+  Future<String?> submitPrompt(String prompt) async {
+    submitPromptCalls += 1;
+    _submitting = true;
+    notifyListeners();
+    final result = await _submitCompleter.future;
+    _submitting = false;
+    notifyListeners();
+    return result;
+  }
+
+  void completeSubmit() {
+    if (!_submitCompleter.isCompleted) {
+      _submitCompleter.complete(selectedSessionId);
+    }
   }
 }
 
