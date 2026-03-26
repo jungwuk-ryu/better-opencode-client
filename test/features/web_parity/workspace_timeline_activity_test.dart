@@ -116,6 +116,68 @@ void main() {
     );
   });
 
+  testWidgets(
+    'shell output and activity detail share the same leading margin',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        initialShellToolPartsExpanded: true,
+        initialTimelineProgressDetailsVisible: false,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              return _TimelineWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+            },
+      );
+      addTearDown(appController.dispose);
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          initialRoute: buildWorkspaceRoute(
+            '/workspace/demo',
+            sessionId: 'ses_1',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('timeline-activity-part_reasoning')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      final shellOutput = find.textContaining(
+        r'$ git diff --staged && git diff',
+      );
+      final reasoningDetail = find.text(
+        'Detailed internal reasoning stays hidden.',
+      );
+
+      expect(shellOutput, findsOneWidget);
+      expect(reasoningDetail, findsOneWidget);
+      expect(
+        tester.getTopLeft(shellOutput).dx,
+        tester.getTopLeft(reasoningDetail).dx,
+      );
+    },
+  );
+
   testWidgets('read tool calls are grouped into an explored summary', (
     tester,
   ) async {

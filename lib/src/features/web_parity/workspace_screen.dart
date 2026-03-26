@@ -9238,10 +9238,7 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
                 : null,
             borderRadius: BorderRadius.circular(12),
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.xs,
-                vertical: AppSpacing.xxs,
-              ),
+              padding: _timelineExpandableHeaderPadding,
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: <Widget>[
@@ -9291,10 +9288,7 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
                 ? const SizedBox.shrink()
                 : Container(
                     width: double.infinity,
-                    margin: const EdgeInsets.only(
-                      left: AppSpacing.lg,
-                      top: AppSpacing.sm,
-                    ),
+                    margin: _timelineExpandableBodyMargin,
                     decoration: BoxDecoration(
                       color: surfaces.panelMuted,
                       borderRadius: BorderRadius.circular(16),
@@ -9304,12 +9298,7 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
                       children: <Widget>[
                         SingleChildScrollView(
                           scrollDirection: Axis.horizontal,
-                          padding: const EdgeInsets.fromLTRB(
-                            AppSpacing.md,
-                            AppSpacing.md,
-                            56,
-                            AppSpacing.md,
-                          ),
+                          padding: _timelineShellBodyPadding,
                           child: Text(
                             widget.body,
                             key: ValueKey<String>(
@@ -9464,10 +9453,7 @@ class _TimelineActivityPartState extends State<_TimelineActivityPart> {
     }
 
     final headerContent = Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.xs,
-        vertical: AppSpacing.xxs,
-      ),
+      padding: _timelineExpandableHeaderPadding,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -9528,11 +9514,8 @@ class _TimelineActivityPartState extends State<_TimelineActivityPart> {
                 ? const SizedBox.shrink()
                 : Container(
                     width: double.infinity,
-                    margin: const EdgeInsets.only(
-                      left: AppSpacing.lg,
-                      top: AppSpacing.xs,
-                    ),
-                    padding: const EdgeInsets.all(AppSpacing.md),
+                    margin: _timelineExpandableBodyMargin,
+                    padding: _timelineExpandableBodyPadding,
                     decoration: BoxDecoration(
                       color: surfaces.panelMuted,
                       borderRadius: BorderRadius.circular(16),
@@ -9589,10 +9572,7 @@ class _TimelineExploredContextPartState
             onTap: () => setState(() => _expanded = !_expanded),
             borderRadius: BorderRadius.circular(10),
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.xs,
-                vertical: AppSpacing.xxs,
-              ),
+              padding: _timelineExpandableHeaderPadding,
               child: Row(
                 children: <Widget>[
                   Expanded(
@@ -9628,10 +9608,7 @@ class _TimelineExploredContextPartState
             child: !_expanded
                 ? const SizedBox.shrink()
                 : Padding(
-                    padding: const EdgeInsets.only(
-                      left: AppSpacing.lg,
-                      top: AppSpacing.sm,
-                    ),
+                    padding: _timelineExploredContextDetailPadding,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: widget.parts
@@ -9658,6 +9635,33 @@ class _TimelineExploredContextPartState
     );
   }
 }
+
+const EdgeInsets _timelineExpandableHeaderPadding = EdgeInsets.symmetric(
+  horizontal: AppSpacing.xs,
+  vertical: AppSpacing.xxs,
+);
+
+const EdgeInsets _timelineExpandableBodyMargin = EdgeInsets.only(
+  top: AppSpacing.xs,
+);
+
+const EdgeInsets _timelineExpandableBodyPadding = EdgeInsets.fromLTRB(
+  AppSpacing.sm,
+  AppSpacing.md,
+  AppSpacing.sm,
+  AppSpacing.md,
+);
+
+const EdgeInsets _timelineShellBodyPadding = EdgeInsets.fromLTRB(
+  AppSpacing.sm,
+  AppSpacing.md,
+  56,
+  AppSpacing.md,
+);
+
+const EdgeInsets _timelineExploredContextDetailPadding = EdgeInsets.only(
+  top: AppSpacing.xs,
+);
 
 class _ShimmeringRichText extends StatefulWidget {
   const _ShimmeringRichText({
