@@ -54,6 +54,39 @@ void main() {
         return;
       }
       final body = switch (request.uri.path) {
+        '/file' => switch (request.uri.queryParameters['directory']) {
+          '/' => [
+            {
+              'name': 'workspace',
+              'path': 'workspace',
+              'absolute': '/workspace',
+              'type': 'directory',
+              'ignored': false,
+            },
+          ],
+          '/workspace' => [
+            {
+              'name': 'design-system',
+              'path': 'design-system',
+              'absolute': '/workspace/design-system',
+              'type': 'directory',
+              'ignored': false,
+            },
+            {
+              'name': 'demo',
+              'path': 'demo',
+              'absolute': '/workspace/demo',
+              'type': 'directory',
+              'ignored': false,
+            },
+          ],
+          _ => <Object?>[],
+        },
+        '/find/file' => switch (request.uri.queryParameters['query']) {
+          'design' => ['design-system'],
+          'demo' => ['demo'],
+          _ => <Object?>[],
+        },
         '/project' => [
           {
             'id': 'project-1',
@@ -139,6 +172,31 @@ void main() {
 
     expect(target.directory, '/workspace/manual');
     expect(target.branch, 'main');
+    service.dispose();
+  });
+
+  test('suggests server directories for typed project paths', () async {
+    final service = ProjectCatalogService();
+    final profile = ServerProfile(
+      id: '1',
+      label: 'demo',
+      baseUrl: baseUri.toString(),
+    );
+
+    final suggestions = await service.suggestDirectories(
+      profile: profile,
+      input: '/workspace/des',
+      pathInfo: const PathInfo(
+        home: '/home/ubuntu',
+        state: '/state',
+        config: '/config',
+        worktree: '/workspace/demo',
+        directory: '/workspace/demo',
+      ),
+    );
+
+    expect(suggestions, contains('/workspace/design-system'));
+    expect(suggestions, isNot(contains('/workspace/demo')));
     service.dispose();
   });
 

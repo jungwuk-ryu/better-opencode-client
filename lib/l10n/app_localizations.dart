@@ -920,6 +920,18 @@ abstract class AppLocalizations {
   /// **'Browse folder'**
   String get projectBrowseAction;
 
+  /// No description provided for @projectPathSuggestionsLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Searching server folders...'**
+  String get projectPathSuggestionsLoading;
+
+  /// No description provided for @projectPathSuggestionsEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No matching folders found on this server.'**
+  String get projectPathSuggestionsEmpty;
+
   /// No description provided for @recentProjectsTitle.
   ///
   /// In en, this message translates to:

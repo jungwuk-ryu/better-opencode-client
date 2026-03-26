@@ -436,6 +436,12 @@ class AppLocalizationsKo extends AppLocalizations {
   String get projectBrowseAction => '폴더 탐색';
 
   @override
+  String get projectPathSuggestionsLoading => '서버 폴더를 찾는 중...';
+
+  @override
+  String get projectPathSuggestionsEmpty => '이 서버에서 일치하는 폴더를 찾지 못했습니다.';
+
+  @override
   String get recentProjectsTitle => '최근 프로젝트';
 
   @override

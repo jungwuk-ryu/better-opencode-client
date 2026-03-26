@@ -137,6 +137,8 @@
   "projectInspectAction": "Inspect path",
   "projectInspectingAction": "Inspecting...",
   "projectBrowseAction": "Browse folder",
+  "projectPathSuggestionsLoading": "Searching server folders...",
+  "projectPathSuggestionsEmpty": "No matching folders found on this server.",
   "recentProjectsTitle": "Recent projects",
   "recentProjectsSubtitle": "Projects you've opened recently, with last session hints when we have them.",
   "pinnedProjectsTitle": "Pinned projects",

@@ -137,6 +137,8 @@
   "projectInspectAction": "경로 확인",
   "projectInspectingAction": "확인 중...",
   "projectBrowseAction": "폴더 탐색",
+  "projectPathSuggestionsLoading": "서버 폴더를 찾는 중...",
+  "projectPathSuggestionsEmpty": "이 서버에서 일치하는 폴더를 찾지 못했습니다.",
   "recentProjectsTitle": "최근 프로젝트",
   "recentProjectsSubtitle": "최근에 연 프로젝트이며, 있으면 마지막 세션 힌트도 함께 보여줍니다.",
   "pinnedProjectsTitle": "고정한 프로젝트",

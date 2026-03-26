@@ -448,6 +448,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get projectBrowseAction => 'Browse folder';
 
   @override
+  String get projectPathSuggestionsLoading => 'Searching server folders...';
+
+  @override
+  String get projectPathSuggestionsEmpty =>
+      'No matching folders found on this server.';
+
+  @override
   String get recentProjectsTitle => 'Recent projects';
 
   @override

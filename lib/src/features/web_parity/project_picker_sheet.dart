@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/connection/connection_models.dart';
@@ -10,6 +9,7 @@ import '../../design_system/app_theme.dart';
 import '../projects/project_catalog_service.dart';
 import '../projects/project_models.dart';
 import '../projects/project_store.dart';
+import '../projects/server_directory_autocomplete_field.dart';
 
 class ProjectPickerSheet extends StatefulWidget {
   const ProjectPickerSheet({
@@ -163,15 +163,6 @@ class _ProjectPickerSheetState extends State<ProjectPickerSheet> {
     }
   }
 
-  Future<void> _browseDirectory() async {
-    final path = await getDirectoryPath();
-    if (path == null || path.isEmpty) {
-      return;
-    }
-    _manualPathController.text = path;
-    await _inspectManualPath();
-  }
-
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
@@ -193,21 +184,26 @@ class _ProjectPickerSheetState extends State<ProjectPickerSheet> {
             ),
             const SizedBox(height: AppSpacing.lg),
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Expanded(
-                  child: TextField(
-                    controller: _manualPathController,
-                    decoration: const InputDecoration(
-                      labelText: 'Directory path',
-                      hintText: '/workspace/my-project',
+                  child: ServerDirectoryAutocompleteField(
+                    fieldKey: const ValueKey<String>(
+                      'project-picker-manual-path-field',
                     ),
+                    profile: widget.profile,
+                    catalogService: _catalogService,
+                    controller: _manualPathController,
+                    labelText: 'Directory path',
+                    hintText: '/workspace/my-project',
+                    loadingText: 'Searching server folders...',
+                    emptyText: 'No matching folders found on the server.',
+                    enabled: !_inspecting,
                     onSubmitted: (_) => _inspectManualPath(),
+                    onSuggestionSelected: (_) {
+                      unawaited(_inspectManualPath());
+                    },
                   ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                OutlinedButton(
-                  onPressed: _inspecting ? null : _browseDirectory,
-                  child: const Text('Browse'),
                 ),
                 const SizedBox(width: AppSpacing.sm),
                 FilledButton(

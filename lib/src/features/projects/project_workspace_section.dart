@@ -1,6 +1,5 @@
+import 'dart:async';
 import 'dart:convert';
-
-import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 import '../../../l10n/app_localizations.dart';
@@ -11,6 +10,7 @@ import '../../design_system/app_theme.dart';
 import 'project_catalog_service.dart';
 import 'project_models.dart';
 import 'project_store.dart';
+import 'server_directory_autocomplete_field.dart';
 
 class ProjectWorkspaceSection extends StatefulWidget {
   const ProjectWorkspaceSection({
@@ -324,15 +324,6 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
     }
   }
 
-  Future<void> _browseDirectory() async {
-    final path = await getDirectoryPath();
-    if (path == null || path.isEmpty) {
-      return;
-    }
-    _manualPathController.text = path;
-    await _inspectManualPath();
-  }
-
   bool _matchesProject(ProjectTarget target) {
     final query = _projectQuery.trim().toLowerCase();
     if (query.isEmpty) {
@@ -641,31 +632,30 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              TextField(
+              ServerDirectoryAutocompleteField(
+                fieldKey: const ValueKey<String>('project-manual-path-field'),
+                profile: widget.profile,
+                catalogService: _catalogService,
                 controller: _manualPathController,
-                decoration: InputDecoration(
-                  labelText: l10n.manualProjectPathLabel,
-                  hintText: l10n.manualProjectPathHint,
-                ),
+                pathInfo: _catalog?.pathInfo,
+                labelText: l10n.manualProjectPathLabel,
+                hintText: l10n.manualProjectPathHint,
+                loadingText: l10n.projectPathSuggestionsLoading,
+                emptyText: l10n.projectPathSuggestionsEmpty,
+                enabled: !_inspecting,
+                onSubmitted: (_) => _inspectManualPath(),
+                onSuggestionSelected: (_) {
+                  unawaited(_inspectManualPath());
+                },
               ),
               const SizedBox(height: AppSpacing.sm),
-              Wrap(
-                spacing: AppSpacing.sm,
-                runSpacing: AppSpacing.sm,
-                children: <Widget>[
-                  ElevatedButton(
-                    onPressed: _inspecting ? null : _inspectManualPath,
-                    child: Text(
-                      _inspecting
-                          ? l10n.projectInspectingAction
-                          : l10n.projectInspectAction,
-                    ),
-                  ),
-                  OutlinedButton(
-                    onPressed: _browseDirectory,
-                    child: Text(l10n.projectBrowseAction),
-                  ),
-                ],
+              ElevatedButton(
+                onPressed: _inspecting ? null : _inspectManualPath,
+                child: Text(
+                  _inspecting
+                      ? l10n.projectInspectingAction
+                      : l10n.projectInspectAction,
+                ),
               ),
             ],
           ),

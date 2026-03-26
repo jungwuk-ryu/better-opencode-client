@@ -193,6 +193,54 @@ void main() {
     expect(find.text('Archive workspace'), findsNothing);
   });
 
+  testWidgets(
+    'manual project path shows server suggestions without local browse action',
+    (tester) async {
+      _setLargeSurface(tester);
+
+      await tester.pumpWidget(
+        _TestApp(
+          child: ProjectWorkspaceSection(
+            profile: const ServerProfile(
+              id: 'studio',
+              label: 'Studio',
+              baseUrl: 'https://studio.example.com',
+            ),
+            onOpenProject: (_) {},
+            projectCatalogService: _FakeProjectCatalogService(
+              catalog: _catalogWithServerProject(),
+              suggestions: const <String>[
+                '/workspace/design-system',
+                '/workspace/demo',
+              ],
+            ),
+            projectStore: _FakeProjectStore(),
+            cacheStore: StaleCacheStore(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Browse folder'), findsNothing);
+
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('project-manual-path-field')),
+        '/workspace/de',
+      );
+      await tester.pump(const Duration(milliseconds: 250));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey<String>('server-directory-suggestion-0')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('server-directory-suggestion-1')),
+        findsOneWidget,
+      );
+    },
+  );
+
   testWidgets('connection screen no longer acts as a project chooser', (
     tester,
   ) async {
@@ -253,10 +301,11 @@ class _TestApp extends StatelessWidget {
 }
 
 class _FakeProjectCatalogService extends ProjectCatalogService {
-  _FakeProjectCatalogService({this.catalog, this.error});
+  _FakeProjectCatalogService({this.catalog, this.error, this.suggestions});
 
   final ProjectCatalog? catalog;
   final Object? error;
+  final List<String>? suggestions;
 
   @override
   Future<ProjectCatalog> fetchCatalog(ServerProfile profile) async {
@@ -276,6 +325,20 @@ class _FakeProjectCatalogService extends ProjectCatalogService {
       label: directory.split('/').last,
       source: 'manual',
     );
+  }
+
+  @override
+  Future<List<String>> suggestDirectories({
+    required ServerProfile profile,
+    required String input,
+    PathInfo? pathInfo,
+    int limit = 8,
+  }) async {
+    final options = suggestions ?? const <String>[];
+    if (input.trim().isEmpty) {
+      return const <String>[];
+    }
+    return options.take(limit).toList(growable: false);
   }
 }
 

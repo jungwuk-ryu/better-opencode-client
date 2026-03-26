@@ -11,6 +11,10 @@ class ProjectCatalogService {
     : _client = client ?? http.Client();
 
   final http.Client _client;
+  final Map<String, Future<PathInfo?>> _pathInfoCache =
+      <String, Future<PathInfo?>>{};
+  final Map<String, Future<List<_DirectoryCandidate>>> _directoryListCache =
+      <String, Future<List<_DirectoryCandidate>>>{};
 
   Future<ProjectCatalog> fetchCatalog(ServerProfile profile) async {
     final baseUri = profile.uriOrNull;
@@ -41,14 +45,19 @@ class ProjectCatalogService {
               .toList(growable: false)
         : const <ProjectSummary>[];
 
+    final pathInfo = pathBody is Map
+        ? PathInfo.fromJson(pathBody.cast<String, Object?>())
+        : null;
+    if (pathInfo != null) {
+      _pathInfoCache[profile.storageKey] = Future<PathInfo?>.value(pathInfo);
+    }
+
     return ProjectCatalog(
       currentProject: currentMap == null
           ? null
           : ProjectSummary.fromJson(currentMap),
       projects: projectList,
-      pathInfo: pathBody is Map
-          ? PathInfo.fromJson(pathBody.cast<String, Object?>())
-          : null,
+      pathInfo: pathInfo,
       vcsInfo: vcsBody is Map
           ? VcsInfo.fromJson(vcsBody.cast<String, Object?>())
           : null,
@@ -115,6 +124,122 @@ class ProjectCatalogService {
       icon: project.icon,
       commands: project.commands,
     );
+  }
+
+  Future<List<String>> suggestDirectories({
+    required ServerProfile profile,
+    required String input,
+    PathInfo? pathInfo,
+    int limit = 8,
+  }) async {
+    final cleaned = _cleanDirectoryInput(input);
+    if (cleaned.isEmpty) {
+      return const <String>[];
+    }
+
+    final raw = _normalizeDriveRoot(cleaned);
+    final resolvedPathInfo = pathInfo ?? await _resolvePathInfo(profile);
+    final home = _trimDirectoryPath(resolvedPathInfo?.home ?? '');
+    final start =
+        _firstNonEmpty(<String?>[
+          home,
+          resolvedPathInfo?.directory,
+          resolvedPathInfo?.worktree,
+          _rootOfDirectoryPath(raw),
+        ]) ??
+        '/';
+    final scoped = _scopedDirectoryInput(raw, start: start, home: home);
+    if (scoped == null) {
+      return const <String>[];
+    }
+
+    final isPathLike =
+        raw.startsWith('~') ||
+        _rootOfDirectoryPath(raw).isNotEmpty ||
+        raw.contains('/');
+    final query = _normalizeDriveRoot(scoped.path);
+    if (!isPathLike) {
+      return _findDirectories(
+        profile: profile,
+        directory: scoped.directory,
+        query: query,
+        limit: limit,
+      );
+    }
+
+    final trimmedQuery = query.replaceFirst(RegExp(r'^/+'), '');
+    final segments = trimmedQuery.split('/');
+    final head = <String>[
+      for (var index = 0; index < segments.length - 1; index += 1)
+        if (segments[index].isNotEmpty && segments[index] != '.')
+          segments[index],
+    ];
+    final tail = segments.isEmpty ? '' : segments.last;
+
+    var paths = <String>[scoped.directory];
+    const branchLimit = 4;
+    const branchCap = 12;
+
+    for (final segment in head) {
+      if (segment == '..') {
+        paths = paths
+            .map(_parentDirectoryPath)
+            .toSet()
+            .take(branchCap)
+            .toList(growable: false);
+        continue;
+      }
+
+      final next = <String>{};
+      for (final path in paths) {
+        next.addAll(
+          await _matchDirectoryChildren(
+            profile: profile,
+            directory: path,
+            query: segment,
+            limit: branchLimit,
+          ),
+        );
+      }
+      paths = next.take(branchCap).toList(growable: false);
+      if (paths.isEmpty) {
+        return const <String>[];
+      }
+    }
+
+    final matches = <String>{};
+    for (final path in paths) {
+      matches.addAll(
+        await _matchDirectoryChildren(
+          profile: profile,
+          directory: path,
+          query: tail,
+          limit: limit * 4,
+        ),
+      );
+    }
+    final suggestions = matches.toList(growable: false);
+    if (!raw.endsWith('/') && tail.isNotEmpty) {
+      String? exactPath;
+      for (final suggestion in suggestions) {
+        if (_directoryBasename(suggestion).toLowerCase() ==
+            tail.toLowerCase()) {
+          exactPath = suggestion;
+          break;
+        }
+      }
+      if (exactPath != null) {
+        final children = await _matchDirectoryChildren(
+          profile: profile,
+          directory: exactPath,
+          query: '',
+          limit: limit,
+        );
+        final expanded = <String>{...suggestions, ...children};
+        return expanded.take(limit).toList(growable: false);
+      }
+    }
+    return suggestions.take(limit).toList(growable: false);
   }
 
   Future<ProjectTarget> updateProject({
@@ -215,6 +340,224 @@ class ProjectCatalogService {
     return trimmed;
   }
 
+  Future<PathInfo?> _resolvePathInfo(ServerProfile profile) {
+    final storageKey = profile.storageKey;
+    final existing = _pathInfoCache[storageKey];
+    if (existing != null) {
+      return existing;
+    }
+
+    final request = () async {
+      final baseUri = profile.uriOrNull;
+      if (baseUri == null) {
+        throw const FormatException('Invalid server profile URL.');
+      }
+      final headers = buildRequestHeaders(profile, accept: 'application/json');
+      final body = await _getJson(baseUri, '/path', headers: headers);
+      if (body is! Map) {
+        return null;
+      }
+      return PathInfo.fromJson(body.cast<String, Object?>());
+    }();
+
+    _pathInfoCache[storageKey] = request;
+    return request.whenComplete(() async {
+      try {
+        await request;
+      } catch (_) {
+        _pathInfoCache.remove(storageKey);
+      }
+    });
+  }
+
+  Future<List<String>> _findDirectories({
+    required ServerProfile profile,
+    required String directory,
+    required String query,
+    required int limit,
+  }) async {
+    final baseUri = profile.uriOrNull;
+    if (baseUri == null) {
+      throw const FormatException('Invalid server profile URL.');
+    }
+    final headers = buildRequestHeaders(profile, accept: 'application/json');
+    final uri = _buildQueryUri(
+      baseUri,
+      '/find/file',
+      queryParameters: <String, String>{
+        'directory': _trimDirectoryPath(directory),
+        'query': query,
+        'type': 'directory',
+        'limit': '$limit',
+      },
+    );
+    final body = await _getJsonUri(uri, headers: headers);
+    if (body is! List) {
+      return const <String>[];
+    }
+
+    final results = <String>{};
+    for (final item in body) {
+      final value = item.toString().trim();
+      if (value.isEmpty) {
+        continue;
+      }
+      results.add(
+        value.startsWith('/')
+            ? _trimDirectoryPath(value)
+            : _joinDirectoryPath(directory, value),
+      );
+    }
+    return results.take(limit).toList(growable: false);
+  }
+
+  Future<List<String>> _matchDirectoryChildren({
+    required ServerProfile profile,
+    required String directory,
+    required String query,
+    required int limit,
+  }) async {
+    final directories = await _listDirectories(
+      profile: profile,
+      directory: directory,
+    );
+    final normalizedQuery = query.trim().toLowerCase();
+    final ranked = directories.toList(growable: false)
+      ..sort((a, b) {
+        final scoreA = _directoryMatchScore(a.name, normalizedQuery);
+        final scoreB = _directoryMatchScore(b.name, normalizedQuery);
+        if (scoreA != scoreB) {
+          return scoreA.compareTo(scoreB);
+        }
+        if (a.name.length != b.name.length) {
+          return a.name.length.compareTo(b.name.length);
+        }
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
+
+    return ranked
+        .where(
+          (candidate) =>
+              normalizedQuery.isEmpty ||
+              candidate.name.toLowerCase().contains(normalizedQuery),
+        )
+        .map((candidate) => candidate.absolute)
+        .take(limit)
+        .toList(growable: false);
+  }
+
+  int _directoryMatchScore(String candidate, String query) {
+    if (query.isEmpty) {
+      return 0;
+    }
+    final lower = candidate.toLowerCase();
+    if (lower == query) {
+      return 0;
+    }
+    if (lower.startsWith(query)) {
+      return 1;
+    }
+    if (lower.contains(query)) {
+      return 2;
+    }
+    return 3;
+  }
+
+  Future<List<_DirectoryCandidate>> _listDirectories({
+    required ServerProfile profile,
+    required String directory,
+  }) {
+    final normalizedDirectory = _trimDirectoryPath(directory);
+    final cacheKey = '${profile.storageKey}\n$normalizedDirectory';
+    final existing = _directoryListCache[cacheKey];
+    if (existing != null) {
+      return existing;
+    }
+
+    final request = () async {
+      final baseUri = profile.uriOrNull;
+      if (baseUri == null) {
+        throw const FormatException('Invalid server profile URL.');
+      }
+      final headers = buildRequestHeaders(profile, accept: 'application/json');
+      final uri = _buildQueryUri(
+        baseUri,
+        '/file',
+        queryParameters: <String, String>{
+          'directory': normalizedDirectory,
+          'path': '',
+        },
+      );
+      final body = await _getJsonUri(uri, headers: headers);
+      if (body is! List) {
+        return const <_DirectoryCandidate>[];
+      }
+      final seen = <String>{};
+      final results = <_DirectoryCandidate>[];
+      for (final item in body.whereType<Map>()) {
+        final json = item.cast<String, Object?>();
+        if (json['type']?.toString() != 'directory') {
+          continue;
+        }
+        final absolute =
+            _trimToNull(json['absolute']?.toString()) ??
+            _resolveDirectoryAbsolute(
+              baseDirectory: normalizedDirectory,
+              relativePath:
+                  _trimToNull(json['path']?.toString()) ??
+                  _trimToNull(json['name']?.toString()) ??
+                  '',
+            );
+        if (absolute == null || !seen.add(absolute)) {
+          continue;
+        }
+        results.add(
+          _DirectoryCandidate(
+            name:
+                _trimToNull(json['name']?.toString()) ??
+                _directoryBasename(absolute),
+            absolute: absolute,
+          ),
+        );
+      }
+      return results;
+    }();
+
+    _directoryListCache[cacheKey] = request;
+    return request.whenComplete(() async {
+      try {
+        await request;
+      } catch (_) {
+        _directoryListCache.remove(cacheKey);
+      }
+    });
+  }
+
+  String? _resolveDirectoryAbsolute({
+    required String baseDirectory,
+    required String relativePath,
+  }) {
+    final trimmed = relativePath.trim();
+    if (trimmed.isEmpty) {
+      return null;
+    }
+    if (_rootOfDirectoryPath(trimmed).isNotEmpty || trimmed.startsWith('/')) {
+      return _trimDirectoryPath(trimmed);
+    }
+    return _joinDirectoryPath(baseDirectory, trimmed);
+  }
+
+  Uri _buildQueryUri(
+    Uri baseUri,
+    String path, {
+    required Map<String, String> queryParameters,
+  }) {
+    final uri = baseUri.resolve(
+      path.startsWith('/') ? path.substring(1) : path,
+    );
+    return uri.replace(queryParameters: queryParameters);
+  }
+
   Future<Object?> _getJson(
     Uri baseUri,
     String path, {
@@ -243,6 +586,173 @@ class ProjectCatalogService {
   }
 
   void dispose() {
+    _pathInfoCache.clear();
+    _directoryListCache.clear();
     _client.close();
   }
+}
+
+class _ScopedDirectoryInput {
+  const _ScopedDirectoryInput({required this.directory, required this.path});
+
+  final String directory;
+  final String path;
+}
+
+class _DirectoryCandidate {
+  const _DirectoryCandidate({required this.name, required this.absolute});
+
+  final String name;
+  final String absolute;
+}
+
+String _cleanDirectoryInput(String value) {
+  final firstLine = (value).split(RegExp(r'\r?\n')).firstOrNull ?? '';
+  return firstLine.replaceAll(RegExp(r'[\u0000-\u001F\u007F]'), '').trim();
+}
+
+String _normalizeDirectoryPath(String input) {
+  final normalized = input.replaceAll('\\', '/');
+  if (normalized.startsWith('//') && !normalized.startsWith('///')) {
+    return '//${normalized.substring(2).replaceAll(RegExp(r'/+'), '/')}';
+  }
+  return normalized.replaceAll(RegExp(r'/+'), '/');
+}
+
+String _normalizeDriveRoot(String input) {
+  final normalized = _normalizeDirectoryPath(input);
+  if (RegExp(r'^[A-Za-z]:$').hasMatch(normalized)) {
+    return '$normalized/';
+  }
+  return normalized;
+}
+
+String _trimDirectoryPath(String input) {
+  final normalized = _normalizeDriveRoot(input);
+  if (normalized == '/' || normalized == '//' || normalized.isEmpty) {
+    return normalized;
+  }
+  if (RegExp(r'^[A-Za-z]:/$').hasMatch(normalized)) {
+    return normalized;
+  }
+  return normalized.replaceFirst(RegExp(r'/+$'), '');
+}
+
+String _joinDirectoryPath(String base, String relative) {
+  final trimmedBase = _trimDirectoryPath(base);
+  final trimmedRelative = _trimDirectoryPath(
+    relative,
+  ).replaceFirst(RegExp(r'^/+'), '');
+  if (trimmedBase.isEmpty) {
+    return trimmedRelative;
+  }
+  if (trimmedRelative.isEmpty) {
+    return trimmedBase;
+  }
+  if (trimmedBase.endsWith('/')) {
+    return '$trimmedBase$trimmedRelative';
+  }
+  return '$trimmedBase/$trimmedRelative';
+}
+
+String _rootOfDirectoryPath(String input) {
+  final normalized = _normalizeDriveRoot(input);
+  if (normalized.startsWith('//')) {
+    return '//';
+  }
+  if (normalized.startsWith('/')) {
+    return '/';
+  }
+  final match = RegExp(r'^[A-Za-z]:/').firstMatch(normalized);
+  if (match != null) {
+    return match.group(0)!;
+  }
+  return '';
+}
+
+String _parentDirectoryPath(String input) {
+  final normalized = _trimDirectoryPath(input);
+  if (normalized == '/' ||
+      normalized == '//' ||
+      RegExp(r'^[A-Za-z]:/$').hasMatch(normalized)) {
+    return normalized;
+  }
+
+  final index = normalized.lastIndexOf('/');
+  if (index <= 0) {
+    return '/';
+  }
+  if (index == 2 && RegExp(r'^[A-Za-z]:').hasMatch(normalized)) {
+    return normalized.substring(0, 3);
+  }
+  return normalized.substring(0, index);
+}
+
+String _directoryBasename(String input) {
+  final normalized = _trimDirectoryPath(input);
+  if (normalized == '/' || normalized == '//' || normalized.isEmpty) {
+    return normalized;
+  }
+  final segments = normalized.split('/');
+  for (var index = segments.length - 1; index >= 0; index -= 1) {
+    final segment = segments[index].trim();
+    if (segment.isNotEmpty) {
+      return segment;
+    }
+  }
+  return normalized;
+}
+
+_ScopedDirectoryInput? _scopedDirectoryInput(
+  String value, {
+  required String start,
+  required String home,
+}) {
+  final normalizedStart = _trimDirectoryPath(start);
+  if (normalizedStart.isEmpty) {
+    return null;
+  }
+
+  final raw = _normalizeDriveRoot(value);
+  if (raw.isEmpty) {
+    return _ScopedDirectoryInput(directory: normalizedStart, path: '');
+  }
+
+  final normalizedHome = _trimDirectoryPath(home);
+  if (raw == '~') {
+    return _ScopedDirectoryInput(
+      directory: normalizedHome.isNotEmpty ? normalizedHome : normalizedStart,
+      path: '',
+    );
+  }
+  if (raw.startsWith('~/')) {
+    return _ScopedDirectoryInput(
+      directory: normalizedHome.isNotEmpty ? normalizedHome : normalizedStart,
+      path: raw.substring(2),
+    );
+  }
+
+  final root = _rootOfDirectoryPath(raw);
+  if (root.isNotEmpty) {
+    return _ScopedDirectoryInput(
+      directory: _trimDirectoryPath(root),
+      path: raw.substring(root.length),
+    );
+  }
+
+  return _ScopedDirectoryInput(directory: normalizedStart, path: raw);
+}
+
+String? _firstNonEmpty(Iterable<String?> values) {
+  for (final value in values) {
+    final trimmed = _trimDirectoryPath(value ?? '');
+    if (trimmed.isNotEmpty) {
+      return trimmed;
+    }
+  }
+  return null;
+}
+
+extension on List<String> {
+  String? get firstOrNull => isEmpty ? null : first;
 }
