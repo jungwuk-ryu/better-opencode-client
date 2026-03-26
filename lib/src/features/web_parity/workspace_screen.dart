@@ -1704,7 +1704,7 @@ class _WorkspaceTopBar extends StatelessWidget {
         ),
         _SessionOverflowMenuAction(
           id: 'timeline-progress-details',
-          label: 'Show to-do and step details in timeline',
+          label: 'Show to-do details in timeline',
           icon: Icons.checklist_rtl_rounded,
           checked: timelineProgressDetailsVisible,
           onSelected: () {
@@ -2582,9 +2582,9 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                             'workspace-settings-progress-toggle',
                                           ),
                                           title:
-                                              'Show to-do and step details in timeline',
+                                              'Show to-do details in timeline',
                                           subtitle:
-                                              'Display internal progress events directly in the chat stream.',
+                                              'Display to-do updates directly in the chat stream.',
                                           value: widget
                                               .appController
                                               .timelineProgressDetailsVisible,
@@ -10837,6 +10837,9 @@ bool _shouldRenderTimelinePart(
   if (part.type == 'text') {
     return _resolvedRawPartText(part).trim().isNotEmpty;
   }
+  if (_isAlwaysHiddenTimelinePart(part)) {
+    return false;
+  }
   if (_isProgressDetailPart(part) && !showProgressDetails) {
     return false;
   }
@@ -10849,11 +10852,12 @@ bool _shouldRenderTimelinePart(
   return true;
 }
 
-bool _isProgressDetailPart(ChatPart part) {
-  if (_isTodoWriteToolPart(part)) {
-    return true;
-  }
+bool _isAlwaysHiddenTimelinePart(ChatPart part) {
   return part.type == 'step-start' || part.type == 'step-finish';
+}
+
+bool _isProgressDetailPart(ChatPart part) {
+  return _isTodoWriteToolPart(part);
 }
 
 bool _shouldAnimateStreamingText(ChatPart part, bool messageIsActive) {

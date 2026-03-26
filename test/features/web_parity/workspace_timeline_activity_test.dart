@@ -757,7 +757,7 @@ void main() {
   });
 
   testWidgets(
-    'step and to-do details stay hidden by default and can be shown from settings',
+    'step details stay hidden and only to-do details can be shown from settings',
     (tester) async {
       tester.view.physicalSize = const Size(1600, 1000);
       tester.view.devicePixelRatio = 1;
@@ -817,13 +817,13 @@ void main() {
 
       expect(
         find.byKey(const ValueKey<String>('timeline-activity-part_step_start')),
-        findsOneWidget,
+        findsNothing,
       );
       expect(
         find.byKey(
           const ValueKey<String>('timeline-activity-part_step_finish'),
         ),
-        findsOneWidget,
+        findsNothing,
       );
       expect(
         find.byKey(const ValueKey<String>('timeline-activity-part_todo')),
