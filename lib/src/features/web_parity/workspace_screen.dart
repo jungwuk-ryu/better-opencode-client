@@ -8641,6 +8641,7 @@ class _WorkspaceSessionPaneDeck extends StatelessWidget {
       return const SizedBox.shrink();
     }
     final resolvedActivePaneId = activePaneId ?? paneViewModels.first.pane.id;
+    final showSelectionChrome = paneViewModels.length > 1;
 
     return Padding(
       key: const ValueKey<String>('workspace-session-pane-deck'),
@@ -8654,6 +8655,7 @@ class _WorkspaceSessionPaneDeck extends StatelessWidget {
                 paneViewModel: paneViewModels[index],
                 compact: compact,
                 selected: paneViewModels[index].pane.id == resolvedActivePaneId,
+                showSelectionChrome: showSelectionChrome,
                 canClose: !compact && paneViewModels.length > 1,
                 shellToolDefaultExpanded: shellToolDefaultExpanded,
                 timelineProgressDetailsVisible: timelineProgressDetailsVisible,
@@ -8684,6 +8686,7 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
     required this.paneViewModel,
     required this.compact,
     required this.selected,
+    required this.showSelectionChrome,
     required this.canClose,
     required this.shellToolDefaultExpanded,
     required this.timelineProgressDetailsVisible,
@@ -8704,6 +8707,7 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
   final _WorkspacePaneViewModel paneViewModel;
   final bool compact;
   final bool selected;
+  final bool showSelectionChrome;
   final bool canClose;
   final bool shellToolDefaultExpanded;
   final bool timelineProgressDetailsVisible;
@@ -8779,6 +8783,7 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
     );
     final paneTodos = controller.todosForSession(sessionId);
     final paneTodoLive = paneTodos.isNotEmpty || paneQuestionRequest != null;
+    final visuallySelected = selected && showSelectionChrome;
 
     Future<void> handleFocus() async {
       await onSelectPane(pane.id);
@@ -8831,24 +8836,30 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
           onTap: selected ? null : () => unawaited(handleFocus()),
           borderRadius: BorderRadius.circular(compact ? 18 : 22),
           child: AnimatedContainer(
+            key: ValueKey<String>(
+              'workspace-session-pane-container-${pane.id}',
+            ),
             duration: const Duration(milliseconds: 180),
             curve: Curves.easeOutCubic,
             decoration: BoxDecoration(
-              color: selected
+              color: visuallySelected
                   ? surfaces.panel.withValues(alpha: 0.98)
                   : surfaces.panelRaised.withValues(alpha: 0.94),
               borderRadius: BorderRadius.circular(compact ? 18 : 22),
               border: Border.all(
-                color: selected
+                color: visuallySelected
                     ? theme.colorScheme.primary.withValues(alpha: 0.78)
                     : surfaces.lineSoft,
-                width: selected ? 1.8 : 1,
+                width: visuallySelected ? 1.8 : 1,
               ),
               boxShadow: <BoxShadow>[
                 BoxShadow(
-                  color: (selected ? theme.colorScheme.primary : Colors.black)
-                      .withValues(alpha: selected ? 0.14 : 0.08),
-                  blurRadius: selected ? 24 : 14,
+                  color:
+                      (visuallySelected
+                              ? theme.colorScheme.primary
+                              : Colors.black)
+                          .withValues(alpha: visuallySelected ? 0.14 : 0.08),
+                  blurRadius: visuallySelected ? 24 : 14,
                   offset: const Offset(0, 10),
                 ),
               ],
@@ -8867,7 +8878,8 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                       final headerWidth = constraints.maxWidth;
                       final hideTitle = headerWidth < 72;
                       final showSubtitle = headerWidth >= 180;
-                      final showSelectedBadge = selected && headerWidth >= 140;
+                      final showSelectedBadge =
+                          visuallySelected && headerWidth >= 140;
                       final useCompactCloseButton = headerWidth < 120;
 
                       Widget closeButton() {
@@ -8945,7 +8957,7 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                                           overflow: TextOverflow.ellipsis,
                                           style: theme.textTheme.bodySmall
                                               ?.copyWith(
-                                                color: selected
+                                                color: visuallySelected
                                                     ? theme.colorScheme.primary
                                                           .withValues(
                                                             alpha: 0.92,

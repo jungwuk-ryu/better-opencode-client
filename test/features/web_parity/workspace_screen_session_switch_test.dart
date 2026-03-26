@@ -161,6 +161,75 @@ void main() {
   });
 
   testWidgets(
+    'desktop layout does not show selected pane chrome when only one pane exists',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              return _RecordingWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+            },
+      );
+      addTearDown(appController.dispose);
+
+      final navigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          navigatorKey: navigatorKey,
+          initialRoute: '/',
+        ),
+      );
+      navigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+      );
+      await tester.pumpAndSettle();
+
+      final paneContainer = find.byWidgetPredicate(
+        (widget) =>
+            widget is AnimatedContainer &&
+            widget.key is ValueKey<String> &&
+            (widget.key! as ValueKey<String>).value.startsWith(
+              'workspace-session-pane-container-',
+            ),
+      );
+
+      expect(paneContainer, findsOneWidget);
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget.key is ValueKey<String> &&
+              (widget.key! as ValueKey<String>).value.startsWith(
+                'workspace-session-pane-selected-badge-',
+              ),
+        ),
+        findsNothing,
+      );
+
+      final decoration =
+          tester.widget<AnimatedContainer>(paneContainer).decoration
+              as BoxDecoration;
+      final border = decoration.border! as Border;
+      expect(border.top.width, 1);
+    },
+  );
+
+  testWidgets(
     'new session button creates a fresh session without replacing the page',
     (tester) async {
       tester.view.physicalSize = const Size(1600, 1000);
@@ -736,6 +805,30 @@ void main() {
         ),
         findsOneWidget,
       );
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget.key is ValueKey<String> &&
+              (widget.key! as ValueKey<String>).value.startsWith(
+                'workspace-session-pane-selected-badge-',
+              ),
+        ),
+        findsNothing,
+      );
+
+      final paneContainer = find.byWidgetPredicate(
+        (widget) =>
+            widget is AnimatedContainer &&
+            widget.key is ValueKey<String> &&
+            (widget.key! as ValueKey<String>).value.startsWith(
+              'workspace-session-pane-container-',
+            ),
+      );
+      final decoration =
+          tester.widget<AnimatedContainer>(paneContainer).decoration
+              as BoxDecoration;
+      final border = decoration.border! as Border;
+      expect(border.top.width, 1);
     },
   );
 
