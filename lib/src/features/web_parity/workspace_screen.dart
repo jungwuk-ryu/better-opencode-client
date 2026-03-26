@@ -251,6 +251,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   static const int _maxDesktopSessionPanes = 4;
   static const String _desktopSessionPaneLayoutKeyPrefix =
       'workspace.desktopSessionPanes';
+  static const String _composerDraftKeyPrefix = 'workspace.composerDraft';
+  static const Duration _composerDraftPersistDebounce = Duration(
+    milliseconds: 250,
+  );
   static final PromptAttachmentService _attachmentService =
       PromptAttachmentService();
   static const Object _composerRecentDraftUnset = Object();
@@ -288,6 +292,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   int _promptSubmitEpoch = 0;
   String? _recentSubmittedPromptDraft;
   String? _activeComposerScopeKey;
+  Timer? _composerDraftPersistTimer;
+  Map<String, String?> _pendingComposerDraftByStorageKey =
+      const <String, String?>{};
+  Map<String, int> _composerDraftRevisionByScope = const <String, int>{};
   int _promptComposerFocusRequestToken = 0;
   int _sessionPaneSequence = 0;
   List<_WorkspaceSessionPaneSpec> _desktopSessionPanes =
@@ -332,6 +340,53 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     return '$directory::${normalizedSessionId == null || normalizedSessionId.isEmpty ? 'new' : normalizedSessionId}';
   }
 
+  String _composerDraftStorageKey(String profileStorageKey, String scopeKey) =>
+      '$_composerDraftKeyPrefix::$profileStorageKey::$scopeKey';
+
+  int _composerDraftRevision(String scopeKey) =>
+      _composerDraftRevisionByScope[scopeKey] ?? 0;
+
+  void _bumpComposerDraftRevision(String scopeKey) {
+    final updated = Map<String, int>.from(_composerDraftRevisionByScope);
+    updated[scopeKey] = (updated[scopeKey] ?? 0) + 1;
+    _composerDraftRevisionByScope = Map<String, int>.unmodifiable(updated);
+  }
+
+  void _queueComposerDraftPersist(String scopeKey, String draft) {
+    final profile = _profile;
+    if (profile == null) {
+      return;
+    }
+    final storageKey = _composerDraftStorageKey(profile.storageKey, scopeKey);
+    final next = Map<String, String?>.from(_pendingComposerDraftByStorageKey);
+    next[storageKey] = draft.isEmpty ? null : draft;
+    _pendingComposerDraftByStorageKey = Map<String, String?>.unmodifiable(next);
+    _composerDraftPersistTimer?.cancel();
+    _composerDraftPersistTimer = Timer(_composerDraftPersistDebounce, () {
+      _composerDraftPersistTimer = null;
+      unawaited(_flushPendingComposerDraftPersists());
+    });
+  }
+
+  Future<void> _flushPendingComposerDraftPersists() async {
+    final pending = _pendingComposerDraftByStorageKey;
+    if (pending.isEmpty) {
+      return;
+    }
+    _composerDraftPersistTimer?.cancel();
+    _composerDraftPersistTimer = null;
+    _pendingComposerDraftByStorageKey = const <String, String?>{};
+    final prefs = await SharedPreferences.getInstance();
+    for (final entry in pending.entries) {
+      final draft = entry.value;
+      if (draft == null || draft.isEmpty) {
+        await prefs.remove(entry.key);
+      } else {
+        await prefs.setString(entry.key, draft);
+      }
+    }
+  }
+
   _WorkspaceComposerScopeState _composerScopeState(String scopeKey) {
     return _composerStatesByScope[scopeKey] ??
         const _WorkspaceComposerScopeState();
@@ -350,19 +405,40 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     List<PromptAttachment>? attachments,
     int? submittedDraftEpoch,
     Object? recentSubmittedDraft = _composerRecentDraftUnset,
+    bool persistDraft = true,
   }) {
     final current = _composerScopeState(scopeKey);
+    final nextDraft = draft ?? current.draft;
+    final nextAttachments = attachments == null
+        ? current.attachments
+        : List<PromptAttachment>.unmodifiable(attachments);
+    final nextSubmittedDraftEpoch =
+        submittedDraftEpoch ?? current.submittedDraftEpoch;
+    final nextRecentSubmittedDraft =
+        identical(recentSubmittedDraft, _composerRecentDraftUnset)
+        ? current.recentSubmittedDraft
+        : recentSubmittedDraft as String?;
     final next = _WorkspaceComposerScopeState(
-      draft: draft ?? current.draft,
-      attachments: attachments == null
-          ? current.attachments
-          : List<PromptAttachment>.unmodifiable(attachments),
-      submittedDraftEpoch: submittedDraftEpoch ?? current.submittedDraftEpoch,
-      recentSubmittedDraft:
-          identical(recentSubmittedDraft, _composerRecentDraftUnset)
-          ? current.recentSubmittedDraft
-          : recentSubmittedDraft as String?,
+      draft: nextDraft,
+      attachments: nextAttachments,
+      submittedDraftEpoch: nextSubmittedDraftEpoch,
+      recentSubmittedDraft: nextRecentSubmittedDraft,
     );
+    final draftChanged = nextDraft != current.draft;
+    final attachmentsChanged = !listEquals(
+      nextAttachments,
+      current.attachments,
+    );
+    final submittedDraftEpochChanged =
+        nextSubmittedDraftEpoch != current.submittedDraftEpoch;
+    final recentSubmittedDraftChanged =
+        nextRecentSubmittedDraft != current.recentSubmittedDraft;
+    if (!draftChanged &&
+        !attachmentsChanged &&
+        !submittedDraftEpochChanged &&
+        !recentSubmittedDraftChanged) {
+      return;
+    }
     final updated = Map<String, _WorkspaceComposerScopeState>.from(
       _composerStatesByScope,
     );
@@ -373,6 +449,12 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     }
     _composerStatesByScope =
         Map<String, _WorkspaceComposerScopeState>.unmodifiable(updated);
+    if (draftChanged) {
+      _bumpComposerDraftRevision(scopeKey);
+      if (persistDraft) {
+        _queueComposerDraftPersist(scopeKey, nextDraft);
+      }
+    }
   }
 
   void _persistActiveComposerScope() {
@@ -391,6 +473,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
 
   void _activateComposerScope(String scopeKey) {
     if (_activeComposerScopeKey == scopeKey) {
+      unawaited(_restorePersistedComposerDraft(scopeKey));
       return;
     }
     _persistActiveComposerScope();
@@ -407,6 +490,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       selection: TextSelection.collapsed(offset: draft.length),
       composing: TextRange.empty,
     );
+    unawaited(_restorePersistedComposerDraft(scopeKey));
   }
 
   void _syncComposerScopeForController(WorkspaceController controller) {
@@ -423,6 +507,47 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       return;
     }
     _updateComposerScopeState(scopeKey, draft: _promptController.text);
+  }
+
+  Future<void> _restorePersistedComposerDraft(String scopeKey) async {
+    final profile = _profile;
+    if (profile == null) {
+      return;
+    }
+    if (_composerScopeState(scopeKey).draft.isNotEmpty) {
+      return;
+    }
+    final revision = _composerDraftRevision(scopeKey);
+    final storageKey = _composerDraftStorageKey(profile.storageKey, scopeKey);
+    if (_pendingComposerDraftByStorageKey.containsKey(storageKey)) {
+      return;
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final persistedDraft = prefs.getString(storageKey);
+    if (persistedDraft == null || persistedDraft.isEmpty) {
+      return;
+    }
+    if (!mounted ||
+        _profile?.storageKey != profile.storageKey ||
+        _composerDraftRevision(scopeKey) != revision ||
+        _composerScopeState(scopeKey).draft.isNotEmpty) {
+      return;
+    }
+    setState(() {
+      _updateComposerScopeState(
+        scopeKey,
+        draft: persistedDraft,
+        persistDraft: false,
+      );
+      if (_activeComposerScopeKey == scopeKey &&
+          _promptController.text.isEmpty) {
+        _promptController.value = TextEditingValue(
+          text: persistedDraft,
+          selection: TextSelection.collapsed(offset: persistedDraft.length),
+          composing: TextRange.empty,
+        );
+      }
+    });
   }
 
   void _handleActiveWorkspaceControllerChanged() {
@@ -695,6 +820,11 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
 
   @override
   void dispose() {
+    _persistActiveComposerScope();
+    _composerDraftPersistTimer?.cancel();
+    if (_pendingComposerDraftByStorageKey.isNotEmpty) {
+      unawaited(_flushPendingComposerDraftPersists());
+    }
     _disposeController();
     _promptController.removeListener(_handlePromptControllerChanged);
     _promptController.dispose();

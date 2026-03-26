@@ -827,6 +827,102 @@ void main() {
     expect(_composerText(tester), 'draft for lab');
   });
 
+  testWidgets('composer drafts restore per session across app launches', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+
+    final firstAppController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _RecordingWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(firstAppController.dispose);
+
+    final firstNavigatorKey = GlobalKey<NavigatorState>();
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: firstAppController,
+        navigatorKey: firstNavigatorKey,
+        initialRoute: '/',
+      ),
+    );
+    firstNavigatorKey.currentState!.pushNamed(
+      buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+    );
+    await tester.pumpAndSettle();
+
+    final composerFinder = find.byKey(
+      const ValueKey<String>('composer-text-field'),
+    );
+
+    await tester.enterText(composerFinder, 'persisted draft for one');
+    await tester.pump();
+
+    await tester.tap(find.text('Session Two'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(composerFinder, 'persisted draft for two');
+    await tester.pump();
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final restoredAppController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _RecordingWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(restoredAppController.dispose);
+
+    final restoredNavigatorKey = GlobalKey<NavigatorState>();
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: restoredAppController,
+        navigatorKey: restoredNavigatorKey,
+        initialRoute: '/',
+      ),
+    );
+    restoredNavigatorKey.currentState!.pushNamed(
+      buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pumpAndSettle();
+
+    expect(_composerText(tester), 'persisted draft for one');
+
+    await tester.tap(find.text('Session Two'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pumpAndSettle();
+
+    expect(_composerText(tester), 'persisted draft for two');
+  });
+
   testWidgets(
     'split panes keep each session todo and sub-agent panels visible without focus',
     (tester) async {
