@@ -9681,7 +9681,7 @@ class _ShimmeringRichTextState extends State<_ShimmeringRichText>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 2200),
+    duration: const Duration(milliseconds: 3000),
   );
 
   @override
@@ -9731,33 +9731,64 @@ class _ShimmeringRichTextState extends State<_ShimmeringRichText>
         return ShaderMask(
           blendMode: BlendMode.srcATop,
           shaderCallback: (bounds) {
-            final width = bounds.width <= 0 ? 1.0 : bounds.width;
-            final start = (width * 2.4 * _controller.value) - width * 1.2;
-            return LinearGradient(
-              begin: Alignment.centerLeft,
-              end: Alignment.centerRight,
-              colors: <Color>[
-                Colors.transparent,
-                Colors.white.withValues(alpha: 0.08),
-                Colors.white.withValues(alpha: 0.78),
-                Colors.white.withValues(alpha: 0.12),
-                Colors.transparent,
-              ],
-              stops: const <double>[0, 0.35, 0.5, 0.65, 1],
-            ).createShader(
-              Rect.fromLTWH(
-                start,
-                0,
-                width * 2.2,
-                bounds.height <= 0 ? 1 : bounds.height,
-              ),
+            final shimmerBounds = Rect.fromLTWH(
+              0,
+              0,
+              bounds.width <= 0 ? 1 : bounds.width,
+              bounds.height <= 0 ? 1 : bounds.height,
             );
+            return _shimmerHighlightGradient(
+              shimmerBounds,
+              _controller.value,
+            ).createShader(shimmerBounds);
           },
           child: child,
         );
       },
     );
   }
+}
+
+LinearGradient _shimmerHighlightGradient(
+  Rect bounds,
+  double progress, {
+  Color highlightColor = Colors.white,
+}) {
+  final width = bounds.width <= 0 ? 1.0 : bounds.width;
+  final bandWidth = _shimmerHighlightWidth(width);
+  final start = ui.lerpDouble(-bandWidth, width, progress) ?? -bandWidth;
+  final end = start + bandWidth;
+  final safeWidth = width <= 0 ? 1.0 : width;
+  final left = (start / safeWidth).clamp(0.0, 1.0);
+  final right = (end / safeWidth).clamp(0.0, 1.0);
+  final center = ((start + end) / 2 / safeWidth).clamp(0.0, 1.0);
+  final innerLeft = (ui.lerpDouble(left, center, 0.34) ?? center).clamp(
+    0.0,
+    1.0,
+  );
+  final innerRight = (ui.lerpDouble(center, right, 0.34) ?? center).clamp(
+    0.0,
+    1.0,
+  );
+
+  return LinearGradient(
+    begin: Alignment.centerLeft,
+    end: Alignment.centerRight,
+    colors: <Color>[
+      Colors.transparent,
+      Colors.transparent,
+      highlightColor.withValues(alpha: 0.06),
+      highlightColor.withValues(alpha: 0.94),
+      highlightColor.withValues(alpha: 0.06),
+      Colors.transparent,
+      Colors.transparent,
+    ],
+    stops: <double>[0, left, innerLeft, center, innerRight, right, 1],
+  );
+}
+
+double _shimmerHighlightWidth(double width) {
+  return (width * 0.14).clamp(28.0, 64.0);
 }
 
 class _ShimmerBox extends StatefulWidget {
@@ -9779,7 +9810,7 @@ class _ShimmerBoxState extends State<_ShimmerBox>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 2200),
+    duration: const Duration(milliseconds: 3000),
   )..repeat();
 
   @override
@@ -9797,46 +9828,46 @@ class _ShimmerBoxState extends State<_ShimmerBox>
             ? constraints.maxWidth
             : 320.0;
         final width = math.max(24.0, maxWidth * widget.widthFactor).toDouble();
-        return AnimatedBuilder(
-          animation: _controller,
-          builder: (context, child) {
-            return ShaderMask(
-              blendMode: BlendMode.srcATop,
-              shaderCallback: (bounds) {
-                final shimmerWidth = bounds.width <= 0 ? 1.0 : bounds.width;
-                final start =
-                    (shimmerWidth * 2.4 * _controller.value) -
-                    shimmerWidth * 1.2;
-                return LinearGradient(
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
-                  colors: <Color>[
-                    Colors.transparent,
-                    Colors.white.withValues(alpha: 0.08),
-                    Colors.white.withValues(alpha: 0.78),
-                    Colors.white.withValues(alpha: 0.12),
-                    Colors.transparent,
-                  ],
-                  stops: const <double>[0, 0.35, 0.5, 0.65, 1],
-                ).createShader(
-                  Rect.fromLTWH(
-                    start,
-                    0,
-                    shimmerWidth * 2.2,
-                    bounds.height <= 0 ? 1 : bounds.height,
+        return SizedBox(
+          width: width,
+          height: widget.height,
+          child: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: surfaces.panelRaised,
+                  borderRadius: BorderRadius.circular(widget.borderRadius),
+                ),
+              ),
+              AnimatedBuilder(
+                animation: _controller,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(widget.borderRadius),
                   ),
-                );
-              },
-              child: child,
-            );
-          },
-          child: Container(
-            width: width,
-            height: widget.height,
-            decoration: BoxDecoration(
-              color: surfaces.panelRaised,
-              borderRadius: BorderRadius.circular(widget.borderRadius),
-            ),
+                ),
+                builder: (context, shimmerChild) {
+                  return ShaderMask(
+                    blendMode: BlendMode.srcIn,
+                    shaderCallback: (bounds) {
+                      final shimmerBounds = Rect.fromLTWH(
+                        0,
+                        0,
+                        bounds.width <= 0 ? 1 : bounds.width,
+                        bounds.height <= 0 ? 1 : bounds.height,
+                      );
+                      return _shimmerHighlightGradient(
+                        shimmerBounds,
+                        _controller.value,
+                      ).createShader(shimmerBounds);
+                    },
+                    child: shimmerChild,
+                  );
+                },
+              ),
+            ],
           ),
         );
       },

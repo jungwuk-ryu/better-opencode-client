@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:opencode_mobile_remote/l10n/app_localizations.dart';
 
@@ -553,7 +555,7 @@ class _ShimmerLabelState extends State<_ShimmerLabel>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 3200),
+    duration: const Duration(milliseconds: 3600),
   )..repeat();
 
   @override
@@ -564,38 +566,49 @@ class _ShimmerLabelState extends State<_ShimmerLabel>
 
   @override
   Widget build(BuildContext context) {
-    final textStyle = Theme.of(
-      context,
-    ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700);
+    final textStyle = Theme.of(context).textTheme.titleMedium?.copyWith(
+      fontWeight: FontWeight.w700,
+      color: widget.baseColor,
+    );
+    final baseChild = Text(widget.text, style: textStyle);
     return AnimatedBuilder(
       animation: _controller,
+      child: baseChild,
       builder: (context, child) {
-        final center = _controller.value;
-        final stops = <double>[
-          (center - 0.35).clamp(0.0, 1.0),
-          (center - 0.15).clamp(0.0, 1.0),
-          center.clamp(0.0, 1.0),
-          (center + 0.15).clamp(0.0, 1.0),
-          (center + 0.35).clamp(0.0, 1.0),
-        ];
         return ShaderMask(
-          blendMode: BlendMode.srcIn,
-          shaderCallback: (bounds) => LinearGradient(
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight,
-            colors: <Color>[
-              widget.baseColor.withValues(alpha: 0.76),
-              widget.baseColor,
-              widget.highlightColor.withValues(alpha: 0.96),
-              widget.baseColor,
-              widget.baseColor.withValues(alpha: 0.76),
-            ],
-            stops: stops,
-          ).createShader(bounds),
+          blendMode: BlendMode.srcATop,
+          shaderCallback: (bounds) {
+            final width = bounds.width <= 0 ? 1.0 : bounds.width;
+            final bandWidth = (width * 0.16).clamp(30.0, 58.0);
+            final start =
+                ui.lerpDouble(-bandWidth, width, _controller.value) ??
+                -bandWidth;
+            final end = start + bandWidth;
+            final left = (start / width).clamp(0.0, 1.0);
+            final right = (end / width).clamp(0.0, 1.0);
+            final center = ((start + end) / 2 / width).clamp(0.0, 1.0);
+            final innerLeft = (ui.lerpDouble(left, center, 0.34) ?? center)
+                .clamp(0.0, 1.0);
+            final innerRight = (ui.lerpDouble(center, right, 0.34) ?? center)
+                .clamp(0.0, 1.0);
+            return LinearGradient(
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+              colors: <Color>[
+                Colors.transparent,
+                Colors.transparent,
+                widget.highlightColor.withValues(alpha: 0.08),
+                widget.highlightColor.withValues(alpha: 0.98),
+                widget.highlightColor.withValues(alpha: 0.08),
+                Colors.transparent,
+                Colors.transparent,
+              ],
+              stops: <double>[0, left, innerLeft, center, innerRight, right, 1],
+            ).createShader(bounds);
+          },
           child: child,
         );
       },
-      child: Text(widget.text, style: textStyle),
     );
   }
 }
