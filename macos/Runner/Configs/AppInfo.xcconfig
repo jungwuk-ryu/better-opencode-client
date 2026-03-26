@@ -8,7 +8,7 @@
 PRODUCT_NAME = better-opencode-client
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = ai.opencode.opencodeMobileRemote
+PRODUCT_BUNDLE_IDENTIFIER = com.jungwuk.boc
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2026 ai.opencode. All rights reserved.

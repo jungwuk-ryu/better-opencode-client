@@ -1,4 +1,4 @@
-package ai.opencode.opencode_mobile_remote
+package com.jungwuk.boc
 
 import io.flutter.embedding.android.FlutterActivity
 
