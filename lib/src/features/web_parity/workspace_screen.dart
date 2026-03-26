@@ -4666,6 +4666,8 @@ class _WorkspaceBody extends StatelessWidget {
           _PromptComposer(
             controller: promptController,
             compact: compact,
+            scopeKey:
+                '${controller.directory}::${controller.selectedSessionId ?? 'new'}',
             submitting: submittingPrompt,
             interruptible: interruptiblePrompt,
             interrupting: interruptingPrompt,
@@ -5677,6 +5679,7 @@ class _PromptComposer extends StatefulWidget {
   const _PromptComposer({
     required this.controller,
     required this.compact,
+    required this.scopeKey,
     required this.submitting,
     required this.interruptible,
     required this.interrupting,
@@ -5708,6 +5711,7 @@ class _PromptComposer extends StatefulWidget {
 
   final TextEditingController controller;
   final bool compact;
+  final String scopeKey;
   final bool submitting;
   final bool interruptible;
   final bool interrupting;
@@ -5757,6 +5761,9 @@ class _PromptComposerState extends State<_PromptComposer> {
       oldWidget.controller.removeListener(_handleComposerChanged);
       widget.controller.addListener(_handleComposerChanged);
     }
+    if (oldWidget.scopeKey != widget.scopeKey) {
+      _dismissFocus();
+    }
   }
 
   @override
@@ -5770,6 +5777,13 @@ class _PromptComposerState extends State<_PromptComposer> {
     if (mounted) {
       setState(() {});
     }
+  }
+
+  void _dismissFocus() {
+    if (_focusNode.hasFocus) {
+      _focusNode.unfocus();
+    }
+    FocusManager.instance.primaryFocus?.unfocus();
   }
 
   String? get _slashQuery {

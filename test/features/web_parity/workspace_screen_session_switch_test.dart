@@ -89,6 +89,69 @@ void main() {
     },
   );
 
+  testWidgets('switching sessions clears composer focus on compact layouts', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(430, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final createdControllers = <_RecordingWorkspaceController>[];
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            final controller = _RecordingWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+            createdControllers.add(controller);
+            return controller;
+          },
+    );
+    addTearDown(appController.dispose);
+
+    final navigatorKey = GlobalKey<NavigatorState>();
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        navigatorKey: navigatorKey,
+        initialRoute: '/',
+      ),
+    );
+    navigatorKey.currentState!.pushNamed(
+      buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+    );
+    await tester.pumpAndSettle();
+
+    final composerFinder = find.byKey(
+      const ValueKey<String>('composer-text-field'),
+    );
+    await tester.tap(composerFinder);
+    await tester.pump();
+
+    EditableText editableText() =>
+        tester.widget<EditableText>(find.byType(EditableText));
+
+    expect(editableText().focusNode.hasFocus, isTrue);
+    expect(tester.testTextInput.hasAnyClients, isTrue);
+
+    await createdControllers.single.selectSession('ses_2');
+    await tester.pumpAndSettle();
+
+    expect(find.text('hello from two'), findsOneWidget);
+    expect(editableText().focusNode.hasFocus, isFalse);
+    expect(tester.testTextInput.hasAnyClients, isFalse);
+  });
+
   testWidgets(
     'new session button creates a fresh session without replacing the page',
     (tester) async {
