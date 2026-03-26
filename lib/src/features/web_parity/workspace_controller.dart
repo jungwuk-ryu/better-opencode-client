@@ -1127,7 +1127,7 @@ class WorkspaceController extends ChangeNotifier {
     _notify();
   }
 
-  Future<SessionSummary?> forkSelectedSession() async {
+  Future<SessionSummary?> forkSelectedSession({String? messageId}) async {
     final project = _project;
     final sessionId = _selectedSessionId;
     if (project == null || sessionId == null) {
@@ -1137,8 +1137,12 @@ class WorkspaceController extends ChangeNotifier {
       profile: profile,
       project: project,
       sessionId: sessionId,
+      messageId: messageId,
     );
-    _sessions = <SessionSummary>[forked, ..._sessions];
+    _sessions = <SessionSummary>[
+      forked,
+      ..._sessions.where((session) => session.id != forked.id),
+    ];
     _selectedSessionId = forked.id;
     _messages = const <ChatMessage>[];
     await _loadSelectedSessionMessages(
@@ -1150,6 +1154,39 @@ class WorkspaceController extends ChangeNotifier {
     _actionNotice = 'Forked session into "${forked.title}".';
     _notify();
     return forked;
+  }
+
+  Future<SessionSummary?> revertSelectedSession({
+    required String messageId,
+    String? partId,
+  }) async {
+    final project = _project;
+    final sessionId = _selectedSessionId;
+    final trimmedMessageId = messageId.trim();
+    if (project == null || sessionId == null || trimmedMessageId.isEmpty) {
+      return null;
+    }
+    final updated = await _sessionActionService.revertSession(
+      profile: profile,
+      project: project,
+      sessionId: sessionId,
+      messageId: trimmedMessageId,
+      partId: partId,
+    );
+    _replaceSession(updated);
+    _selectedSessionId = updated.id;
+    _messages = const <ChatMessage>[];
+    _showingCachedSessionMessages = false;
+    _sessionLoadError = null;
+    await _loadSelectedSessionMessages(
+      project: project,
+      sessionId: updated.id,
+      loadPanels: true,
+      persistHint: true,
+    );
+    _actionNotice = 'Reverted the session to this message.';
+    _notify();
+    return updated;
   }
 
   Future<SessionSummary?> shareSelectedSession() async {

@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -6,9 +7,11 @@ import 'package:opencode_mobile_remote/src/app/app_controller.dart';
 import 'package:opencode_mobile_remote/src/app/app_routes.dart';
 import 'package:opencode_mobile_remote/src/app/app_scope.dart';
 import 'package:opencode_mobile_remote/src/core/connection/connection_models.dart';
+import 'package:opencode_mobile_remote/src/core/spec/raw_json_document.dart';
 import 'package:opencode_mobile_remote/src/design_system/app_theme.dart';
 import 'package:opencode_mobile_remote/src/features/chat/chat_models.dart';
 import 'package:opencode_mobile_remote/src/features/projects/project_models.dart';
+import 'package:opencode_mobile_remote/src/features/settings/config_service.dart';
 import 'package:opencode_mobile_remote/src/features/terminal/pty_models.dart';
 import 'package:opencode_mobile_remote/src/features/terminal/pty_service.dart';
 import 'package:opencode_mobile_remote/src/features/web_parity/workspace_controller.dart';
@@ -296,6 +299,196 @@ void main() {
     await tester.pump();
 
     expect(find.text('Code block copied.'), findsOneWidget);
+  });
+
+  testWidgets('desktop hover on a user message reveals metadata and actions', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    late _UserMessageActionWorkspaceController controllerInstance;
+    final appController = _StaticAppController(
+      profile: profile,
+      initialShellToolPartsExpanded: true,
+      initialTimelineProgressDetailsVisible: false,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            controllerInstance = _UserMessageActionWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+            return controllerInstance;
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+        platform: TargetPlatform.macOS,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    final bubble = find.byKey(
+      const ValueKey<String>('timeline-user-message-msg_user_hover'),
+    );
+    expect(bubble, findsOneWidget);
+    expect(
+      find.byKey(
+        const ValueKey<String>('timeline-user-actions-msg_user_hover'),
+      ),
+      findsNothing,
+    );
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer();
+    await mouse.moveTo(tester.getCenter(bubble));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    expect(
+      find.byKey(
+        const ValueKey<String>('timeline-user-actions-msg_user_hover'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('GPT-5.4'), findsOneWidget);
+    expect(
+      find.byKey(
+        const ValueKey<String>('timeline-user-action-fork-msg_user_hover'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        const ValueKey<String>('timeline-user-action-revert-msg_user_hover'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        const ValueKey<String>('timeline-user-action-copy-msg_user_hover'),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('timeline-user-action-copy-msg_user_hover'),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('timeline-user-action-fork-msg_user_hover'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 80));
+
+    expect(controllerInstance.forkCount, 1);
+    expect(controllerInstance.lastForkMessageId, 'msg_user_hover');
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('timeline-user-action-revert-msg_user_hover'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 80));
+
+    expect(controllerInstance.revertCount, 1);
+    expect(controllerInstance.lastRevertMessageId, 'msg_user_hover');
+  });
+
+  testWidgets('touch long press opens user message actions', (tester) async {
+    tester.view.physicalSize = const Size(430, 932);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      initialShellToolPartsExpanded: true,
+      initialTimelineProgressDetailsVisible: false,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _UserMessageActionWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+        platform: TargetPlatform.android,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    await tester.longPress(
+      find.byKey(
+        const ValueKey<String>('timeline-user-message-msg_user_hover'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    expect(
+      find.byKey(
+        const ValueKey<String>(
+          'timeline-user-action-sheet-fork-msg_user_hover',
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        const ValueKey<String>(
+          'timeline-user-action-sheet-revert-msg_user_hover',
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        const ValueKey<String>(
+          'timeline-user-action-sheet-copy-msg_user_hover',
+        ),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('chat code block highlighting can be disabled', (tester) async {
@@ -644,17 +837,19 @@ class _WorkspaceRouteHarness extends StatelessWidget {
   const _WorkspaceRouteHarness({
     required this.controller,
     required this.initialRoute,
+    this.platform,
   });
 
   final WebParityAppController controller;
   final String initialRoute;
+  final TargetPlatform? platform;
 
   @override
   Widget build(BuildContext context) {
     return AppScope(
       controller: controller,
       child: MaterialApp(
-        theme: AppTheme.dark(),
+        theme: AppTheme.dark().copyWith(platform: platform),
         initialRoute: initialRoute,
         onGenerateRoute: (settings) {
           final route = AppRouteData.parse(settings.name);
@@ -1274,6 +1469,142 @@ class _CodeBlockWorkspaceController extends WorkspaceController {
   Future<void> load() async {
     _loading = false;
     notifyListeners();
+  }
+}
+
+class _UserMessageActionWorkspaceController extends WorkspaceController {
+  _UserMessageActionWorkspaceController({
+    required super.profile,
+    required super.directory,
+    super.initialSessionId,
+  });
+
+  static const ProjectTarget _projectTarget = ProjectTarget(
+    directory: '/workspace/demo',
+    label: 'Demo',
+    source: 'server',
+    vcs: 'git',
+    branch: 'main',
+  );
+
+  static final ConfigSnapshot _configSnapshot = ConfigSnapshot(
+    config: RawJsonDocument(<String, Object?>{}),
+    providerConfig: RawJsonDocument(<String, Object?>{
+      'providers': <Object?>[
+        <String, Object?>{
+          'id': 'openai',
+          'name': 'OpenAI',
+          'source': 'remote',
+          'models': <String, Object?>{
+            'openai/gpt-5.4': <String, Object?>{
+              'id': 'gpt-5.4',
+              'providerID': 'openai',
+              'name': 'GPT-5.4',
+            },
+          },
+        },
+      ],
+    }),
+  );
+
+  static final DateTime _timestamp = DateTime.fromMillisecondsSinceEpoch(
+    1711421100000,
+  );
+
+  SessionSummary _session = SessionSummary(
+    id: 'ses_1',
+    directory: '/workspace/demo',
+    title: 'User message actions',
+    version: '1',
+    updatedAt: _timestamp,
+    createdAt: _timestamp,
+  );
+
+  static final List<ChatMessage> _messages = <ChatMessage>[
+    ChatMessage(
+      info: ChatMessageInfo(
+        id: 'msg_user_hover',
+        role: 'user',
+        sessionId: 'ses_1',
+        agent: 'Sisyphus',
+        providerId: 'openai',
+        modelId: 'gpt-5.4',
+        createdAt: _timestamp,
+        completedAt: _timestamp,
+      ),
+      parts: const <ChatPart>[
+        ChatPart(
+          id: 'part_user_hover',
+          type: 'text',
+          text: 'Please check the current progress.',
+        ),
+      ],
+    ),
+  ];
+
+  bool _loading = true;
+  int forkCount = 0;
+  int revertCount = 0;
+  String? lastForkMessageId;
+  String? lastRevertMessageId;
+
+  @override
+  bool get loading => _loading;
+
+  @override
+  ProjectTarget? get project => _projectTarget;
+
+  @override
+  List<ProjectTarget> get availableProjects => const <ProjectTarget>[
+    _projectTarget,
+  ];
+
+  @override
+  List<SessionSummary> get sessions => <SessionSummary>[_session];
+
+  @override
+  String? get selectedSessionId => _session.id;
+
+  @override
+  SessionSummary? get selectedSession => _session;
+
+  @override
+  ConfigSnapshot? get configSnapshot => _configSnapshot;
+
+  @override
+  List<ChatMessage> get messages => _messages;
+
+  @override
+  Future<void> load() async {
+    _loading = false;
+    notifyListeners();
+  }
+
+  @override
+  Future<SessionSummary?> forkSelectedSession({String? messageId}) async {
+    forkCount += 1;
+    lastForkMessageId = messageId;
+    return _session;
+  }
+
+  @override
+  Future<SessionSummary?> revertSelectedSession({
+    required String messageId,
+    String? partId,
+  }) async {
+    revertCount += 1;
+    lastRevertMessageId = messageId;
+    _session = SessionSummary(
+      id: _session.id,
+      directory: _session.directory,
+      title: _session.title,
+      version: _session.version,
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(1711421160000),
+      createdAt: _session.createdAt,
+      revertMessageId: messageId,
+    );
+    notifyListeners();
+    return _session;
   }
 }
 

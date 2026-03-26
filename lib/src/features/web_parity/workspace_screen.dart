@@ -900,6 +900,64 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     }
   }
 
+  Future<void> _forkMessageIntoSession(
+    WorkspaceController controller,
+    ChatMessage message,
+  ) async {
+    final messageId = message.info.id.trim();
+    if (messageId.isEmpty) {
+      return;
+    }
+    try {
+      final forked = await controller.forkSelectedSession(messageId: messageId);
+      if (!mounted || forked == null) {
+        return;
+      }
+      _forceTimelineBottomForSession(forked.id);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Forked from this message into "${forked.title}".'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to fork from this message: $error')),
+      );
+    }
+  }
+
+  Future<void> _revertToMessage(
+    WorkspaceController controller,
+    ChatMessage message,
+  ) async {
+    final messageId = message.info.id.trim();
+    if (messageId.isEmpty) {
+      return;
+    }
+    try {
+      final updated = await controller.revertSelectedSession(
+        messageId: messageId,
+      );
+      if (!mounted || updated == null) {
+        return;
+      }
+      _forceTimelineBottomForSession(updated.id);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Reverted the session to this message.')),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to revert to this message: $error')),
+      );
+    }
+  }
+
   Future<void> _createNewSession(WorkspaceController controller) async {
     try {
       await controller.createEmptySession();
@@ -1436,6 +1494,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                 compact: compact,
                                 controller: controller,
                                 allSessions: controller.sessions,
+                                selectedSession: controller.selectedSession,
+                                configSnapshot: controller.configSnapshot,
                                 submittingPrompt:
                                     _promptSubmitInFlight ||
                                     controller.submittingPrompt,
@@ -1449,6 +1509,13 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                     appController.shellToolPartsExpanded,
                                 timelineProgressDetailsVisible: appController
                                     .timelineProgressDetailsVisible,
+                                onForkMessage: (message) =>
+                                    _forkMessageIntoSession(
+                                      controller,
+                                      message,
+                                    ),
+                                onRevertMessage: (message) =>
+                                    _revertToMessage(controller, message),
                                 interruptiblePrompt:
                                     controller.selectedSessionId != null &&
                                     (_promptSubmitInFlight ||
@@ -4462,6 +4529,8 @@ class _WorkspaceBody extends StatelessWidget {
     required this.compact,
     required this.controller,
     required this.allSessions,
+    required this.selectedSession,
+    required this.configSnapshot,
     required this.submittingPrompt,
     required this.interruptiblePrompt,
     required this.interruptingPrompt,
@@ -4472,6 +4541,8 @@ class _WorkspaceBody extends StatelessWidget {
     required this.compactPane,
     required this.shellToolDefaultExpanded,
     required this.timelineProgressDetailsVisible,
+    required this.onForkMessage,
+    required this.onRevertMessage,
     required this.onCompactPaneChanged,
     required this.onSubmitPrompt,
     required this.onInterruptPrompt,
@@ -4490,6 +4561,8 @@ class _WorkspaceBody extends StatelessWidget {
   final bool compact;
   final WorkspaceController controller;
   final List<SessionSummary> allSessions;
+  final SessionSummary? selectedSession;
+  final ConfigSnapshot? configSnapshot;
   final bool submittingPrompt;
   final bool interruptiblePrompt;
   final bool interruptingPrompt;
@@ -4500,6 +4573,8 @@ class _WorkspaceBody extends StatelessWidget {
   final _CompactWorkspacePane compactPane;
   final bool shellToolDefaultExpanded;
   final bool timelineProgressDetailsVisible;
+  final Future<void> Function(ChatMessage message) onForkMessage;
+  final Future<void> Function(ChatMessage message) onRevertMessage;
   final ValueChanged<_CompactWorkspacePane> onCompactPaneChanged;
   final VoidCallback onSubmitPrompt;
   final Future<void> Function() onInterruptPrompt;
@@ -4566,9 +4641,13 @@ class _WorkspaceBody extends StatelessWidget {
                     error: controller.sessionLoadError,
                     messages: controller.messages,
                     sessions: allSessions,
+                    selectedSession: selectedSession,
+                    configSnapshot: configSnapshot,
                     shellToolDefaultExpanded: shellToolDefaultExpanded,
                     timelineProgressDetailsVisible:
                         timelineProgressDetailsVisible,
+                    onForkMessage: onForkMessage,
+                    onRevertMessage: onRevertMessage,
                     onOpenSession: onOpenSession,
                     onRetry: controller.retrySelectedSessionMessages,
                   ),
@@ -5267,8 +5346,12 @@ class _MessageTimeline extends StatelessWidget {
     required this.error,
     required this.messages,
     required this.sessions,
+    required this.selectedSession,
+    required this.configSnapshot,
     required this.shellToolDefaultExpanded,
     required this.timelineProgressDetailsVisible,
+    required this.onForkMessage,
+    required this.onRevertMessage,
     required this.onOpenSession,
     required this.onRetry,
     super.key,
@@ -5281,8 +5364,12 @@ class _MessageTimeline extends StatelessWidget {
   final String? error;
   final List<ChatMessage> messages;
   final List<SessionSummary> sessions;
+  final SessionSummary? selectedSession;
+  final ConfigSnapshot? configSnapshot;
   final bool shellToolDefaultExpanded;
   final bool timelineProgressDetailsVisible;
+  final Future<void> Function(ChatMessage message) onForkMessage;
+  final Future<void> Function(ChatMessage message) onRevertMessage;
   final ValueChanged<String> onOpenSession;
   final Future<void> Function() onRetry;
 
@@ -5379,9 +5466,13 @@ class _MessageTimeline extends StatelessWidget {
                           currentSessionId: currentSessionId,
                           message: message,
                           sessions: sessions,
+                          selectedSession: selectedSession,
+                          configSnapshot: configSnapshot,
                           shellToolDefaultExpanded: shellToolDefaultExpanded,
                           timelineProgressDetailsVisible:
                               timelineProgressDetailsVisible,
+                          onForkMessage: onForkMessage,
+                          onRevertMessage: onRevertMessage,
                           onOpenSession: onOpenSession,
                         ),
                       ),
@@ -7618,49 +7709,42 @@ class _TimelineMessage extends StatelessWidget {
     required this.currentSessionId,
     required this.message,
     required this.sessions,
+    required this.selectedSession,
+    required this.configSnapshot,
     required this.shellToolDefaultExpanded,
     required this.timelineProgressDetailsVisible,
+    required this.onForkMessage,
+    required this.onRevertMessage,
     required this.onOpenSession,
   });
 
   final String? currentSessionId;
   final ChatMessage message;
   final List<SessionSummary> sessions;
+  final SessionSummary? selectedSession;
+  final ConfigSnapshot? configSnapshot;
   final bool shellToolDefaultExpanded;
   final bool timelineProgressDetailsVisible;
+  final Future<void> Function(ChatMessage message) onForkMessage;
+  final Future<void> Function(ChatMessage message) onRevertMessage;
   final ValueChanged<String> onOpenSession;
 
   @override
   Widget build(BuildContext context) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final isUser = message.info.role == 'user';
     if (isUser) {
       final attachments = message.parts
           .where(_isAttachmentFilePart)
           .toList(growable: false);
       final text = _messageBody(message);
-      return Align(
-        alignment: Alignment.centerRight,
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 720),
-          padding: const EdgeInsets.all(AppSpacing.md),
-          decoration: BoxDecoration(
-            color: surfaces.panelRaised,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: surfaces.lineSoft),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              if (attachments.isNotEmpty)
-                _UserMessageAttachmentGrid(attachments: attachments),
-              if (attachments.isNotEmpty && text.trim().isNotEmpty)
-                const SizedBox(height: AppSpacing.md),
-              if (text.trim().isNotEmpty) _InlineCodeText(text: text),
-            ],
-          ),
-        ),
+      return _UserTimelineMessage(
+        message: message,
+        text: text,
+        attachments: attachments,
+        configSnapshot: configSnapshot,
+        selectedSession: selectedSession,
+        onForkMessage: onForkMessage,
+        onRevertMessage: onRevertMessage,
       );
     }
 
@@ -7707,6 +7791,440 @@ class _TimelineMessage extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: timelineItems,
+    );
+  }
+}
+
+class _UserTimelineMessage extends StatefulWidget {
+  const _UserTimelineMessage({
+    required this.message,
+    required this.text,
+    required this.attachments,
+    required this.configSnapshot,
+    required this.selectedSession,
+    required this.onForkMessage,
+    required this.onRevertMessage,
+  });
+
+  final ChatMessage message;
+  final String text;
+  final List<ChatPart> attachments;
+  final ConfigSnapshot? configSnapshot;
+  final SessionSummary? selectedSession;
+  final Future<void> Function(ChatMessage message) onForkMessage;
+  final Future<void> Function(ChatMessage message) onRevertMessage;
+
+  @override
+  State<_UserTimelineMessage> createState() => _UserTimelineMessageState();
+}
+
+class _UserTimelineMessageState extends State<_UserTimelineMessage> {
+  bool _hovering = false;
+  String? _runningActionId;
+
+  bool get _isOptimistic {
+    return widget.message.info.metadata['_optimistic'] == true ||
+        widget.message.info.id.startsWith('local_user_');
+  }
+
+  bool get _supportsHover {
+    return switch (Theme.of(context).platform) {
+      TargetPlatform.macOS ||
+      TargetPlatform.windows ||
+      TargetPlatform.linux => true,
+      _ => false,
+    };
+  }
+
+  bool get _canCopy => widget.text.trim().isNotEmpty;
+
+  bool get _canFork =>
+      !_isOptimistic && widget.message.info.id.trim().isNotEmpty;
+
+  bool get _canRevert {
+    if (_isOptimistic || widget.message.info.id.trim().isEmpty) {
+      return false;
+    }
+    return widget.selectedSession?.revertMessageId != widget.message.info.id;
+  }
+
+  bool get _showDesktopActions => _supportsHover && _hovering;
+
+  Future<void> _copyMessage() async {
+    if (!_canCopy || _runningActionId != null) {
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: widget.text.trimRight()));
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Message copied.')));
+  }
+
+  Future<void> _runAction(
+    String actionId,
+    Future<void> Function() action,
+  ) async {
+    if (_runningActionId != null) {
+      return;
+    }
+    setState(() {
+      _runningActionId = actionId;
+    });
+    try {
+      await action();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _runningActionId = null;
+        });
+      }
+    }
+  }
+
+  Future<void> _openTouchActionSheet() async {
+    if (_supportsHover) {
+      return;
+    }
+    final hasActions = _canCopy || _canFork || _canRevert;
+    if (!hasActions) {
+      return;
+    }
+    final head = _userMessageMetaHead(
+      widget.message,
+      widget.configSnapshot?.providerCatalog,
+    );
+    final stamp = _formatTimelineMessageStamp(context, widget.message);
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      showDragHandle: true,
+      backgroundColor: Theme.of(context).extension<AppSurfaces>()!.panel,
+      builder: (sheetContext) {
+        final theme = Theme.of(sheetContext);
+        final surfaces = theme.extension<AppSurfaces>()!;
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.lg,
+            0,
+            AppSpacing.lg,
+            AppSpacing.lg,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              if (head.isNotEmpty || stamp.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                  child: Text(
+                    [
+                      if (head.isNotEmpty) head,
+                      if (stamp.isNotEmpty) stamp,
+                    ].join('  •  '),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: surfaces.muted,
+                    ),
+                  ),
+                ),
+              if (_canFork)
+                ListTile(
+                  key: ValueKey<String>(
+                    'timeline-user-action-sheet-fork-${widget.message.info.id}',
+                  ),
+                  leading: const Icon(Icons.call_split_rounded),
+                  title: const Text('Fork to New Session'),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    unawaited(
+                      _runAction(
+                        'fork',
+                        () => widget.onForkMessage(widget.message),
+                      ),
+                    );
+                  },
+                ),
+              if (_canRevert)
+                ListTile(
+                  key: ValueKey<String>(
+                    'timeline-user-action-sheet-revert-${widget.message.info.id}',
+                  ),
+                  leading: const Icon(Icons.undo_rounded),
+                  title: const Text('Revert Message'),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    unawaited(
+                      _runAction(
+                        'revert',
+                        () => widget.onRevertMessage(widget.message),
+                      ),
+                    );
+                  },
+                ),
+              if (_canCopy)
+                ListTile(
+                  key: ValueKey<String>(
+                    'timeline-user-action-sheet-copy-${widget.message.info.id}',
+                  ),
+                  leading: const Icon(Icons.content_copy_rounded),
+                  title: const Text('Copy Message'),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    unawaited(_copyMessage());
+                  },
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final hasText = widget.text.trim().isNotEmpty;
+    final hasActions = _canCopy || _canFork || _canRevert;
+
+    return Align(
+      alignment: Alignment.centerRight,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 720),
+        child: MouseRegion(
+          onEnter: _supportsHover
+              ? (_) => setState(() {
+                  _hovering = true;
+                })
+              : null,
+          onExit: _supportsHover
+              ? (_) => setState(() {
+                  _hovering = false;
+                })
+              : null,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: <Widget>[
+              GestureDetector(
+                key: ValueKey<String>(
+                  'timeline-user-message-${widget.message.info.id}',
+                ),
+                onLongPress: hasActions ? _openTouchActionSheet : null,
+                child: Container(
+                  padding: const EdgeInsets.all(AppSpacing.md),
+                  decoration: BoxDecoration(
+                    color: surfaces.panelRaised,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: surfaces.lineSoft),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      if (widget.attachments.isNotEmpty)
+                        _UserMessageAttachmentGrid(
+                          attachments: widget.attachments,
+                        ),
+                      if (widget.attachments.isNotEmpty && hasText)
+                        const SizedBox(height: AppSpacing.md),
+                      if (hasText) _InlineCodeText(text: widget.text),
+                    ],
+                  ),
+                ),
+              ),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 180),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                child: !_showDesktopActions
+                    ? const SizedBox.shrink()
+                    : Padding(
+                        key: ValueKey<String>(
+                          'timeline-user-actions-${widget.message.info.id}',
+                        ),
+                        padding: const EdgeInsets.only(top: AppSpacing.sm),
+                        child: _UserMessageHoverBar(
+                          message: widget.message,
+                          configSnapshot: widget.configSnapshot,
+                          canCopy: _canCopy,
+                          canFork: _canFork,
+                          canRevert: _canRevert,
+                          runningActionId: _runningActionId,
+                          onCopy: _copyMessage,
+                          onFork: () => _runAction(
+                            'fork',
+                            () => widget.onForkMessage(widget.message),
+                          ),
+                          onRevert: () => _runAction(
+                            'revert',
+                            () => widget.onRevertMessage(widget.message),
+                          ),
+                        ),
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _UserMessageHoverBar extends StatelessWidget {
+  const _UserMessageHoverBar({
+    required this.message,
+    required this.configSnapshot,
+    required this.canCopy,
+    required this.canFork,
+    required this.canRevert,
+    required this.runningActionId,
+    required this.onCopy,
+    required this.onFork,
+    required this.onRevert,
+  });
+
+  final ChatMessage message;
+  final ConfigSnapshot? configSnapshot;
+  final bool canCopy;
+  final bool canFork;
+  final bool canRevert;
+  final String? runningActionId;
+  final Future<void> Function() onCopy;
+  final Future<void> Function() onFork;
+  final Future<void> Function() onRevert;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final head = _userMessageMetaHead(message, configSnapshot?.providerCatalog);
+    final stamp = _formatTimelineMessageStamp(context, message);
+    final meta = [
+      if (head.isNotEmpty) head,
+      if (stamp.isNotEmpty) stamp,
+    ].join('  •  ');
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 720),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.sm,
+            vertical: AppSpacing.xs,
+          ),
+          decoration: BoxDecoration(
+            color: surfaces.panel.withValues(alpha: 0.8),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: surfaces.lineSoft),
+          ),
+          child: Wrap(
+            alignment: WrapAlignment.end,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.xs,
+            children: <Widget>[
+              if (meta.isNotEmpty)
+                Text(
+                  meta,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: surfaces.muted,
+                  ),
+                ),
+              if (canFork)
+                _UserMessageActionChip(
+                  key: ValueKey<String>(
+                    'timeline-user-action-fork-${message.info.id}',
+                  ),
+                  icon: Icons.call_split_rounded,
+                  label: 'Fork to New Session',
+                  busy: runningActionId == 'fork',
+                  onTap: onFork,
+                ),
+              if (canRevert)
+                _UserMessageActionChip(
+                  key: ValueKey<String>(
+                    'timeline-user-action-revert-${message.info.id}',
+                  ),
+                  icon: Icons.undo_rounded,
+                  label: 'Revert Message',
+                  busy: runningActionId == 'revert',
+                  onTap: onRevert,
+                ),
+              if (canCopy)
+                _UserMessageActionChip(
+                  key: ValueKey<String>(
+                    'timeline-user-action-copy-${message.info.id}',
+                  ),
+                  icon: Icons.content_copy_rounded,
+                  label: 'Copy Message',
+                  onTap: onCopy,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _UserMessageActionChip extends StatelessWidget {
+  const _UserMessageActionChip({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.busy = false,
+    super.key,
+  });
+
+  final IconData icon;
+  final String label;
+  final Future<void> Function() onTap;
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: busy ? null : () => unawaited(onTap()),
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.sm,
+            vertical: AppSpacing.xs,
+          ),
+          decoration: BoxDecoration(
+            color: surfaces.panelRaised,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: surfaces.lineSoft),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              if (busy)
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else
+                Icon(icon, size: 14, color: theme.colorScheme.onSurface),
+              const SizedBox(width: AppSpacing.xs),
+              Text(
+                label,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -9590,6 +10108,84 @@ String _messageBody(ChatMessage message) {
       .map(_partText)
       .where((value) => value.isNotEmpty)
       .join('\n\n');
+}
+
+String _userMessageMetaHead(
+  ChatMessage message,
+  ProviderCatalog? providerCatalog,
+) {
+  final info = message.info;
+  final agent = info.agent?.trim() ?? '';
+  final model = _resolvedUserMessageModelLabel(message, providerCatalog);
+  final parts = <String>[
+    if (agent.isNotEmpty) agent,
+    if (model.isNotEmpty) model,
+  ];
+  return parts.join('  •  ');
+}
+
+String _resolvedUserMessageModelLabel(
+  ChatMessage message,
+  ProviderCatalog? providerCatalog,
+) {
+  final providerId = message.info.providerId?.trim() ?? '';
+  final modelId = message.info.modelId?.trim() ?? '';
+  if (modelId.isEmpty) {
+    return '';
+  }
+  if (providerCatalog == null || providerId.isEmpty) {
+    return modelId;
+  }
+  final provider = _findProviderDefinition(providerCatalog, providerId);
+  final model = provider == null
+      ? null
+      : _findProviderModelDefinition(provider, providerId, modelId);
+  final providerLabel = provider?.name.trim() ?? '';
+  final modelLabel = model?.name.trim().isNotEmpty == true
+      ? model!.name.trim()
+      : modelId;
+  if (providerLabel.isEmpty) {
+    return modelLabel;
+  }
+  return '$providerLabel · $modelLabel';
+}
+
+ProviderDefinition? _findProviderDefinition(
+  ProviderCatalog catalog,
+  String providerId,
+) {
+  for (final provider in catalog.providers) {
+    if (provider.id == providerId) {
+      return provider;
+    }
+  }
+  return null;
+}
+
+ProviderModelDefinition? _findProviderModelDefinition(
+  ProviderDefinition provider,
+  String providerId,
+  String modelId,
+) {
+  final direct = provider.models['$providerId/$modelId'];
+  if (direct != null) {
+    return direct;
+  }
+  for (final model in provider.models.values) {
+    if (model.id == modelId) {
+      return model;
+    }
+  }
+  return null;
+}
+
+String _formatTimelineMessageStamp(BuildContext context, ChatMessage message) {
+  final timestamp = message.info.createdAt ?? message.info.completedAt;
+  if (timestamp == null) {
+    return '';
+  }
+  final locale = Localizations.localeOf(context).toLanguageTag();
+  return DateFormat.MMMd(locale).add_jm().format(timestamp.toLocal());
 }
 
 List<ChatMessage> _orderedTimelineMessages(List<ChatMessage> messages) {

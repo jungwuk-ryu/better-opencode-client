@@ -510,7 +510,7 @@ class _ActionWorkspaceController extends _HeaderWorkspaceController {
   }
 
   @override
-  Future<SessionSummary?> forkSelectedSession() async {
+  Future<SessionSummary?> forkSelectedSession({String? messageId}) async {
     forkCount += 1;
     final forked = SessionSummary(
       id: 'ses_forked',
