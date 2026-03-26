@@ -2360,49 +2360,18 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
               borderRadius: BorderRadius.circular(28),
               child: BackdropFilter(
                 key: const ValueKey<String>('workspace-settings-sheet-blur'),
-                filter: ui.ImageFilter.blur(sigmaX: 26, sigmaY: 26),
+                filter: ui.ImageFilter.blur(sigmaX: 30, sigmaY: 30),
                 child: Container(
                   key: const ValueKey<String>('workspace-settings-sheet'),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(28),
+                    color: surfaces.panel.withValues(alpha: 0.72),
                     border: Border.all(
                       color: Colors.white.withValues(alpha: 0.12),
-                    ),
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: <Color>[
-                        Colors.white.withValues(alpha: 0.085),
-                        surfaces.panelRaised.withValues(alpha: 0.78),
-                        surfaces.panel.withValues(alpha: 0.72),
-                      ],
-                      stops: const <double>[0, 0.18, 1],
                     ),
                   ),
                   child: Stack(
                     children: <Widget>[
-                      Positioned(
-                        top: -120,
-                        left: -60,
-                        right: -60,
-                        height: 220,
-                        child: IgnorePointer(
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              gradient: RadialGradient(
-                                center: const Alignment(-0.55, -0.95),
-                                radius: 1.2,
-                                colors: <Color>[
-                                  theme.colorScheme.primary.withValues(
-                                    alpha: 0.16,
-                                  ),
-                                  Colors.transparent,
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
                       Positioned(
                         top: 0,
                         left: 0,
@@ -2418,14 +2387,7 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                         children: <Widget>[
                           Container(
                             decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: <Color>[
-                                  Colors.white.withValues(alpha: 0.055),
-                                  Colors.transparent,
-                                ],
-                              ),
+                              color: Colors.white.withValues(alpha: 0.025),
                               border: Border(
                                 bottom: BorderSide(
                                   color: Colors.white.withValues(alpha: 0.08),
@@ -2746,6 +2708,7 @@ class _WorkspaceSettingsCard extends StatelessWidget {
           padding: const EdgeInsets.all(AppSpacing.md),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(20),
+            color: surfaces.panelRaised.withValues(alpha: 0.42),
             border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
             boxShadow: <BoxShadow>[
               BoxShadow(
@@ -2755,15 +2718,6 @@ class _WorkspaceSettingsCard extends StatelessWidget {
                 offset: const Offset(0, 12),
               ),
             ],
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: <Color>[
-                Colors.white.withValues(alpha: 0.04),
-                surfaces.panelRaised.withValues(alpha: 0.56),
-                surfaces.panelMuted.withValues(alpha: 0.46),
-              ],
-            ),
           ),
           child: child,
         ),
@@ -2795,15 +2749,7 @@ class _WorkspaceSettingsToggleRow extends StatelessWidget {
         vertical: AppSpacing.sm,
       ),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: <Color>[
-            Colors.white.withValues(alpha: 0.035),
-            surfaces.panelRaised.withValues(alpha: 0.44),
-            surfaces.panelMuted.withValues(alpha: 0.36),
-          ],
-        ),
+        color: surfaces.panelMuted.withValues(alpha: 0.52),
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
       ),
