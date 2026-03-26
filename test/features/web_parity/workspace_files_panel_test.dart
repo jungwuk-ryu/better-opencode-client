@@ -320,6 +320,14 @@ void main() {
       find.byKey(const ValueKey<String>('review-diff-blur')),
       findsOneWidget,
     );
+
+    final diffSurface = tester.widget<Container>(
+      find.byKey(const ValueKey<String>('review-diff-surface')),
+    );
+    final decoration = diffSurface.decoration! as BoxDecoration;
+    expect(decoration.gradient, isNull);
+    expect(decoration.color, isNotNull);
+    expect(decoration.color!.a, lessThan(1));
   });
 
   testWidgets('review panel preview can be resized by dragging the handle', (

@@ -11394,28 +11394,21 @@ class _ReviewDiffView extends StatelessWidget {
       borderRadius: BorderRadius.circular(AppSpacing.md),
       child: BackdropFilter(
         key: const ValueKey<String>('review-diff-blur'),
-        filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
         child: Container(
+          key: const ValueKey<String>('review-diff-surface'),
           width: double.infinity,
           padding: const EdgeInsets.all(AppSpacing.md),
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: <Color>[
-                Colors.white.withValues(alpha: 0.045),
-                surfaces.panelRaised.withValues(alpha: 0.7),
-                surfaces.panelMuted.withValues(alpha: 0.62),
-              ],
-            ),
+            color: surfaces.background.withValues(alpha: 0.38),
             borderRadius: BorderRadius.circular(AppSpacing.md),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
             boxShadow: <BoxShadow>[
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.18),
-                blurRadius: 16,
-                spreadRadius: -8,
-                offset: const Offset(0, 10),
+                color: Colors.black.withValues(alpha: 0.22),
+                blurRadius: 22,
+                spreadRadius: -10,
+                offset: const Offset(0, 12),
               ),
             ],
           ),
