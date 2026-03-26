@@ -32,6 +32,7 @@ import '../terminal/pty_models.dart';
 import '../terminal/pty_service.dart';
 import '../terminal/pty_terminal_panel.dart';
 import '../tools/todo_models.dart';
+import 'project_picker_sheet.dart';
 import 'workspace_controller.dart';
 
 enum _CompactWorkspacePane { session, side }
@@ -161,6 +162,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   bool _promptSubmitInFlight = false;
   int _promptSubmitEpoch = 0;
   String? _recentSubmittedPromptDraft;
+  int _promptComposerFocusRequestToken = 0;
   int _sessionPaneSequence = 0;
   List<_WorkspaceSessionPaneSpec> _desktopSessionPanes =
       const <_WorkspaceSessionPaneSpec>[];
@@ -352,6 +354,467 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
 
   void _toggleDesktopSidePanelVisibility() {
     _setDesktopSidePanelVisible(!_desktopSidePanelVisible);
+  }
+
+  bool get _isAppleShortcutPlatform =>
+      defaultTargetPlatform == TargetPlatform.macOS ||
+      defaultTargetPlatform == TargetPlatform.iOS;
+
+  bool _matchesWorkspaceShortcut(
+    KeyEvent event, {
+    required LogicalKeyboardKey key,
+    bool mod = false,
+    bool ctrl = false,
+    bool alt = false,
+    bool shift = false,
+  }) {
+    final keyboard = HardwareKeyboard.instance;
+    final expectedMeta = mod && _isAppleShortcutPlatform;
+    final expectedCtrl = ctrl || (mod && !_isAppleShortcutPlatform);
+    return event.logicalKey == key &&
+        keyboard.isMetaPressed == expectedMeta &&
+        keyboard.isControlPressed == expectedCtrl &&
+        keyboard.isAltPressed == alt &&
+        keyboard.isShiftPressed == shift;
+  }
+
+  bool _canHandleWorkspaceShortcuts() {
+    final route = ModalRoute.of(context);
+    return mounted && (route == null || route.isCurrent);
+  }
+
+  bool _canInterruptWithShortcut(WorkspaceController controller) {
+    return !_promptSubmitInFlight &&
+        _promptController.text.trim().isEmpty &&
+        _composerAttachments.isEmpty &&
+        controller.selectedSessionId != null &&
+        controller.selectedSessionInterruptible &&
+        !controller.interruptingSession;
+  }
+
+  bool _isCompactLayout(BuildContext context) {
+    return MediaQuery.sizeOf(context).width < AppSpacing.wideLayoutBreakpoint;
+  }
+
+  void _requestPromptComposerFocus() {
+    setState(() {
+      _promptComposerFocusRequestToken += 1;
+    });
+  }
+
+  void _toggleSessionsSurface({required bool compact}) {
+    if (compact) {
+      final scaffoldState = _scaffoldKey.currentState;
+      if (scaffoldState == null) {
+        return;
+      }
+      if (scaffoldState.isDrawerOpen) {
+        Navigator.of(context).maybePop();
+        return;
+      }
+      scaffoldState.openDrawer();
+      return;
+    }
+    _toggleDesktopSidebarVisibility();
+  }
+
+  void _toggleSideTab(
+    WorkspaceController controller,
+    WorkspaceSideTab tab, {
+    required bool compact,
+  }) {
+    if (compact) {
+      final alreadyShowing =
+          _compactPane == _CompactWorkspacePane.side &&
+          controller.sideTab == tab;
+      if (alreadyShowing) {
+        setState(() {
+          _compactPane = _CompactWorkspacePane.session;
+        });
+        return;
+      }
+      setState(() {
+        _compactPane = _CompactWorkspacePane.side;
+      });
+      controller.setSideTab(tab);
+      return;
+    }
+
+    final alreadyShowing =
+        _desktopSidePanelVisible && controller.sideTab == tab;
+    if (alreadyShowing) {
+      _setDesktopSidePanelVisible(false);
+      return;
+    }
+    _setDesktopSidePanelVisible(true);
+    controller.setSideTab(tab);
+  }
+
+  Future<void> _navigateSessionByOffset(
+    WorkspaceController controller,
+    int offset, {
+    required bool compact,
+  }) async {
+    final sessions = controller.visibleSessions;
+    if (sessions.length <= 1) {
+      return;
+    }
+    var currentIndex = sessions.indexWhere(
+      (session) => session.id == controller.selectedSessionId,
+    );
+    if (currentIndex < 0) {
+      currentIndex = 0;
+    }
+    final nextIndex = (currentIndex + offset) % sessions.length;
+    final normalizedIndex = nextIndex < 0
+        ? nextIndex + sessions.length
+        : nextIndex;
+    final nextSession = sessions[normalizedIndex];
+    if (nextSession.id == controller.selectedSessionId) {
+      return;
+    }
+    await _selectSessionInPlace(controller, nextSession.id, compact: compact);
+  }
+
+  Future<void> _navigateProjectByOffset(
+    WorkspaceController controller,
+    int offset, {
+    required bool compact,
+  }) async {
+    final projects = controller.availableProjects;
+    if (projects.length <= 1) {
+      return;
+    }
+    var currentIndex = projects.indexWhere(
+      (project) => project.directory == _currentDirectory,
+    );
+    if (currentIndex < 0) {
+      currentIndex = 0;
+    }
+    final nextIndex = (currentIndex + offset) % projects.length;
+    final normalizedIndex = nextIndex < 0
+        ? nextIndex + projects.length
+        : nextIndex;
+    final nextProject = projects[normalizedIndex];
+    if (nextProject.directory == _currentDirectory) {
+      return;
+    }
+    final profile = _profile;
+    if (profile != null) {
+      await AppScope.of(
+        context,
+      ).persistProjectUpdate(profile: profile, target: nextProject);
+    }
+    await _selectProjectInPlace(nextProject, compact: compact);
+  }
+
+  void _cycleSelectedAgent(WorkspaceController controller, int offset) {
+    final agents = controller.composerAgents;
+    if (agents.isEmpty) {
+      return;
+    }
+    var currentIndex = agents.indexWhere(
+      (agent) => agent.name == controller.selectedAgentName,
+    );
+    if (currentIndex < 0) {
+      currentIndex = offset >= 0 ? -1 : 0;
+    }
+    final nextIndex = (currentIndex + offset) % agents.length;
+    final normalizedIndex = nextIndex < 0
+        ? nextIndex + agents.length
+        : nextIndex;
+    controller.selectAgent(agents[normalizedIndex].name);
+  }
+
+  void _cycleSelectedReasoning(WorkspaceController controller) {
+    final options = <String?>[null, ...controller.availableReasoningValues];
+    if (options.length <= 1) {
+      return;
+    }
+    var currentIndex = options.indexOf(controller.selectedReasoning);
+    if (currentIndex < 0) {
+      currentIndex = 0;
+    }
+    final nextIndex = (currentIndex + 1) % options.length;
+    controller.selectReasoning(options[nextIndex]);
+  }
+
+  Future<void> _showModelShortcutPicker(WorkspaceController controller) async {
+    final models = controller.composerModels;
+    if (models.isEmpty) {
+      return;
+    }
+    final grouped = <String, List<WorkspaceComposerModelOption>>{};
+    for (final model in models) {
+      grouped
+          .putIfAbsent(
+            model.providerName,
+            () => <WorkspaceComposerModelOption>[],
+          )
+          .add(model);
+    }
+
+    final items =
+        grouped.entries
+            .map(
+              (entry) => _GroupedSelectionItems<WorkspaceComposerModelOption>(
+                title: entry.key,
+                items: entry.value
+                  ..sort(
+                    (left, right) => left.name.toLowerCase().compareTo(
+                      right.name.toLowerCase(),
+                    ),
+                  ),
+              ),
+            )
+            .toList(growable: false)
+          ..sort(
+            (left, right) =>
+                left.title.toLowerCase().compareTo(right.title.toLowerCase()),
+          );
+
+    final selection = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) =>
+          _GroupedSelectionSheet<WorkspaceComposerModelOption>(
+            title: 'Select Model',
+            searchHint: 'Search models',
+            groups: items,
+            selectedValue: controller.selectedModel?.key,
+            matchesQuery: (item, query) {
+              final q = query.toLowerCase();
+              return item.name.toLowerCase().contains(q) ||
+                  item.modelId.toLowerCase().contains(q) ||
+                  item.providerName.toLowerCase().contains(q) ||
+                  item.providerId.toLowerCase().contains(q);
+            },
+            onSelected: (item) => Navigator.of(context).pop(item.key),
+            titleBuilder: (item) => item.name,
+            subtitleBuilder: (item) => item.providerName,
+            valueOf: (item) => item.key,
+            trailingBuilder: (item) => item.reasoningValues.isEmpty
+                ? null
+                : Text(
+                    '${item.reasoningValues.length} variants',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).extension<AppSurfaces>()!.muted,
+                    ),
+                  ),
+          ),
+    );
+    if (selection != null) {
+      controller.selectModel(selection);
+    }
+  }
+
+  Future<void> _openProjectPickerShortcut() async {
+    final profile = _profile;
+    if (profile == null) {
+      return;
+    }
+    final target = await showModalBottomSheet<ProjectTarget>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      builder: (context) => FractionallySizedBox(
+        heightFactor: 0.82,
+        child: ProjectPickerSheet(
+          profile: profile,
+          projectCatalogService: _projectCatalogService,
+        ),
+      ),
+    );
+    if (target == null || !mounted) {
+      return;
+    }
+    await AppScope.of(
+      context,
+    ).persistProjectUpdate(profile: profile, target: target);
+    if (!mounted) {
+      return;
+    }
+    await _selectProjectInPlace(target, compact: _isCompactLayout(context));
+  }
+
+  KeyEventResult _handleWorkspaceShortcutKeyEvent(
+    FocusNode node,
+    KeyEvent event,
+  ) {
+    if (!_canHandleWorkspaceShortcuts() || event is! KeyDownEvent) {
+      return KeyEventResult.ignored;
+    }
+    final controller = _controller;
+    if (controller == null) {
+      return KeyEventResult.ignored;
+    }
+    final compact = _isCompactLayout(context);
+
+    if (_matchesWorkspaceShortcut(
+      event,
+      key: LogicalKeyboardKey.keyL,
+      ctrl: true,
+    )) {
+      _requestPromptComposerFocus();
+      return KeyEventResult.handled;
+    }
+    if (_matchesWorkspaceShortcut(
+      event,
+      key: LogicalKeyboardKey.comma,
+      mod: true,
+    )) {
+      unawaited(_openWorkspaceSettingsSheet(AppScope.of(context), controller));
+      return KeyEventResult.handled;
+    }
+    if (_matchesWorkspaceShortcut(
+      event,
+      key: LogicalKeyboardKey.keyO,
+      mod: true,
+    )) {
+      unawaited(_openProjectPickerShortcut());
+      return KeyEventResult.handled;
+    }
+    if (_matchesWorkspaceShortcut(
+      event,
+      key: LogicalKeyboardKey.keyB,
+      mod: true,
+    )) {
+      _toggleSessionsSurface(compact: compact);
+      return KeyEventResult.handled;
+    }
+    if (_matchesWorkspaceShortcut(
+      event,
+      key: LogicalKeyboardKey.keyR,
+      mod: true,
+      shift: true,
+    )) {
+      _toggleSideTab(controller, WorkspaceSideTab.review, compact: compact);
+      return KeyEventResult.handled;
+    }
+    if (_matchesWorkspaceShortcut(
+      event,
+      key: LogicalKeyboardKey.backslash,
+      mod: true,
+    )) {
+      _toggleSideTab(controller, WorkspaceSideTab.files, compact: compact);
+      return KeyEventResult.handled;
+    }
+    if (_matchesWorkspaceShortcut(
+      event,
+      key: LogicalKeyboardKey.backquote,
+      ctrl: true,
+    )) {
+      unawaited(_toggleTerminalPanel());
+      return KeyEventResult.handled;
+    }
+    if (_matchesWorkspaceShortcut(
+      event,
+      key: LogicalKeyboardKey.keyT,
+      ctrl: true,
+      alt: true,
+    )) {
+      unawaited(_createPtySession());
+      return KeyEventResult.handled;
+    }
+    if (_matchesWorkspaceShortcut(
+      event,
+      key: LogicalKeyboardKey.keyS,
+      mod: true,
+      shift: true,
+    )) {
+      unawaited(_createNewSession(controller));
+      return KeyEventResult.handled;
+    }
+    if (_matchesWorkspaceShortcut(
+      event,
+      key: LogicalKeyboardKey.arrowUp,
+      alt: true,
+    )) {
+      unawaited(_navigateSessionByOffset(controller, -1, compact: compact));
+      return KeyEventResult.handled;
+    }
+    if (_matchesWorkspaceShortcut(
+      event,
+      key: LogicalKeyboardKey.arrowDown,
+      alt: true,
+    )) {
+      unawaited(_navigateSessionByOffset(controller, 1, compact: compact));
+      return KeyEventResult.handled;
+    }
+    if (_matchesWorkspaceShortcut(
+      event,
+      key: LogicalKeyboardKey.arrowUp,
+      mod: true,
+      alt: true,
+    )) {
+      unawaited(_navigateProjectByOffset(controller, -1, compact: compact));
+      return KeyEventResult.handled;
+    }
+    if (_matchesWorkspaceShortcut(
+      event,
+      key: LogicalKeyboardKey.arrowDown,
+      mod: true,
+      alt: true,
+    )) {
+      unawaited(_navigateProjectByOffset(controller, 1, compact: compact));
+      return KeyEventResult.handled;
+    }
+    if (_matchesWorkspaceShortcut(
+      event,
+      key: LogicalKeyboardKey.keyU,
+      mod: true,
+    )) {
+      unawaited(_pickComposerAttachments());
+      return KeyEventResult.handled;
+    }
+    if (_matchesWorkspaceShortcut(
+      event,
+      key: LogicalKeyboardKey.quote,
+      mod: true,
+    )) {
+      unawaited(_showModelShortcutPicker(controller));
+      return KeyEventResult.handled;
+    }
+    if (_matchesWorkspaceShortcut(
+      event,
+      key: LogicalKeyboardKey.period,
+      mod: true,
+      shift: true,
+    )) {
+      _cycleSelectedAgent(controller, -1);
+      return KeyEventResult.handled;
+    }
+    if (_matchesWorkspaceShortcut(
+      event,
+      key: LogicalKeyboardKey.period,
+      mod: true,
+    )) {
+      _cycleSelectedAgent(controller, 1);
+      return KeyEventResult.handled;
+    }
+    if (_matchesWorkspaceShortcut(
+      event,
+      key: LogicalKeyboardKey.keyD,
+      mod: true,
+      shift: true,
+    )) {
+      _cycleSelectedReasoning(controller);
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.escape) {
+      if (_chatSearchVisible) {
+        _closeChatSearch();
+        return KeyEventResult.handled;
+      }
+      if (_canInterruptWithShortcut(controller)) {
+        unawaited(_interruptSelectedSession());
+        return KeyEventResult.handled;
+      }
+    }
+
+    return KeyEventResult.ignored;
   }
 
   void _focusChatSearchField() {
@@ -1664,369 +2127,380 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       );
     }
 
-    return AnimatedBuilder(
-      animation: controller,
-      builder: (context, _) {
-        _scheduleRouteSessionSync();
-        final projectLoadingShell = controller.loading
-            ? _projectLoadingShellState
-            : null;
-        if (!controller.loading && _projectLoadingShellState != null) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted || _controller?.loading == true) {
-              return;
-            }
-            setState(() {
-              _projectLoadingShellState = null;
+    return Focus(
+      autofocus: true,
+      onKeyEvent: _handleWorkspaceShortcutKeyEvent,
+      child: AnimatedBuilder(
+        animation: controller,
+        builder: (context, _) {
+          _scheduleRouteSessionSync();
+          final projectLoadingShell = controller.loading
+              ? _projectLoadingShellState
+              : null;
+          if (!controller.loading && _projectLoadingShellState != null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted || _controller?.loading == true) {
+                return;
+              }
+              setState(() {
+                _projectLoadingShellState = null;
+              });
             });
-          });
-        }
-        final compact =
-            MediaQuery.sizeOf(context).width < AppSpacing.wideLayoutBreakpoint;
-        final displayProject =
-            controller.project ?? projectLoadingShell?.targetProject;
-        final displayProjects = controller.availableProjects.isNotEmpty
-            ? controller.availableProjects
-            : (projectLoadingShell?.projects ?? const <ProjectTarget>[]);
-        final showProjectLoadingShell = projectLoadingShell != null;
-        final displaySessions = showProjectLoadingShell
-            ? const <SessionSummary>[]
-            : controller.visibleSessions;
-        final displayAllSessions = showProjectLoadingShell
-            ? const <SessionSummary>[]
-            : controller.sessions;
-        final displayStatuses = showProjectLoadingShell
-            ? const <String, SessionStatusSummary>{}
-            : controller.statuses;
-        final selectedSession = showProjectLoadingShell
-            ? null
-            : controller.selectedSession;
-        final desktopSidebarVisible = !compact && _desktopSidebarVisible;
-        final desktopSidePanelVisible = !compact && _desktopSidePanelVisible;
-        final desktopSessionPanes = _resolvedDesktopSessionPanes(controller);
-        _scheduleWatchedSessionSync(
-          controller,
-          compact
-              ? const <String?>[]
-              : desktopSessionPanes
-                    .where((pane) => pane.id != _activeDesktopSessionPaneId)
-                    .map((pane) => pane.sessionId),
-        );
-        final mainSession = _rootSessionFor(
-          displayAllSessions,
-          selectedSession,
-        );
-        final chatSearch = _resolveChatSearchState(controller);
-        final sidebar = _WorkspaceSidebar(
-          currentDirectory: _currentDirectory,
-          currentSessionId: showProjectLoadingShell
+          }
+          final compact =
+              MediaQuery.sizeOf(context).width <
+              AppSpacing.wideLayoutBreakpoint;
+          final displayProject =
+              controller.project ?? projectLoadingShell?.targetProject;
+          final displayProjects = controller.availableProjects.isNotEmpty
+              ? controller.availableProjects
+              : (projectLoadingShell?.projects ?? const <ProjectTarget>[]);
+          final showProjectLoadingShell = projectLoadingShell != null;
+          final displaySessions = showProjectLoadingShell
+              ? const <SessionSummary>[]
+              : controller.visibleSessions;
+          final displayAllSessions = showProjectLoadingShell
+              ? const <SessionSummary>[]
+              : controller.sessions;
+          final displayStatuses = showProjectLoadingShell
+              ? const <String, SessionStatusSummary>{}
+              : controller.statuses;
+          final selectedSession = showProjectLoadingShell
               ? null
-              : controller.selectedSessionId,
-          project: displayProject,
-          projects: displayProjects,
-          sessions: displaySessions,
-          allSessions: displayAllSessions,
-          statuses: displayStatuses,
-          showSubsessions: appController.sidebarChildSessionsVisible,
-          loadingProjectContents: showProjectLoadingShell,
-          onSelectProject: (project) =>
-              unawaited(_selectProjectInPlace(project, compact: compact)),
-          onEditProject: (project) => unawaited(_editProject(project)),
-          onRemoveProject: (project) =>
-              unawaited(_removeProject(controller, project, compact: compact)),
-          onReorderProjects: (projects) =>
-              _reorderProjects(appController, projects),
-          onSelectSession: (sessionId) {
-            unawaited(
-              _selectSessionInPlace(controller, sessionId, compact: compact),
-            );
-          },
-          onNewSession: () => _createNewSession(controller),
-          onOpenSettings: () =>
-              _openWorkspaceSettingsSheet(appController, controller),
-        );
+              : controller.selectedSession;
+          final desktopSidebarVisible = !compact && _desktopSidebarVisible;
+          final desktopSidePanelVisible = !compact && _desktopSidePanelVisible;
+          final desktopSessionPanes = _resolvedDesktopSessionPanes(controller);
+          _scheduleWatchedSessionSync(
+            controller,
+            compact
+                ? const <String?>[]
+                : desktopSessionPanes
+                      .where((pane) => pane.id != _activeDesktopSessionPaneId)
+                      .map((pane) => pane.sessionId),
+          );
+          final mainSession = _rootSessionFor(
+            displayAllSessions,
+            selectedSession,
+          );
+          final chatSearch = _resolveChatSearchState(controller);
+          final sidebar = _WorkspaceSidebar(
+            currentDirectory: _currentDirectory,
+            currentSessionId: showProjectLoadingShell
+                ? null
+                : controller.selectedSessionId,
+            project: displayProject,
+            projects: displayProjects,
+            sessions: displaySessions,
+            allSessions: displayAllSessions,
+            statuses: displayStatuses,
+            showSubsessions: appController.sidebarChildSessionsVisible,
+            loadingProjectContents: showProjectLoadingShell,
+            onSelectProject: (project) =>
+                unawaited(_selectProjectInPlace(project, compact: compact)),
+            onEditProject: (project) => unawaited(_editProject(project)),
+            onRemoveProject: (project) => unawaited(
+              _removeProject(controller, project, compact: compact),
+            ),
+            onReorderProjects: (projects) =>
+                _reorderProjects(appController, projects),
+            onSelectSession: (sessionId) {
+              unawaited(
+                _selectSessionInPlace(controller, sessionId, compact: compact),
+              );
+            },
+            onNewSession: () => _createNewSession(controller),
+            onOpenSettings: () =>
+                _openWorkspaceSettingsSheet(appController, controller),
+          );
 
-        return Scaffold(
-          key: _scaffoldKey,
-          drawer: compact ? Drawer(child: sidebar) : null,
-          body: SafeArea(
-            child: Row(
-              children: <Widget>[
-                if (!compact)
-                  _HorizontalReveal(
-                    key: const ValueKey<String>(
-                      'workspace-desktop-sidebar-reveal',
-                    ),
-                    visible: desktopSidebarVisible,
-                    alignment: Alignment.centerLeft,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        KeyedSubtree(
-                          key: const ValueKey<String>(
-                            'workspace-desktop-sidebar-pane',
+          return Scaffold(
+            key: _scaffoldKey,
+            drawer: compact ? Drawer(child: sidebar) : null,
+            body: SafeArea(
+              child: Row(
+                children: <Widget>[
+                  if (!compact)
+                    _HorizontalReveal(
+                      key: const ValueKey<String>(
+                        'workspace-desktop-sidebar-reveal',
+                      ),
+                      visible: desktopSidebarVisible,
+                      alignment: Alignment.centerLeft,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          KeyedSubtree(
+                            key: const ValueKey<String>(
+                              'workspace-desktop-sidebar-pane',
+                            ),
+                            child: sidebar,
                           ),
-                          child: sidebar,
+                          Container(
+                            width: 1,
+                            color: Theme.of(context).dividerColor,
+                          ),
+                        ],
+                      ),
+                    ),
+                  Expanded(
+                    child: Column(
+                      children: <Widget>[
+                        _WorkspaceTopBar(
+                          compact: compact,
+                          profile: appController.selectedProfile,
+                          project: displayProject,
+                          session: selectedSession,
+                          mainSession: mainSession,
+                          status: showProjectLoadingShell
+                              ? null
+                              : controller.selectedStatus,
+                          contextMetrics: showProjectLoadingShell
+                              ? const SessionContextMetrics(
+                                  totalCost: 0,
+                                  context: null,
+                                )
+                              : controller.sessionContextMetrics,
+                          shellToolPartsExpanded:
+                              appController.shellToolPartsExpanded,
+                          onSetShellToolPartsExpanded:
+                              appController.setShellToolPartsExpanded,
+                          timelineProgressDetailsVisible:
+                              appController.timelineProgressDetailsVisible,
+                          onSetTimelineProgressDetailsVisible:
+                              appController.setTimelineProgressDetailsVisible,
+                          terminalOpen: _terminalPanelOpen,
+                          chatSearchVisible: _chatSearchVisible,
+                          chatSearchController: _chatSearchController,
+                          chatSearchFocusNode: _chatSearchFocusNode,
+                          chatSearchStatusText: chatSearch.statusText,
+                          chatSearchNavigationEnabled: chatSearch.hasMatches,
+                          onOpenChatSearch: _openChatSearch,
+                          onCloseChatSearch: _closeChatSearch,
+                          onChatSearchChanged: _handleChatSearchChanged,
+                          onPreviousChatSearchMatch: () =>
+                              _moveChatSearchMatch(-1),
+                          onNextChatSearchMatch: () => _moveChatSearchMatch(1),
+                          onBackHome: () => Navigator.of(
+                            context,
+                          ).pushNamedAndRemoveUntil('/', (route) => false),
+                          sessionsPanelVisible: desktopSidebarVisible,
+                          sidePanelVisible: desktopSidePanelVisible,
+                          sidePanelLabel: _desktopSidePanelLabel(controller),
+                          onToggleSessionsPanel: compact
+                              ? null
+                              : _toggleDesktopSidebarVisibility,
+                          onToggleSidePanel: compact
+                              ? null
+                              : _toggleDesktopSidePanelVisibility,
+                          sessionPaneCount: compact
+                              ? 1
+                              : desktopSessionPanes.length,
+                          canSplitSessionPane:
+                              !compact &&
+                              !showProjectLoadingShell &&
+                              desktopSessionPanes.length <
+                                  _maxDesktopSessionPanes,
+                          onSplitSessionPane: compact || showProjectLoadingShell
+                              ? null
+                              : () => _splitDesktopSessionPane(controller),
+                          onOpenDrawer: compact
+                              ? () => _scaffoldKey.currentState?.openDrawer()
+                              : null,
+                          onToggleTerminal: _toggleTerminalPanel,
+                          onBackToMainSession:
+                              selectedSession != null &&
+                                  mainSession != null &&
+                                  selectedSession.id != mainSession.id
+                              ? () {
+                                  unawaited(
+                                    _selectSessionInPlace(
+                                      controller,
+                                      mainSession.id,
+                                      compact: compact,
+                                    ),
+                                  );
+                                }
+                              : null,
+                          onRename: () => _renameSelectedSession(controller),
+                          onFork: controller.selectedSession == null
+                              ? null
+                              : () => _forkSelectedSession(controller),
+                          onShare: controller.selectedSession == null
+                              ? null
+                              : () => _shareSelectedSession(controller),
+                          onDelete: controller.selectedSession == null
+                              ? null
+                              : () => _deleteSelectedSession(controller),
                         ),
-                        Container(
-                          width: 1,
-                          color: Theme.of(context).dividerColor,
+                        Expanded(
+                          child: showProjectLoadingShell
+                              ? _WorkspaceProjectLoadingView(
+                                  key: ValueKey<String>(
+                                    'workspace-project-loading-${displayProject?.directory ?? _currentDirectory}',
+                                  ),
+                                  project: displayProject,
+                                  compact: compact,
+                                )
+                              : controller.loading
+                              ? const Center(child: CircularProgressIndicator())
+                              : controller.error != null
+                              ? _WorkspaceError(
+                                  error: controller.error!,
+                                  onBackHome: () => Navigator.of(context)
+                                      .pushNamedAndRemoveUntil(
+                                        '/',
+                                        (route) => false,
+                                      ),
+                                )
+                              : _WorkspaceBody(
+                                  compact: compact,
+                                  controller: controller,
+                                  allSessions: controller.sessions,
+                                  selectedSession: controller.selectedSession,
+                                  sidePanelVisible: desktopSidePanelVisible,
+                                  configSnapshot: controller.configSnapshot,
+                                  submittingPrompt:
+                                      _promptSubmitInFlight ||
+                                      controller.submittingPrompt,
+                                  pickingAttachments:
+                                      _pickingComposerAttachments,
+                                  attachments: _composerAttachments,
+                                  promptController: _promptController,
+                                  promptFocusRequestToken:
+                                      _promptComposerFocusRequestToken,
+                                  submittedDraftEpoch: _promptSubmitEpoch,
+                                  recentSubmittedDraft:
+                                      _recentSubmittedPromptDraft,
+                                  compactPane: _compactPane,
+                                  desktopSessionPanes: desktopSessionPanes,
+                                  activeDesktopSessionPaneId:
+                                      _activeDesktopSessionPaneId,
+                                  busyFollowupMode:
+                                      appController.busyFollowupMode,
+                                  shellToolDefaultExpanded:
+                                      appController.shellToolPartsExpanded,
+                                  timelineProgressDetailsVisible: appController
+                                      .timelineProgressDetailsVisible,
+                                  chatSearchQuery: chatSearch.query,
+                                  chatSearchMatchMessageIds:
+                                      chatSearch.matchMessageIds,
+                                  chatSearchActiveMessageId:
+                                      chatSearch.activeMessageId,
+                                  chatSearchRevision: chatSearch.revision,
+                                  timelineJumpEpoch: _timelineJumpEpoch,
+                                  onForkMessage: (message) =>
+                                      _forkMessageIntoSession(
+                                        controller,
+                                        message,
+                                      ),
+                                  onRevertMessage: (message) =>
+                                      _revertToMessage(controller, message),
+                                  interruptiblePrompt:
+                                      controller.selectedSessionId != null &&
+                                      (_promptSubmitInFlight ||
+                                          controller
+                                              .selectedSessionInterruptible),
+                                  interruptingPrompt:
+                                      controller.interruptingSession,
+                                  onCompactPaneChanged: (value) {
+                                    if (_compactPane == value) {
+                                      return;
+                                    }
+                                    setState(() {
+                                      _compactPane = value;
+                                    });
+                                  },
+                                  onSubmitPrompt: _submitPrompt,
+                                  onEditQueuedPrompt: _editQueuedPrompt,
+                                  onDeleteQueuedPrompt: _deleteQueuedPrompt,
+                                  onSendQueuedPromptNow: _sendQueuedPromptNow,
+                                  onInterruptPrompt: _interruptSelectedSession,
+                                  onCreateSession: () =>
+                                      _createNewSession(controller),
+                                  onOpenSession: (sessionId) {
+                                    unawaited(
+                                      _selectSessionInPlace(
+                                        controller,
+                                        sessionId,
+                                        compact: compact,
+                                      ),
+                                    );
+                                  },
+                                  onSelectSessionPane: (paneId) =>
+                                      _activateDesktopSessionPane(
+                                        controller,
+                                        paneId,
+                                      ),
+                                  onCloseSessionPane: (paneId) {
+                                    unawaited(
+                                      _closeDesktopSessionPane(
+                                        controller,
+                                        paneId,
+                                      ),
+                                    );
+                                  },
+                                  onPickAttachments: _pickComposerAttachments,
+                                  onRemoveAttachment: _removeComposerAttachment,
+                                  onShowSidePanel: compact
+                                      ? null
+                                      : () => _setDesktopSidePanelVisible(true),
+                                  onShareSession:
+                                      controller.selectedSession == null
+                                      ? null
+                                      : () => _shareSelectedSession(controller),
+                                  onUnshareSession:
+                                      controller.selectedSession == null
+                                      ? null
+                                      : () =>
+                                            _unshareSelectedSession(controller),
+                                  onSummarizeSession:
+                                      controller.selectedSession == null
+                                      ? null
+                                      : () => _summarizeSelectedSession(
+                                          controller,
+                                        ),
+                                  onToggleTerminal: _toggleTerminalPanel,
+                                  terminalPanelOpen: _terminalPanelOpen,
+                                  terminalPanel:
+                                      !_terminalPanelMounted ||
+                                          _ptyService == null
+                                      ? null
+                                      : PtyTerminalPanel(
+                                          profile: _profile!,
+                                          directory: _currentDirectory,
+                                          service: _ptyService!,
+                                          sessions: _ptySessions,
+                                          activeSessionId: _activePtyId,
+                                          loading: _loadingPtySessions,
+                                          creating: _creatingPtySession,
+                                          error: _terminalError,
+                                          onSelectSession: (ptyId) {
+                                            setState(() {
+                                              _activePtyId = ptyId;
+                                            });
+                                          },
+                                          onCreateSession: _createPtySession,
+                                          onCloseSession: _closePtySession,
+                                          onRetry: () => _loadPtySessions(
+                                            epoch: _terminalEpoch,
+                                            profile: _profile!,
+                                          ),
+                                          onTitleChanged: _renamePtySession,
+                                          onSessionMissing:
+                                              _removeMissingPtySession,
+                                        ),
+                                ),
                         ),
                       ],
                     ),
                   ),
-                Expanded(
-                  child: Column(
-                    children: <Widget>[
-                      _WorkspaceTopBar(
-                        compact: compact,
-                        profile: appController.selectedProfile,
-                        project: displayProject,
-                        session: selectedSession,
-                        mainSession: mainSession,
-                        status: showProjectLoadingShell
-                            ? null
-                            : controller.selectedStatus,
-                        contextMetrics: showProjectLoadingShell
-                            ? const SessionContextMetrics(
-                                totalCost: 0,
-                                context: null,
-                              )
-                            : controller.sessionContextMetrics,
-                        shellToolPartsExpanded:
-                            appController.shellToolPartsExpanded,
-                        onSetShellToolPartsExpanded:
-                            appController.setShellToolPartsExpanded,
-                        timelineProgressDetailsVisible:
-                            appController.timelineProgressDetailsVisible,
-                        onSetTimelineProgressDetailsVisible:
-                            appController.setTimelineProgressDetailsVisible,
-                        terminalOpen: _terminalPanelOpen,
-                        chatSearchVisible: _chatSearchVisible,
-                        chatSearchController: _chatSearchController,
-                        chatSearchFocusNode: _chatSearchFocusNode,
-                        chatSearchStatusText: chatSearch.statusText,
-                        chatSearchNavigationEnabled: chatSearch.hasMatches,
-                        onOpenChatSearch: _openChatSearch,
-                        onCloseChatSearch: _closeChatSearch,
-                        onChatSearchChanged: _handleChatSearchChanged,
-                        onPreviousChatSearchMatch: () =>
-                            _moveChatSearchMatch(-1),
-                        onNextChatSearchMatch: () => _moveChatSearchMatch(1),
-                        onBackHome: () => Navigator.of(
-                          context,
-                        ).pushNamedAndRemoveUntil('/', (route) => false),
-                        sessionsPanelVisible: desktopSidebarVisible,
-                        sidePanelVisible: desktopSidePanelVisible,
-                        sidePanelLabel: _desktopSidePanelLabel(controller),
-                        onToggleSessionsPanel: compact
-                            ? null
-                            : _toggleDesktopSidebarVisibility,
-                        onToggleSidePanel: compact
-                            ? null
-                            : _toggleDesktopSidePanelVisibility,
-                        sessionPaneCount: compact
-                            ? 1
-                            : desktopSessionPanes.length,
-                        canSplitSessionPane:
-                            !compact &&
-                            !showProjectLoadingShell &&
-                            desktopSessionPanes.length <
-                                _maxDesktopSessionPanes,
-                        onSplitSessionPane: compact || showProjectLoadingShell
-                            ? null
-                            : () => _splitDesktopSessionPane(controller),
-                        onOpenDrawer: compact
-                            ? () => _scaffoldKey.currentState?.openDrawer()
-                            : null,
-                        onToggleTerminal: _toggleTerminalPanel,
-                        onBackToMainSession:
-                            selectedSession != null &&
-                                mainSession != null &&
-                                selectedSession.id != mainSession.id
-                            ? () {
-                                unawaited(
-                                  _selectSessionInPlace(
-                                    controller,
-                                    mainSession.id,
-                                    compact: compact,
-                                  ),
-                                );
-                              }
-                            : null,
-                        onRename: () => _renameSelectedSession(controller),
-                        onFork: controller.selectedSession == null
-                            ? null
-                            : () => _forkSelectedSession(controller),
-                        onShare: controller.selectedSession == null
-                            ? null
-                            : () => _shareSelectedSession(controller),
-                        onDelete: controller.selectedSession == null
-                            ? null
-                            : () => _deleteSelectedSession(controller),
-                      ),
-                      Expanded(
-                        child: showProjectLoadingShell
-                            ? _WorkspaceProjectLoadingView(
-                                key: ValueKey<String>(
-                                  'workspace-project-loading-${displayProject?.directory ?? _currentDirectory}',
-                                ),
-                                project: displayProject,
-                                compact: compact,
-                              )
-                            : controller.loading
-                            ? const Center(child: CircularProgressIndicator())
-                            : controller.error != null
-                            ? _WorkspaceError(
-                                error: controller.error!,
-                                onBackHome: () => Navigator.of(context)
-                                    .pushNamedAndRemoveUntil(
-                                      '/',
-                                      (route) => false,
-                                    ),
-                              )
-                            : _WorkspaceBody(
-                                compact: compact,
-                                controller: controller,
-                                allSessions: controller.sessions,
-                                selectedSession: controller.selectedSession,
-                                sidePanelVisible: desktopSidePanelVisible,
-                                configSnapshot: controller.configSnapshot,
-                                submittingPrompt:
-                                    _promptSubmitInFlight ||
-                                    controller.submittingPrompt,
-                                pickingAttachments: _pickingComposerAttachments,
-                                attachments: _composerAttachments,
-                                promptController: _promptController,
-                                submittedDraftEpoch: _promptSubmitEpoch,
-                                recentSubmittedDraft:
-                                    _recentSubmittedPromptDraft,
-                                compactPane: _compactPane,
-                                desktopSessionPanes: desktopSessionPanes,
-                                activeDesktopSessionPaneId:
-                                    _activeDesktopSessionPaneId,
-                                busyFollowupMode:
-                                    appController.busyFollowupMode,
-                                shellToolDefaultExpanded:
-                                    appController.shellToolPartsExpanded,
-                                timelineProgressDetailsVisible: appController
-                                    .timelineProgressDetailsVisible,
-                                chatSearchQuery: chatSearch.query,
-                                chatSearchMatchMessageIds:
-                                    chatSearch.matchMessageIds,
-                                chatSearchActiveMessageId:
-                                    chatSearch.activeMessageId,
-                                chatSearchRevision: chatSearch.revision,
-                                timelineJumpEpoch: _timelineJumpEpoch,
-                                onForkMessage: (message) =>
-                                    _forkMessageIntoSession(
-                                      controller,
-                                      message,
-                                    ),
-                                onRevertMessage: (message) =>
-                                    _revertToMessage(controller, message),
-                                interruptiblePrompt:
-                                    controller.selectedSessionId != null &&
-                                    (_promptSubmitInFlight ||
-                                        controller
-                                            .selectedSessionInterruptible),
-                                interruptingPrompt:
-                                    controller.interruptingSession,
-                                onCompactPaneChanged: (value) {
-                                  if (_compactPane == value) {
-                                    return;
-                                  }
-                                  setState(() {
-                                    _compactPane = value;
-                                  });
-                                },
-                                onSubmitPrompt: _submitPrompt,
-                                onEditQueuedPrompt: _editQueuedPrompt,
-                                onDeleteQueuedPrompt: _deleteQueuedPrompt,
-                                onSendQueuedPromptNow: _sendQueuedPromptNow,
-                                onInterruptPrompt: _interruptSelectedSession,
-                                onCreateSession: () =>
-                                    _createNewSession(controller),
-                                onOpenSession: (sessionId) {
-                                  unawaited(
-                                    _selectSessionInPlace(
-                                      controller,
-                                      sessionId,
-                                      compact: compact,
-                                    ),
-                                  );
-                                },
-                                onSelectSessionPane: (paneId) =>
-                                    _activateDesktopSessionPane(
-                                      controller,
-                                      paneId,
-                                    ),
-                                onCloseSessionPane: (paneId) {
-                                  unawaited(
-                                    _closeDesktopSessionPane(
-                                      controller,
-                                      paneId,
-                                    ),
-                                  );
-                                },
-                                onPickAttachments: _pickComposerAttachments,
-                                onRemoveAttachment: _removeComposerAttachment,
-                                onShowSidePanel: compact
-                                    ? null
-                                    : () => _setDesktopSidePanelVisible(true),
-                                onShareSession:
-                                    controller.selectedSession == null
-                                    ? null
-                                    : () => _shareSelectedSession(controller),
-                                onUnshareSession:
-                                    controller.selectedSession == null
-                                    ? null
-                                    : () => _unshareSelectedSession(controller),
-                                onSummarizeSession:
-                                    controller.selectedSession == null
-                                    ? null
-                                    : () =>
-                                          _summarizeSelectedSession(controller),
-                                onToggleTerminal: _toggleTerminalPanel,
-                                terminalPanelOpen: _terminalPanelOpen,
-                                terminalPanel:
-                                    !_terminalPanelMounted ||
-                                        _ptyService == null
-                                    ? null
-                                    : PtyTerminalPanel(
-                                        profile: _profile!,
-                                        directory: _currentDirectory,
-                                        service: _ptyService!,
-                                        sessions: _ptySessions,
-                                        activeSessionId: _activePtyId,
-                                        loading: _loadingPtySessions,
-                                        creating: _creatingPtySession,
-                                        error: _terminalError,
-                                        onSelectSession: (ptyId) {
-                                          setState(() {
-                                            _activePtyId = ptyId;
-                                          });
-                                        },
-                                        onCreateSession: _createPtySession,
-                                        onCloseSession: _closePtySession,
-                                        onRetry: () => _loadPtySessions(
-                                          epoch: _terminalEpoch,
-                                          profile: _profile!,
-                                        ),
-                                        onTitleChanged: _renamePtySession,
-                                        onSessionMissing:
-                                            _removeMissingPtySession,
-                                      ),
-                              ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }
@@ -2408,9 +2882,8 @@ class _WorkspaceTopBar extends StatelessWidget {
                     label: 'Sessions',
                     icon: Icons.view_sidebar_rounded,
                     active: sessionsPanelVisible,
-                    tooltip: sessionsPanelVisible
-                        ? 'Hide sessions panel'
-                        : 'Show sessions panel',
+                    tooltip:
+                        '${sessionsPanelVisible ? 'Hide sessions panel' : 'Show sessions panel'} (${_formatWorkspaceShortcutLabel('mod+b')})',
                     onTap: onToggleSessionsPanel!,
                   ),
                 ],
@@ -3551,6 +4024,12 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                 ),
                                 SizedBox(height: sectionGap),
                                 _WorkspaceSettingsSection(
+                                  title: 'Keyboard',
+                                  child:
+                                      const _WorkspaceKeyboardShortcutsCard(),
+                                ),
+                                SizedBox(height: sectionGap),
+                                _WorkspaceSettingsSection(
                                   title: 'Sidebar',
                                   child: _WorkspaceSettingsCard(
                                     child: _WorkspaceSettingsToggleRow(
@@ -3992,6 +4471,280 @@ class _WorkspaceSettingsTextScaleRow extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WorkspaceShortcutSpec {
+  const _WorkspaceShortcutSpec({
+    required this.title,
+    required this.description,
+    required this.shortcut,
+  });
+
+  final String title;
+  final String description;
+  final String shortcut;
+}
+
+const List<_WorkspaceShortcutSpec> _workspaceKeyboardShortcuts =
+    <_WorkspaceShortcutSpec>[
+      _WorkspaceShortcutSpec(
+        title: 'Open project',
+        description: 'Bring up the server project picker.',
+        shortcut: 'mod+o',
+      ),
+      _WorkspaceShortcutSpec(
+        title: 'Open settings',
+        description: 'Show workspace settings and the shortcut reference.',
+        shortcut: 'mod+comma',
+      ),
+      _WorkspaceShortcutSpec(
+        title: 'Toggle sessions panel',
+        description: 'Collapse or reveal the left sessions sidebar.',
+        shortcut: 'mod+b',
+      ),
+      _WorkspaceShortcutSpec(
+        title: 'Toggle review panel',
+        description: 'Show or hide the review tab in the side panel.',
+        shortcut: 'mod+shift+r',
+      ),
+      _WorkspaceShortcutSpec(
+        title: 'Toggle files panel',
+        description: 'Show or hide the files tab in the side panel.',
+        shortcut: 'mod+backslash',
+      ),
+      _WorkspaceShortcutSpec(
+        title: 'Focus composer',
+        description: 'Jump straight to the chat input.',
+        shortcut: 'ctrl+l',
+      ),
+      _WorkspaceShortcutSpec(
+        title: 'New session',
+        description: 'Create a fresh session in the current project.',
+        shortcut: 'mod+shift+s',
+      ),
+      _WorkspaceShortcutSpec(
+        title: 'Attach files',
+        description: 'Open the file picker for prompt attachments.',
+        shortcut: 'mod+u',
+      ),
+      _WorkspaceShortcutSpec(
+        title: 'Previous / next session',
+        description: 'Move across root sessions in the sidebar order.',
+        shortcut: 'alt+arrowup / alt+arrowdown',
+      ),
+      _WorkspaceShortcutSpec(
+        title: 'Previous / next project',
+        description: 'Move across projects in the left rail order.',
+        shortcut: 'mod+alt+arrowup / mod+alt+arrowdown',
+      ),
+      _WorkspaceShortcutSpec(
+        title: 'Choose model',
+        description: 'Open the model picker from anywhere in the workspace.',
+        shortcut: 'mod+quote',
+      ),
+      _WorkspaceShortcutSpec(
+        title: 'Cycle agent',
+        description: 'Rotate the active agent selection.',
+        shortcut: 'mod+period / mod+shift+period',
+      ),
+      _WorkspaceShortcutSpec(
+        title: 'Cycle reasoning',
+        description: 'Rotate the available reasoning depth options.',
+        shortcut: 'mod+shift+d',
+      ),
+      _WorkspaceShortcutSpec(
+        title: 'Toggle terminal / new terminal',
+        description: 'Open the terminal panel or create a new terminal tab.',
+        shortcut: 'ctrl+backquote / ctrl+alt+t',
+      ),
+      _WorkspaceShortcutSpec(
+        title: 'Stop running session',
+        description: 'Interrupt the active response when the composer is idle.',
+        shortcut: 'escape',
+      ),
+    ];
+
+String _formatWorkspaceShortcutLabel(String config) {
+  final isApplePlatform =
+      defaultTargetPlatform == TargetPlatform.macOS ||
+      defaultTargetPlatform == TargetPlatform.iOS;
+  final combos = config
+      .split('/')
+      .map((item) => item.trim())
+      .where((item) => item.isNotEmpty);
+
+  String formatCombo(String combo) {
+    final parts = combo.split('+').map((part) => part.trim()).toList();
+    final rendered = <String>[];
+    for (final part in parts) {
+      switch (part) {
+        case 'mod':
+          rendered.add(isApplePlatform ? '⌘' : 'Ctrl');
+          break;
+        case 'ctrl':
+          rendered.add(isApplePlatform ? '⌃' : 'Ctrl');
+          break;
+        case 'alt':
+          rendered.add(isApplePlatform ? '⌥' : 'Alt');
+          break;
+        case 'shift':
+          rendered.add(isApplePlatform ? '⇧' : 'Shift');
+          break;
+        case 'comma':
+          rendered.add(',');
+          break;
+        case 'quote':
+          rendered.add("'");
+          break;
+        case 'period':
+          rendered.add('.');
+          break;
+        case 'backslash':
+          rendered.add(r'\');
+          break;
+        case 'backquote':
+          rendered.add('`');
+          break;
+        case 'arrowup':
+          rendered.add('↑');
+          break;
+        case 'arrowdown':
+          rendered.add('↓');
+          break;
+        case 'escape':
+          rendered.add('Esc');
+          break;
+        default:
+          rendered.add(
+            part.length == 1
+                ? part.toUpperCase()
+                : '${part[0].toUpperCase()}${part.substring(1)}',
+          );
+          break;
+      }
+    }
+    if (isApplePlatform) {
+      return rendered.join('');
+    }
+    return rendered.join('+');
+  }
+
+  return combos.map(formatCombo).join('  /  ');
+}
+
+class _WorkspaceKeyboardShortcutsCard extends StatelessWidget {
+  const _WorkspaceKeyboardShortcutsCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final density = _workspaceDensity(context);
+    final rows = <Widget>[];
+    for (
+      var index = 0;
+      index < _workspaceKeyboardShortcuts.length;
+      index += 1
+    ) {
+      rows.add(_WorkspaceShortcutRow(spec: _workspaceKeyboardShortcuts[index]));
+      if (index != _workspaceKeyboardShortcuts.length - 1) {
+        rows.add(SizedBox(height: density.inset(AppSpacing.sm)));
+      }
+    }
+    return _WorkspaceSettingsCard(
+      child: Column(
+        key: const ValueKey<String>('workspace-settings-shortcuts-card'),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            'OpenCode-style desktop shortcuts',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            'Web defaults are used where OpenCode web and CLI differ.',
+            style: theme.textTheme.bodySmall?.copyWith(color: surfaces.muted),
+          ),
+          SizedBox(height: density.inset(AppSpacing.md)),
+          ...rows,
+        ],
+      ),
+    );
+  }
+}
+
+class _WorkspaceShortcutRow extends StatelessWidget {
+  const _WorkspaceShortcutRow({required this.spec});
+
+  final _WorkspaceShortcutSpec spec;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final density = _workspaceDensity(context);
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: density.inset(AppSpacing.md),
+        vertical: density.inset(AppSpacing.sm),
+      ),
+      decoration: BoxDecoration(
+        color: surfaces.panelMuted.withValues(alpha: 0.52),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  spec.title,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xxs),
+                Text(
+                  spec.description,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: surfaces.muted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(width: density.inset(AppSpacing.md)),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 240),
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.sm,
+                vertical: 6,
+              ),
+              decoration: BoxDecoration(
+                color: surfaces.panel,
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: surfaces.lineSoft),
+              ),
+              child: Text(
+                _formatWorkspaceShortcutLabel(spec.shortcut),
+                textAlign: TextAlign.right,
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: theme.colorScheme.primary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ),
           ),
         ],
@@ -4512,7 +5265,8 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
                   ),
                   onPressed: widget.onOpenSettings,
                   icon: const Icon(Icons.settings_rounded),
-                  tooltip: 'Workspace settings',
+                  tooltip:
+                      'Workspace settings (${_formatWorkspaceShortcutLabel('mod+comma')})',
                 ),
                 SizedBox(height: panelPadding),
               ],
@@ -5973,6 +6727,7 @@ class _WorkspaceBody extends StatelessWidget {
     required this.pickingAttachments,
     required this.attachments,
     required this.promptController,
+    required this.promptFocusRequestToken,
     required this.submittedDraftEpoch,
     required this.recentSubmittedDraft,
     required this.compactPane,
@@ -6021,6 +6776,7 @@ class _WorkspaceBody extends StatelessWidget {
   final bool pickingAttachments;
   final List<PromptAttachment> attachments;
   final TextEditingController promptController;
+  final int promptFocusRequestToken;
   final int submittedDraftEpoch;
   final String? recentSubmittedDraft;
   final _CompactWorkspacePane compactPane;
@@ -6156,6 +6912,7 @@ class _WorkspaceBody extends StatelessWidget {
             compact: compact,
             scopeKey:
                 '${controller.directory}::${controller.selectedSessionId ?? 'new'}',
+            focusRequestToken: promptFocusRequestToken,
             submitting: submittingPrompt,
             busyFollowupMode: busyFollowupMode,
             interruptible: interruptiblePrompt,
@@ -8487,6 +9244,7 @@ class _PromptComposer extends StatefulWidget {
     required this.controller,
     required this.compact,
     required this.scopeKey,
+    required this.focusRequestToken,
     required this.submitting,
     required this.busyFollowupMode,
     required this.interruptible,
@@ -8528,6 +9286,7 @@ class _PromptComposer extends StatefulWidget {
   final TextEditingController controller;
   final bool compact;
   final String scopeKey;
+  final int focusRequestToken;
   final bool submitting;
   final WorkspaceFollowupMode busyFollowupMode;
   final bool interruptible;
@@ -8597,6 +9356,14 @@ class _PromptComposerState extends State<_PromptComposer> {
     if (oldWidget.scopeKey != widget.scopeKey) {
       _clearRestoredDraftGuard();
       _dismissFocus();
+    }
+    if (oldWidget.focusRequestToken != widget.focusRequestToken) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          return;
+        }
+        _focusNode.requestFocus();
+      });
     }
   }
 

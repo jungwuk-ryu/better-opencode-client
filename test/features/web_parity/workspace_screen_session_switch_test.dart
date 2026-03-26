@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -10,6 +11,8 @@ import 'package:opencode_mobile_remote/src/app/app_scope.dart';
 import 'package:opencode_mobile_remote/src/core/connection/connection_models.dart';
 import 'package:opencode_mobile_remote/src/design_system/app_theme.dart';
 import 'package:opencode_mobile_remote/src/features/chat/chat_models.dart';
+import 'package:opencode_mobile_remote/src/features/chat/prompt_attachment_models.dart';
+import 'package:opencode_mobile_remote/src/features/projects/project_catalog_service.dart';
 import 'package:opencode_mobile_remote/src/features/projects/project_models.dart';
 import 'package:opencode_mobile_remote/src/features/requests/request_models.dart';
 import 'package:opencode_mobile_remote/src/features/terminal/pty_models.dart';
@@ -307,6 +310,318 @@ void main() {
       expect(tester.getSize(sidebarReveal).width, greaterThan(300));
     },
   );
+
+  testWidgets(
+    'desktop keyboard shortcuts toggle panels and focus the composer',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              return _RecordingWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+            },
+      );
+      addTearDown(appController.dispose);
+
+      final navigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          navigatorKey: navigatorKey,
+          initialRoute: '/',
+        ),
+      );
+      navigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+      );
+      await tester.pumpAndSettle();
+
+      final sidebarReveal = find.byKey(
+        const ValueKey<String>('workspace-desktop-sidebar-reveal'),
+      );
+      final sidePanelReveal = find.byKey(
+        const ValueKey<String>('workspace-desktop-side-panel-reveal'),
+      );
+
+      await _sendShortcut(tester, <LogicalKeyboardKey>[
+        LogicalKeyboardKey.controlLeft,
+        LogicalKeyboardKey.keyB,
+      ]);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 260));
+      expect(tester.getSize(sidebarReveal).width, closeTo(0, 0.1));
+
+      await _sendShortcut(tester, <LogicalKeyboardKey>[
+        LogicalKeyboardKey.controlLeft,
+        LogicalKeyboardKey.shiftLeft,
+        LogicalKeyboardKey.keyR,
+      ]);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 260));
+      expect(tester.getSize(sidePanelReveal).width, closeTo(0, 0.1));
+
+      await _sendShortcut(tester, <LogicalKeyboardKey>[
+        LogicalKeyboardKey.controlLeft,
+        LogicalKeyboardKey.backslash,
+      ]);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 260));
+      expect(tester.getSize(sidePanelReveal).width, greaterThan(300));
+
+      await _sendShortcut(tester, <LogicalKeyboardKey>[
+        LogicalKeyboardKey.controlLeft,
+        LogicalKeyboardKey.keyL,
+      ]);
+      await tester.pump();
+
+      final editable = tester.widget<EditableText>(find.byType(EditableText));
+      expect(editable.focusNode.hasFocus, isTrue);
+    },
+  );
+
+  testWidgets('keyboard shortcut opens workspace settings', (tester) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _RecordingWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    final navigatorKey = GlobalKey<NavigatorState>();
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        navigatorKey: navigatorKey,
+        initialRoute: '/',
+      ),
+    );
+    navigatorKey.currentState!.pushNamed(
+      buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+    );
+    await tester.pumpAndSettle();
+
+    await _sendShortcut(tester, <LogicalKeyboardKey>[
+      LogicalKeyboardKey.controlLeft,
+      LogicalKeyboardKey.comma,
+    ]);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 260));
+
+    expect(
+      find.byKey(const ValueKey<String>('workspace-settings-sheet')),
+      findsOneWidget,
+    );
+    final settingsListView = find.descendant(
+      of: find.byKey(const ValueKey<String>('workspace-settings-sheet')),
+      matching: find.byType(ListView),
+    );
+    await tester.dragUntilVisible(
+      find.byKey(const ValueKey<String>('workspace-settings-shortcuts-card')),
+      settingsListView,
+      const Offset(0, -180),
+    );
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey<String>('workspace-settings-shortcuts-card')),
+      findsOneWidget,
+    );
+    expect(find.text('OpenCode-style desktop shortcuts'), findsOneWidget);
+  });
+
+  testWidgets('keyboard shortcut opens the project picker sheet', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _RecordingWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    final navigatorKey = GlobalKey<NavigatorState>();
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        navigatorKey: navigatorKey,
+        initialRoute: '/',
+        projectCatalogService: _ShortcutProjectCatalogService(),
+      ),
+    );
+    navigatorKey.currentState!.pushNamed(
+      buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+    );
+    await tester.pumpAndSettle();
+
+    await _sendShortcut(tester, <LogicalKeyboardKey>[
+      LogicalKeyboardKey.controlLeft,
+      LogicalKeyboardKey.keyO,
+    ]);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 320));
+
+    expect(find.text('Open Project'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('project-picker-manual-path-field')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('keyboard shortcut navigates to the next session in place', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final createdControllers = <_RecordingWorkspaceController>[];
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            final controller = _RecordingWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+            createdControllers.add(controller);
+            return controller;
+          },
+    );
+    addTearDown(appController.dispose);
+
+    final navigatorKey = GlobalKey<NavigatorState>();
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        navigatorKey: navigatorKey,
+        initialRoute: '/',
+      ),
+    );
+    navigatorKey.currentState!.pushNamed(
+      buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+    );
+    await tester.pumpAndSettle();
+
+    expect(createdControllers.single.selectedSessionId, 'ses_1');
+    expect(find.text('hello from one'), findsOneWidget);
+
+    await _sendShortcut(tester, <LogicalKeyboardKey>[
+      LogicalKeyboardKey.altLeft,
+      LogicalKeyboardKey.arrowDown,
+    ]);
+    await tester.pumpAndSettle();
+
+    expect(createdControllers.single.selectedSessionId, 'ses_2');
+    expect(find.text('hello from two'), findsOneWidget);
+  });
+
+  testWidgets('keyboard shortcut triggers attachment picking', (tester) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _RecordingWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    final navigatorKey = GlobalKey<NavigatorState>();
+    var pickerCalls = 0;
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        navigatorKey: navigatorKey,
+        initialRoute: '/',
+        attachmentPicker: () async {
+          pickerCalls += 1;
+          return const <PromptAttachment>[];
+        },
+      ),
+    );
+    navigatorKey.currentState!.pushNamed(
+      buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+    );
+    await tester.pumpAndSettle();
+
+    await _sendShortcut(tester, <LogicalKeyboardKey>[
+      LogicalKeyboardKey.controlLeft,
+      LogicalKeyboardKey.keyU,
+    ]);
+    await tester.pumpAndSettle();
+
+    expect(pickerCalls, 1);
+  });
 
   testWidgets(
     'desktop layout can split session panes and keep non-active sessions visible',
@@ -798,18 +1113,34 @@ void main() {
   );
 }
 
+Future<void> _sendShortcut(
+  WidgetTester tester,
+  List<LogicalKeyboardKey> keys,
+) async {
+  for (final key in keys) {
+    await tester.sendKeyDownEvent(key);
+  }
+  for (final key in keys.reversed) {
+    await tester.sendKeyUpEvent(key);
+  }
+}
+
 class _WorkspaceRouteHarness extends StatelessWidget {
   const _WorkspaceRouteHarness({
     required this.controller,
     required this.navigatorKey,
     required this.initialRoute,
     this.navigatorObservers = const <NavigatorObserver>[],
+    this.projectCatalogService,
+    this.attachmentPicker,
   });
 
   final WebParityAppController controller;
   final GlobalKey<NavigatorState> navigatorKey;
   final String initialRoute;
   final List<NavigatorObserver> navigatorObservers;
+  final ProjectCatalogService? projectCatalogService;
+  final Future<List<PromptAttachment>> Function()? attachmentPicker;
 
   @override
   Widget build(BuildContext context) {
@@ -833,12 +1164,56 @@ class _WorkspaceRouteHarness extends StatelessWidget {
                     directory: directory,
                     sessionId: sessionId,
                     ptyServiceFactory: _FakePtyService.new,
+                    attachmentPicker: attachmentPicker,
+                    projectCatalogService: projectCatalogService,
                   ),
               };
             },
           );
         },
       ),
+    );
+  }
+}
+
+class _ShortcutProjectCatalogService extends ProjectCatalogService {
+  @override
+  Future<ProjectCatalog> fetchCatalog(ServerProfile profile) async {
+    return ProjectCatalog(
+      currentProject: const ProjectSummary(
+        id: 'demo',
+        directory: '/workspace/demo',
+        worktree: '/workspace/demo',
+        name: 'Demo',
+        vcs: 'git',
+        updatedAt: null,
+      ),
+      projects: const <ProjectSummary>[
+        ProjectSummary(
+          id: 'demo',
+          directory: '/workspace/demo',
+          worktree: '/workspace/demo',
+          name: 'Demo',
+          vcs: 'git',
+          updatedAt: null,
+        ),
+        ProjectSummary(
+          id: 'lab',
+          directory: '/workspace/lab',
+          worktree: '/workspace/lab',
+          name: 'Lab',
+          vcs: 'git',
+          updatedAt: null,
+        ),
+      ],
+      pathInfo: const PathInfo(
+        home: '/home/tester',
+        state: '/state',
+        config: '/config',
+        worktree: '/workspace/demo',
+        directory: '/workspace/demo',
+      ),
+      vcsInfo: const VcsInfo(branch: 'main'),
     );
   }
 }
