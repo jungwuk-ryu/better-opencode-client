@@ -5450,9 +5450,13 @@ class _MessageTimelineState extends State<_MessageTimeline> {
   static const int _initialWindowSize = 60;
   static const int _windowGrowthSize = 40;
   static const double _loadOlderThreshold = 96;
+  static const ValueKey<String> _loadOlderItemKey = ValueKey<String>(
+    'timeline-load-older-indicator-item',
+  );
 
   int _visibleStartIndex = 0;
   bool _loadingOlder = false;
+  bool _loadOlderCheckScheduled = false;
 
   List<ChatMessage> get _visibleMessages => widget.messages.sublist(
     _visibleStartIndex.clamp(0, widget.messages.length),
@@ -5517,6 +5521,20 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     await _loadOlderMessages();
   }
 
+  void _scheduleLoadOlderCheck() {
+    if (_loadOlderCheckScheduled || _loadingOlder || _hiddenMessageCount == 0) {
+      return;
+    }
+    _loadOlderCheckScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadOlderCheckScheduled = false;
+      if (!mounted) {
+        return;
+      }
+      unawaited(_handleScroll());
+    });
+  }
+
   Future<void> _loadOlderMessages() async {
     if (_loadingOlder || _hiddenMessageCount == 0 || !mounted) {
       return;
@@ -5524,13 +5542,6 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     if (!widget.controller.hasClients) {
       return;
     }
-    final position = widget.controller.position;
-    if (!position.hasContentDimensions) {
-      return;
-    }
-
-    final previousPixels = position.pixels;
-    final previousMaxExtent = position.maxScrollExtent;
     final nextStart = math.max(0, _visibleStartIndex - _windowGrowthSize);
     if (nextStart == _visibleStartIndex) {
       return;
@@ -5551,15 +5562,6 @@ class _MessageTimelineState extends State<_MessageTimeline> {
         });
         return;
       }
-      final nextPosition = widget.controller.position;
-      final deltaExtent = nextPosition.maxScrollExtent - previousMaxExtent;
-      final targetPixels = (previousPixels + deltaExtent).clamp(
-        0.0,
-        nextPosition.maxScrollExtent,
-      );
-      if ((targetPixels - nextPosition.pixels).abs() > 0.5) {
-        widget.controller.jumpTo(targetPixels);
-      }
       if (!mounted) {
         return;
       }
@@ -5574,6 +5576,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final theme = Theme.of(context);
+    _scheduleLoadOlderCheck();
     if (widget.loading && widget.messages.isEmpty) {
       return const _TimelineStatusCard(
         icon: SizedBox(
@@ -5637,70 +5640,95 @@ class _MessageTimelineState extends State<_MessageTimeline> {
             controller: widget.controller,
             thumbVisibility: true,
             interactive: true,
-            child: SingleChildScrollView(
-              controller: widget.controller,
-              key: const PageStorageKey<String>('web-parity-message-timeline'),
-              padding: EdgeInsets.fromLTRB(
-                widget.compact ? AppSpacing.sm : AppSpacing.xl,
-                widget.compact ? AppSpacing.sm : AppSpacing.xl,
-                widget.compact ? AppSpacing.sm : AppSpacing.xl,
-                widget.compact ? AppSpacing.xs : AppSpacing.lg,
-              ),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 860),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      if (_hiddenMessageCount > 0)
-                        Padding(
-                          padding: EdgeInsets.only(
-                            bottom: widget.compact
-                                ? AppSpacing.sm
-                                : AppSpacing.md,
-                          ),
-                          child: _TimelineLoadOlderIndicator(
-                            hiddenCount: _hiddenMessageCount,
-                            loading: _loadingOlder,
-                            compact: widget.compact,
-                          ),
-                        ),
-                      ..._visibleMessages.asMap().entries.map((entry) {
-                        final index = entry.key;
-                        final message = entry.value;
-                        final isLast = index == _visibleMessages.length - 1;
-                        return Padding(
-                          padding: EdgeInsets.only(
-                            bottom: isLast
-                                ? 0
-                                : (widget.compact
-                                      ? AppSpacing.md
-                                      : AppSpacing.xl),
-                          ),
-                          child: SizedBox(
-                            width: double.infinity,
-                            child: _TimelineMessage(
-                              currentSessionId: widget.currentSessionId,
-                              message: message,
-                              compact: widget.compact,
-                              sessions: widget.sessions,
-                              selectedSession: widget.selectedSession,
-                              configSnapshot: widget.configSnapshot,
-                              shellToolDefaultExpanded:
-                                  widget.shellToolDefaultExpanded,
-                              timelineProgressDetailsVisible:
-                                  widget.timelineProgressDetailsVisible,
-                              onForkMessage: widget.onForkMessage,
-                              onRevertMessage: widget.onRevertMessage,
-                              onOpenSession: widget.onOpenSession,
+            child: Builder(
+              builder: (context) {
+                final visibleMessages = _visibleMessages;
+                final hasHiddenMessages = _hiddenMessageCount > 0;
+                final itemCount =
+                    visibleMessages.length + (hasHiddenMessages ? 1 : 0);
+
+                return ListView.builder(
+                  controller: widget.controller,
+                  key: const PageStorageKey<String>(
+                    'web-parity-message-timeline',
+                  ),
+                  padding: EdgeInsets.fromLTRB(
+                    widget.compact ? AppSpacing.sm : AppSpacing.xl,
+                    widget.compact ? AppSpacing.sm : AppSpacing.xl,
+                    widget.compact ? AppSpacing.sm : AppSpacing.xl,
+                    widget.compact ? AppSpacing.xs : AppSpacing.lg,
+                  ),
+                  itemCount: itemCount,
+                  cacheExtent: 1600,
+                  itemBuilder: (context, index) {
+                    if (hasHiddenMessages && index == 0) {
+                      return KeyedSubtree(
+                        key: _loadOlderItemKey,
+                        child: Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 860),
+                            child: Padding(
+                              padding: EdgeInsets.only(
+                                bottom: widget.compact
+                                    ? AppSpacing.sm
+                                    : AppSpacing.md,
+                              ),
+                              child: _TimelineLoadOlderIndicator(
+                                hiddenCount: _hiddenMessageCount,
+                                loading: _loadingOlder,
+                                compact: widget.compact,
+                              ),
                             ),
                           ),
-                        );
-                      }),
-                    ],
-                  ),
-                ),
-              ),
+                        ),
+                      );
+                    }
+
+                    final messageIndex = index - (hasHiddenMessages ? 1 : 0);
+                    final message = visibleMessages[messageIndex];
+                    final isLast = messageIndex == visibleMessages.length - 1;
+                    return KeyedSubtree(
+                      key: ValueKey<String>(
+                        'timeline-message-${message.info.id}',
+                      ),
+                      child: RepaintBoundary(
+                        child: Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 860),
+                            child: Padding(
+                              padding: EdgeInsets.only(
+                                bottom: isLast
+                                    ? 0
+                                    : (widget.compact
+                                          ? AppSpacing.md
+                                          : AppSpacing.xl),
+                              ),
+                              child: SizedBox(
+                                width: double.infinity,
+                                child: _TimelineMessage(
+                                  currentSessionId: widget.currentSessionId,
+                                  message: message,
+                                  compact: widget.compact,
+                                  sessions: widget.sessions,
+                                  selectedSession: widget.selectedSession,
+                                  configSnapshot: widget.configSnapshot,
+                                  shellToolDefaultExpanded:
+                                      widget.shellToolDefaultExpanded,
+                                  timelineProgressDetailsVisible:
+                                      widget.timelineProgressDetailsVisible,
+                                  onForkMessage: widget.onForkMessage,
+                                  onRevertMessage: widget.onRevertMessage,
+                                  onOpenSession: widget.onOpenSession,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
             ),
           ),
         ),
@@ -8093,7 +8121,7 @@ class _CompactPaneButton extends StatelessWidget {
   }
 }
 
-class _TimelineMessage extends StatelessWidget {
+class _TimelineMessage extends StatefulWidget {
   const _TimelineMessage({
     required this.currentSessionId,
     required this.message,
@@ -8121,43 +8149,89 @@ class _TimelineMessage extends StatelessWidget {
   final ValueChanged<String> onOpenSession;
 
   @override
-  Widget build(BuildContext context) {
-    final isUser = message.info.role == 'user';
-    if (isUser) {
-      final attachments = message.parts
+  State<_TimelineMessage> createState() => _TimelineMessageState();
+}
+
+class _TimelineMessageState extends State<_TimelineMessage> {
+  ChatMessage? _derivedMessageRef;
+  bool _derivedShowProgressDetails = false;
+  List<ChatPart> _cachedAttachments = const <ChatPart>[];
+  String _cachedUserText = '';
+  List<ChatPart> _cachedOrderedParts = const <ChatPart>[];
+
+  @override
+  void initState() {
+    super.initState();
+    _syncDerivedState(force: true);
+  }
+
+  @override
+  void didUpdateWidget(covariant _TimelineMessage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.message, widget.message) ||
+        oldWidget.timelineProgressDetailsVisible !=
+            widget.timelineProgressDetailsVisible) {
+      _syncDerivedState(force: true);
+    }
+  }
+
+  void _syncDerivedState({bool force = false}) {
+    if (!force &&
+        identical(_derivedMessageRef, widget.message) &&
+        _derivedShowProgressDetails == widget.timelineProgressDetailsVisible) {
+      return;
+    }
+    _derivedMessageRef = widget.message;
+    _derivedShowProgressDetails = widget.timelineProgressDetailsVisible;
+
+    if (widget.message.info.role == 'user') {
+      _cachedAttachments = widget.message.parts
           .where(_isAttachmentFilePart)
           .toList(growable: false);
-      final text = _messageBody(message);
+      _cachedUserText = _messageBody(widget.message);
+      _cachedOrderedParts = const <ChatPart>[];
+      return;
+    }
+
+    _cachedAttachments = const <ChatPart>[];
+    _cachedUserText = '';
+    _cachedOrderedParts = _orderedTimelineParts(
+      widget.message,
+      showProgressDetails: widget.timelineProgressDetailsVisible,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isUser = widget.message.info.role == 'user';
+    if (isUser) {
       return _UserTimelineMessage(
-        message: message,
-        text: text,
-        compact: compact,
-        attachments: attachments,
-        configSnapshot: configSnapshot,
-        selectedSession: selectedSession,
-        onForkMessage: onForkMessage,
-        onRevertMessage: onRevertMessage,
+        message: widget.message,
+        text: _cachedUserText,
+        compact: widget.compact,
+        attachments: _cachedAttachments,
+        configSnapshot: widget.configSnapshot,
+        selectedSession: widget.selectedSession,
+        onForkMessage: widget.onForkMessage,
+        onRevertMessage: widget.onRevertMessage,
       );
     }
 
-    final orderedParts = _orderedTimelineParts(
-      message,
-      showProgressDetails: timelineProgressDetailsVisible,
-    );
     final timelineItems = <Widget>[];
-    for (var index = 0; index < orderedParts.length; index += 1) {
-      final part = orderedParts[index];
+    final messageIsActive = _messageIsActive(widget.message);
+    for (var index = 0; index < _cachedOrderedParts.length; index += 1) {
+      final part = _cachedOrderedParts[index];
       if (_isContextGroupToolPart(part)) {
         final contextParts = <ChatPart>[part];
-        while (index + 1 < orderedParts.length &&
-            _isContextGroupToolPart(orderedParts[index + 1])) {
+        while (index + 1 < _cachedOrderedParts.length &&
+            _isContextGroupToolPart(_cachedOrderedParts[index + 1])) {
           index += 1;
-          contextParts.add(orderedParts[index]);
+          contextParts.add(_cachedOrderedParts[index]);
         }
         timelineItems.add(
           Padding(
             padding: EdgeInsets.only(
-              bottom: compact ? AppSpacing.sm : AppSpacing.md,
+              bottom: widget.compact ? AppSpacing.sm : AppSpacing.md,
             ),
             child: _TimelineExploredContextPart(parts: contextParts),
           ),
@@ -8167,19 +8241,19 @@ class _TimelineMessage extends StatelessWidget {
       timelineItems.add(
         Padding(
           padding: EdgeInsets.only(
-            bottom: compact ? AppSpacing.sm : AppSpacing.md,
+            bottom: widget.compact ? AppSpacing.sm : AppSpacing.md,
           ),
           child: _TimelinePart(
-            currentSessionId: currentSessionId,
+            currentSessionId: widget.currentSessionId,
             part: part,
-            sessions: sessions,
-            shellToolDefaultExpanded: shellToolDefaultExpanded,
-            textStreamingActive: _messageIsActive(message),
+            sessions: widget.sessions,
+            shellToolDefaultExpanded: widget.shellToolDefaultExpanded,
+            textStreamingActive: messageIsActive,
             shimmerActive: _activityPartShimmerActive(
               part,
-              messageIsActive: _messageIsActive(message),
+              messageIsActive: messageIsActive,
             ),
-            onOpenSession: onOpenSession,
+            onOpenSession: widget.onOpenSession,
           ),
         ),
       );
@@ -9558,6 +9632,124 @@ class _ShimmerBoxState extends State<_ShimmerBox>
   }
 }
 
+final _structuredTextParseCache =
+    _LruCache<String, List<_StructuredContentBlockData>>(maximumSize: 256);
+final _paragraphSplitCache = _LruCache<String, List<String>>(maximumSize: 512);
+final _inlineCodeSegmentCache = _LruCache<String, List<_InlineCodeSegment>>(
+  maximumSize: 1024,
+);
+final _attachmentPreviewBytesCache = _LruCache<String, Uint8List?>(
+  maximumSize: 128,
+);
+
+sealed class _StructuredContentBlockData {
+  const _StructuredContentBlockData();
+}
+
+class _StructuredParagraphData extends _StructuredContentBlockData {
+  const _StructuredParagraphData({required this.text});
+
+  final String text;
+}
+
+class _StructuredCodeFenceData extends _StructuredContentBlockData {
+  const _StructuredCodeFenceData({required this.code, this.language});
+
+  final String code;
+  final String? language;
+}
+
+class _InlineCodeSegment {
+  const _InlineCodeSegment({required this.text, required this.code});
+
+  final String text;
+  final bool code;
+}
+
+List<_StructuredContentBlockData> _parseStructuredTextBlocks(String text) {
+  final cached = _structuredTextParseCache.get(text);
+  if (cached != null) {
+    return cached;
+  }
+
+  final blocks = <_StructuredContentBlockData>[];
+  final fencePattern = RegExp(r'```([a-zA-Z0-9_-]*)\n([\s\S]*?)```');
+  var cursor = 0;
+  for (final match in fencePattern.allMatches(text)) {
+    final before = text.substring(cursor, match.start).trim();
+    if (before.isNotEmpty) {
+      blocks.add(_StructuredParagraphData(text: before));
+    }
+    blocks.add(
+      _StructuredCodeFenceData(
+        language: match.group(1)?.trim(),
+        code: (match.group(2) ?? '').trimRight(),
+      ),
+    );
+    cursor = match.end;
+  }
+
+  final tail = text.substring(cursor).trim();
+  if (tail.isNotEmpty) {
+    blocks.add(_StructuredParagraphData(text: tail));
+  }
+
+  final resolved = List<_StructuredContentBlockData>.unmodifiable(
+    blocks.isEmpty
+        ? <_StructuredContentBlockData>[_StructuredParagraphData(text: text)]
+        : blocks,
+  );
+  _structuredTextParseCache.set(text, resolved);
+  return resolved;
+}
+
+List<String> _splitStructuredParagraphs(String text) {
+  final cached = _paragraphSplitCache.get(text);
+  if (cached != null) {
+    return cached;
+  }
+
+  final paragraphs = List<String>.unmodifiable(
+    text
+        .split(RegExp(r'\n\s*\n'))
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList(growable: false),
+  );
+  _paragraphSplitCache.set(text, paragraphs);
+  return paragraphs;
+}
+
+List<_InlineCodeSegment> _parseInlineCodeSegments(String text) {
+  final cached = _inlineCodeSegmentCache.get(text);
+  if (cached != null) {
+    return cached;
+  }
+
+  final codePattern = RegExp(r'`([^`]+)`');
+  final segments = <_InlineCodeSegment>[];
+  var cursor = 0;
+  for (final match in codePattern.allMatches(text)) {
+    if (match.start > cursor) {
+      segments.add(
+        _InlineCodeSegment(
+          text: text.substring(cursor, match.start),
+          code: false,
+        ),
+      );
+    }
+    segments.add(_InlineCodeSegment(text: match.group(1) ?? '', code: true));
+    cursor = match.end;
+  }
+  if (cursor < text.length) {
+    segments.add(_InlineCodeSegment(text: text.substring(cursor), code: false));
+  }
+
+  final resolved = List<_InlineCodeSegment>.unmodifiable(segments);
+  _inlineCodeSegmentCache.set(text, resolved);
+  return resolved;
+}
+
 class _StructuredTextBlock extends StatelessWidget {
   const _StructuredTextBlock({required this.text});
 
@@ -9565,28 +9757,7 @@ class _StructuredTextBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final blocks = <Widget>[];
-    final fencePattern = RegExp(r'```([a-zA-Z0-9_-]*)\n([\s\S]*?)```');
-    var cursor = 0;
-    for (final match in fencePattern.allMatches(text)) {
-      final before = text.substring(cursor, match.start).trim();
-      if (before.isNotEmpty) {
-        blocks.add(_ParagraphBlock(text: before));
-      }
-      final language = match.group(1)?.trim();
-      final code = (match.group(2) ?? '').trimRight();
-      blocks.add(_StructuredCodeFenceBlock(language: language, code: code));
-      cursor = match.end;
-    }
-
-    final tail = text.substring(cursor).trim();
-    if (tail.isNotEmpty) {
-      blocks.add(_ParagraphBlock(text: tail));
-    }
-
-    if (blocks.isEmpty) {
-      blocks.add(_ParagraphBlock(text: text));
-    }
+    final blocks = _parseStructuredTextBlocks(text);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -9594,7 +9765,13 @@ class _StructuredTextBlock extends StatelessWidget {
           .map(
             (block) => Padding(
               padding: const EdgeInsets.only(bottom: AppSpacing.md),
-              child: block,
+              child: switch (block) {
+                _StructuredParagraphData(:final text) => _ParagraphBlock(
+                  text: text,
+                ),
+                _StructuredCodeFenceData(:final code, :final language) =>
+                  _StructuredCodeFenceBlock(language: language, code: code),
+              },
             ),
           )
           .toList(growable: false),
@@ -9616,6 +9793,11 @@ class _StructuredCodeFenceBlock extends StatefulWidget {
 class _StructuredCodeFenceBlockState extends State<_StructuredCodeFenceBlock> {
   Timer? _copiedTimer;
   bool _copied = false;
+  String? _cachedHighlightCode;
+  String? _cachedHighlightLanguage;
+  bool? _cachedHighlightEnabled;
+  int? _cachedHighlightThemeSignature;
+  List<InlineSpan>? _cachedHighlightedSpans;
 
   @override
   void dispose() {
@@ -9672,13 +9854,26 @@ class _StructuredCodeFenceBlockState extends State<_StructuredCodeFenceBlock> {
     final canHighlight =
         highlightEnabled &&
         syntaxLanguage != _FilePreviewSyntaxLanguage.plainText;
-    final highlightedSpans = canHighlight
-        ? _buildHighlightedCodeBlockSpans(
-            code: widget.code,
-            language: language,
-            syntaxTheme: syntaxTheme,
-          )
-        : null;
+    final themeSignature = _syntaxThemeSignature(theme, surfaces);
+    List<InlineSpan>? highlightedSpans;
+    if (canHighlight) {
+      if (_cachedHighlightedSpans == null ||
+          _cachedHighlightCode != widget.code ||
+          _cachedHighlightLanguage != language ||
+          _cachedHighlightEnabled != highlightEnabled ||
+          _cachedHighlightThemeSignature != themeSignature) {
+        _cachedHighlightedSpans = _buildHighlightedCodeBlockSpans(
+          code: widget.code,
+          language: language,
+          syntaxTheme: syntaxTheme,
+        );
+        _cachedHighlightCode = widget.code;
+        _cachedHighlightLanguage = language;
+        _cachedHighlightEnabled = highlightEnabled;
+        _cachedHighlightThemeSignature = themeSignature;
+      }
+      highlightedSpans = _cachedHighlightedSpans;
+    }
 
     return Container(
       width: double.infinity,
@@ -9982,11 +10177,7 @@ class _ParagraphBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final paragraphs = text
-        .split(RegExp(r'\n\s*\n'))
-        .map((item) => item.trim())
-        .where((item) => item.isNotEmpty)
-        .toList(growable: false);
+    final paragraphs = _splitStructuredParagraphs(text);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: paragraphs
@@ -10017,12 +10208,11 @@ class _InlineCodeText extends StatelessWidget {
       fontWeight: FontWeight.w600,
       height: 1.8,
     );
-    final codePattern = RegExp(r'`([^`]+)`');
     final spans = <InlineSpan>[];
-    var cursor = 0;
-    for (final match in codePattern.allMatches(text)) {
-      if (match.start > cursor) {
-        spans.add(TextSpan(text: text.substring(cursor, match.start)));
+    for (final segment in _parseInlineCodeSegments(text)) {
+      if (!segment.code) {
+        spans.add(TextSpan(text: segment.text));
+        continue;
       }
       spans.add(
         WidgetSpan(
@@ -10038,14 +10228,10 @@ class _InlineCodeText extends StatelessWidget {
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: surfaces.lineSoft),
             ),
-            child: Text(match.group(1) ?? '', style: codeStyle),
+            child: Text(segment.text, style: codeStyle),
           ),
         ),
       );
-      cursor = match.end;
-    }
-    if (cursor < text.length) {
-      spans.add(TextSpan(text: text.substring(cursor)));
     }
     return Text.rich(TextSpan(style: baseStyle, children: spans));
   }
@@ -10901,16 +11087,25 @@ String _attachmentPartFilename(ChatPart part) {
 }
 
 Uint8List? _attachmentDataBytes(String url) {
+  final cached = _attachmentPreviewBytesCache.get(url);
+  if (cached != null || _attachmentPreviewBytesCache.containsKey(url)) {
+    return cached;
+  }
   if (!url.startsWith('data:')) {
+    _attachmentPreviewBytesCache.set(url, null);
     return null;
   }
   final commaIndex = url.indexOf(',');
   if (commaIndex == -1 || commaIndex == url.length - 1) {
+    _attachmentPreviewBytesCache.set(url, null);
     return null;
   }
   try {
-    return base64Decode(url.substring(commaIndex + 1));
+    final bytes = base64Decode(url.substring(commaIndex + 1));
+    _attachmentPreviewBytesCache.set(url, bytes);
+    return bytes;
   } catch (_) {
+    _attachmentPreviewBytesCache.set(url, null);
     return null;
   }
 }
@@ -12270,11 +12465,22 @@ class _VisibleFileTreeEntry {
   final bool loading;
 }
 
-class _HighlightedFilePreview extends StatelessWidget {
+class _HighlightedFilePreview extends StatefulWidget {
   const _HighlightedFilePreview({required this.path, required this.content});
 
   final String? path;
   final String content;
+
+  @override
+  State<_HighlightedFilePreview> createState() =>
+      _HighlightedFilePreviewState();
+}
+
+class _HighlightedFilePreviewState extends State<_HighlightedFilePreview> {
+  String? _cachedPath;
+  String? _cachedContent;
+  int? _cachedThemeSignature;
+  List<InlineSpan>? _cachedSpans;
 
   @override
   Widget build(BuildContext context) {
@@ -12290,15 +12496,24 @@ class _HighlightedFilePreview extends StatelessWidget {
       surfaces: surfaces,
       baseStyle: baseStyle,
     );
-    final spans = _buildHighlightedFilePreviewSpans(
-      content: content,
-      path: path,
-      syntaxTheme: syntaxTheme,
-    );
+    final themeSignature = _syntaxThemeSignature(theme, surfaces);
+    if (_cachedSpans == null ||
+        _cachedPath != widget.path ||
+        _cachedContent != widget.content ||
+        _cachedThemeSignature != themeSignature) {
+      _cachedSpans = _buildHighlightedFilePreviewSpans(
+        content: widget.content,
+        path: widget.path,
+        syntaxTheme: syntaxTheme,
+      );
+      _cachedPath = widget.path;
+      _cachedContent = widget.content;
+      _cachedThemeSignature = themeSignature;
+    }
 
     return SelectableText.rich(
       key: const ValueKey<String>('files-preview-content'),
-      TextSpan(style: syntaxTheme.base, children: spans),
+      TextSpan(style: syntaxTheme.base, children: _cachedSpans),
     );
   }
 }
@@ -12406,6 +12621,19 @@ class _FilePreviewHighlightPattern {
 
   final RegExp regex;
   final TextStyle? style;
+}
+
+int _syntaxThemeSignature(ThemeData theme, AppSurfaces surfaces) {
+  return Object.hashAll(<Object?>[
+    theme.colorScheme.primary,
+    theme.colorScheme.onSurface,
+    surfaces.panel,
+    surfaces.panelRaised,
+    surfaces.muted,
+    surfaces.warning,
+    surfaces.success,
+    surfaces.accentSoft,
+  ]);
 }
 
 List<InlineSpan> _buildHighlightedFilePreviewSpans({
@@ -13443,6 +13671,32 @@ Color _sessionContextUsageColor(
     return surfaces.warning;
   }
   return theme.colorScheme.primary;
+}
+
+class _LruCache<K, V> {
+  _LruCache({required this.maximumSize});
+
+  final int maximumSize;
+  final LinkedHashMap<K, V> _entries = LinkedHashMap<K, V>();
+
+  V? get(K key) {
+    if (!_entries.containsKey(key)) {
+      return null;
+    }
+    final value = _entries.remove(key);
+    _entries[key] = value as V;
+    return value;
+  }
+
+  bool containsKey(K key) => _entries.containsKey(key);
+
+  void set(K key, V value) {
+    _entries.remove(key);
+    _entries[key] = value;
+    while (_entries.length > maximumSize) {
+      _entries.remove(_entries.keys.first);
+    }
+  }
 }
 
 class _WorkspaceError extends StatelessWidget {

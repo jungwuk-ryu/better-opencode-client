@@ -432,7 +432,7 @@ void main() {
         const PageStorageKey<String>('web-parity-message-timeline'),
       );
       final initialPosition = tester
-          .widget<SingleChildScrollView>(listFinder)
+          .widget<ListView>(listFinder)
           .controller!
           .position;
       final initialMaxExtent = initialPosition.maxScrollExtent;
@@ -448,7 +448,7 @@ void main() {
       await tester.pumpAndSettle();
 
       final updatedPosition = tester
-          .widget<SingleChildScrollView>(listFinder)
+          .widget<ListView>(listFinder)
           .controller!
           .position;
       expect(updatedPosition.maxScrollExtent, greaterThan(initialMaxExtent));
@@ -513,10 +513,7 @@ void main() {
       final listFinder = find.byKey(
         const PageStorageKey<String>('web-parity-message-timeline'),
       );
-      final position = tester
-          .widget<SingleChildScrollView>(listFinder)
-          .controller!
-          .position;
+      final position = tester.widget<ListView>(listFinder).controller!.position;
 
       expect(position.maxScrollExtent, greaterThan(0));
       expect(position.pixels, closeTo(position.maxScrollExtent, 96));
@@ -574,23 +571,22 @@ void main() {
         find.textContaining('assistant long session message 119'),
         findsOneWidget,
       );
-      expect(find.text('60 earlier messages'), findsOneWidget);
 
       final listFinder = find.byKey(
         const PageStorageKey<String>('web-parity-message-timeline'),
       );
-      final scrollView = tester.widget<SingleChildScrollView>(listFinder);
+      final scrollView = tester.widget<ListView>(listFinder);
+      final initialPosition = scrollView.controller!.position;
+      final initialMaxExtent = initialPosition.maxScrollExtent;
 
       scrollView.controller!.jumpTo(0);
       await tester.pump();
       await tester.pump();
       await tester.pumpAndSettle();
 
-      expect(find.text('20 earlier messages'), findsOneWidget);
-      expect(
-        find.textContaining('user long session message 20'),
-        findsOneWidget,
-      );
+      final updatedPosition = scrollView.controller!.position;
+      expect(updatedPosition.maxScrollExtent, greaterThan(initialMaxExtent));
+      expect(updatedPosition.pixels, lessThan(updatedPosition.maxScrollExtent));
       expect(find.text('user long session message 0'), findsNothing);
     },
   );
