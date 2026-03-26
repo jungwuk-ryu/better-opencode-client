@@ -17,11 +17,7 @@ class PtyService {
     required String directory,
   }) async {
     final response = await _client.get(
-      buildPtyHttpUri(
-        profile: profile,
-        directory: directory,
-        path: 'pty',
-      ),
+      buildPtyHttpUri(profile: profile, directory: directory, path: 'pty'),
       headers: buildRequestHeaders(profile, accept: 'application/json'),
     );
     _ensureSuccess(response, 'pty list');
@@ -81,11 +77,7 @@ class PtyService {
     }
 
     final response = await _client.post(
-      buildPtyHttpUri(
-        profile: profile,
-        directory: directory,
-        path: 'pty',
-      ),
+      buildPtyHttpUri(profile: profile, directory: directory, path: 'pty'),
       headers: buildRequestHeaders(
         profile,
         accept: 'application/json',
@@ -229,8 +221,14 @@ Uri buildPtyWebSocketUri({
   final password = profile.password ?? '';
   final userInfo = profile.hasBasicAuth ? '$username:$password' : null;
 
-  return httpUri.replace(
+  return Uri(
     scheme: httpUri.scheme == 'https' ? 'wss' : 'ws',
-    userInfo: userInfo,
+    userInfo: userInfo ?? '',
+    host: httpUri.host,
+    port: httpUri.hasPort ? httpUri.port : null,
+    path: httpUri.path,
+    queryParameters: httpUri.queryParameters.isEmpty
+        ? null
+        : httpUri.queryParameters,
   );
 }

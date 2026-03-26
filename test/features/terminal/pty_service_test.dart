@@ -162,9 +162,30 @@ void main() {
     expect(uri.host, 'example.com');
     expect(uri.path, '/api/pty/pty_1/connect');
     expect(uri.userInfo, 'demo:secret');
+    expect(uri.toString(), isNot(contains(':0/')));
     expect(uri.queryParameters, <String, String>{
       'directory': '/workspace/demo',
       'cursor': '42',
     });
+  });
+
+  test('builds websocket uri without inventing port 0 for default https', () {
+    final uri = buildPtyWebSocketUri(
+      profile: const ServerProfile(
+        id: 'server',
+        label: 'auth',
+        baseUrl: 'https://example.com/api',
+        username: 'demo',
+        password: 'secret',
+      ),
+      directory: '/workspace/demo',
+      ptyId: 'pty_1',
+    );
+
+    expect(
+      uri.toString(),
+      'wss://demo:secret@example.com/api/pty/pty_1/connect?directory=%2Fworkspace%2Fdemo',
+    );
+    expect(uri.port, 0);
   });
 }
