@@ -3172,6 +3172,83 @@ class WorkspaceController extends ChangeNotifier {
     }
   }
 
+  void applyProjectOrder(
+    List<ProjectTarget> orderedProjects, {
+    bool notify = true,
+  }) {
+    if (_availableProjects.length <= 1 || orderedProjects.isEmpty) {
+      return;
+    }
+
+    final rankByDirectory = <String, int>{
+      for (var index = 0; index < orderedProjects.length; index += 1)
+        orderedProjects[index].directory: index,
+    };
+    final replacementByDirectory = <String, ProjectTarget>{
+      for (final project in orderedProjects) project.directory: project,
+    };
+    final originalIndexByDirectory = <String, int>{
+      for (var index = 0; index < _availableProjects.length; index += 1)
+        _availableProjects[index].directory: index,
+    };
+
+    ProjectTarget mergeProject(ProjectTarget current) {
+      final replacement = replacementByDirectory[current.directory];
+      if (replacement == null) {
+        return current;
+      }
+      return current.copyWith(
+        label: replacement.label,
+        id: replacement.id,
+        name: replacement.name,
+        source: replacement.source,
+        vcs: replacement.vcs,
+        branch: replacement.branch,
+        icon: replacement.icon,
+        commands: replacement.commands,
+        lastSession: current.lastSession ?? replacement.lastSession,
+        clearId: replacement.id == null,
+        clearName: replacement.name == null,
+        clearIcon: replacement.icon == null,
+        clearCommands: replacement.commands == null,
+        clearLastSession:
+            replacement.lastSession == null && current.lastSession == null,
+      );
+    }
+
+    final nextProjects = _availableProjects
+        .map(mergeProject)
+        .toList(growable: false);
+    nextProjects.sort((left, right) {
+      final leftRank = rankByDirectory[left.directory];
+      final rightRank = rankByDirectory[right.directory];
+      if (leftRank != null && rightRank != null) {
+        return leftRank.compareTo(rightRank);
+      }
+      if (leftRank != null) {
+        return -1;
+      }
+      if (rightRank != null) {
+        return 1;
+      }
+      return (originalIndexByDirectory[left.directory] ?? 0).compareTo(
+        originalIndexByDirectory[right.directory] ?? 0,
+      );
+    });
+
+    _availableProjects = List<ProjectTarget>.unmodifiable(nextProjects);
+    final currentProject = _project;
+    if (currentProject != null) {
+      _project = nextProjects.cast<ProjectTarget?>().firstWhere(
+        (project) => project?.directory == currentProject.directory,
+        orElse: () => currentProject,
+      );
+    }
+    if (notify) {
+      _notify();
+    }
+  }
+
   T? _sessionTreeRequest<T>(
     List<T> requests,
     String Function(T request) sessionIdOf,

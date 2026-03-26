@@ -1610,6 +1610,20 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     await _selectProjectInPlace(remainingProjects.first, compact: compact);
   }
 
+  Future<void> _reorderProjects(
+    WebParityAppController appController,
+    List<ProjectTarget> orderedProjects,
+  ) async {
+    final profile = _profile;
+    if (profile == null) {
+      return;
+    }
+    await appController.reorderProjects(
+      profile: profile,
+      orderedProjects: orderedProjects,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final appController = AppScope.of(context);
@@ -1720,6 +1734,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
           onEditProject: (project) => unawaited(_editProject(project)),
           onRemoveProject: (project) =>
               unawaited(_removeProject(controller, project, compact: compact)),
+          onReorderProjects: (projects) =>
+              _reorderProjects(appController, projects),
           onSelectSession: (sessionId) {
             unawaited(
               _selectSessionInPlace(controller, sessionId, compact: compact),
@@ -4289,7 +4305,7 @@ class _SessionContextUsageRing extends StatelessWidget {
   }
 }
 
-class _WorkspaceSidebar extends StatelessWidget {
+class _WorkspaceSidebar extends StatefulWidget {
   const _WorkspaceSidebar({
     required this.currentDirectory,
     required this.currentSessionId,
@@ -4303,6 +4319,7 @@ class _WorkspaceSidebar extends StatelessWidget {
     required this.onSelectProject,
     required this.onEditProject,
     required this.onRemoveProject,
+    required this.onReorderProjects,
     required this.onSelectSession,
     required this.onNewSession,
     required this.onOpenSettings,
@@ -4320,9 +4337,69 @@ class _WorkspaceSidebar extends StatelessWidget {
   final ValueChanged<ProjectTarget> onSelectProject;
   final ValueChanged<ProjectTarget> onEditProject;
   final ValueChanged<ProjectTarget> onRemoveProject;
+  final Future<void> Function(List<ProjectTarget> projects) onReorderProjects;
   final ValueChanged<String> onSelectSession;
   final VoidCallback onNewSession;
   final VoidCallback onOpenSettings;
+
+  @override
+  State<_WorkspaceSidebar> createState() => _WorkspaceSidebarState();
+}
+
+class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
+  List<ProjectTarget> _orderedProjects = const <ProjectTarget>[];
+
+  @override
+  void initState() {
+    super.initState();
+    _orderedProjects = List<ProjectTarget>.unmodifiable(widget.projects);
+  }
+
+  @override
+  void didUpdateWidget(covariant _WorkspaceSidebar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_sameProjectOrder(oldWidget.projects, widget.projects)) {
+      _orderedProjects = List<ProjectTarget>.unmodifiable(widget.projects);
+    }
+  }
+
+  bool _sameProjectOrder(List<ProjectTarget> left, List<ProjectTarget> right) {
+    if (identical(left, right)) {
+      return true;
+    }
+    if (left.length != right.length) {
+      return false;
+    }
+    for (var index = 0; index < left.length; index += 1) {
+      if (left[index].directory != right[index].directory) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  Future<void> _handleProjectReorder(int oldIndex, int newIndex) async {
+    if (_orderedProjects.length < 2) {
+      return;
+    }
+    if (oldIndex < newIndex) {
+      newIndex -= 1;
+    }
+    if (oldIndex == newIndex ||
+        oldIndex < 0 ||
+        oldIndex >= _orderedProjects.length ||
+        newIndex < 0 ||
+        newIndex >= _orderedProjects.length) {
+      return;
+    }
+    final next = List<ProjectTarget>.of(_orderedProjects);
+    final moved = next.removeAt(oldIndex);
+    next.insert(newIndex, moved);
+    setState(() {
+      _orderedProjects = List<ProjectTarget>.unmodifiable(next);
+    });
+    await widget.onReorderProjects(_orderedProjects);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -4333,18 +4410,20 @@ class _WorkspaceSidebar extends StatelessWidget {
     final panelPadding = density.inset(AppSpacing.md, min: AppSpacing.xs);
     final sectionGap = density.inset(AppSpacing.lg, min: AppSpacing.md);
     final microGap = density.inset(AppSpacing.sm, min: AppSpacing.xs);
+    final projects = _orderedProjects;
     final currentProject =
-        project ?? _projectForDirectory(projects, currentDirectory);
+        widget.project ??
+        _projectForDirectory(projects, widget.currentDirectory);
     final rootSelectedSessionId = _rootSessionFor(
-      allSessions,
-      _sessionById(allSessions, currentSessionId),
+      widget.allSessions,
+      _sessionById(widget.allSessions, widget.currentSessionId),
     )?.id;
     final sessionEntries = _buildSidebarSessionEntries(
-      roots: sessions,
-      allSessions: allSessions,
-      statuses: statuses,
-      selectedSessionId: currentSessionId,
-      includeNested: showSubsessions,
+      roots: widget.sessions,
+      allSessions: widget.allSessions,
+      statuses: widget.statuses,
+      selectedSessionId: widget.currentSessionId,
+      includeNested: widget.showSubsessions,
     );
 
     return SizedBox(
@@ -4358,25 +4437,70 @@ class _WorkspaceSidebar extends StatelessWidget {
               children: <Widget>[
                 SizedBox(height: panelPadding),
                 Expanded(
-                  child: ListView.separated(
+                  child: ReorderableListView.builder(
+                    key: const ValueKey<String>(
+                      'workspace-project-sidebar-reorder-list',
+                    ),
+                    buildDefaultDragHandles: false,
+                    padding: EdgeInsets.zero,
                     itemCount: projects.length,
-                    separatorBuilder: (_, _) => SizedBox(height: microGap),
+                    onReorder: (oldIndex, newIndex) =>
+                        unawaited(_handleProjectReorder(oldIndex, newIndex)),
+                    proxyDecorator: (child, index, animation) {
+                      final curved = CurvedAnimation(
+                        parent: animation,
+                        curve: Curves.easeOutCubic,
+                      );
+                      return FadeTransition(
+                        opacity: Tween<double>(
+                          begin: 0.94,
+                          end: 1,
+                        ).animate(curved),
+                        child: ScaleTransition(
+                          scale: Tween<double>(
+                            begin: 1,
+                            end: 1.04,
+                          ).animate(curved),
+                          child: child,
+                        ),
+                      );
+                    },
                     itemBuilder: (context, index) {
                       final project = projects[index];
-                      final selected = project.directory == currentDirectory;
+                      final selected =
+                          project.directory == widget.currentDirectory;
                       return Padding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: density.inset(AppSpacing.sm),
+                        key: ValueKey<String>(
+                          'workspace-project-item-${project.directory}',
                         ),
-                        child: _ProjectSidebarTile(
-                          key: ValueKey<String>(
-                            'workspace-project-${project.directory}',
-                          ),
-                          project: project,
-                          selected: selected,
-                          onSelect: () => onSelectProject(project),
-                          onEdit: () => onEditProject(project),
-                          onRemove: () => onRemoveProject(project),
+                        padding: EdgeInsets.fromLTRB(
+                          density.inset(AppSpacing.sm),
+                          0,
+                          density.inset(AppSpacing.sm),
+                          index == projects.length - 1 ? 0 : microGap,
+                        ),
+                        child: Stack(
+                          children: <Widget>[
+                            _ProjectSidebarTile(
+                              key: ValueKey<String>(
+                                'workspace-project-${project.directory}',
+                              ),
+                              project: project,
+                              selected: selected,
+                              onSelect: () => widget.onSelectProject(project),
+                              onEdit: () => widget.onEditProject(project),
+                              onRemove: () => widget.onRemoveProject(project),
+                            ),
+                            Positioned(
+                              top: 2,
+                              right: 2,
+                              child: _SidebarProjectReorderHandle(
+                                index: index,
+                                project: project,
+                                enabled: projects.length > 1,
+                              ),
+                            ),
+                          ],
                         ),
                       );
                     },
@@ -4386,7 +4510,7 @@ class _WorkspaceSidebar extends StatelessWidget {
                   key: const ValueKey<String>(
                     'workspace-sidebar-settings-button',
                   ),
-                  onPressed: onOpenSettings,
+                  onPressed: widget.onOpenSettings,
                   icon: const Icon(Icons.settings_rounded),
                   tooltip: 'Workspace settings',
                 ),
@@ -4434,15 +4558,16 @@ class _WorkspaceSidebar extends StatelessWidget {
                         SizedBox(width: microGap),
                         _SidebarProjectMenuButton(
                           project: currentProject,
-                          onEdit: () => onEditProject(currentProject),
-                          onRemove: () => onRemoveProject(currentProject),
+                          onEdit: () => widget.onEditProject(currentProject),
+                          onRemove: () =>
+                              widget.onRemoveProject(currentProject),
                         ),
                       ],
                     ),
                     SizedBox(height: sectionGap),
                   ] else ...<Widget>[
                     Text(
-                      projectDisplayLabel(currentDirectory),
+                      projectDisplayLabel(widget.currentDirectory),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.titleLarge?.copyWith(
@@ -4473,14 +4598,16 @@ class _WorkspaceSidebar extends StatelessWidget {
                         ),
                         backgroundColor: surfaces.panel,
                       ),
-                      onPressed: loadingProjectContents ? null : onNewSession,
+                      onPressed: widget.loadingProjectContents
+                          ? null
+                          : widget.onNewSession,
                       icon: const Icon(Icons.edit_note_rounded, size: 18),
                       label: const Text('New session'),
                     ),
                   ),
                   SizedBox(height: panelPadding),
                   Expanded(
-                    child: loadingProjectContents
+                    child: widget.loadingProjectContents
                         ? const _SidebarSessionLoadingState()
                         : sessionEntries.isEmpty
                         ? Text(
@@ -4501,10 +4628,12 @@ class _WorkspaceSidebar extends StatelessWidget {
                                 ),
                                 entry: entry,
                                 project: currentProject,
-                                selected: showSubsessions
-                                    ? entry.session.id == currentSessionId
+                                selected: widget.showSubsessions
+                                    ? entry.session.id ==
+                                          widget.currentSessionId
                                     : entry.rootId == rootSelectedSessionId,
-                                onTap: () => onSelectSession(entry.session.id),
+                                onTap: () =>
+                                    widget.onSelectSession(entry.session.id),
                               );
                             },
                           ),
@@ -4693,37 +4822,95 @@ class _ProjectSidebarTileState extends State<_ProjectSidebarTile> {
     return Tooltip(
       message: widget.project.title,
       waitDuration: const Duration(milliseconds: 350),
-      child: GestureDetector(
-        onSecondaryTapDown: (details) => _showMenu(details.globalPosition),
-        onLongPressStart: (details) => _showMenu(details.globalPosition),
-        child: InkWell(
-          onTap: widget.onSelect,
-          borderRadius: BorderRadius.circular(AppSpacing.md),
-          child: Container(
-            height: 48,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: widget.selected
-                  ? Theme.of(
-                      context,
-                    ).colorScheme.primary.withValues(alpha: 0.16)
-                  : surfaces.panelRaised,
-              borderRadius: BorderRadius.circular(AppSpacing.md),
-              border: Border.all(
+      child: Material(
+        type: MaterialType.transparency,
+        child: GestureDetector(
+          onSecondaryTapDown: (details) => _showMenu(details.globalPosition),
+          onLongPressStart: (details) => _showMenu(details.globalPosition),
+          child: InkWell(
+            onTap: widget.onSelect,
+            borderRadius: BorderRadius.circular(AppSpacing.md),
+            child: Container(
+              height: 48,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
                 color: widget.selected
-                    ? Theme.of(context).colorScheme.primary
-                    : surfaces.lineSoft,
+                    ? Theme.of(
+                        context,
+                      ).colorScheme.primary.withValues(alpha: 0.16)
+                    : surfaces.panelRaised,
+                borderRadius: BorderRadius.circular(AppSpacing.md),
+                border: Border.all(
+                  color: widget.selected
+                      ? Theme.of(context).colorScheme.primary
+                      : surfaces.lineSoft,
+                ),
               ),
-            ),
-            child: _ProjectAvatar(
-              project: widget.project,
-              size: 38,
-              fontSize: 22,
-              rounded: 10,
+              child: _ProjectAvatar(
+                project: widget.project,
+                size: 38,
+                fontSize: 22,
+                rounded: 10,
+              ),
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+class _SidebarProjectReorderHandle extends StatelessWidget {
+  const _SidebarProjectReorderHandle({
+    required this.index,
+    required this.project,
+    required this.enabled,
+  });
+
+  final int index;
+  final ProjectTarget project;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final handle = Tooltip(
+      message: enabled ? 'Drag to reorder project' : 'Only one project',
+      waitDuration: const Duration(milliseconds: 300),
+      child: MouseRegion(
+        cursor: enabled ? SystemMouseCursors.grab : SystemMouseCursors.basic,
+        child: Container(
+          key: ValueKey<String>(
+            'workspace-project-reorder-handle-${project.directory}',
+          ),
+          width: 18,
+          height: 18,
+          decoration: BoxDecoration(
+            color: surfaces.panel.withValues(alpha: 0.94),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: surfaces.lineSoft),
+            boxShadow: <BoxShadow>[
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.18),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Icon(
+            Icons.drag_indicator_rounded,
+            size: 12,
+            color: surfaces.muted,
+          ),
+        ),
+      ),
+    );
+    if (!enabled) {
+      return Material(type: MaterialType.transparency, child: handle);
+    }
+    return Material(
+      type: MaterialType.transparency,
+      child: ReorderableDragStartListener(index: index, child: handle),
     );
   }
 }

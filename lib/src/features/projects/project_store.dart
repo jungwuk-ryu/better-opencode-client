@@ -75,6 +75,44 @@ class ProjectStore {
     return next;
   }
 
+  Future<List<ProjectTarget>> reorderRecentProjects(
+    List<ProjectTarget> orderedProjects,
+  ) async {
+    final current = await loadRecentProjects();
+    final byDirectory = <String, ProjectTarget>{
+      for (final project in current) project.directory: project,
+    };
+    for (final project in orderedProjects) {
+      byDirectory[project.directory] = project;
+    }
+
+    final next = <ProjectTarget>[];
+    final seen = <String>{};
+    for (final project in orderedProjects) {
+      if (!seen.add(project.directory)) {
+        continue;
+      }
+      next.add(byDirectory[project.directory] ?? project);
+      if (next.length >= _recentProjectLimit) {
+        break;
+      }
+    }
+    if (next.length < _recentProjectLimit) {
+      for (final project in current) {
+        if (!seen.add(project.directory)) {
+          continue;
+        }
+        next.add(project);
+        if (next.length >= _recentProjectLimit) {
+          break;
+        }
+      }
+    }
+
+    await _saveRecentProjects(next);
+    return List<ProjectTarget>.unmodifiable(next);
+  }
+
   Future<ProjectTarget?> loadLastWorkspace(String serverStorageKey) async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_lastWorkspaceKey(serverStorageKey));
@@ -126,22 +164,18 @@ class ProjectStore {
 
   Future<Set<String>> hideProject(String directory) async {
     final prefs = await SharedPreferences.getInstance();
-    final next = await loadHiddenProjects()..add(directory);
-    await prefs.setStringList(
-      _hiddenProjectsKey,
-      next.toList(growable: false),
-    );
+    final next = await loadHiddenProjects()
+      ..add(directory);
+    await prefs.setStringList(_hiddenProjectsKey, next.toList(growable: false));
     await removeRecentProject(directory);
     return next;
   }
 
   Future<Set<String>> restoreProject(String directory) async {
     final prefs = await SharedPreferences.getInstance();
-    final next = await loadHiddenProjects()..remove(directory);
-    await prefs.setStringList(
-      _hiddenProjectsKey,
-      next.toList(growable: false),
-    );
+    final next = await loadHiddenProjects()
+      ..remove(directory);
+    await prefs.setStringList(_hiddenProjectsKey, next.toList(growable: false));
     return next;
   }
 

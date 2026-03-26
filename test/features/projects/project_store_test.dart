@@ -81,4 +81,40 @@ void main() {
     expect(restored?.lastSession?.title, 'Saved session');
     expect(restored?.lastSession?.status, 'busy');
   });
+
+  test(
+    'reorders recent projects and keeps unspecified entries after them',
+    () async {
+      final store = ProjectStore();
+      const demo = ProjectTarget(
+        directory: '/workspace/demo',
+        label: 'Demo',
+        source: 'server',
+      );
+      const lab = ProjectTarget(
+        directory: '/workspace/lab',
+        label: 'Lab',
+        source: 'server',
+      );
+      const docs = ProjectTarget(
+        directory: '/workspace/docs',
+        label: 'Docs',
+        source: 'server',
+      );
+
+      await store.recordRecentProject(docs);
+      await store.recordRecentProject(lab);
+      await store.recordRecentProject(demo);
+
+      final reordered = await store.reorderRecentProjects(const <ProjectTarget>[
+        lab,
+        demo,
+      ]);
+
+      expect(
+        reordered.map((project) => project.directory).toList(growable: false),
+        const <String>['/workspace/lab', '/workspace/demo', '/workspace/docs'],
+      );
+    },
+  );
 }

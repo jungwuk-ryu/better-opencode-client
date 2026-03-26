@@ -414,6 +414,76 @@ void main() {
     expect(find.byTooltip('Demo'), findsOneWidget);
     expect(find.byTooltip('Lab'), findsOneWidget);
   });
+
+  testWidgets('project rail icons can be dragged to reorder', (tester) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    late _EditableSidebarWorkspaceController controllerInstance;
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            controllerInstance = _EditableSidebarWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+            return controllerInstance;
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    final demoTile = find.byKey(
+      const ValueKey<String>('workspace-project-/workspace/demo'),
+    );
+    final labTile = find.byKey(
+      const ValueKey<String>('workspace-project-/workspace/lab'),
+    );
+    expect(
+      tester.getTopLeft(demoTile).dy,
+      lessThan(tester.getTopLeft(labTile).dy),
+    );
+
+    final demoHandle = find.byKey(
+      const ValueKey<String>(
+        'workspace-project-reorder-handle-/workspace/demo',
+      ),
+    );
+    await tester.drag(demoHandle, const Offset(0, 140));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 420));
+
+    expect(
+      controllerInstance.availableProjects
+          .map((project) => project.directory)
+          .toList(growable: false),
+      const <String>['/workspace/lab', '/workspace/demo'],
+    );
+    expect(
+      tester.getTopLeft(demoTile).dy,
+      greaterThan(tester.getTopLeft(labTile).dy),
+    );
+  });
 }
 
 class _WorkspaceRouteHarness extends StatelessWidget {
@@ -707,6 +777,42 @@ class _EditableSidebarWorkspaceController extends _SidebarWorkspaceController {
     _projects = _projects
         .where((project) => project.directory != directory)
         .toList(growable: false);
+    if (notify) {
+      notifyListeners();
+    }
+  }
+
+  @override
+  void applyProjectOrder(
+    List<ProjectTarget> orderedProjects, {
+    bool notify = true,
+  }) {
+    final rankByDirectory = <String, int>{
+      for (var index = 0; index < orderedProjects.length; index += 1)
+        orderedProjects[index].directory: index,
+    };
+    final originalIndexByDirectory = <String, int>{
+      for (var index = 0; index < _projects.length; index += 1)
+        _projects[index].directory: index,
+    };
+    final next = List<ProjectTarget>.of(_projects);
+    next.sort((left, right) {
+      final leftRank = rankByDirectory[left.directory];
+      final rightRank = rankByDirectory[right.directory];
+      if (leftRank != null && rightRank != null) {
+        return leftRank.compareTo(rightRank);
+      }
+      if (leftRank != null) {
+        return -1;
+      }
+      if (rightRank != null) {
+        return 1;
+      }
+      return (originalIndexByDirectory[left.directory] ?? 0).compareTo(
+        originalIndexByDirectory[right.directory] ?? 0,
+      );
+    });
+    _projects = List<ProjectTarget>.unmodifiable(next);
     if (notify) {
       notifyListeners();
     }

@@ -364,6 +364,17 @@ class WebParityAppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> reorderProjects({
+    required ServerProfile profile,
+    required List<ProjectTarget> orderedProjects,
+  }) async {
+    _recentProjects = await _projectStore.reorderRecentProjects(
+      orderedProjects,
+    );
+    _applyProjectOrder(profile: profile, orderedProjects: _recentProjects);
+    notifyListeners();
+  }
+
   bool hasWorkspaceController({
     required ServerProfile profile,
     required String directory,
@@ -421,6 +432,18 @@ class WebParityAppController extends ChangeNotifier {
         continue;
       }
       entry.value.applyProjectRemoval(directory);
+    }
+  }
+
+  void _applyProjectOrder({
+    required ServerProfile profile,
+    required List<ProjectTarget> orderedProjects,
+  }) {
+    for (final entry in _workspaceControllers.entries) {
+      if (!entry.key.startsWith('${profile.storageKey}::')) {
+        continue;
+      }
+      entry.value.applyProjectOrder(orderedProjects);
     }
   }
 
