@@ -1,6 +1,6 @@
 {
   "@@locale": "ko",
-  "appTitle": "OpenCode Remote",
+  "appTitle": "better-opencode-client (BOC)",
   "foundationTitle": "파운데이션 워크스페이스",
   "foundationSubtitle": "서버를 연결하기 전에 기본 확인과 라이브 업데이트 준비를 마칩니다.",
   "currentFlavor": "플레이버",
@@ -518,7 +518,7 @@
   "@shellModulesCount": {"placeholders": {"count": {"type": "int"}}},
   "shellSwipeUtilitiesIntoView": "유틸리티를 화면으로 밀어 올리기",
   "shellOpenUtilityRail": "유틸리티 레일 열기",
-  "shellOpenCodeRemote": "OpenCode 리모트",
+  "shellOpenCodeRemote": "BOC",
   "shellContextNearby": "주변 컨텍스트",
   "shellShownCount": "{count}개 표시 중",
   "@shellShownCount": {"placeholders": {"count": {"type": "int"}}},

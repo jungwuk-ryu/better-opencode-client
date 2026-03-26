@@ -39,7 +39,7 @@ class _OpenCodeRemoteAppState extends State<OpenCodeRemoteApp> {
         return AppScope(
           controller: _appController,
           child: MaterialApp(
-            title: 'OpenCode Remote',
+            onGenerateTitle: (context) => AppLocalizations.of(context)!.appTitle,
             debugShowCheckedModeBanner: false,
             theme: AppTheme.dark(),
             locale: _localeController.locale,

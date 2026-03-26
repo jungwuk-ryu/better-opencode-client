@@ -1,6 +1,6 @@
-# opencode_mobile_remote
+# better-opencode-client (BOC)
 
-Spec-driven adaptive OpenCode Flutter client
+better-opencode-client (BOC) is a spec-driven Flutter client for OpenCode.
 
 ## Getting Started
 

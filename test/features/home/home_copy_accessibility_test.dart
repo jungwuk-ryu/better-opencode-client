@@ -45,7 +45,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Workspace'), findsOneWidget);
-      expect(find.text('OpenCode Remote'), findsOneWidget);
+      expect(find.text('better-opencode-client (BOC)'), findsOneWidget);
       expect(find.text('Add server'), findsWidgets);
       expect(
         find.bySemanticsLabel(RegExp(r'Workspace primary action')),

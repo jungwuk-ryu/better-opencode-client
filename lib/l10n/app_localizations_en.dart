@@ -9,7 +9,7 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
-  String get appTitle => 'OpenCode Remote';
+  String get appTitle => 'better-opencode-client (BOC)';
 
   @override
   String get foundationTitle => 'Foundation workspace';
@@ -1417,7 +1417,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get shellOpenUtilityRail => 'Open the utility rail';
 
   @override
-  String get shellOpenCodeRemote => 'OpenCode remote';
+  String get shellOpenCodeRemote => 'BOC';
 
   @override
   String get shellContextNearby => 'Context nearby';

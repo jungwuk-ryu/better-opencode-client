@@ -9,7 +9,7 @@ class AppLocalizationsKo extends AppLocalizations {
   AppLocalizationsKo([String locale = 'ko']) : super(locale);
 
   @override
-  String get appTitle => 'OpenCode Remote';
+  String get appTitle => 'better-opencode-client (BOC)';
 
   @override
   String get foundationTitle => '파운데이션 워크스페이스';
@@ -1368,7 +1368,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get shellOpenUtilityRail => '유틸리티 레일 열기';
 
   @override
-  String get shellOpenCodeRemote => 'OpenCode 리모트';
+  String get shellOpenCodeRemote => 'BOC';
 
   @override
   String get shellContextNearby => '주변 컨텍스트';

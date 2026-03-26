@@ -1,11 +1,11 @@
 {
-    "name": "opencode_mobile_remote",
-    "short_name": "opencode_mobile_remote",
+    "name": "better-opencode-client (BOC)",
+    "short_name": "BOC",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "Spec-driven adaptive OpenCode Flutter client",
+    "description": "better-opencode-client (BOC), a Flutter client for OpenCode",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

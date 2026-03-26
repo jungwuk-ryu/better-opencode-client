@@ -101,7 +101,7 @@ abstract class AppLocalizations {
   /// No description provided for @appTitle.
   ///
   /// In en, this message translates to:
-  /// **'OpenCode Remote'**
+  /// **'better-opencode-client (BOC)'**
   String get appTitle;
 
   /// No description provided for @foundationTitle.
@@ -2681,7 +2681,7 @@ abstract class AppLocalizations {
   /// No description provided for @shellOpenCodeRemote.
   ///
   /// In en, this message translates to:
-  /// **'OpenCode remote'**
+  /// **'BOC'**
   String get shellOpenCodeRemote;
 
   /// No description provided for @shellContextNearby.
