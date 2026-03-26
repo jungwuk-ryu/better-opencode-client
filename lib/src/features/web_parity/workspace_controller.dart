@@ -195,6 +195,8 @@ class WorkspaceController extends ChangeNotifier {
   String? _queuedSessionMessagesCacheSessionId;
   List<ChatMessage>? _queuedSessionMessagesCacheMessages;
   int _queuedSessionMessagesCacheToken = 0;
+  Map<String, String> _activeChildSessionLivePreviewById =
+      const <String, String>{};
   Map<String, String> _activeChildSessionCachedPreviewById =
       const <String, String>{};
   Map<String, int> _activeChildSessionCachedPreviewVersionById =
@@ -1947,6 +1949,10 @@ class WorkspaceController extends ChangeNotifier {
     } else if (type == 'session.deleted') {
       _sessions = applySessionDeletedEvent(_sessions, event.properties);
       _statuses = removeSessionStatusEvent(_statuses, event.properties);
+      _removeActiveChildPreviewState(
+        event.properties['sessionID']?.toString() ??
+            (event.properties['info'] as Map?)?['id']?.toString(),
+      );
     } else if (type == 'session.status') {
       _statuses = applySessionStatusEvent(_statuses, event.properties);
     } else if (type == 'message.updated') {
@@ -1986,6 +1992,7 @@ class WorkspaceController extends ChangeNotifier {
       }
       _messages = nextMessages;
     } else if (type == 'message.part.updated') {
+      _applyActiveChildLivePreviewPartEvent(event.properties);
       final project = _project;
       final sessionId = _selectedSessionId;
       final baseMessages =
@@ -2017,6 +2024,7 @@ class WorkspaceController extends ChangeNotifier {
       }
       _messages = nextMessages;
     } else if (type == 'message.removed') {
+      _clearActiveChildLivePreviewForMessageEvent(event.properties);
       final project = _project;
       final sessionId = _selectedSessionId;
       final baseMessages =
@@ -2803,10 +2811,99 @@ class WorkspaceController extends ChangeNotifier {
     _queuedSessionMessagesCacheMessages = null;
   }
 
+  void _applyActiveChildLivePreviewPartEvent(Map<String, Object?> properties) {
+    final partJson = properties['part'];
+    if (partJson is! Map) {
+      return;
+    }
+    final part = ChatPart.fromJson(partJson.cast<String, Object?>());
+    final sessionId = part.sessionId?.trim() ?? '';
+    if (!_shouldTrackActiveChildLivePreview(sessionId)) {
+      return;
+    }
+    _setActiveChildLivePreview(sessionId, _partActivityPreviewText(part));
+  }
+
+  void _clearActiveChildLivePreviewForMessageEvent(
+    Map<String, Object?> properties,
+  ) {
+    final sessionId = properties['sessionID']?.toString().trim() ?? '';
+    if (!_shouldTrackActiveChildLivePreview(sessionId)) {
+      return;
+    }
+    _setActiveChildLivePreview(sessionId, null);
+  }
+
+  bool _shouldTrackActiveChildLivePreview(String sessionId) {
+    if (sessionId.isEmpty || sessionId == _selectedSessionId) {
+      return false;
+    }
+    final root = rootSelectedSession;
+    if (root == null || sessionId == root.id) {
+      return false;
+    }
+    final session = _sessionById(sessionId);
+    if (session == null || session.archivedAt != null) {
+      return false;
+    }
+    return _sessionTreeIds(root.id).contains(sessionId);
+  }
+
+  void _setActiveChildLivePreview(String sessionId, String? preview) {
+    final trimmed = preview?.trim();
+    final current = _activeChildSessionLivePreviewById[sessionId];
+    if (trimmed == null || trimmed.isEmpty) {
+      if (current == null) {
+        return;
+      }
+      final next = Map<String, String>.from(_activeChildSessionLivePreviewById)
+        ..remove(sessionId);
+      _activeChildSessionLivePreviewById = Map<String, String>.unmodifiable(
+        next,
+      );
+      return;
+    }
+    if (current == trimmed) {
+      return;
+    }
+    final next = Map<String, String>.from(_activeChildSessionLivePreviewById)
+      ..[sessionId] = trimmed;
+    _activeChildSessionLivePreviewById = Map<String, String>.unmodifiable(next);
+  }
+
+  void _removeActiveChildPreviewState(String? sessionId) {
+    final normalized = sessionId?.trim() ?? '';
+    if (normalized.isEmpty) {
+      return;
+    }
+    if (_activeChildSessionLivePreviewById.containsKey(normalized)) {
+      final next = Map<String, String>.from(_activeChildSessionLivePreviewById)
+        ..remove(normalized);
+      _activeChildSessionLivePreviewById = Map<String, String>.unmodifiable(
+        next,
+      );
+    }
+    if (_activeChildSessionCachedPreviewById.containsKey(normalized)) {
+      final next = Map<String, String>.from(
+        _activeChildSessionCachedPreviewById,
+      )..remove(normalized);
+      _activeChildSessionCachedPreviewById = Map<String, String>.unmodifiable(
+        next,
+      );
+    }
+    if (_activeChildSessionCachedPreviewVersionById.containsKey(normalized)) {
+      final next = Map<String, int>.from(
+        _activeChildSessionCachedPreviewVersionById,
+      )..remove(normalized);
+      _activeChildSessionCachedPreviewVersionById =
+          Map<String, int>.unmodifiable(next);
+    }
+  }
+
   String? _resolveActiveChildSessionPreview(SessionSummary session) {
     final livePreview = session.id == _selectedSessionId
         ? _sessionActivityPreviewText(_messages)
-        : null;
+        : _activeChildSessionLivePreviewById[session.id];
     final cachedPreview = _activeChildSessionCachedPreviewById[session.id];
     final statusPreview = _statusActivityPreviewText(_statuses[session.id]);
     return _firstNonEmptyText(<String?>[
@@ -2820,6 +2917,15 @@ class WorkspaceController extends ChangeNotifier {
   void _ensureActiveChildSessionPreviewCache() {
     final activeSessions = activeChildSessions;
     final activeIds = activeSessions.map((session) => session.id).toSet();
+    if (_activeChildSessionLivePreviewById.isNotEmpty) {
+      _activeChildSessionLivePreviewById = Map<String, String>.unmodifiable(
+        Map<String, String>.fromEntries(
+          _activeChildSessionLivePreviewById.entries.where(
+            (entry) => activeIds.contains(entry.key),
+          ),
+        ),
+      );
+    }
     if (_activeChildSessionCachedPreviewById.isNotEmpty ||
         _activeChildSessionCachedPreviewVersionById.isNotEmpty) {
       _activeChildSessionCachedPreviewById = Map<String, String>.unmodifiable(

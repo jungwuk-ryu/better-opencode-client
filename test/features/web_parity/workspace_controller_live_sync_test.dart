@@ -812,6 +812,85 @@ void main() {
       'Preparing release checklist',
     );
   });
+
+  test(
+    'controller updates active child previews from live part events without selecting the child session',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      const childSessionId = 'ses_child_busy';
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_root',
+              title: 'Root session',
+              createdAt: 1710000001000,
+              updatedAt: 1710000005000,
+            ),
+            _session(
+              id: childSessionId,
+              title: 'Busy child',
+              createdAt: 1710000002000,
+              updatedAt: 1710000007000,
+              parentId: 'ses_root',
+            ),
+          ],
+          statuses: <String, SessionStatusSummary>{
+            'ses_root': const SessionStatusSummary(type: 'idle'),
+            childSessionId: const SessionStatusSummary(type: 'busy'),
+          },
+          messages: const <ChatMessage>[],
+          selectedSessionId: 'ses_root',
+        ),
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+
+      expect(
+        controller.activeChildSessionPreviewById[childSessionId],
+        'Working on the latest step',
+      );
+
+      void emitPartUpdate(String title) {
+        eventStreamService.emitToScope(
+          profile,
+          project,
+          EventEnvelope(
+            type: 'message.part.updated',
+            properties: <String, Object?>{
+              'part': <String, Object?>{
+                'id': 'part_child_tool',
+                'messageID': 'msg_child_tool',
+                'sessionID': childSessionId,
+                'type': 'tool',
+                'tool': 'bash',
+                'state': <String, Object?>{'title': title},
+              },
+            },
+          ),
+        );
+      }
+
+      emitPartUpdate('Inspecting release notes');
+      expect(
+        controller.activeChildSessionPreviewById[childSessionId],
+        'Shell: Inspecting release notes',
+      );
+
+      emitPartUpdate('Comparing release notes');
+      expect(
+        controller.activeChildSessionPreviewById[childSessionId],
+        'Shell: Comparing release notes',
+      );
+    },
+  );
 }
 
 WorkspaceController _buildController({
