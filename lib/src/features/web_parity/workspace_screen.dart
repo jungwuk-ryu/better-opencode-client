@@ -10785,6 +10785,9 @@ class _ContextRawMessageTile extends StatelessWidget {
       child: Theme(
         data: theme.copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
+          key: PageStorageKey<String>(
+            'context-raw-message-expansion-${message.info.id}',
+          ),
           backgroundColor: Colors.transparent,
           collapsedBackgroundColor: Colors.transparent,
           shape: const Border(),

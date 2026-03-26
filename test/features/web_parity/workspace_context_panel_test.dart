@@ -76,7 +76,21 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Raw messages'), findsOneWidget);
-    await tester.tap(find.byType(ExpansionTile).last);
+    expect(
+      find.byKey(
+        const PageStorageKey<String>(
+          'context-raw-message-expansion-msg_assistant_1',
+        ),
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(
+        const PageStorageKey<String>(
+          'context-raw-message-expansion-msg_assistant_1',
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
 
     final rawTile = tester.widget<Container>(
