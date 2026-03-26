@@ -89,6 +89,97 @@ void main() {
     },
   );
 
+  test('controller caches ordered timeline and context derivations', () async {
+    final eventStreamService = _ControlledEventStreamService();
+    final olderMessage = ChatMessage(
+      info: ChatMessageInfo(
+        id: 'msg_older',
+        role: 'assistant',
+        sessionId: 'ses_1',
+        createdAt: DateTime.fromMillisecondsSinceEpoch(1710000001000),
+        completedAt: DateTime.fromMillisecondsSinceEpoch(1710000002000),
+        cost: 0.12,
+        inputTokens: 120,
+        outputTokens: 40,
+      ),
+      parts: const <ChatPart>[
+        ChatPart(
+          id: 'part_older',
+          type: 'text',
+          text: 'Older assistant reply',
+          messageId: 'msg_older',
+          sessionId: 'ses_1',
+        ),
+      ],
+    );
+    final newerMessage = ChatMessage(
+      info: ChatMessageInfo(
+        id: 'msg_newer',
+        role: 'user',
+        sessionId: 'ses_1',
+        createdAt: DateTime.fromMillisecondsSinceEpoch(1710000003000),
+        completedAt: DateTime.fromMillisecondsSinceEpoch(1710000003000),
+      ),
+      parts: const <ChatPart>[
+        ChatPart(
+          id: 'part_newer',
+          type: 'text',
+          text: 'Latest user prompt',
+          messageId: 'msg_newer',
+          sessionId: 'ses_1',
+        ),
+      ],
+    );
+    final chatService = _FakeChatService(
+      bundle: ChatSessionBundle(
+        sessions: <SessionSummary>[
+          _session(
+            id: 'ses_1',
+            title: 'Initial session',
+            createdAt: 1710000001000,
+            updatedAt: 1710000005000,
+          ),
+        ],
+        statuses: const <String, SessionStatusSummary>{
+          'ses_1': SessionStatusSummary(type: 'idle'),
+        },
+        messages: const <ChatMessage>[],
+        selectedSessionId: 'ses_1',
+      ),
+      fetchMessagesHandler:
+          ({
+            required ServerProfile profile,
+            required ProjectTarget project,
+            required String sessionId,
+          }) async => <ChatMessage>[newerMessage, olderMessage],
+    );
+    final controller = _buildController(
+      profile: profile,
+      project: project,
+      eventStreamService: eventStreamService,
+      chatService: chatService,
+    );
+    addTearDown(controller.dispose);
+
+    await controller.load();
+
+    final orderedMessages = controller.orderedMessages;
+    final repeatedOrderedMessages = controller.orderedMessages;
+    final metrics = controller.sessionContextMetrics;
+    final repeatedMetrics = controller.sessionContextMetrics;
+
+    expect(orderedMessages.map((message) => message.info.id), <String>[
+      'msg_older',
+      'msg_newer',
+    ]);
+    expect(identical(orderedMessages, repeatedOrderedMessages), isTrue);
+    expect(identical(metrics, repeatedMetrics), isTrue);
+    expect(controller.timelineContentSignature, isNonZero);
+    expect(metrics.totalCost, 0.12);
+    expect(controller.userMessageCount, 1);
+    expect(controller.assistantMessageCount, 1);
+  });
+
   test('controller removes externally deleted sessions in real time', () async {
     final eventStreamService = _ControlledEventStreamService();
     final controller = _buildController(

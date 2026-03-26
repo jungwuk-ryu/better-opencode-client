@@ -11,6 +11,7 @@ import '../../core/persistence/stale_cache_store.dart';
 import '../chat/chat_models.dart';
 import '../chat/chat_service.dart';
 import '../chat/prompt_attachment_models.dart';
+import '../chat/session_context_insights.dart';
 import '../chat/session_action_service.dart';
 import '../commands/command_service.dart';
 import '../files/file_browser_service.dart';
@@ -177,6 +178,18 @@ class WorkspaceController extends ChangeNotifier {
   int _promptRefreshRevision = 0;
   int _sessionLoadRevision = 0;
   int _reviewDiffRevision = 0;
+  List<ChatMessage>? _derivedMessagesRef;
+  ConfigSnapshot? _derivedConfigSnapshotRef;
+  String? _derivedRevertMessageId;
+  List<ChatMessage> _orderedMessagesCache = const <ChatMessage>[];
+  int _timelineContentSignatureCache = 0;
+  SessionContextMetrics _sessionContextMetricsCache =
+      const SessionContextMetrics(totalCost: 0, context: null);
+  String? _sessionSystemPromptCache;
+  List<SessionContextBreakdownSegment> _sessionContextBreakdownCache =
+      const <SessionContextBreakdownSegment>[];
+  int _userMessageCountCache = 0;
+  int _assistantMessageCountCache = 0;
 
   bool get loading => _loading;
   bool get sessionLoading => _sessionLoading;
@@ -200,6 +213,41 @@ class WorkspaceController extends ChangeNotifier {
   Map<String, SessionStatusSummary> get statuses => _statuses;
   String? get selectedSessionId => _selectedSessionId;
   List<ChatMessage> get messages => _messages;
+  List<ChatMessage> get orderedMessages {
+    _ensureDerivedMessageState();
+    return _orderedMessagesCache;
+  }
+
+  int get timelineContentSignature {
+    _ensureDerivedMessageState();
+    return _timelineContentSignatureCache;
+  }
+
+  SessionContextMetrics get sessionContextMetrics {
+    _ensureDerivedMessageState();
+    return _sessionContextMetricsCache;
+  }
+
+  String? get sessionSystemPrompt {
+    _ensureDerivedMessageState();
+    return _sessionSystemPromptCache;
+  }
+
+  List<SessionContextBreakdownSegment> get sessionContextBreakdown {
+    _ensureDerivedMessageState();
+    return _sessionContextBreakdownCache;
+  }
+
+  int get userMessageCount {
+    _ensureDerivedMessageState();
+    return _userMessageCountCache;
+  }
+
+  int get assistantMessageCount {
+    _ensureDerivedMessageState();
+    return _assistantMessageCountCache;
+  }
+
   FileBrowserBundle? get fileBundle => _fileBundle;
   Set<String> get expandedFileDirectories =>
       UnmodifiableSetView<String>(_expandedFileDirectories);
@@ -1475,6 +1523,54 @@ class WorkspaceController extends ChangeNotifier {
     }
   }
 
+  void _ensureDerivedMessageState() {
+    final currentMessages = messages;
+    final configSnapshot = this.configSnapshot;
+    final revertMessageId = selectedSession?.revertMessageId;
+    if (identical(_derivedMessagesRef, currentMessages) &&
+        identical(_derivedConfigSnapshotRef, configSnapshot) &&
+        _derivedRevertMessageId == revertMessageId) {
+      return;
+    }
+
+    final providerCatalog = configSnapshot?.providerCatalog;
+    _derivedMessagesRef = currentMessages;
+    _derivedConfigSnapshotRef = configSnapshot;
+    _derivedRevertMessageId = revertMessageId;
+    _orderedMessagesCache = _orderedTimelineMessages(currentMessages);
+    _timelineContentSignatureCache = _computeTimelineContentSignature(
+      _orderedMessagesCache,
+    );
+    _sessionContextMetricsCache = getSessionContextMetrics(
+      messages: currentMessages,
+      providerCatalog: providerCatalog,
+    );
+    _sessionSystemPromptCache = resolveSessionSystemPrompt(
+      messages: currentMessages,
+      revertMessageId: revertMessageId,
+    );
+    final snapshot = _sessionContextMetricsCache.context;
+    _sessionContextBreakdownCache = snapshot == null
+        ? const <SessionContextBreakdownSegment>[]
+        : estimateSessionContextBreakdown(
+            messages: currentMessages,
+            inputTokens: snapshot.inputTokens,
+            systemPrompt: _sessionSystemPromptCache,
+          );
+    var userCount = 0;
+    var assistantCount = 0;
+    for (final message in currentMessages) {
+      switch (message.info.role) {
+        case 'user':
+          userCount += 1;
+        case 'assistant':
+          assistantCount += 1;
+      }
+    }
+    _userMessageCountCache = userCount;
+    _assistantMessageCountCache = assistantCount;
+  }
+
   void _restoreComposerSelectionFromMessages() {
     ChatMessage? lastUser;
     for (final message in _messages.reversed) {
@@ -2485,6 +2581,77 @@ class WorkspaceController extends ChangeNotifier {
     return encodedParts.join('|');
   }
 
+  List<ChatMessage> _orderedTimelineMessages(List<ChatMessage> messages) {
+    if (messages.length <= 1) {
+      return messages;
+    }
+    final indexed = <_IndexedTimelineMessage>[
+      for (var index = 0; index < messages.length; index += 1)
+        _IndexedTimelineMessage(index: index, message: messages[index]),
+    ];
+    indexed.sort(_compareTimelineMessages);
+    var changed = false;
+    for (var index = 0; index < indexed.length; index += 1) {
+      if (indexed[index].index != index) {
+        changed = true;
+        break;
+      }
+    }
+    if (!changed) {
+      return messages;
+    }
+    return indexed.map((entry) => entry.message).toList(growable: false);
+  }
+
+  int _computeTimelineContentSignature(List<ChatMessage> messages) {
+    var signature = messages.length;
+    for (final message in messages) {
+      signature = Object.hash(
+        signature,
+        message.info.id,
+        message.info.role,
+        message.info.agent,
+        message.info.variant,
+        message.info.modelId,
+        message.info.providerId,
+        message.info.createdAt?.millisecondsSinceEpoch,
+        message.info.completedAt?.millisecondsSinceEpoch,
+        message.info.cost,
+        message.info.totalTokens,
+        message.info.inputTokens,
+        message.info.outputTokens,
+        message.info.reasoningTokens,
+        message.info.cacheReadTokens,
+        message.info.cacheWriteTokens,
+        message.parts.length,
+      );
+      for (final part in message.parts) {
+        signature = Object.hash(
+          signature,
+          part.id,
+          part.type,
+          part.tool,
+          part.filename,
+          _stringSignature(part.text),
+          _stringSignature(part.metadata['summary']?.toString()),
+          _stringSignature(part.metadata['content']?.toString()),
+          _stringSignature(part.metadata['command']?.toString()),
+          _stringSignature(part.metadata['output']?.toString()),
+          _stringSignature(part.metadata['title']?.toString()),
+          _stringSignature(part.metadata['status']?.toString()),
+        );
+      }
+    }
+    return signature;
+  }
+
+  int _stringSignature(String? value) {
+    if (value == null || value.isEmpty) {
+      return 0;
+    }
+    return Object.hash(value.length, value.hashCode);
+  }
+
   String _partSignatureText(ChatPart part) {
     final text = part.text?.trim();
     if (text != null && text.isNotEmpty) {
@@ -2673,6 +2840,45 @@ class WorkspaceController extends ChangeNotifier {
     }
     super.dispose();
   }
+}
+
+int _compareTimelineMessages(
+  _IndexedTimelineMessage left,
+  _IndexedTimelineMessage right,
+) {
+  final timestamp = _compareMessageTimestamp(left.message, right.message);
+  if (timestamp != 0) {
+    return timestamp;
+  }
+  final completed = _compareNullableDateTimes(
+    left.message.info.completedAt,
+    right.message.info.completedAt,
+  );
+  if (completed != 0) {
+    return completed;
+  }
+  return left.index.compareTo(right.index);
+}
+
+int _compareMessageTimestamp(ChatMessage left, ChatMessage right) {
+  return _compareNullableDateTimes(
+    left.info.createdAt ?? left.info.completedAt,
+    right.info.createdAt ?? right.info.completedAt,
+  );
+}
+
+int _compareNullableDateTimes(DateTime? left, DateTime? right) {
+  if (left == null || right == null) {
+    return 0;
+  }
+  return left.compareTo(right);
+}
+
+class _IndexedTimelineMessage {
+  const _IndexedTimelineMessage({required this.index, required this.message});
+
+  final int index;
+  final ChatMessage message;
 }
 
 class _SlashCommandInvocation {

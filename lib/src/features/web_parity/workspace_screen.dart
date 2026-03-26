@@ -561,7 +561,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       final scopeKey =
           '$_currentDirectory::${controller.selectedSessionId ?? 'new'}';
       final messageCount = controller.messages.length;
-      final contentSignature = _timelineContentSignature(controller.messages);
+      final contentSignature = controller.timelineContentSignature;
       final sessionChanged = _lastTimelineScopeKey != scopeKey;
       final sessionLoadFinished =
           _lastTimelineLoading &&
@@ -691,15 +691,6 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       }
       _scheduleTimelineBottomLock();
     });
-  }
-
-  int _timelineContentSignature(List<ChatMessage> messages) {
-    var signature = messages.length;
-    for (final message in messages) {
-      final encoded = jsonEncode(message.toJson());
-      signature = Object.hash(signature, encoded.length, encoded.hashCode);
-    }
-    return signature;
   }
 
   Future<void> _pickComposerAttachments() async {
@@ -841,9 +832,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     }
     final nextTitle = await showDialog<String>(
       context: context,
-      builder: (context) => _RenameSessionDialog(
-        initialTitle: selected.title,
-      ),
+      builder: (context) => _RenameSessionDialog(initialTitle: selected.title),
     );
     if (nextTitle == null || nextTitle.isEmpty) {
       return;
@@ -1408,12 +1397,12 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                         status: showProjectLoadingShell
                             ? null
                             : controller.selectedStatus,
-                        messages: showProjectLoadingShell
-                            ? const <ChatMessage>[]
-                            : controller.messages,
-                        configSnapshot: showProjectLoadingShell
-                            ? null
-                            : controller.configSnapshot,
+                        contextMetrics: showProjectLoadingShell
+                            ? const SessionContextMetrics(
+                                totalCost: 0,
+                                context: null,
+                              )
+                            : controller.sessionContextMetrics,
                         shellToolPartsExpanded:
                             appController.shellToolPartsExpanded,
                         onSetShellToolPartsExpanded:
@@ -1621,8 +1610,7 @@ class _WorkspaceTopBar extends StatelessWidget {
     required this.session,
     required this.mainSession,
     required this.status,
-    required this.messages,
-    required this.configSnapshot,
+    required this.contextMetrics,
     required this.shellToolPartsExpanded,
     required this.onSetShellToolPartsExpanded,
     required this.timelineProgressDetailsVisible,
@@ -1644,8 +1632,7 @@ class _WorkspaceTopBar extends StatelessWidget {
   final SessionSummary? session;
   final SessionSummary? mainSession;
   final SessionStatusSummary? status;
-  final List<ChatMessage> messages;
-  final ConfigSnapshot? configSnapshot;
+  final SessionContextMetrics contextMetrics;
   final bool shellToolPartsExpanded;
   final Future<void> Function(bool value) onSetShellToolPartsExpanded;
   final bool timelineProgressDetailsVisible;
@@ -1672,11 +1659,7 @@ class _WorkspaceTopBar extends StatelessWidget {
         onBackToMainSession != null;
     final busy = _isActiveSessionStatus(status);
     final title = _sessionHeaderTitle(session, project);
-    final metrics = getSessionContextMetrics(
-      messages: messages,
-      providerCatalog: configSnapshot?.providerCatalog,
-    );
-    final contextSnapshot = metrics.context;
+    final contextSnapshot = contextMetrics.context;
     final titleStyle = compact
         ? theme.textTheme.titleMedium?.copyWith(
             fontWeight: FontWeight.w700,
@@ -4644,7 +4627,7 @@ class _WorkspaceBody extends StatelessWidget {
                     showingCachedMessages:
                         controller.showingCachedSessionMessages,
                     error: controller.sessionLoadError,
-                    messages: controller.messages,
+                    messages: controller.orderedMessages,
                     sessions: allSessions,
                     selectedSession: selectedSession,
                     configSnapshot: configSnapshot,
@@ -5389,7 +5372,6 @@ class _MessageTimeline extends StatelessWidget {
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final theme = Theme.of(context);
-    final orderedMessages = _orderedTimelineMessages(messages);
     if (loading && messages.isEmpty) {
       return const _TimelineStatusCard(
         icon: SizedBox(
@@ -5464,11 +5446,11 @@ class _MessageTimeline extends StatelessWidget {
                   AppSpacing.xl,
                   AppSpacing.lg,
                 ),
-                itemCount: orderedMessages.length,
+                itemCount: messages.length,
                 separatorBuilder: (_, _) =>
                     const SizedBox(height: AppSpacing.xl),
                 itemBuilder: (context, index) {
-                  final message = orderedMessages[index];
+                  final message = messages[index];
                   return Center(
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 860),
@@ -10200,28 +10182,6 @@ String _formatTimelineMessageStamp(BuildContext context, ChatMessage message) {
   return DateFormat.MMMd(locale).add_jm().format(timestamp.toLocal());
 }
 
-List<ChatMessage> _orderedTimelineMessages(List<ChatMessage> messages) {
-  if (messages.length <= 1) {
-    return messages;
-  }
-  final indexed = <_IndexedTimelineMessage>[
-    for (var index = 0; index < messages.length; index += 1)
-      _IndexedTimelineMessage(index: index, message: messages[index]),
-  ];
-  indexed.sort(_compareTimelineMessages);
-  var changed = false;
-  for (var index = 0; index < indexed.length; index += 1) {
-    if (indexed[index].index != index) {
-      changed = true;
-      break;
-    }
-  }
-  if (!changed) {
-    return messages;
-  }
-  return indexed.map((entry) => entry.message).toList(growable: false);
-}
-
 bool _messageIsActive(ChatMessage message) {
   return message.info.role == 'assistant' && message.info.completedAt == null;
 }
@@ -10270,45 +10230,6 @@ bool _activityPartShimmerActive(
     'reasoning' || 'agent' || 'subtask' || 'step-start' => messageIsActive,
     _ => false,
   };
-}
-
-int _compareTimelineMessages(
-  _IndexedTimelineMessage left,
-  _IndexedTimelineMessage right,
-) {
-  final timestamp = _compareMessageTimestamp(left.message, right.message);
-  if (timestamp != 0) {
-    return timestamp;
-  }
-  final completed = _compareNullableDateTimes(
-    left.message.info.completedAt,
-    right.message.info.completedAt,
-  );
-  if (completed != 0) {
-    return completed;
-  }
-  return left.index.compareTo(right.index);
-}
-
-int _compareMessageTimestamp(ChatMessage left, ChatMessage right) {
-  return _compareNullableDateTimes(
-    left.info.createdAt ?? left.info.completedAt,
-    right.info.createdAt ?? right.info.completedAt,
-  );
-}
-
-int _compareNullableDateTimes(DateTime? left, DateTime? right) {
-  if (left == null || right == null) {
-    return 0;
-  }
-  return left.compareTo(right);
-}
-
-class _IndexedTimelineMessage {
-  const _IndexedTimelineMessage({required this.index, required this.message});
-
-  final int index;
-  final ChatMessage message;
 }
 
 String _partText(ChatPart part) {
@@ -11201,7 +11122,11 @@ class _SidePanel extends StatelessWidget {
             WorkspaceSideTab.context => _ContextPanel(
               session: controller.selectedSession,
               messages: controller.messages,
-              configSnapshot: controller.configSnapshot,
+              metrics: controller.sessionContextMetrics,
+              systemPrompt: controller.sessionSystemPrompt,
+              breakdown: controller.sessionContextBreakdown,
+              userMessageCount: controller.userMessageCount,
+              assistantMessageCount: controller.assistantMessageCount,
             ),
           },
         ),
@@ -12547,12 +12472,20 @@ class _ContextPanel extends StatefulWidget {
   const _ContextPanel({
     required this.session,
     required this.messages,
-    required this.configSnapshot,
+    required this.metrics,
+    required this.systemPrompt,
+    required this.breakdown,
+    required this.userMessageCount,
+    required this.assistantMessageCount,
   });
 
   final SessionSummary? session;
   final List<ChatMessage> messages;
-  final ConfigSnapshot? configSnapshot;
+  final SessionContextMetrics metrics;
+  final String? systemPrompt;
+  final List<SessionContextBreakdownSegment> breakdown;
+  final int userMessageCount;
+  final int assistantMessageCount;
 
   @override
   State<_ContextPanel> createState() => _ContextPanelState();
@@ -12574,28 +12507,10 @@ class _ContextPanelState extends State<_ContextPanel> {
     final locale = Localizations.localeOf(context).toLanguageTag();
     final decimal = NumberFormat.decimalPattern(locale);
     final currency = NumberFormat.simpleCurrency(locale: locale, name: 'USD');
-    final metrics = getSessionContextMetrics(
-      messages: widget.messages,
-      providerCatalog: widget.configSnapshot?.providerCatalog,
-    );
+    final metrics = widget.metrics;
     final snapshot = metrics.context;
-    final systemPrompt = resolveSessionSystemPrompt(
-      messages: widget.messages,
-      revertMessageId: widget.session?.revertMessageId,
-    );
-    final breakdown = snapshot == null
-        ? const <SessionContextBreakdownSegment>[]
-        : estimateSessionContextBreakdown(
-            messages: widget.messages,
-            inputTokens: snapshot.inputTokens,
-            systemPrompt: systemPrompt,
-          );
-    final userMessages = widget.messages
-        .where((message) => message.info.role == 'user')
-        .length;
-    final assistantMessages = widget.messages
-        .where((message) => message.info.role == 'assistant')
-        .length;
+    final systemPrompt = widget.systemPrompt;
+    final breakdown = widget.breakdown;
     final stats = <_ContextStatEntry>[
       _ContextStatEntry(
         label: 'Session',
@@ -12644,11 +12559,11 @@ class _ContextPanelState extends State<_ContextPanel> {
       ),
       _ContextStatEntry(
         label: 'User Messages',
-        value: decimal.format(userMessages),
+        value: decimal.format(widget.userMessageCount),
       ),
       _ContextStatEntry(
         label: 'Assistant Messages',
-        value: decimal.format(assistantMessages),
+        value: decimal.format(widget.assistantMessageCount),
       ),
       _ContextStatEntry(
         label: 'Total Cost',
