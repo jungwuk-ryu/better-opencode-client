@@ -75,7 +75,6 @@ void main() {
     );
     expect(find.text('Root session'), findsAtLeastNWidgets(1));
     expect(find.text('Another root session'), findsAtLeastNWidgets(1));
-    expect(find.text('Nested subagent session'), findsNothing);
     expect(
       find.byKey(const ValueKey<String>('workspace-session-entry-ses_child-1')),
       findsNothing,
@@ -151,7 +150,10 @@ void main() {
     expect(find.text('Workspace Settings'), findsOneWidget);
     expect(find.text('Manage Servers'), findsOneWidget);
     expect(find.text('Ready'), findsOneWidget);
-    expect(find.text('Nested subagent session'), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('workspace-session-entry-ses_child-1')),
+      findsNothing,
+    );
 
     final shellSwitch = find.descendant(
       of: find.byKey(const ValueKey<String>('workspace-settings-shell-toggle')),
@@ -463,9 +465,9 @@ class _SidebarWorkspaceController extends WorkspaceController {
 
   static const Map<String, SessionStatusSummary> _statuses =
       <String, SessionStatusSummary>{
-        'ses_1': SessionStatusSummary(type: 'running'),
+        'ses_1': SessionStatusSummary(type: 'idle'),
         'ses_2': SessionStatusSummary(type: 'idle'),
-        'ses_child': SessionStatusSummary(type: 'idle'),
+        'ses_child': SessionStatusSummary(type: 'running'),
       };
 
   bool _loading = true;

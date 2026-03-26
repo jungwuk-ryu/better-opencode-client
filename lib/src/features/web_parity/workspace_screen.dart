@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -3293,7 +3294,6 @@ class _WorkspaceSidebar extends StatelessWidget {
                                 ),
                                 entry: entry,
                                 project: currentProject,
-                                status: statuses[entry.session.id],
                                 selected: showSubsessions
                                     ? entry.session.id == currentSessionId
                                     : entry.rootId == rootSelectedSessionId,
@@ -3520,18 +3520,19 @@ class _SidebarSessionEntry {
     required this.session,
     required this.depth,
     required this.rootId,
+    required this.active,
   });
 
   final SessionSummary session;
   final int depth;
   final String rootId;
+  final bool active;
 }
 
 class _SidebarSessionTreeRow extends StatelessWidget {
   const _SidebarSessionTreeRow({
     required this.entry,
     required this.project,
-    required this.status,
     required this.selected,
     required this.onTap,
     super.key,
@@ -3539,7 +3540,6 @@ class _SidebarSessionTreeRow extends StatelessWidget {
 
   final _SidebarSessionEntry entry;
   final ProjectTarget? project;
-  final SessionStatusSummary? status;
   final bool selected;
   final VoidCallback onTap;
 
@@ -3550,7 +3550,7 @@ class _SidebarSessionTreeRow extends StatelessWidget {
     final title = entry.session.title.trim().isEmpty
         ? 'Untitled session'
         : entry.session.title.trim();
-    final active = _isActiveSessionStatus(status);
+    final active = entry.active;
     final isRoot = entry.depth == 0;
     final indent = entry.depth * 18.0;
 
@@ -4361,16 +4361,7 @@ List<_SidebarSessionEntry> _buildSidebarSessionEntries({
   required String? selectedSessionId,
   required bool includeNested,
 }) {
-  final childrenByParent = <String, List<SessionSummary>>{};
-  for (final session in allSessions) {
-    final parentId = session.parentId;
-    if (parentId == null || parentId.isEmpty || session.archivedAt != null) {
-      continue;
-    }
-    childrenByParent
-        .putIfAbsent(parentId, () => <SessionSummary>[])
-        .add(session);
-  }
+  final childrenByParent = _sessionChildrenByParent(allSessions);
 
   int compareSessions(SessionSummary left, SessionSummary right) {
     final leftSelected = left.id == selectedSessionId;
@@ -4378,8 +4369,16 @@ List<_SidebarSessionEntry> _buildSidebarSessionEntries({
     if (leftSelected != rightSelected) {
       return leftSelected ? -1 : 1;
     }
-    final leftActive = _isActiveSessionStatus(statuses[left.id]);
-    final rightActive = _isActiveSessionStatus(statuses[right.id]);
+    final leftActive = _sessionTreeIsActive(
+      left.id,
+      childrenByParent: childrenByParent,
+      statuses: statuses,
+    );
+    final rightActive = _sessionTreeIsActive(
+      right.id,
+      childrenByParent: childrenByParent,
+      statuses: statuses,
+    );
     if (leftActive != rightActive) {
       return leftActive ? -1 : 1;
     }
@@ -4402,7 +4401,16 @@ List<_SidebarSessionEntry> _buildSidebarSessionEntries({
       return;
     }
     entries.add(
-      _SidebarSessionEntry(session: session, depth: depth, rootId: rootId),
+      _SidebarSessionEntry(
+        session: session,
+        depth: depth,
+        rootId: rootId,
+        active: _sessionTreeIsActive(
+          session.id,
+          childrenByParent: childrenByParent,
+          statuses: statuses,
+        ),
+      ),
     );
     if (!includeNested) {
       return;
@@ -4453,6 +4461,45 @@ SessionSummary? _rootSessionFor(
 
 bool _isActiveSessionStatus(SessionStatusSummary? status) {
   return (status?.type.trim().toLowerCase() ?? 'idle') != 'idle';
+}
+
+Map<String, List<SessionSummary>> _sessionChildrenByParent(
+  List<SessionSummary> sessions,
+) {
+  final childrenByParent = <String, List<SessionSummary>>{};
+  for (final session in sessions) {
+    final parentId = session.parentId;
+    if (parentId == null || parentId.isEmpty || session.archivedAt != null) {
+      continue;
+    }
+    childrenByParent
+        .putIfAbsent(parentId, () => <SessionSummary>[])
+        .add(session);
+  }
+  return childrenByParent;
+}
+
+bool _sessionTreeIsActive(
+  String sessionId, {
+  required Map<String, List<SessionSummary>> childrenByParent,
+  required Map<String, SessionStatusSummary> statuses,
+}) {
+  final pending = Queue<String>()..add(sessionId);
+  final seen = <String>{};
+  while (pending.isNotEmpty) {
+    final currentId = pending.removeFirst();
+    if (!seen.add(currentId)) {
+      continue;
+    }
+    if (_isActiveSessionStatus(statuses[currentId])) {
+      return true;
+    }
+    for (final child
+        in childrenByParent[currentId] ?? const <SessionSummary>[]) {
+      pending.add(child.id);
+    }
+  }
+  return false;
 }
 
 String _sessionHeaderTitle(SessionSummary? session, ProjectTarget? project) {
