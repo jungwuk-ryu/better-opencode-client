@@ -47,6 +47,51 @@ enum WorkspaceFollowupMode {
 
 enum WorkspacePromptDispatchMode { queue, steer }
 
+class WorkspaceSessionTimelineState {
+  const WorkspaceSessionTimelineState({
+    required this.sessionId,
+    required this.messages,
+    required this.orderedMessages,
+    required this.loading,
+    required this.showingCachedMessages,
+    this.error,
+  });
+
+  const WorkspaceSessionTimelineState.empty({this.sessionId})
+    : messages = const <ChatMessage>[],
+      orderedMessages = const <ChatMessage>[],
+      loading = false,
+      showingCachedMessages = false,
+      error = null;
+
+  final String? sessionId;
+  final List<ChatMessage> messages;
+  final List<ChatMessage> orderedMessages;
+  final bool loading;
+  final bool showingCachedMessages;
+  final String? error;
+
+  WorkspaceSessionTimelineState copyWith({
+    String? sessionId,
+    List<ChatMessage>? messages,
+    List<ChatMessage>? orderedMessages,
+    bool? loading,
+    bool? showingCachedMessages,
+    String? error,
+    bool clearError = false,
+  }) {
+    return WorkspaceSessionTimelineState(
+      sessionId: sessionId ?? this.sessionId,
+      messages: messages ?? this.messages,
+      orderedMessages: orderedMessages ?? this.orderedMessages,
+      loading: loading ?? this.loading,
+      showingCachedMessages:
+          showingCachedMessages ?? this.showingCachedMessages,
+      error: clearError ? null : (error ?? this.error),
+    );
+  }
+}
+
 class WorkspaceQueuedPrompt {
   const WorkspaceQueuedPrompt({
     required this.id,
@@ -311,6 +356,10 @@ class WorkspaceController extends ChangeNotifier {
       const <String, int>{};
   int _activeChildSessionPreviewLoadSignature = 0;
   int _activeChildSessionPreviewLoadToken = 0;
+  Set<String> _watchedSessionIds = const <String>{};
+  Map<String, WorkspaceSessionTimelineState> _watchedSessionTimelineById =
+      const <String, WorkspaceSessionTimelineState>{};
+  Map<String, int> _watchedSessionLoadRevisionById = const <String, int>{};
   Map<String, List<WorkspaceQueuedPrompt>> _queuedPromptsBySessionId =
       const <String, List<WorkspaceQueuedPrompt>>{};
   Map<String, String> _queuedPromptFailureBySessionId =
@@ -533,6 +582,74 @@ class WorkspaceController extends ChangeNotifier {
     return UnmodifiableMapView<String, String>(previews);
   }
 
+  WorkspaceSessionTimelineState timelineStateForSession(String? sessionId) {
+    final normalized = sessionId?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return const WorkspaceSessionTimelineState.empty();
+    }
+    if (normalized == _selectedSessionId) {
+      return WorkspaceSessionTimelineState(
+        sessionId: normalized,
+        messages: _messages,
+        orderedMessages: orderedMessages,
+        loading: _sessionLoading,
+        showingCachedMessages: _showingCachedSessionMessages,
+        error: _sessionLoadError,
+      );
+    }
+    return _watchedSessionTimelineById[normalized] ??
+        WorkspaceSessionTimelineState.empty(sessionId: normalized);
+  }
+
+  void updateWatchedSessionIds(Iterable<String?> sessionIds) {
+    final normalized = sessionIds
+        .map((sessionId) => sessionId?.trim() ?? '')
+        .where((sessionId) => sessionId.isNotEmpty)
+        .where((sessionId) => sessionId != _selectedSessionId)
+        .toSet();
+
+    if (setEquals(normalized, _watchedSessionIds)) {
+      return;
+    }
+
+    final removed = _watchedSessionIds.difference(normalized);
+    final added = normalized.difference(_watchedSessionIds);
+    _watchedSessionIds = Set<String>.unmodifiable(normalized);
+
+    var changed = false;
+    if (removed.isNotEmpty) {
+      final nextTimelineById = Map<String, WorkspaceSessionTimelineState>.from(
+        _watchedSessionTimelineById,
+      );
+      final nextLoadRevisionById = Map<String, int>.from(
+        _watchedSessionLoadRevisionById,
+      );
+      for (final sessionId in removed) {
+        changed = nextTimelineById.remove(sessionId) != null || changed;
+        nextLoadRevisionById.remove(sessionId);
+      }
+      _watchedSessionTimelineById =
+          Map<String, WorkspaceSessionTimelineState>.unmodifiable(
+            nextTimelineById,
+          );
+      _watchedSessionLoadRevisionById = Map<String, int>.unmodifiable(
+        nextLoadRevisionById,
+      );
+    }
+
+    if (added.isNotEmpty) {
+      for (final sessionId in added) {
+        _seedWatchedSessionTimeline(sessionId);
+        unawaited(_loadWatchedSessionTimeline(sessionId));
+      }
+      changed = true;
+    }
+
+    if (changed) {
+      _notify();
+    }
+  }
+
   void selectAgent(String? name) {
     final agent = _findAgent(name) ?? _defaultComposerAgent;
     if (agent == null) {
@@ -739,7 +856,18 @@ class WorkspaceController extends ChangeNotifier {
     if (_project == null) {
       return;
     }
+    final previousSessionId = _selectedSessionId;
+    _cacheSelectedTimelineForWatchedSession(previousSessionId);
     _selectedSessionId = sessionId;
+    if (sessionId != null && sessionId.isNotEmpty) {
+      final nextTimelineById = Map<String, WorkspaceSessionTimelineState>.from(
+        _watchedSessionTimelineById,
+      )..remove(sessionId);
+      _watchedSessionTimelineById =
+          Map<String, WorkspaceSessionTimelineState>.unmodifiable(
+            nextTimelineById,
+          );
+    }
     _messages = const <ChatMessage>[];
     _sessionLoading = false;
     _showingCachedSessionMessages = false;
@@ -781,6 +909,21 @@ class WorkspaceController extends ChangeNotifier {
       loadPanels: true,
       persistHint: true,
     );
+  }
+
+  Future<void> refreshTimelineSession(String? sessionId) async {
+    final normalized = sessionId?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return;
+    }
+    if (normalized == _selectedSessionId) {
+      await retrySelectedSessionMessages();
+      return;
+    }
+    if (!_watchedSessionIds.contains(normalized)) {
+      return;
+    }
+    await _loadWatchedSessionTimeline(normalized);
   }
 
   Future<void> selectReviewFile(String path) async {
@@ -1104,6 +1247,247 @@ class WorkspaceController extends ChangeNotifier {
     return 'The server may be offline or responding too slowly.\n$detail';
   }
 
+  void _seedWatchedSessionTimeline(String sessionId) {
+    if (_watchedSessionTimelineById.containsKey(sessionId)) {
+      return;
+    }
+    final next = Map<String, WorkspaceSessionTimelineState>.from(
+      _watchedSessionTimelineById,
+    );
+    next[sessionId] = WorkspaceSessionTimelineState(
+      sessionId: sessionId,
+      messages: const <ChatMessage>[],
+      orderedMessages: const <ChatMessage>[],
+      loading: true,
+      showingCachedMessages: false,
+    );
+    _watchedSessionTimelineById =
+        Map<String, WorkspaceSessionTimelineState>.unmodifiable(next);
+  }
+
+  void _cacheSelectedTimelineForWatchedSession(String? sessionId) {
+    final normalized = sessionId?.trim() ?? '';
+    if (normalized.isEmpty || !_watchedSessionIds.contains(normalized)) {
+      return;
+    }
+    _setWatchedSessionTimeline(
+      normalized,
+      WorkspaceSessionTimelineState(
+        sessionId: normalized,
+        messages: _messages,
+        orderedMessages: orderedMessages,
+        loading: false,
+        showingCachedMessages: _showingCachedSessionMessages,
+        error: _sessionLoadError,
+      ),
+    );
+  }
+
+  void _setWatchedSessionTimeline(
+    String sessionId,
+    WorkspaceSessionTimelineState state,
+  ) {
+    if (!_watchedSessionIds.contains(sessionId)) {
+      return;
+    }
+    final current = _watchedSessionTimelineById[sessionId];
+    if (current != null &&
+        identical(current.messages, state.messages) &&
+        identical(current.orderedMessages, state.orderedMessages) &&
+        current.loading == state.loading &&
+        current.showingCachedMessages == state.showingCachedMessages &&
+        current.error == state.error) {
+      return;
+    }
+    final next = Map<String, WorkspaceSessionTimelineState>.from(
+      _watchedSessionTimelineById,
+    )..[sessionId] = state;
+    _watchedSessionTimelineById =
+        Map<String, WorkspaceSessionTimelineState>.unmodifiable(next);
+  }
+
+  WorkspaceSessionTimelineState _buildTimelineState({
+    required String sessionId,
+    required List<ChatMessage> messages,
+    required bool loading,
+    required bool showingCachedMessages,
+    String? error,
+  }) {
+    final ordered =
+        identical(messages, _messages) && sessionId == _selectedSessionId
+        ? orderedMessages
+        : _orderedTimelineMessages(messages);
+    return WorkspaceSessionTimelineState(
+      sessionId: sessionId,
+      messages: messages,
+      orderedMessages: ordered,
+      loading: loading,
+      showingCachedMessages: showingCachedMessages,
+      error: error,
+    );
+  }
+
+  bool _isStaleWatchedSessionLoad(int revision, String sessionId) {
+    return _disposed ||
+        !_watchedSessionIds.contains(sessionId) ||
+        revision != _watchedSessionLoadRevisionById[sessionId] ||
+        _selectedSessionId == sessionId;
+  }
+
+  Future<void> _loadWatchedSessionTimeline(String sessionId) async {
+    final project = _project;
+    if (project == null ||
+        sessionId.isEmpty ||
+        !_watchedSessionIds.contains(sessionId)) {
+      return;
+    }
+    final revision = (_watchedSessionLoadRevisionById[sessionId] ?? 0) + 1;
+    _watchedSessionLoadRevisionById = Map<String, int>.unmodifiable(
+      <String, int>{..._watchedSessionLoadRevisionById, sessionId: revision},
+    );
+
+    final current = _watchedSessionTimelineById[sessionId];
+    _setWatchedSessionTimeline(
+      sessionId,
+      _buildTimelineState(
+        sessionId: sessionId,
+        messages: current?.messages ?? const <ChatMessage>[],
+        loading: true,
+        showingCachedMessages: current?.showingCachedMessages ?? false,
+        error: null,
+      ),
+    );
+    _notify();
+
+    final cachedMessages = await _loadCachedSessionMessages(
+      project: project,
+      sessionId: sessionId,
+    );
+    if (_isStaleWatchedSessionLoad(revision, sessionId)) {
+      return;
+    }
+    if (cachedMessages != null) {
+      _setWatchedSessionTimeline(
+        sessionId,
+        _buildTimelineState(
+          sessionId: sessionId,
+          messages: _mergeSessionMessages(
+            project: project,
+            sessionId: sessionId,
+            serverMessages: cachedMessages,
+          ),
+          loading: true,
+          showingCachedMessages: cachedMessages.isNotEmpty,
+          error: null,
+        ),
+      );
+      _notify();
+    }
+
+    try {
+      final messages = await _chatService.fetchMessages(
+        profile: profile,
+        project: project,
+        sessionId: sessionId,
+      );
+      if (_isStaleWatchedSessionLoad(revision, sessionId)) {
+        return;
+      }
+      _setWatchedSessionTimeline(
+        sessionId,
+        _buildTimelineState(
+          sessionId: sessionId,
+          messages: _mergeSessionMessages(
+            project: project,
+            sessionId: sessionId,
+            serverMessages: messages,
+          ),
+          loading: false,
+          showingCachedMessages: false,
+          error: null,
+        ),
+      );
+      unawaited(
+        _saveSessionMessagesCache(
+          project: project,
+          sessionId: sessionId,
+          messages: messages,
+        ),
+      );
+      _notify();
+    } catch (error) {
+      if (_isStaleWatchedSessionLoad(revision, sessionId)) {
+        return;
+      }
+      final currentState = _watchedSessionTimelineById[sessionId];
+      _setWatchedSessionTimeline(
+        sessionId,
+        _buildTimelineState(
+          sessionId: sessionId,
+          messages: currentState?.messages ?? const <ChatMessage>[],
+          loading: false,
+          showingCachedMessages: currentState?.showingCachedMessages ?? false,
+          error: _describeSessionLoadError(error),
+        ),
+      );
+      _notify();
+    }
+  }
+
+  void _applyWatchedSessionTimelineEvent(
+    Map<String, Object?> properties, {
+    required String? sessionId,
+    required List<ChatMessage> Function(List<ChatMessage> messages) applyEvent,
+    bool persistImmediately = false,
+  }) {
+    final normalized = sessionId?.trim() ?? '';
+    if (normalized.isEmpty ||
+        normalized == _selectedSessionId ||
+        !_watchedSessionIds.contains(normalized)) {
+      return;
+    }
+    final project = _project;
+    if (project == null) {
+      return;
+    }
+    final currentState =
+        _watchedSessionTimelineById[normalized] ??
+        WorkspaceSessionTimelineState.empty(sessionId: normalized);
+    final baseMessages = _stripOptimisticMessages(
+      project: project,
+      sessionId: normalized,
+      messages: currentState.messages,
+    );
+    final nextServerMessages = applyEvent(baseMessages);
+    final nextMessages = _mergeSessionMessages(
+      project: project,
+      sessionId: normalized,
+      serverMessages: nextServerMessages,
+    );
+    if (identical(nextMessages, currentState.messages)) {
+      return;
+    }
+    _setWatchedSessionTimeline(
+      normalized,
+      _buildTimelineState(
+        sessionId: normalized,
+        messages: nextMessages,
+        loading: false,
+        showingCachedMessages: false,
+        error: null,
+      ),
+    );
+    if (persistImmediately) {
+      unawaited(
+        _saveSessionMessagesCache(
+          project: project,
+          sessionId: normalized,
+          messages: nextServerMessages,
+        ),
+      );
+    }
+  }
+
   Future<String?> submitPrompt(
     String prompt, {
     List<PromptAttachment> attachments = const <PromptAttachment>[],
@@ -1274,24 +1658,45 @@ class WorkspaceController extends ChangeNotifier {
       return;
     }
 
-    if (_selectedSessionId == sessionId && messages != null) {
-      _messages = _mergeSessionMessages(
+    if (messages != null) {
+      final mergedMessages = _mergeSessionMessages(
         project: project,
         sessionId: sessionId,
         serverMessages: messages,
       );
-      _sessionLoading = false;
-      _showingCachedSessionMessages = false;
-      _sessionLoadError = null;
-      _restoreComposerSelectionFromMessages();
-      unawaited(
-        _persistSessionMessagesCache(
-          project: project,
-          sessionId: sessionId,
-          messages: messages,
-          immediate: true,
-        ),
-      );
+      if (_selectedSessionId == sessionId) {
+        _messages = mergedMessages;
+        _sessionLoading = false;
+        _showingCachedSessionMessages = false;
+        _sessionLoadError = null;
+        _restoreComposerSelectionFromMessages();
+        unawaited(
+          _persistSessionMessagesCache(
+            project: project,
+            sessionId: sessionId,
+            messages: messages,
+            immediate: true,
+          ),
+        );
+      } else if (_watchedSessionIds.contains(sessionId)) {
+        _setWatchedSessionTimeline(
+          sessionId,
+          _buildTimelineState(
+            sessionId: sessionId,
+            messages: mergedMessages,
+            loading: false,
+            showingCachedMessages: false,
+            error: null,
+          ),
+        );
+        unawaited(
+          _saveSessionMessagesCache(
+            project: project,
+            sessionId: sessionId,
+            messages: messages,
+          ),
+        );
+      }
     }
 
     try {
@@ -2512,6 +2917,25 @@ class WorkspaceController extends ChangeNotifier {
           (event.properties['info'] as Map?)?['id']?.toString();
       _sessions = applySessionDeletedEvent(_sessions, event.properties);
       _statuses = removeSessionStatusEvent(_statuses, event.properties);
+      if (removedSessionId != null && removedSessionId.isNotEmpty) {
+        final nextWatchedIds = Set<String>.from(_watchedSessionIds)
+          ..remove(removedSessionId);
+        _watchedSessionIds = Set<String>.unmodifiable(nextWatchedIds);
+        final nextTimelineById =
+            Map<String, WorkspaceSessionTimelineState>.from(
+              _watchedSessionTimelineById,
+            )..remove(removedSessionId);
+        _watchedSessionTimelineById =
+            Map<String, WorkspaceSessionTimelineState>.unmodifiable(
+              nextTimelineById,
+            );
+        final nextLoadRevisionById = Map<String, int>.from(
+          _watchedSessionLoadRevisionById,
+        )..remove(removedSessionId);
+        _watchedSessionLoadRevisionById = Map<String, int>.unmodifiable(
+          nextLoadRevisionById,
+        );
+      }
       _removeActiveChildPreviewState(removedSessionId);
       _clearQueuedPromptStateForSession(removedSessionId);
     } else if (type == 'session.status') {
@@ -2520,6 +2944,17 @@ class WorkspaceController extends ChangeNotifier {
         sessionId: event.properties['sessionID']?.toString(),
       );
     } else if (type == 'message.updated') {
+      final infoJson = event.properties['info'] as Map?;
+      _applyWatchedSessionTimelineEvent(
+        event.properties,
+        sessionId: infoJson?['sessionID']?.toString(),
+        applyEvent: (messages) => applyMessageUpdatedEvent(
+          messages,
+          event.properties,
+          selectedSessionId: infoJson?['sessionID']?.toString(),
+        ),
+        persistImmediately: true,
+      );
       final project = _project;
       final sessionId = _selectedSessionId;
       final baseMessages =
@@ -2557,6 +2992,16 @@ class WorkspaceController extends ChangeNotifier {
       _messages = nextMessages;
     } else if (type == 'message.part.updated') {
       _applyActiveChildLivePreviewPartEvent(event.properties);
+      final partJson = event.properties['part'] as Map?;
+      _applyWatchedSessionTimelineEvent(
+        event.properties,
+        sessionId: partJson?['sessionID']?.toString(),
+        applyEvent: (messages) => applyMessagePartUpdatedEvent(
+          messages,
+          event.properties,
+          selectedSessionId: partJson?['sessionID']?.toString(),
+        ),
+      );
       final project = _project;
       final sessionId = _selectedSessionId;
       final baseMessages =
@@ -2589,6 +3034,16 @@ class WorkspaceController extends ChangeNotifier {
       _messages = nextMessages;
     } else if (type == 'message.removed') {
       _clearActiveChildLivePreviewForMessageEvent(event.properties);
+      _applyWatchedSessionTimelineEvent(
+        event.properties,
+        sessionId: event.properties['sessionID']?.toString(),
+        applyEvent: (messages) => applyMessageRemovedEvent(
+          messages,
+          event.properties,
+          selectedSessionId: event.properties['sessionID']?.toString(),
+        ),
+        persistImmediately: true,
+      );
       final project = _project;
       final sessionId = _selectedSessionId;
       final baseMessages =
@@ -3086,6 +3541,29 @@ class WorkspaceController extends ChangeNotifier {
       _showingCachedSessionMessages = false;
       _sessionLoadError = null;
       _notify();
+    } else if (_watchedSessionIds.contains(sessionId)) {
+      final currentState =
+          _watchedSessionTimelineById[sessionId] ??
+          WorkspaceSessionTimelineState.empty(sessionId: sessionId);
+      _setWatchedSessionTimeline(
+        sessionId,
+        _buildTimelineState(
+          sessionId: sessionId,
+          messages: _mergeSessionMessages(
+            project: project,
+            sessionId: sessionId,
+            serverMessages: _stripOptimisticMessages(
+              project: project,
+              sessionId: sessionId,
+              messages: currentState.messages,
+            ),
+          ),
+          loading: currentState.loading,
+          showingCachedMessages: currentState.showingCachedMessages,
+          error: currentState.error,
+        ),
+      );
+      _notify();
     }
     return message;
   }
@@ -3116,6 +3594,29 @@ class WorkspaceController extends ChangeNotifier {
           project: project,
           sessionId: sessionId,
           messages: _messages,
+        ),
+      );
+      _notify();
+    } else if (_watchedSessionIds.contains(sessionId)) {
+      final currentState =
+          _watchedSessionTimelineById[sessionId] ??
+          WorkspaceSessionTimelineState.empty(sessionId: sessionId);
+      _setWatchedSessionTimeline(
+        sessionId,
+        _buildTimelineState(
+          sessionId: sessionId,
+          messages: _mergeSessionMessages(
+            project: project,
+            sessionId: sessionId,
+            serverMessages: _stripOptimisticMessages(
+              project: project,
+              sessionId: sessionId,
+              messages: currentState.messages,
+            ),
+          ),
+          loading: currentState.loading,
+          showingCachedMessages: currentState.showingCachedMessages,
+          error: currentState.error,
         ),
       );
       _notify();

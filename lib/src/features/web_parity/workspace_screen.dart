@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -58,6 +59,20 @@ class _WorkspaceDensity {
   double maxContentWidth(double value) => compact ? value + 80 : value;
 }
 
+class _WorkspaceSessionPaneSpec {
+  const _WorkspaceSessionPaneSpec({required this.id, this.sessionId});
+
+  final String id;
+  final String? sessionId;
+
+  _WorkspaceSessionPaneSpec copyWith({String? id, String? sessionId}) {
+    return _WorkspaceSessionPaneSpec(
+      id: id ?? this.id,
+      sessionId: sessionId ?? this.sessionId,
+    );
+  }
+}
+
 class WebParityWorkspaceScreen extends StatefulWidget {
   const WebParityWorkspaceScreen({
     required this.directory,
@@ -80,28 +95,15 @@ class WebParityWorkspaceScreen extends StatefulWidget {
 }
 
 class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
+  static const int _maxDesktopSessionPanes = 4;
   static final PromptAttachmentService _attachmentService =
       PromptAttachmentService();
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  final ScrollController _timelineScrollController = ScrollController(
-    keepScrollOffset: false,
-  );
   WorkspaceController? _controller;
   ServerProfile? _profile;
   final TextEditingController _promptController = TextEditingController();
   List<PromptAttachment> _composerAttachments = const <PromptAttachment>[];
   bool _pickingComposerAttachments = false;
-  String? _lastTimelineScopeKey;
-  int _lastTimelineMessageCount = 0;
-  int _lastTimelineContentSignature = 0;
-  bool _lastTimelineLoading = false;
-  bool _timelineWasNearBottom = true;
-  String? _forcedTimelineBottomScopeKey;
-  String? _timelineBottomLockScopeKey;
-  double? _timelineBottomLockLastExtent;
-  int _timelineBottomLockStableFrames = 0;
-  int _timelineBottomLockAttempts = 0;
-  bool _timelineBottomLockScheduled = false;
   _CompactWorkspacePane _compactPane = _CompactWorkspacePane.session;
   PtyService? _ptyService;
   List<PtySessionInfo> _ptySessions = const <PtySessionInfo>[];
@@ -121,6 +123,13 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   bool _promptSubmitInFlight = false;
   int _promptSubmitEpoch = 0;
   String? _recentSubmittedPromptDraft;
+  int _sessionPaneSequence = 0;
+  List<_WorkspaceSessionPaneSpec> _desktopSessionPanes =
+      const <_WorkspaceSessionPaneSpec>[];
+  String? _activeDesktopSessionPaneId;
+  int _timelineJumpEpoch = 0;
+  Set<String> _pendingWatchedSessionIds = const <String>{};
+  bool _watchedSessionSyncScheduled = false;
   late String _activeDirectory;
   String? _activeRouteSessionId;
   _WorkspaceProjectLoadingShellState? _projectLoadingShellState;
@@ -132,13 +141,23 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     super.initState();
     _activeDirectory = widget.directory;
     _activeRouteSessionId = widget.sessionId;
+    _resetDesktopSessionPanes(initialSessionId: widget.sessionId);
     _projectCatalogService =
         widget.projectCatalogService ?? ProjectCatalogService();
     _ownsProjectCatalogService = widget.projectCatalogService == null;
-    _timelineScrollController.addListener(_handleTimelineScroll);
   }
 
   String get _currentDirectory => _activeDirectory;
+
+  void _resetDesktopSessionPanes({String? initialSessionId}) {
+    final pane = _WorkspaceSessionPaneSpec(
+      id: 'pane_${_sessionPaneSequence++}',
+      sessionId: initialSessionId,
+    );
+    _desktopSessionPanes = <_WorkspaceSessionPaneSpec>[pane];
+    _activeDesktopSessionPaneId = pane.id;
+    _timelineJumpEpoch += 1;
+  }
 
   @override
   void didChangeDependencies() {
@@ -191,8 +210,6 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   void dispose() {
     _disposeController();
     _promptController.dispose();
-    _timelineScrollController.removeListener(_handleTimelineScroll);
-    _timelineScrollController.dispose();
     _ptyService?.dispose();
     if (_ownsProjectCatalogService) {
       _projectCatalogService.dispose();
@@ -232,7 +249,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
 
     if (bindingChanged) {
       _compactPane = _CompactWorkspacePane.session;
-      _resetTimelineTracking();
+      _resetDesktopSessionPanes(initialSessionId: routeSessionId);
       _resetTerminalState(profile);
     }
 
@@ -574,178 +591,184 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     return 'Terminal $number';
   }
 
-  void _handleTimelineScroll() {
-    if (!_timelineScrollController.hasClients) {
-      return;
+  List<_WorkspaceSessionPaneSpec> _resolvedDesktopSessionPanes(
+    WorkspaceController controller,
+  ) {
+    final sessionsById = <String, SessionSummary>{
+      for (final session in controller.sessions) session.id: session,
+    };
+    final selectedSessionId = controller.selectedSessionId;
+    final activePaneId =
+        _activeDesktopSessionPaneId ??
+        (_desktopSessionPanes.isNotEmpty
+            ? _desktopSessionPanes.first.id
+            : null);
+
+    final resolved = <_WorkspaceSessionPaneSpec>[];
+    for (final pane in _desktopSessionPanes) {
+      final effectiveSessionId = pane.id == activePaneId
+          ? selectedSessionId
+          : pane.sessionId;
+      final normalized = effectiveSessionId?.trim();
+      if (normalized != null &&
+          normalized.isNotEmpty &&
+          !sessionsById.containsKey(normalized)) {
+        continue;
+      }
+      resolved.add(
+        _WorkspaceSessionPaneSpec(id: pane.id, sessionId: effectiveSessionId),
+      );
     }
-    final position = _timelineScrollController.position;
-    if (!position.hasContentDimensions) {
-      return;
+
+    if (resolved.isEmpty) {
+      final fallback = _WorkspaceSessionPaneSpec(
+        id: 'pane_${_sessionPaneSequence++}',
+        sessionId: selectedSessionId,
+      );
+      _desktopSessionPanes = <_WorkspaceSessionPaneSpec>[fallback];
+      _activeDesktopSessionPaneId = fallback.id;
+      return <_WorkspaceSessionPaneSpec>[fallback];
     }
-    _timelineWasNearBottom =
-        !position.hasPixels ||
-        (position.maxScrollExtent - position.pixels) <= 120;
+
+    if (!resolved.any((pane) => pane.id == activePaneId)) {
+      _activeDesktopSessionPaneId = resolved.first.id;
+    }
+
+    return List<_WorkspaceSessionPaneSpec>.unmodifiable(resolved);
   }
 
-  void _resetTimelineTracking() {
-    _lastTimelineScopeKey = null;
-    _lastTimelineMessageCount = 0;
-    _lastTimelineContentSignature = 0;
-    _lastTimelineLoading = false;
-    _timelineWasNearBottom = true;
-    _forcedTimelineBottomScopeKey = null;
-    _clearTimelineBottomLock();
-  }
-
-  void _forceTimelineBottomForSession(String? sessionId) {
-    final trimmed = sessionId?.trim();
-    if (trimmed == null || trimmed.isEmpty) {
-      _forcedTimelineBottomScopeKey = null;
+  void _commitSelectedSessionToActivePane(WorkspaceController controller) {
+    final activePaneId = _activeDesktopSessionPaneId;
+    if (activePaneId == null) {
       return;
     }
-    _forcedTimelineBottomScopeKey = '$_currentDirectory::$trimmed';
-    _timelineWasNearBottom = true;
+    final selectedSessionId = controller.selectedSessionId;
+    var changed = false;
+    final next = _desktopSessionPanes
+        .map((pane) {
+          if (pane.id != activePaneId || pane.sessionId == selectedSessionId) {
+            return pane;
+          }
+          changed = true;
+          return pane.copyWith(sessionId: selectedSessionId);
+        })
+        .toList(growable: false);
+    if (!changed) {
+      return;
+    }
+    _desktopSessionPanes = next;
   }
 
-  void _scheduleTimelineSync(WorkspaceController controller) {
+  void _scheduleWatchedSessionSync(
+    WorkspaceController controller,
+    Iterable<String?> sessionIds,
+  ) {
+    final normalized = sessionIds
+        .map((sessionId) => sessionId?.trim() ?? '')
+        .where((sessionId) => sessionId.isNotEmpty)
+        .toSet();
+    if (setEquals(normalized, _pendingWatchedSessionIds) &&
+        _watchedSessionSyncScheduled) {
+      return;
+    }
+    _pendingWatchedSessionIds = Set<String>.unmodifiable(normalized);
+    if (_watchedSessionSyncScheduled) {
+      return;
+    }
+    _watchedSessionSyncScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_timelineScrollController.hasClients) {
+      _watchedSessionSyncScheduled = false;
+      if (!mounted || !identical(_controller, controller)) {
         return;
       }
-
-      final scopeKey =
-          '$_currentDirectory::${controller.selectedSessionId ?? 'new'}';
-      final messageCount = controller.messages.length;
-      final contentSignature = controller.timelineContentSignature;
-      final sessionChanged = _lastTimelineScopeKey != scopeKey;
-      final sessionLoadFinished =
-          _lastTimelineLoading &&
-          !controller.sessionLoading &&
-          messageCount > 0 &&
-          _lastTimelineScopeKey == scopeKey;
-      final forceBottomLock = _forcedTimelineBottomScopeKey == scopeKey;
-      final messageCountChanged = _lastTimelineMessageCount != messageCount;
-      final contentChanged =
-          _lastTimelineContentSignature != contentSignature ||
-          messageCountChanged;
-
-      if (messageCount > 0 &&
-          (sessionChanged || sessionLoadFinished || forceBottomLock)) {
-        _beginTimelineBottomLock(scopeKey);
-        if (forceBottomLock) {
-          _forcedTimelineBottomScopeKey = null;
-        }
-      } else if (forceBottomLock &&
-          !controller.sessionLoading &&
-          messageCount == 0) {
-        _forcedTimelineBottomScopeKey = null;
-      }
-
-      final position = _timelineScrollController.position;
-      if (!position.hasContentDimensions) {
-        return;
-      }
-      final nearBottomNow =
-          !position.hasPixels ||
-          (position.maxScrollExtent - position.pixels) <= 120;
-      final shouldFollowTimeline =
-          forceBottomLock ||
-          sessionChanged ||
-          (contentChanged && (_timelineWasNearBottom || nearBottomNow));
-
-      if (shouldFollowTimeline) {
-        final target = position.maxScrollExtent;
-        if ((target - position.pixels).abs() <= 1) {
-          _timelineWasNearBottom = true;
-        } else if (sessionChanged || !position.hasPixels) {
-          _timelineScrollController.jumpTo(target);
-          _timelineWasNearBottom = true;
-        } else {
-          _timelineScrollController.animateTo(
-            target,
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOutCubic,
-          );
-          _timelineWasNearBottom = true;
-        }
-      }
-
-      _lastTimelineScopeKey = scopeKey;
-      _lastTimelineMessageCount = messageCount;
-      _lastTimelineContentSignature = contentSignature;
-      _lastTimelineLoading = controller.sessionLoading;
+      controller.updateWatchedSessionIds(_pendingWatchedSessionIds);
     });
   }
 
-  void _beginTimelineBottomLock(String scopeKey) {
-    _timelineBottomLockScopeKey = scopeKey;
-    _timelineBottomLockLastExtent = null;
-    _timelineBottomLockStableFrames = 0;
-    _timelineBottomLockAttempts = 0;
-    _scheduleTimelineBottomLock();
-  }
-
-  void _clearTimelineBottomLock() {
-    _timelineBottomLockScopeKey = null;
-    _timelineBottomLockLastExtent = null;
-    _timelineBottomLockStableFrames = 0;
-    _timelineBottomLockAttempts = 0;
-  }
-
-  void _scheduleTimelineBottomLock() {
-    if (_timelineBottomLockScheduled || _timelineBottomLockScopeKey == null) {
+  Future<void> _activateDesktopSessionPane(
+    WorkspaceController controller,
+    String paneId,
+  ) async {
+    if (_activeDesktopSessionPaneId == paneId) {
       return;
     }
-    _timelineBottomLockScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _timelineBottomLockScheduled = false;
-      if (!mounted) {
-        return;
-      }
-      final expectedScopeKey = _timelineBottomLockScopeKey;
-      if (expectedScopeKey == null) {
-        return;
-      }
-      if (!_timelineScrollController.hasClients) {
-        _scheduleTimelineBottomLock();
-        return;
-      }
-      final controller = _controller;
-      final currentScopeKey = controller == null
-          ? null
-          : '$_currentDirectory::${controller.selectedSessionId ?? 'new'}';
-      if (currentScopeKey != expectedScopeKey) {
-        _clearTimelineBottomLock();
-        return;
-      }
-      final position = _timelineScrollController.position;
-      if (!position.hasContentDimensions) {
-        _scheduleTimelineBottomLock();
-        return;
-      }
-
-      final target = position.maxScrollExtent;
-      if (!position.hasPixels || (target - position.pixels).abs() > 1) {
-        _timelineScrollController.jumpTo(target);
-      }
-      _timelineWasNearBottom = true;
-
-      final lastExtent = _timelineBottomLockLastExtent;
-      if (lastExtent != null && (target - lastExtent).abs() <= 1) {
-        _timelineBottomLockStableFrames += 1;
-      } else {
-        _timelineBottomLockStableFrames = 0;
-        _timelineBottomLockLastExtent = target;
-      }
-
-      _timelineBottomLockAttempts += 1;
-      if (_timelineBottomLockStableFrames >= 1 ||
-          _timelineBottomLockAttempts >= 8) {
-        _clearTimelineBottomLock();
-        return;
-      }
-      _scheduleTimelineBottomLock();
+    _commitSelectedSessionToActivePane(controller);
+    final targetPane = _desktopSessionPanes
+        .cast<_WorkspaceSessionPaneSpec?>()
+        .firstWhere((pane) => pane?.id == paneId, orElse: () => null);
+    if (targetPane == null) {
+      return;
+    }
+    setState(() {
+      _activeDesktopSessionPaneId = paneId;
+      _timelineJumpEpoch += 1;
     });
+    if (controller.selectedSessionId == targetPane.sessionId) {
+      return;
+    }
+    await controller.selectSession(targetPane.sessionId);
+  }
+
+  void _splitDesktopSessionPane(WorkspaceController controller) {
+    if (_desktopSessionPanes.length >= _maxDesktopSessionPanes) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You can open up to 4 session panes.')),
+      );
+      return;
+    }
+    _commitSelectedSessionToActivePane(controller);
+    final activePaneId = _activeDesktopSessionPaneId;
+    final activeIndex = _desktopSessionPanes.indexWhere(
+      (pane) => pane.id == activePaneId,
+    );
+    final insertIndex = activeIndex >= 0
+        ? activeIndex + 1
+        : _desktopSessionPanes.length;
+    final newPane = _WorkspaceSessionPaneSpec(
+      id: 'pane_${_sessionPaneSequence++}',
+      sessionId: controller.selectedSessionId,
+    );
+    final next = List<_WorkspaceSessionPaneSpec>.from(_desktopSessionPanes)
+      ..insert(insertIndex, newPane);
+    setState(() {
+      _desktopSessionPanes = next;
+      _activeDesktopSessionPaneId = newPane.id;
+      _timelineJumpEpoch += 1;
+    });
+  }
+
+  Future<void> _closeDesktopSessionPane(
+    WorkspaceController controller,
+    String paneId,
+  ) async {
+    if (_desktopSessionPanes.length <= 1) {
+      return;
+    }
+    _commitSelectedSessionToActivePane(controller);
+    final current = List<_WorkspaceSessionPaneSpec>.from(_desktopSessionPanes);
+    final removedIndex = current.indexWhere((pane) => pane.id == paneId);
+    if (removedIndex < 0) {
+      return;
+    }
+    final removedPane = current.removeAt(removedIndex);
+    final wasActive = removedPane.id == _activeDesktopSessionPaneId;
+    _WorkspaceSessionPaneSpec? nextActivePane;
+    if (wasActive) {
+      final nextIndex = math.min(removedIndex, current.length - 1);
+      nextActivePane = current[nextIndex];
+    }
+    setState(() {
+      _desktopSessionPanes = current;
+      if (wasActive) {
+        _activeDesktopSessionPaneId = nextActivePane?.id;
+        _timelineJumpEpoch += 1;
+      }
+    });
+    if (wasActive &&
+        nextActivePane != null &&
+        controller.selectedSessionId != nextActivePane.sessionId) {
+      await controller.selectSession(nextActivePane.sessionId);
+    }
   }
 
   Future<void> _pickComposerAttachments() async {
@@ -1020,7 +1043,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       if (!mounted || forked == null) {
         return;
       }
-      _forceTimelineBottomForSession(forked.id);
+      setState(() {
+        _timelineJumpEpoch += 1;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Forked from this message into "${forked.title}".'),
@@ -1051,7 +1076,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       if (!mounted || updated == null) {
         return;
       }
-      _forceTimelineBottomForSession(updated.id);
+      setState(() {
+        _timelineJumpEpoch += 1;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Reverted the session to this message.')),
       );
@@ -1223,7 +1250,11 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     String sessionId, {
     required bool compact,
   }) async {
-    _forceTimelineBottomForSession(sessionId);
+    if (!compact) {
+      setState(() {
+        _timelineJumpEpoch += 1;
+      });
+    }
     if (compact && (_scaffoldKey.currentState?.isDrawerOpen ?? false)) {
       Navigator.of(context).pop();
       await Future<void>.delayed(Duration.zero);
@@ -1445,7 +1476,6 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     return AnimatedBuilder(
       animation: controller,
       builder: (context, _) {
-        _scheduleTimelineSync(controller);
         _scheduleRouteSessionSync();
         final projectLoadingShell = controller.loading
             ? _projectLoadingShellState
@@ -1482,6 +1512,15 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
             : controller.selectedSession;
         final desktopSidebarVisible = !compact && _desktopSidebarVisible;
         final desktopSidePanelVisible = !compact && _desktopSidePanelVisible;
+        final desktopSessionPanes = _resolvedDesktopSessionPanes(controller);
+        _scheduleWatchedSessionSync(
+          controller,
+          compact
+              ? const <String?>[]
+              : desktopSessionPanes
+                    .where((pane) => pane.id != _activeDesktopSessionPaneId)
+                    .map((pane) => pane.sessionId),
+        );
         final mainSession = _rootSessionFor(
           displayAllSessions,
           selectedSession,
@@ -1581,6 +1620,17 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                         onToggleSidePanel: compact
                             ? null
                             : _toggleDesktopSidePanelVisibility,
+                        sessionPaneCount: compact
+                            ? 1
+                            : desktopSessionPanes.length,
+                        canSplitSessionPane:
+                            !compact &&
+                            !showProjectLoadingShell &&
+                            desktopSessionPanes.length <
+                                _maxDesktopSessionPanes,
+                        onSplitSessionPane: compact || showProjectLoadingShell
+                            ? null
+                            : () => _splitDesktopSessionPane(controller),
                         onOpenDrawer: compact
                             ? () => _scaffoldKey.currentState?.openDrawer()
                             : null,
@@ -1646,15 +1696,17 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                 submittedDraftEpoch: _promptSubmitEpoch,
                                 recentSubmittedDraft:
                                     _recentSubmittedPromptDraft,
-                                timelineScrollController:
-                                    _timelineScrollController,
                                 compactPane: _compactPane,
+                                desktopSessionPanes: desktopSessionPanes,
+                                activeDesktopSessionPaneId:
+                                    _activeDesktopSessionPaneId,
                                 busyFollowupMode:
                                     appController.busyFollowupMode,
                                 shellToolDefaultExpanded:
                                     appController.shellToolPartsExpanded,
                                 timelineProgressDetailsVisible: appController
                                     .timelineProgressDetailsVisible,
+                                timelineJumpEpoch: _timelineJumpEpoch,
                                 onForkMessage: (message) =>
                                     _forkMessageIntoSession(
                                       controller,
@@ -1690,6 +1742,19 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                       controller,
                                       sessionId,
                                       compact: compact,
+                                    ),
+                                  );
+                                },
+                                onSelectSessionPane: (paneId) =>
+                                    _activateDesktopSessionPane(
+                                      controller,
+                                      paneId,
+                                    ),
+                                onCloseSessionPane: (paneId) {
+                                  unawaited(
+                                    _closeDesktopSessionPane(
+                                      controller,
+                                      paneId,
                                     ),
                                   );
                                 },
@@ -1797,10 +1862,13 @@ class _WorkspaceTopBar extends StatelessWidget {
     required this.sessionsPanelVisible,
     required this.sidePanelVisible,
     required this.sidePanelLabel,
+    required this.sessionPaneCount,
     required this.onBackHome,
     required this.onToggleTerminal,
     this.onToggleSessionsPanel,
     this.onToggleSidePanel,
+    this.canSplitSessionPane = false,
+    this.onSplitSessionPane,
     this.onOpenDrawer,
     this.onBackToMainSession,
     this.onRename,
@@ -1824,10 +1892,13 @@ class _WorkspaceTopBar extends StatelessWidget {
   final bool sessionsPanelVisible;
   final bool sidePanelVisible;
   final String sidePanelLabel;
+  final int sessionPaneCount;
   final VoidCallback onBackHome;
   final VoidCallback onToggleTerminal;
   final VoidCallback? onToggleSessionsPanel;
   final VoidCallback? onToggleSidePanel;
+  final bool canSplitSessionPane;
+  final VoidCallback? onSplitSessionPane;
   final VoidCallback? onOpenDrawer;
   final VoidCallback? onBackToMainSession;
   final VoidCallback? onRename;
@@ -2073,6 +2144,23 @@ class _WorkspaceTopBar extends StatelessWidget {
                 onTap: onToggleSidePanel!,
               ),
             ],
+            if (onSplitSessionPane != null) ...<Widget>[
+              SizedBox(width: density.inset(AppSpacing.xs, min: 4)),
+              _WorkspaceActionChip(
+                key: const ValueKey<String>(
+                  'workspace-split-session-pane-button',
+                ),
+                label: sessionPaneCount > 1
+                    ? 'Split ($sessionPaneCount)'
+                    : 'Split',
+                icon: Icons.splitscreen_rounded,
+                enabled: canSplitSessionPane,
+                tooltip: canSplitSessionPane
+                    ? 'Split the chat area into another session pane'
+                    : 'Maximum number of session panes open',
+                onTap: onSplitSessionPane,
+              ),
+            ],
             SizedBox(width: density.inset(AppSpacing.sm, min: 6)),
             Expanded(
               child: Column(
@@ -2234,6 +2322,70 @@ class _WorkspacePanelToggleChip extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WorkspaceActionChip extends StatelessWidget {
+  const _WorkspaceActionChip({
+    required this.label,
+    required this.icon,
+    required this.enabled,
+    required this.tooltip,
+    required this.onTap,
+    super.key,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool enabled;
+  final String tooltip;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final density = _workspaceDensity(context);
+
+    return Tooltip(
+      message: tooltip,
+      child: Opacity(
+        opacity: enabled ? 1 : 0.52,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: enabled ? onTap : null,
+            borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOutCubic,
+              padding: EdgeInsets.symmetric(
+                horizontal: density.inset(AppSpacing.sm),
+                vertical: density.inset(AppSpacing.xs, min: 4),
+              ),
+              decoration: BoxDecoration(
+                color: surfaces.panelRaised.withValues(alpha: 0.82),
+                borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
+                border: Border.all(color: surfaces.lineSoft),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Icon(icon, size: 16, color: surfaces.muted),
+                  SizedBox(width: density.inset(AppSpacing.xs, min: 4)),
+                  Text(
+                    label,
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -5233,11 +5385,13 @@ class _WorkspaceBody extends StatelessWidget {
     required this.promptController,
     required this.submittedDraftEpoch,
     required this.recentSubmittedDraft,
-    required this.timelineScrollController,
     required this.compactPane,
+    required this.desktopSessionPanes,
+    required this.activeDesktopSessionPaneId,
     required this.busyFollowupMode,
     required this.shellToolDefaultExpanded,
     required this.timelineProgressDetailsVisible,
+    required this.timelineJumpEpoch,
     required this.onForkMessage,
     required this.onRevertMessage,
     required this.onCompactPaneChanged,
@@ -5248,6 +5402,8 @@ class _WorkspaceBody extends StatelessWidget {
     required this.onInterruptPrompt,
     required this.onCreateSession,
     required this.onOpenSession,
+    required this.onSelectSessionPane,
+    required this.onCloseSessionPane,
     required this.onPickAttachments,
     required this.onRemoveAttachment,
     this.onShowSidePanel,
@@ -5273,11 +5429,13 @@ class _WorkspaceBody extends StatelessWidget {
   final TextEditingController promptController;
   final int submittedDraftEpoch;
   final String? recentSubmittedDraft;
-  final ScrollController timelineScrollController;
   final _CompactWorkspacePane compactPane;
+  final List<_WorkspaceSessionPaneSpec> desktopSessionPanes;
+  final String? activeDesktopSessionPaneId;
   final WorkspaceFollowupMode busyFollowupMode;
   final bool shellToolDefaultExpanded;
   final bool timelineProgressDetailsVisible;
+  final int timelineJumpEpoch;
   final Future<void> Function(ChatMessage message) onForkMessage;
   final Future<void> Function(ChatMessage message) onRevertMessage;
   final ValueChanged<_CompactWorkspacePane> onCompactPaneChanged;
@@ -5288,6 +5446,8 @@ class _WorkspaceBody extends StatelessWidget {
   final Future<void> Function() onInterruptPrompt;
   final Future<void> Function() onCreateSession;
   final ValueChanged<String> onOpenSession;
+  final Future<void> Function(String paneId) onSelectSessionPane;
+  final ValueChanged<String> onCloseSessionPane;
   final Future<void> Function() onPickAttachments;
   final ValueChanged<String> onRemoveAttachment;
   final VoidCallback? onShowSidePanel;
@@ -5324,6 +5484,14 @@ class _WorkspaceBody extends StatelessWidget {
       compact: compact,
       onOpenSession: openActiveChildSession,
     );
+    final paneSpecs = compact
+        ? <_WorkspaceSessionPaneSpec>[
+            _WorkspaceSessionPaneSpec(
+              id: 'compact-pane',
+              sessionId: controller.selectedSessionId,
+            ),
+          ]
+        : desktopSessionPanes;
     final content = Column(
       children: <Widget>[
         if (!compact) activeSubSessionPanel,
@@ -5337,34 +5505,27 @@ class _WorkspaceBody extends StatelessWidget {
                       topLeft: Radius.circular(AppSpacing.cardRadius),
                     ),
             ),
-            child: controller.selectedSessionId == null
-                ? _NewSessionView(
-                    project: controller.project,
-                    messages: controller.messages,
-                  )
-                : _MessageTimeline(
-                    key: ValueKey<String>(
-                      'timeline-${controller.selectedSessionId ?? 'new'}',
-                    ),
-                    controller: timelineScrollController,
-                    currentSessionId: controller.selectedSessionId,
-                    loading: controller.sessionLoading,
-                    showingCachedMessages:
-                        controller.showingCachedSessionMessages,
-                    error: controller.sessionLoadError,
-                    messages: controller.orderedMessages,
-                    compact: compact,
-                    sessions: allSessions,
-                    selectedSession: selectedSession,
-                    configSnapshot: configSnapshot,
-                    shellToolDefaultExpanded: shellToolDefaultExpanded,
-                    timelineProgressDetailsVisible:
-                        timelineProgressDetailsVisible,
-                    onForkMessage: onForkMessage,
-                    onRevertMessage: onRevertMessage,
-                    onOpenSession: onOpenSession,
-                    onRetry: controller.retrySelectedSessionMessages,
-                  ),
+            child: _WorkspaceSessionPaneDeck(
+              compact: compact,
+              project: controller.project,
+              controller: controller,
+              panes: paneSpecs,
+              activePaneId: compact
+                  ? 'compact-pane'
+                  : activeDesktopSessionPaneId,
+              allSessions: allSessions,
+              selectedSession: selectedSession,
+              configSnapshot: configSnapshot,
+              shellToolDefaultExpanded: shellToolDefaultExpanded,
+              timelineProgressDetailsVisible: timelineProgressDetailsVisible,
+              timelineJumpEpoch: timelineJumpEpoch,
+              onSelectPane: onSelectSessionPane,
+              onClosePane: onCloseSessionPane,
+              onForkMessage: onForkMessage,
+              onRevertMessage: onRevertMessage,
+              onOpenSession: onOpenSession,
+              onRetrySelectedSession: controller.retrySelectedSessionMessages,
+            ),
           ),
         ),
         if (controller.selectedSessionId != null)
@@ -5536,6 +5697,382 @@ class _HorizontalReveal extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _WorkspaceSessionPaneDeck extends StatelessWidget {
+  const _WorkspaceSessionPaneDeck({
+    required this.compact,
+    required this.project,
+    required this.controller,
+    required this.panes,
+    required this.activePaneId,
+    required this.allSessions,
+    required this.selectedSession,
+    required this.configSnapshot,
+    required this.shellToolDefaultExpanded,
+    required this.timelineProgressDetailsVisible,
+    required this.timelineJumpEpoch,
+    required this.onSelectPane,
+    required this.onClosePane,
+    required this.onForkMessage,
+    required this.onRevertMessage,
+    required this.onOpenSession,
+    required this.onRetrySelectedSession,
+  });
+
+  final bool compact;
+  final ProjectTarget? project;
+  final WorkspaceController controller;
+  final List<_WorkspaceSessionPaneSpec> panes;
+  final String? activePaneId;
+  final List<SessionSummary> allSessions;
+  final SessionSummary? selectedSession;
+  final ConfigSnapshot? configSnapshot;
+  final bool shellToolDefaultExpanded;
+  final bool timelineProgressDetailsVisible;
+  final int timelineJumpEpoch;
+  final Future<void> Function(String paneId) onSelectPane;
+  final ValueChanged<String> onClosePane;
+  final Future<void> Function(ChatMessage message) onForkMessage;
+  final Future<void> Function(ChatMessage message) onRevertMessage;
+  final ValueChanged<String> onOpenSession;
+  final Future<void> Function() onRetrySelectedSession;
+
+  @override
+  Widget build(BuildContext context) {
+    final density = _workspaceDensity(context);
+    final spacing = compact
+        ? density.inset(AppSpacing.xs, min: 4)
+        : density.inset(AppSpacing.sm, min: 6);
+    final outerPadding = compact
+        ? EdgeInsets.zero
+        : EdgeInsets.all(density.inset(AppSpacing.sm, min: AppSpacing.xs));
+    final resolvedPanes = panes.isEmpty
+        ? <_WorkspaceSessionPaneSpec>[
+            _WorkspaceSessionPaneSpec(
+              id: 'fallback-pane',
+              sessionId: controller.selectedSessionId,
+            ),
+          ]
+        : panes;
+
+    return Padding(
+      key: const ValueKey<String>('workspace-session-pane-deck'),
+      padding: outerPadding,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var index = 0; index < resolvedPanes.length; index += 1) ...[
+            Expanded(
+              child: _WorkspaceSessionPaneCard(
+                pane: resolvedPanes[index],
+                project: project,
+                compact: compact,
+                selected: resolvedPanes[index].id == activePaneId,
+                canClose: !compact && resolvedPanes.length > 1,
+                controller: controller,
+                session: _sessionById(
+                  allSessions,
+                  resolvedPanes[index].sessionId,
+                ),
+                selectedSession: selectedSession,
+                configSnapshot: configSnapshot,
+                shellToolDefaultExpanded: shellToolDefaultExpanded,
+                timelineProgressDetailsVisible: timelineProgressDetailsVisible,
+                timelineJumpEpoch: timelineJumpEpoch,
+                allSessions: allSessions,
+                onSelectPane: onSelectPane,
+                onClosePane: onClosePane,
+                onForkMessage: onForkMessage,
+                onRevertMessage: onRevertMessage,
+                onOpenSession: onOpenSession,
+                onRetrySelectedSession: onRetrySelectedSession,
+              ),
+            ),
+            if (index < resolvedPanes.length - 1) SizedBox(width: spacing),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _WorkspaceSessionPaneCard extends StatelessWidget {
+  const _WorkspaceSessionPaneCard({
+    required this.pane,
+    required this.project,
+    required this.compact,
+    required this.selected,
+    required this.canClose,
+    required this.controller,
+    required this.session,
+    required this.selectedSession,
+    required this.configSnapshot,
+    required this.shellToolDefaultExpanded,
+    required this.timelineProgressDetailsVisible,
+    required this.timelineJumpEpoch,
+    required this.allSessions,
+    required this.onSelectPane,
+    required this.onClosePane,
+    required this.onForkMessage,
+    required this.onRevertMessage,
+    required this.onOpenSession,
+    required this.onRetrySelectedSession,
+  });
+
+  final _WorkspaceSessionPaneSpec pane;
+  final ProjectTarget? project;
+  final bool compact;
+  final bool selected;
+  final bool canClose;
+  final WorkspaceController controller;
+  final SessionSummary? session;
+  final SessionSummary? selectedSession;
+  final ConfigSnapshot? configSnapshot;
+  final bool shellToolDefaultExpanded;
+  final bool timelineProgressDetailsVisible;
+  final int timelineJumpEpoch;
+  final List<SessionSummary> allSessions;
+  final Future<void> Function(String paneId) onSelectPane;
+  final ValueChanged<String> onClosePane;
+  final Future<void> Function(ChatMessage message) onForkMessage;
+  final Future<void> Function(ChatMessage message) onRevertMessage;
+  final ValueChanged<String> onOpenSession;
+  final Future<void> Function() onRetrySelectedSession;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final density = _workspaceDensity(context);
+    final sessionId = pane.sessionId;
+    final timelineState = controller.timelineStateForSession(sessionId);
+    final status = sessionId == null ? null : controller.statuses[sessionId];
+    final busy = _isActiveSessionStatus(status);
+    final title = _sessionHeaderTitle(session, project);
+    final subtitle = sessionId == null
+        ? 'New session draft'
+        : selected
+        ? 'Sidebar, side panel, and composer follow this pane'
+        : 'Click to focus this session';
+
+    Future<void> handleFocus() async {
+      await onSelectPane(pane.id);
+    }
+
+    Future<void> handleRetry() async {
+      if (selected) {
+        await onRetrySelectedSession();
+        return;
+      }
+      await controller.refreshTimelineSession(sessionId);
+    }
+
+    Future<void> handleForkMessage(ChatMessage message) async {
+      if (!selected) {
+        await handleFocus();
+      }
+      await onForkMessage(message);
+    }
+
+    Future<void> handleRevertMessage(ChatMessage message) async {
+      if (!selected) {
+        await handleFocus();
+      }
+      await onRevertMessage(message);
+    }
+
+    void handleOpenSession(String sessionId) {
+      if (selected) {
+        onOpenSession(sessionId);
+        return;
+      }
+      unawaited(() async {
+        await handleFocus();
+        onOpenSession(sessionId);
+      }());
+    }
+
+    return Semantics(
+      selected: selected,
+      label: title,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          key: ValueKey<String>('workspace-session-pane-${pane.id}'),
+          onTap: selected ? null : () => unawaited(handleFocus()),
+          borderRadius: BorderRadius.circular(compact ? 18 : 22),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            decoration: BoxDecoration(
+              color: selected
+                  ? surfaces.panel.withValues(alpha: 0.98)
+                  : surfaces.panelRaised.withValues(alpha: 0.94),
+              borderRadius: BorderRadius.circular(compact ? 18 : 22),
+              border: Border.all(
+                color: selected
+                    ? theme.colorScheme.primary.withValues(alpha: 0.78)
+                    : surfaces.lineSoft,
+                width: selected ? 1.8 : 1,
+              ),
+              boxShadow: <BoxShadow>[
+                BoxShadow(
+                  color: (selected ? theme.colorScheme.primary : Colors.black)
+                      .withValues(alpha: selected ? 0.14 : 0.08),
+                  blurRadius: selected ? 24 : 14,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: Column(
+              children: <Widget>[
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    density.inset(compact ? AppSpacing.sm : AppSpacing.md),
+                    density.inset(compact ? AppSpacing.sm : AppSpacing.md),
+                    density.inset(compact ? AppSpacing.sm : AppSpacing.md),
+                    density.inset(compact ? AppSpacing.xs : AppSpacing.sm),
+                  ),
+                  child: Row(
+                    children: <Widget>[
+                      Container(
+                        width: compact ? 9 : 10,
+                        height: compact ? 9 : 10,
+                        decoration: BoxDecoration(
+                          color: busy
+                              ? theme.colorScheme.primary
+                              : const Color(0xFF64D7C4),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      SizedBox(width: density.inset(AppSpacing.xs, min: 4)),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Tooltip(
+                              message: title,
+                              child: Text(
+                                title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style:
+                                    (compact
+                                            ? theme.textTheme.titleSmall
+                                            : theme.textTheme.titleMedium)
+                                        ?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                            SizedBox(
+                              height: density.inset(
+                                compact ? AppSpacing.xxs : AppSpacing.xs,
+                                min: 2,
+                              ),
+                            ),
+                            Text(
+                              subtitle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: selected
+                                    ? theme.colorScheme.primary.withValues(
+                                        alpha: 0.92,
+                                      )
+                                    : surfaces.muted,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (selected)
+                        Container(
+                          key: ValueKey<String>(
+                            'workspace-session-pane-selected-badge-${pane.id}',
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.xs,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.primary.withValues(
+                              alpha: 0.16,
+                            ),
+                            borderRadius: BorderRadius.circular(
+                              AppSpacing.pillRadius,
+                            ),
+                            border: Border.all(
+                              color: theme.colorScheme.primary.withValues(
+                                alpha: 0.24,
+                              ),
+                            ),
+                          ),
+                          child: Text(
+                            'Active',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.primary,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      if (canClose) ...<Widget>[
+                        SizedBox(width: density.inset(AppSpacing.xs, min: 4)),
+                        IconButton(
+                          key: ValueKey<String>(
+                            'workspace-session-pane-close-${pane.id}',
+                          ),
+                          onPressed: () => onClosePane(pane.id),
+                          tooltip: 'Close pane',
+                          icon: const Icon(Icons.close_rounded, size: 18),
+                          splashRadius: 18,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                Divider(height: 1, color: surfaces.lineSoft),
+                Expanded(
+                  child: sessionId == null
+                      ? _NewSessionView(
+                          project: project,
+                          messages: timelineState.messages,
+                        )
+                      : _MessageTimeline(
+                          key: ValueKey<String>(
+                            'timeline-${pane.id}-${sessionId.isEmpty ? 'new' : sessionId}',
+                          ),
+                          storageScopeKey:
+                              '${pane.id}::${sessionId.isEmpty ? 'new' : sessionId}',
+                          pageStorageKeyValue: selected
+                              ? 'web-parity-message-timeline'
+                              : 'web-parity-message-timeline-${pane.id}::${sessionId.isEmpty ? 'new' : sessionId}',
+                          currentSessionId: sessionId,
+                          loading: timelineState.loading,
+                          showingCachedMessages:
+                              timelineState.showingCachedMessages,
+                          error: timelineState.error,
+                          messages: timelineState.orderedMessages,
+                          compact: compact,
+                          sessions: allSessions,
+                          selectedSession: selected ? selectedSession : session,
+                          configSnapshot: configSnapshot,
+                          shellToolDefaultExpanded: shellToolDefaultExpanded,
+                          timelineProgressDetailsVisible:
+                              timelineProgressDetailsVisible,
+                          onForkMessage: handleForkMessage,
+                          onRevertMessage: handleRevertMessage,
+                          onOpenSession: handleOpenSession,
+                          onRetry: handleRetry,
+                          jumpToBottomEpoch: selected ? timelineJumpEpoch : 0,
+                        ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -6400,9 +6937,59 @@ class _PromptComposerLoadingPlaceholder extends StatelessWidget {
   }
 }
 
+int _timelineContentSignature(List<ChatMessage> messages) {
+  var signature = messages.length;
+  for (final message in messages) {
+    signature = Object.hash(
+      signature,
+      message.info.id,
+      message.info.role,
+      message.info.agent,
+      message.info.variant,
+      message.info.modelId,
+      message.info.providerId,
+      message.info.createdAt?.millisecondsSinceEpoch,
+      message.info.completedAt?.millisecondsSinceEpoch,
+      message.info.cost,
+      message.info.totalTokens,
+      message.info.inputTokens,
+      message.info.outputTokens,
+      message.info.reasoningTokens,
+      message.info.cacheReadTokens,
+      message.info.cacheWriteTokens,
+      message.parts.length,
+    );
+    for (final part in message.parts) {
+      signature = Object.hash(
+        signature,
+        part.id,
+        part.type,
+        part.tool,
+        part.filename,
+        _timelineStringSignature(part.text),
+        _timelineStringSignature(part.metadata['summary']?.toString()),
+        _timelineStringSignature(part.metadata['content']?.toString()),
+        _timelineStringSignature(part.metadata['command']?.toString()),
+        _timelineStringSignature(part.metadata['output']?.toString()),
+        _timelineStringSignature(part.metadata['title']?.toString()),
+        _timelineStringSignature(part.metadata['status']?.toString()),
+      );
+    }
+  }
+  return signature;
+}
+
+int _timelineStringSignature(String? value) {
+  if (value == null || value.isEmpty) {
+    return 0;
+  }
+  return Object.hash(value.length, value.hashCode);
+}
+
 class _MessageTimeline extends StatefulWidget {
   const _MessageTimeline({
-    required this.controller,
+    required this.storageScopeKey,
+    required this.pageStorageKeyValue,
     required this.currentSessionId,
     required this.loading,
     required this.showingCachedMessages,
@@ -6418,10 +7005,12 @@ class _MessageTimeline extends StatefulWidget {
     required this.onRevertMessage,
     required this.onOpenSession,
     required this.onRetry,
+    required this.jumpToBottomEpoch,
     super.key,
   });
 
-  final ScrollController controller;
+  final String storageScopeKey;
+  final String pageStorageKeyValue;
   final String? currentSessionId;
   final bool loading;
   final bool showingCachedMessages;
@@ -6437,6 +7026,7 @@ class _MessageTimeline extends StatefulWidget {
   final Future<void> Function(ChatMessage message) onRevertMessage;
   final ValueChanged<String> onOpenSession;
   final Future<void> Function() onRetry;
+  final int jumpToBottomEpoch;
 
   @override
   State<_MessageTimeline> createState() => _MessageTimelineState();
@@ -6453,6 +7043,20 @@ class _MessageTimelineState extends State<_MessageTimeline> {
   int _visibleStartIndex = 0;
   bool _loadingOlder = false;
   bool _loadOlderCheckScheduled = false;
+  late final ScrollController _scrollController = ScrollController(
+    keepScrollOffset: false,
+  );
+  String? _lastScopeKey;
+  int _lastMessageCount = 0;
+  int _lastContentSignature = 0;
+  bool _lastLoading = false;
+  bool _wasNearBottom = true;
+  int _lastJumpToBottomEpoch = 0;
+  double? _bottomLockLastExtent;
+  int _bottomLockStableFrames = 0;
+  int _bottomLockAttempts = 0;
+  bool _bottomLockScheduled = false;
+  String? _bottomLockScopeKey;
 
   List<ChatMessage> get _visibleMessages => widget.messages.sublist(
     _visibleStartIndex.clamp(0, widget.messages.length),
@@ -6465,16 +7069,13 @@ class _MessageTimelineState extends State<_MessageTimeline> {
   void initState() {
     super.initState();
     _visibleStartIndex = _initialVisibleStart(widget.messages.length);
-    widget.controller.addListener(_handleScroll);
+    _lastJumpToBottomEpoch = widget.jumpToBottomEpoch;
+    _scrollController.addListener(_handleScroll);
   }
 
   @override
   void didUpdateWidget(covariant _MessageTimeline oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.controller, widget.controller)) {
-      oldWidget.controller.removeListener(_handleScroll);
-      widget.controller.addListener(_handleScroll);
-    }
 
     final sessionChanged =
         oldWidget.currentSessionId != widget.currentSessionId;
@@ -6490,11 +7091,22 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     if (_visibleStartIndex > widget.messages.length) {
       _visibleStartIndex = _initialVisibleStart(widget.messages.length);
     }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _syncTimelinePosition(
+        forceBottom: _lastJumpToBottomEpoch != widget.jumpToBottomEpoch,
+      );
+    });
+    _lastJumpToBottomEpoch = widget.jumpToBottomEpoch;
   }
 
   @override
   void dispose() {
-    widget.controller.removeListener(_handleScroll);
+    _scrollController.removeListener(_handleScroll);
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -6503,13 +7115,21 @@ class _MessageTimelineState extends State<_MessageTimeline> {
   }
 
   Future<void> _handleScroll() async {
+    if (_scrollController.hasClients) {
+      final position = _scrollController.position;
+      if (position.hasContentDimensions) {
+        _wasNearBottom =
+            !position.hasPixels ||
+            (position.maxScrollExtent - position.pixels) <= 120;
+      }
+    }
     if (_loadingOlder || _hiddenMessageCount == 0) {
       return;
     }
-    if (!widget.controller.hasClients) {
+    if (!_scrollController.hasClients) {
       return;
     }
-    final position = widget.controller.position;
+    final position = _scrollController.position;
     if (!position.hasContentDimensions ||
         position.pixels > _loadOlderThreshold) {
       return;
@@ -6535,7 +7155,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     if (_loadingOlder || _hiddenMessageCount == 0 || !mounted) {
       return;
     }
-    if (!widget.controller.hasClients) {
+    if (!_scrollController.hasClients) {
       return;
     }
     final nextStart = math.max(0, _visibleStartIndex - _windowGrowthSize);
@@ -6552,7 +7172,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
       if (!mounted) {
         return;
       }
-      if (!widget.controller.hasClients) {
+      if (!_scrollController.hasClients) {
         setState(() {
           _loadingOlder = false;
         });
@@ -6568,12 +7188,144 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     });
   }
 
+  int _contentSignature() {
+    return _timelineContentSignature(widget.messages);
+  }
+
+  void _beginBottomLock(String scopeKey) {
+    _bottomLockScopeKey = scopeKey;
+    _bottomLockLastExtent = null;
+    _bottomLockStableFrames = 0;
+    _bottomLockAttempts = 0;
+    _scheduleBottomLock();
+  }
+
+  void _clearBottomLock() {
+    _bottomLockScopeKey = null;
+    _bottomLockLastExtent = null;
+    _bottomLockStableFrames = 0;
+    _bottomLockAttempts = 0;
+  }
+
+  void _scheduleBottomLock() {
+    if (_bottomLockScheduled || _bottomLockScopeKey == null) {
+      return;
+    }
+    _bottomLockScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _bottomLockScheduled = false;
+      if (!mounted) {
+        return;
+      }
+      final expectedScopeKey = _bottomLockScopeKey;
+      if (expectedScopeKey == null) {
+        return;
+      }
+      if (!_scrollController.hasClients) {
+        _scheduleBottomLock();
+        return;
+      }
+      if (widget.storageScopeKey != expectedScopeKey) {
+        _clearBottomLock();
+        return;
+      }
+      final position = _scrollController.position;
+      if (!position.hasContentDimensions) {
+        _scheduleBottomLock();
+        return;
+      }
+      final target = position.maxScrollExtent;
+      if (!position.hasPixels || (target - position.pixels).abs() > 1) {
+        _scrollController.jumpTo(target);
+      }
+      _wasNearBottom = true;
+
+      final lastExtent = _bottomLockLastExtent;
+      if (lastExtent != null && (target - lastExtent).abs() <= 1) {
+        _bottomLockStableFrames += 1;
+      } else {
+        _bottomLockStableFrames = 0;
+        _bottomLockLastExtent = target;
+      }
+
+      _bottomLockAttempts += 1;
+      if (_bottomLockStableFrames >= 1 || _bottomLockAttempts >= 8) {
+        _clearBottomLock();
+        return;
+      }
+      _scheduleBottomLock();
+    });
+  }
+
+  void _syncTimelinePosition({bool forceBottom = false}) {
+    if (!mounted || !_scrollController.hasClients) {
+      return;
+    }
+    final scopeKey = widget.storageScopeKey;
+    final messageCount = widget.messages.length;
+    final contentSignature = _contentSignature();
+    final sessionChanged = _lastScopeKey != scopeKey;
+    final sessionLoadFinished =
+        _lastLoading &&
+        !widget.loading &&
+        messageCount > 0 &&
+        _lastScopeKey == scopeKey;
+    final messageCountChanged = _lastMessageCount != messageCount;
+    final contentChanged =
+        _lastContentSignature != contentSignature || messageCountChanged;
+
+    if (messageCount > 0 &&
+        (sessionChanged || sessionLoadFinished || forceBottom)) {
+      _beginBottomLock(scopeKey);
+    }
+
+    final position = _scrollController.position;
+    if (!position.hasContentDimensions) {
+      return;
+    }
+    final nearBottomNow =
+        !position.hasPixels ||
+        (position.maxScrollExtent - position.pixels) <= 120;
+    final shouldFollowTimeline =
+        forceBottom ||
+        sessionChanged ||
+        (contentChanged && (_wasNearBottom || nearBottomNow));
+
+    if (shouldFollowTimeline) {
+      final target = position.maxScrollExtent;
+      if ((target - position.pixels).abs() <= 1) {
+        _wasNearBottom = true;
+      } else if (sessionChanged || !position.hasPixels) {
+        _scrollController.jumpTo(target);
+        _wasNearBottom = true;
+      } else {
+        _scrollController.animateTo(
+          target,
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+        );
+        _wasNearBottom = true;
+      }
+    }
+
+    _lastScopeKey = scopeKey;
+    _lastMessageCount = messageCount;
+    _lastContentSignature = contentSignature;
+    _lastLoading = widget.loading;
+  }
+
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final theme = Theme.of(context);
     final density = _workspaceDensity(context);
     _scheduleLoadOlderCheck();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _syncTimelinePosition();
+    });
     if (widget.loading && widget.messages.isEmpty) {
       return const _TimelineStatusCard(
         icon: SizedBox(
@@ -6634,7 +7386,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
           ),
         Expanded(
           child: Scrollbar(
-            controller: widget.controller,
+            controller: _scrollController,
             thumbVisibility: true,
             interactive: true,
             child: Builder(
@@ -6645,10 +7397,8 @@ class _MessageTimelineState extends State<_MessageTimeline> {
                     visibleMessages.length + (hasHiddenMessages ? 1 : 0);
 
                 return ListView.builder(
-                  controller: widget.controller,
-                  key: const PageStorageKey<String>(
-                    'web-parity-message-timeline',
-                  ),
+                  controller: _scrollController,
+                  key: PageStorageKey<String>(widget.pageStorageKeyValue),
                   padding: EdgeInsets.fromLTRB(
                     density.inset(
                       widget.compact ? AppSpacing.sm : AppSpacing.xl,

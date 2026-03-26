@@ -309,6 +309,117 @@ void main() {
   );
 
   testWidgets(
+    'desktop layout can split session panes and keep non-active sessions visible',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final createdControllers = <_RecordingWorkspaceController>[];
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              final controller = _RecordingWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+              createdControllers.add(controller);
+              return controller;
+            },
+      );
+      addTearDown(appController.dispose);
+
+      final navigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          navigatorKey: navigatorKey,
+          initialRoute: '/',
+        ),
+      );
+      navigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+      );
+      await tester.pumpAndSettle();
+
+      final controller = createdControllers.single;
+      expect(find.text('hello from one'), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('workspace-split-session-pane-button'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('hello from one'), findsNWidgets(2));
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is InkWell &&
+              widget.key is ValueKey<String> &&
+              (widget.key! as ValueKey<String>).value.startsWith(
+                'workspace-session-pane-',
+              ),
+        ),
+        findsNWidgets(2),
+      );
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget.key is ValueKey<String> &&
+              (widget.key! as ValueKey<String>).value.startsWith(
+                'workspace-session-pane-selected-badge-',
+              ),
+        ),
+        findsOneWidget,
+      );
+      expect(controller.selectedSessionId, 'ses_1');
+
+      await tester.tap(find.text('Session Two'));
+      await tester.pumpAndSettle();
+
+      expect(controller.selectedSessionId, 'ses_2');
+      expect(find.text('hello from one'), findsOneWidget);
+      expect(find.text('hello from two'), findsOneWidget);
+
+      await tester.tap(find.text('hello from one'));
+      await tester.pumpAndSettle();
+
+      expect(controller.selectedSessionId, 'ses_1');
+      expect(find.text('hello from one'), findsOneWidget);
+      expect(find.text('hello from two'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Close pane').first);
+      await tester.pumpAndSettle();
+
+      expect(controller.selectedSessionId, 'ses_2');
+      expect(find.text('hello from one'), findsNothing);
+      expect(find.text('hello from two'), findsOneWidget);
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is InkWell &&
+              widget.key is ValueKey<String> &&
+              (widget.key! as ValueKey<String>).value.startsWith(
+                'workspace-session-pane-',
+              ),
+        ),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
     'switching projects stays on the same page and reuses cached workspace controllers',
     (tester) async {
       tester.view.physicalSize = const Size(1600, 1000);
@@ -834,6 +945,28 @@ class _RecordingWorkspaceController extends WorkspaceController {
   List<ChatMessage> get messages => _messages;
 
   @override
+  WorkspaceSessionTimelineState timelineStateForSession(String? sessionId) {
+    final normalized = sessionId?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return const WorkspaceSessionTimelineState.empty();
+    }
+    final messages = _messageListFor(normalized);
+    return WorkspaceSessionTimelineState(
+      sessionId: normalized,
+      messages: messages,
+      orderedMessages: messages,
+      loading: _loading && normalized == _selectedSessionId,
+      showingCachedMessages: false,
+    );
+  }
+
+  @override
+  void updateWatchedSessionIds(Iterable<String?> sessionIds) {}
+
+  @override
+  Future<void> refreshTimelineSession(String? sessionId) async {}
+
+  @override
   List<TodoItem> get todos => const <TodoItem>[];
 
   @override
@@ -1003,6 +1136,27 @@ class _StreamingWorkspaceController extends WorkspaceController {
   List<ChatMessage> get messages => _messages;
 
   @override
+  WorkspaceSessionTimelineState timelineStateForSession(String? sessionId) {
+    final normalized = sessionId?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return const WorkspaceSessionTimelineState.empty();
+    }
+    return WorkspaceSessionTimelineState(
+      sessionId: normalized,
+      messages: _messages,
+      orderedMessages: _messages,
+      loading: _loading,
+      showingCachedMessages: false,
+    );
+  }
+
+  @override
+  void updateWatchedSessionIds(Iterable<String?> sessionIds) {}
+
+  @override
+  Future<void> refreshTimelineSession(String? sessionId) async {}
+
+  @override
   Future<void> load() async {
     _loading = false;
     _selectedSessionId = initialSessionId ?? 'ses_1';
@@ -1086,6 +1240,27 @@ class _LongSessionWorkspaceController extends WorkspaceController {
 
   @override
   List<ChatMessage> get messages => _messages;
+
+  @override
+  WorkspaceSessionTimelineState timelineStateForSession(String? sessionId) {
+    final normalized = sessionId?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return const WorkspaceSessionTimelineState.empty();
+    }
+    return WorkspaceSessionTimelineState(
+      sessionId: normalized,
+      messages: _messages,
+      orderedMessages: _messages,
+      loading: _loading,
+      showingCachedMessages: false,
+    );
+  }
+
+  @override
+  void updateWatchedSessionIds(Iterable<String?> sessionIds) {}
+
+  @override
+  Future<void> refreshTimelineSession(String? sessionId) async {}
 
   @override
   Future<void> load() async {

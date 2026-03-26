@@ -323,6 +323,28 @@ class _ChildSessionWorkspaceController extends WorkspaceController {
   List<ChatMessage> get messages => _messages;
 
   @override
+  WorkspaceSessionTimelineState timelineStateForSession(String? sessionId) {
+    final normalized = sessionId?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return const WorkspaceSessionTimelineState.empty();
+    }
+    final messages = _messageListFor(normalized);
+    return WorkspaceSessionTimelineState(
+      sessionId: normalized,
+      messages: messages,
+      orderedMessages: messages,
+      loading: _loading && normalized == _selectedSessionId,
+      showingCachedMessages: false,
+    );
+  }
+
+  @override
+  void updateWatchedSessionIds(Iterable<String?> sessionIds) {}
+
+  @override
+  Future<void> refreshTimelineSession(String? sessionId) async {}
+
+  @override
   Future<void> load() async {
     _loading = false;
     _selectedSessionId = initialSessionId ?? 'ses_root';
@@ -513,6 +535,28 @@ class _AsyncChildSessionWorkspaceController extends WorkspaceController {
 
   @override
   List<ChatMessage> get messages => _messages;
+
+  @override
+  WorkspaceSessionTimelineState timelineStateForSession(String? sessionId) {
+    final normalized = sessionId?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return const WorkspaceSessionTimelineState.empty();
+    }
+    final messages = _messageListFor(normalized);
+    return WorkspaceSessionTimelineState(
+      sessionId: normalized,
+      messages: messages,
+      orderedMessages: messages,
+      loading: _loading && normalized == _selectedSessionId,
+      showingCachedMessages: false,
+    );
+  }
+
+  @override
+  void updateWatchedSessionIds(Iterable<String?> sessionIds) {}
+
+  @override
+  Future<void> refreshTimelineSession(String? sessionId) async {}
 
   @override
   Future<void> load() async {
