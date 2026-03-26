@@ -6837,6 +6837,22 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
                       final project = projects[index];
                       final selected =
                           project.directory == widget.currentDirectory;
+                      final tile = _ProjectSidebarTile(
+                        key: ValueKey<String>(
+                          'workspace-project-${project.directory}',
+                        ),
+                        project: project,
+                        selected: selected,
+                        onSelect: () => widget.onSelectProject(project),
+                        onEdit: () => widget.onEditProject(project),
+                        onRemove: () => widget.onRemoveProject(project),
+                      );
+                      final reorderableTile = projects.length > 1
+                          ? ReorderableDragStartListener(
+                              index: index,
+                              child: tile,
+                            )
+                          : tile;
                       return Padding(
                         key: ValueKey<String>(
                           'workspace-project-item-${project.directory}',
@@ -6847,29 +6863,7 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
                           density.inset(AppSpacing.sm),
                           index == projects.length - 1 ? 0 : microGap,
                         ),
-                        child: Stack(
-                          children: <Widget>[
-                            _ProjectSidebarTile(
-                              key: ValueKey<String>(
-                                'workspace-project-${project.directory}',
-                              ),
-                              project: project,
-                              selected: selected,
-                              onSelect: () => widget.onSelectProject(project),
-                              onEdit: () => widget.onEditProject(project),
-                              onRemove: () => widget.onRemoveProject(project),
-                            ),
-                            Positioned(
-                              top: 2,
-                              right: 2,
-                              child: _SidebarProjectReorderHandle(
-                                index: index,
-                                project: project,
-                                enabled: projects.length > 1,
-                              ),
-                            ),
-                          ],
-                        ),
+                        child: reorderableTile,
                       );
                     },
                   ),
@@ -7225,61 +7219,6 @@ class _ProjectSidebarTileState extends State<_ProjectSidebarTile> {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _SidebarProjectReorderHandle extends StatelessWidget {
-  const _SidebarProjectReorderHandle({
-    required this.index,
-    required this.project,
-    required this.enabled,
-  });
-
-  final int index;
-  final ProjectTarget project;
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
-    final handle = Tooltip(
-      message: enabled ? 'Drag to reorder project' : 'Only one project',
-      waitDuration: const Duration(milliseconds: 300),
-      child: MouseRegion(
-        cursor: enabled ? SystemMouseCursors.grab : SystemMouseCursors.basic,
-        child: Container(
-          key: ValueKey<String>(
-            'workspace-project-reorder-handle-${project.directory}',
-          ),
-          width: 18,
-          height: 18,
-          decoration: BoxDecoration(
-            color: surfaces.panel.withValues(alpha: 0.94),
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: surfaces.lineSoft),
-            boxShadow: <BoxShadow>[
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.18),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Icon(
-            Icons.drag_indicator_rounded,
-            size: 12,
-            color: surfaces.muted,
-          ),
-        ),
-      ),
-    );
-    if (!enabled) {
-      return Material(type: MaterialType.transparency, child: handle);
-    }
-    return Material(
-      type: MaterialType.transparency,
-      child: ReorderableDragStartListener(index: index, child: handle),
     );
   }
 }

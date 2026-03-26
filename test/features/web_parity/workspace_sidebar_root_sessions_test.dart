@@ -492,12 +492,17 @@ void main() {
       lessThan(tester.getTopLeft(labTile).dy),
     );
 
-    final demoHandle = find.byKey(
-      const ValueKey<String>(
-        'workspace-project-reorder-handle-/workspace/demo',
+    expect(
+      find.byKey(
+        const ValueKey<String>(
+          'workspace-project-reorder-handle-/workspace/demo',
+        ),
       ),
+      findsNothing,
     );
-    await tester.drag(demoHandle, const Offset(0, 140));
+    expect(find.byIcon(Icons.drag_indicator_rounded), findsNothing);
+
+    await tester.drag(demoTile, const Offset(0, 140));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 420));
 
