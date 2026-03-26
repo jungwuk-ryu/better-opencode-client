@@ -141,6 +141,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   static const int _maxDesktopSessionPanes = 4;
   static final PromptAttachmentService _attachmentService =
       PromptAttachmentService();
+  static const Object _composerRecentDraftUnset = Object();
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   WorkspaceController? _controller;
   ServerProfile? _profile;
@@ -148,6 +149,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   final TextEditingController _chatSearchController = TextEditingController();
   final FocusNode _chatSearchFocusNode = FocusNode();
   List<PromptAttachment> _composerAttachments = const <PromptAttachment>[];
+  Map<String, _WorkspaceComposerScopeState> _composerStatesByScope =
+      const <String, _WorkspaceComposerScopeState>{};
   bool _pickingComposerAttachments = false;
   bool _chatSearchVisible = false;
   int _chatSearchActiveMatchIndex = 0;
@@ -169,9 +172,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   bool _sessionRouteSyncInFlight = false;
   String? _pendingSessionRouteId;
   int _sessionRouteSyncRevision = 0;
-  bool _promptSubmitInFlight = false;
+  Set<String> _promptSubmitInFlightScopeKeys = const <String>{};
   int _promptSubmitEpoch = 0;
   String? _recentSubmittedPromptDraft;
+  String? _activeComposerScopeKey;
   int _promptComposerFocusRequestToken = 0;
   int _sessionPaneSequence = 0;
   List<_WorkspaceSessionPaneSpec> _desktopSessionPanes =
@@ -192,6 +196,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   @override
   void initState() {
     super.initState();
+    _promptController.addListener(_handlePromptControllerChanged);
     _activeDirectory = widget.directory;
     _activeRouteSessionId = widget.sessionId;
     _resetDesktopSessionPanes(
@@ -204,6 +209,125 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   }
 
   String get _currentDirectory => _activeDirectory;
+
+  bool get _activePromptSubmitInFlight =>
+      _activeComposerScopeKey != null &&
+      _promptSubmitInFlightScopeKeys.contains(_activeComposerScopeKey);
+
+  String _composerScopeKey({required String directory, String? sessionId}) {
+    final normalizedSessionId = sessionId?.trim();
+    return '$directory::${normalizedSessionId == null || normalizedSessionId.isEmpty ? 'new' : normalizedSessionId}';
+  }
+
+  _WorkspaceComposerScopeState _composerScopeState(String scopeKey) {
+    return _composerStatesByScope[scopeKey] ??
+        const _WorkspaceComposerScopeState();
+  }
+
+  List<PromptAttachment> _composerAttachmentsForScope(String scopeKey) {
+    if (_activeComposerScopeKey == scopeKey) {
+      return _composerAttachments;
+    }
+    return _composerScopeState(scopeKey).attachments;
+  }
+
+  void _updateComposerScopeState(
+    String scopeKey, {
+    String? draft,
+    List<PromptAttachment>? attachments,
+    int? submittedDraftEpoch,
+    Object? recentSubmittedDraft = _composerRecentDraftUnset,
+  }) {
+    final current = _composerScopeState(scopeKey);
+    final next = _WorkspaceComposerScopeState(
+      draft: draft ?? current.draft,
+      attachments: attachments == null
+          ? current.attachments
+          : List<PromptAttachment>.unmodifiable(attachments),
+      submittedDraftEpoch: submittedDraftEpoch ?? current.submittedDraftEpoch,
+      recentSubmittedDraft:
+          identical(recentSubmittedDraft, _composerRecentDraftUnset)
+          ? current.recentSubmittedDraft
+          : recentSubmittedDraft as String?,
+    );
+    final updated = Map<String, _WorkspaceComposerScopeState>.from(
+      _composerStatesByScope,
+    );
+    if (next.isEmpty) {
+      updated.remove(scopeKey);
+    } else {
+      updated[scopeKey] = next;
+    }
+    _composerStatesByScope =
+        Map<String, _WorkspaceComposerScopeState>.unmodifiable(updated);
+  }
+
+  void _persistActiveComposerScope() {
+    final scopeKey = _activeComposerScopeKey;
+    if (scopeKey == null) {
+      return;
+    }
+    _updateComposerScopeState(
+      scopeKey,
+      draft: _promptController.text,
+      attachments: _composerAttachments,
+      submittedDraftEpoch: _promptSubmitEpoch,
+      recentSubmittedDraft: _recentSubmittedPromptDraft,
+    );
+  }
+
+  void _activateComposerScope(String scopeKey) {
+    if (_activeComposerScopeKey == scopeKey) {
+      return;
+    }
+    _persistActiveComposerScope();
+    _activeComposerScopeKey = scopeKey;
+    final state = _composerScopeState(scopeKey);
+    _composerAttachments = List<PromptAttachment>.unmodifiable(
+      state.attachments,
+    );
+    _promptSubmitEpoch = state.submittedDraftEpoch;
+    _recentSubmittedPromptDraft = state.recentSubmittedDraft;
+    final draft = state.draft;
+    _promptController.value = TextEditingValue(
+      text: draft,
+      selection: TextSelection.collapsed(offset: draft.length),
+      composing: TextRange.empty,
+    );
+  }
+
+  void _syncComposerScopeForController(WorkspaceController controller) {
+    final scopeKey = _composerScopeKey(
+      directory: controller.directory,
+      sessionId: controller.selectedSessionId,
+    );
+    _activateComposerScope(scopeKey);
+  }
+
+  void _handlePromptControllerChanged() {
+    final scopeKey = _activeComposerScopeKey;
+    if (scopeKey == null) {
+      return;
+    }
+    _updateComposerScopeState(scopeKey, draft: _promptController.text);
+  }
+
+  void _handleActiveWorkspaceControllerChanged() {
+    final controller = _controller;
+    if (!mounted || controller == null) {
+      return;
+    }
+    final scopeKey = _composerScopeKey(
+      directory: controller.directory,
+      sessionId: controller.selectedSessionId,
+    );
+    if (scopeKey == _activeComposerScopeKey) {
+      return;
+    }
+    setState(() {
+      _activateComposerScope(scopeKey);
+    });
+  }
 
   void _showSnackBar(
     String message, {
@@ -313,6 +437,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   @override
   void dispose() {
     _disposeController();
+    _promptController.removeListener(_handlePromptControllerChanged);
     _promptController.dispose();
     _chatSearchController.dispose();
     _chatSearchFocusNode.dispose();
@@ -325,6 +450,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
 
   void _disposeController() {
     _clearWatchedSessionSync();
+    _controller?.removeListener(_handleActiveWorkspaceControllerChanged);
     _controller = null;
     _projectLoadingShellState = null;
   }
@@ -345,6 +471,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       directory: directory,
       initialSessionId: routeSessionId,
     );
+    final previousController = _controller;
     final profileChanged = _profile?.storageKey != profile.storageKey;
     final directoryChanged = _activeDirectory != directory;
     final bindingChanged =
@@ -352,10 +479,17 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         profileChanged ||
         directoryChanged;
 
+    if (!identical(previousController, nextController)) {
+      previousController?.removeListener(
+        _handleActiveWorkspaceControllerChanged,
+      );
+      nextController.addListener(_handleActiveWorkspaceControllerChanged);
+    }
     _controller = nextController;
     _profile = profile;
     _activeDirectory = directory;
     _activeRouteSessionId = routeSessionId;
+    _syncComposerScopeForController(nextController);
 
     if (profileChanged || resetPaneDeck) {
       _compactPane = _CompactWorkspacePane.session;
@@ -447,7 +581,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   }
 
   bool _canInterruptWithShortcut(WorkspaceController controller) {
-    return !_promptSubmitInFlight &&
+    return !_activePromptSubmitInFlight &&
         _promptController.text.trim().isEmpty &&
         _composerAttachments.isEmpty &&
         controller.selectedSessionId != null &&
@@ -1700,7 +1834,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   }
 
   Future<void> _pickComposerAttachments() async {
-    if (_promptSubmitInFlight || _pickingComposerAttachments) {
+    final scopeKey = _activeComposerScopeKey;
+    if (scopeKey == null ||
+        _activePromptSubmitInFlight ||
+        _pickingComposerAttachments) {
       return;
     }
 
@@ -1715,11 +1852,17 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       if (!mounted || attachments.isEmpty) {
         return;
       }
+      final nextAttachments = <PromptAttachment>[
+        ..._composerAttachmentsForScope(scopeKey),
+        ...attachments,
+      ];
       setState(() {
-        _composerAttachments = <PromptAttachment>[
-          ..._composerAttachments,
-          ...attachments,
-        ];
+        _updateComposerScopeState(scopeKey, attachments: nextAttachments);
+        if (_activeComposerScopeKey == scopeKey) {
+          _composerAttachments = List<PromptAttachment>.unmodifiable(
+            nextAttachments,
+          );
+        }
       });
     } catch (error) {
       if (!mounted) {
@@ -1763,19 +1906,27 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   }
 
   void _removeComposerAttachment(String attachmentId) {
+    final scopeKey = _activeComposerScopeKey;
+    if (scopeKey == null) {
+      return;
+    }
+    final nextAttachments = _composerAttachments
+        .where((attachment) => attachment.id != attachmentId)
+        .toList(growable: false);
     setState(() {
-      _composerAttachments = _composerAttachments
-          .where((attachment) => attachment.id != attachmentId)
-          .toList(growable: false);
+      _composerAttachments = nextAttachments;
+      _updateComposerScopeState(scopeKey, attachments: nextAttachments);
     });
   }
 
   Future<void> _submitPrompt(WorkspacePromptDispatchMode? mode) async {
     final controller = _controller;
+    final scopeKey = _activeComposerScopeKey;
     final draft = _promptController.text;
     final attachments = List<PromptAttachment>.from(_composerAttachments);
     if (controller == null ||
-        _promptSubmitInFlight ||
+        scopeKey == null ||
+        _promptSubmitInFlightScopeKeys.contains(scopeKey) ||
         controller.submittingPrompt ||
         (draft.trim().isEmpty && attachments.isEmpty)) {
       return;
@@ -1792,12 +1943,23 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                   WorkspacePromptDispatchMode.steer,
               }
             : null);
+    final nextSubmitEpoch = _promptSubmitEpoch + 1;
 
     setState(() {
-      _promptSubmitInFlight = true;
+      _promptSubmitInFlightScopeKeys = <String>{
+        ..._promptSubmitInFlightScopeKeys,
+        scopeKey,
+      };
       _composerAttachments = const <PromptAttachment>[];
-      _promptSubmitEpoch += 1;
+      _promptSubmitEpoch = nextSubmitEpoch;
       _recentSubmittedPromptDraft = draft;
+      _updateComposerScopeState(
+        scopeKey,
+        draft: '',
+        attachments: const <PromptAttachment>[],
+        submittedDraftEpoch: nextSubmitEpoch,
+        recentSubmittedDraft: draft,
+      );
     });
     _promptController.value = const TextEditingValue(
       text: '',
@@ -1815,15 +1977,29 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       if (!mounted) {
         return;
       }
+      final restoredEpoch = nextSubmitEpoch + 1;
       setState(() {
-        _composerAttachments = attachments;
-        _recentSubmittedPromptDraft = null;
-        _promptSubmitEpoch += 1;
+        _updateComposerScopeState(
+          scopeKey,
+          draft: draft,
+          attachments: attachments,
+          submittedDraftEpoch: restoredEpoch,
+          recentSubmittedDraft: null,
+        );
+        if (_activeComposerScopeKey == scopeKey) {
+          _composerAttachments = List<PromptAttachment>.unmodifiable(
+            attachments,
+          );
+          _recentSubmittedPromptDraft = null;
+          _promptSubmitEpoch = restoredEpoch;
+        }
       });
-      _promptController.value = TextEditingValue(
-        text: draft,
-        selection: TextSelection.collapsed(offset: draft.length),
-      );
+      if (_activeComposerScopeKey == scopeKey) {
+        _promptController.value = TextEditingValue(
+          text: draft,
+          selection: TextSelection.collapsed(offset: draft.length),
+        );
+      }
       _showSnackBar(
         'Failed to send message: $error',
         tone: AppSnackBarTone.danger,
@@ -1831,7 +2007,11 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     } finally {
       if (mounted) {
         setState(() {
-          _promptSubmitInFlight = false;
+          final nextInFlight = Set<String>.from(_promptSubmitInFlightScopeKeys)
+            ..remove(scopeKey);
+          _promptSubmitInFlightScopeKeys = Set<String>.unmodifiable(
+            nextInFlight,
+          );
         });
       }
     }
@@ -1839,7 +2019,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
 
   Future<void> _editQueuedPrompt(String queuedPromptId) async {
     final controller = _controller;
-    if (controller == null) {
+    final scopeKey = _activeComposerScopeKey;
+    if (controller == null || scopeKey == null) {
       return;
     }
     final queuedPrompt = await controller.editSelectedQueuedPrompt(
@@ -1853,17 +2034,28 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     }
     controller.selectModel(queuedPrompt.modelKey);
     controller.selectReasoning(queuedPrompt.reasoning);
-    setState(() {
-      _composerAttachments = List<PromptAttachment>.from(
-        queuedPrompt.attachments,
-      );
-      _recentSubmittedPromptDraft = null;
-    });
-    _promptController.value = TextEditingValue(
-      text: queuedPrompt.prompt,
-      selection: TextSelection.collapsed(offset: queuedPrompt.prompt.length),
-      composing: TextRange.empty,
+    final nextAttachments = List<PromptAttachment>.from(
+      queuedPrompt.attachments,
     );
+    setState(() {
+      _updateComposerScopeState(
+        scopeKey,
+        draft: queuedPrompt.prompt,
+        attachments: nextAttachments,
+        recentSubmittedDraft: null,
+      );
+      if (_activeComposerScopeKey == scopeKey) {
+        _composerAttachments = nextAttachments;
+        _recentSubmittedPromptDraft = null;
+      }
+    });
+    if (_activeComposerScopeKey == scopeKey) {
+      _promptController.value = TextEditingValue(
+        text: queuedPrompt.prompt,
+        selection: TextSelection.collapsed(offset: queuedPrompt.prompt.length),
+        composing: TextRange.empty,
+      );
+    }
   }
 
   Future<void> _deleteQueuedPrompt(String queuedPromptId) async {
@@ -2279,8 +2471,6 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         _selectedSessionVisibleOutsideActivePane(currentController)) {
       currentController.preserveSelectedSessionTimelineForWatch();
     }
-    _promptController.clear();
-    _composerAttachments = const <PromptAttachment>[];
 
     setState(() {
       _projectLoadingShellState = shouldPreserveShell
@@ -2747,7 +2937,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                   activeWorkspaceError: controller.error,
                                   sidePanelVisible: desktopSidePanelVisible,
                                   submittingPrompt:
-                                      _promptSubmitInFlight ||
+                                      _activePromptSubmitInFlight ||
                                       controller.submittingPrompt,
                                   pickingAttachments:
                                       _pickingComposerAttachments,
@@ -2781,7 +2971,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                       _revertToMessage(controller, message),
                                   interruptiblePrompt:
                                       controller.selectedSessionId != null &&
-                                      (_promptSubmitInFlight ||
+                                      (_activePromptSubmitInFlight ||
                                           controller
                                               .selectedSessionInterruptible),
                                   interruptingPrompt:
@@ -2908,6 +3098,40 @@ class _WorkspacePaneViewModel {
   final _WorkspaceSessionPaneSpec pane;
   final WorkspaceController controller;
   final ProjectTarget? project;
+}
+
+class _WorkspaceComposerScopeState {
+  const _WorkspaceComposerScopeState({
+    this.draft = '',
+    this.attachments = const <PromptAttachment>[],
+    this.submittedDraftEpoch = 0,
+    this.recentSubmittedDraft,
+  });
+
+  final String draft;
+  final List<PromptAttachment> attachments;
+  final int submittedDraftEpoch;
+  final String? recentSubmittedDraft;
+
+  bool get isEmpty =>
+      draft.isEmpty &&
+      attachments.isEmpty &&
+      submittedDraftEpoch == 0 &&
+      (recentSubmittedDraft == null || recentSubmittedDraft!.isEmpty);
+
+  _WorkspaceComposerScopeState copyWith({
+    String? draft,
+    List<PromptAttachment>? attachments,
+    int? submittedDraftEpoch,
+    String? recentSubmittedDraft,
+  }) {
+    return _WorkspaceComposerScopeState(
+      draft: draft ?? this.draft,
+      attachments: attachments ?? this.attachments,
+      submittedDraftEpoch: submittedDraftEpoch ?? this.submittedDraftEpoch,
+      recentSubmittedDraft: recentSubmittedDraft,
+    );
+  }
 }
 
 List<ProjectTarget> _mergedProjectsWithTarget(

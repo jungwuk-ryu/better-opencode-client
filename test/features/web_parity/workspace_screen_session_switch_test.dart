@@ -734,6 +734,94 @@ void main() {
     },
   );
 
+  testWidgets('composer draft follows the active pane session and project', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final createdControllers = <_RecordingWorkspaceController>[];
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            final controller = _RecordingWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+            createdControllers.add(controller);
+            return controller;
+          },
+    );
+    addTearDown(appController.dispose);
+
+    final navigatorKey = GlobalKey<NavigatorState>();
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        navigatorKey: navigatorKey,
+        initialRoute: '/',
+      ),
+    );
+    navigatorKey.currentState!.pushNamed(
+      buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('workspace-split-session-pane-button')),
+    );
+    await tester.pumpAndSettle();
+
+    final composerFinder = find.byKey(
+      const ValueKey<String>('composer-text-field'),
+    );
+
+    await tester.tap(find.text('Session Two'));
+    await tester.pumpAndSettle();
+    await tester.enterText(composerFinder, 'draft for two');
+    await tester.pump();
+
+    await tester.tap(find.text('hello from one'));
+    await tester.pumpAndSettle();
+    expect(_composerText(tester), isEmpty);
+
+    await tester.enterText(composerFinder, 'draft for one');
+    await tester.pump();
+
+    await tester.tap(find.text('hello from two'));
+    await tester.pumpAndSettle();
+    expect(_composerText(tester), 'draft for two');
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('workspace-project-/workspace/lab')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(createdControllers, hasLength(2));
+    expect(_composerText(tester), isEmpty);
+
+    await tester.enterText(composerFinder, 'draft for lab');
+    await tester.pump();
+
+    await tester.tap(find.text('hello from one'));
+    await tester.pumpAndSettle();
+    expect(_composerText(tester), 'draft for one');
+
+    await tester.tap(find.text('hello from lab'));
+    await tester.pumpAndSettle();
+    expect(_composerText(tester), 'draft for lab');
+  });
+
   testWidgets(
     'switching projects stays on the same page and reuses cached workspace controllers',
     (tester) async {
@@ -1299,6 +1387,16 @@ Finder _paneLoadingFinder() {
           'workspace-session-pane-loading-',
         ),
   );
+}
+
+String _composerText(WidgetTester tester) {
+  return tester
+          .widget<TextField>(
+            find.byKey(const ValueKey<String>('composer-text-field')),
+          )
+          .controller
+          ?.text ??
+      '';
 }
 
 class _WorkspaceRouteHarness extends StatelessWidget {
