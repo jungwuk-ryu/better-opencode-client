@@ -34,14 +34,33 @@ class _OpenCodeRemoteAppState extends State<OpenCodeRemoteApp> {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: _localeController,
+      animation: Listenable.merge(<Listenable>[
+        _localeController,
+        _appController,
+      ]),
       builder: (context, child) {
         return AppScope(
           controller: _appController,
           child: MaterialApp(
-            onGenerateTitle: (context) => AppLocalizations.of(context)!.appTitle,
+            onGenerateTitle: (context) =>
+                AppLocalizations.of(context)!.appTitle,
             debugShowCheckedModeBanner: false,
             theme: AppTheme.dark(),
+            builder: (context, child) {
+              final mediaQuery = MediaQuery.maybeOf(context);
+              if (mediaQuery == null) {
+                return child ?? const SizedBox.shrink();
+              }
+              return MediaQuery(
+                data: mediaQuery.copyWith(
+                  textScaler: _ScaledTextScaler(
+                    base: mediaQuery.textScaler,
+                    multiplier: _appController.textScaleFactor,
+                  ),
+                ),
+                child: child ?? const SizedBox.shrink(),
+              );
+            },
             locale: _localeController.locale,
             supportedLocales: AppLocalizations.supportedLocales,
             localizationsDelegates: const [
@@ -79,4 +98,31 @@ class _OpenCodeRemoteAppState extends State<OpenCodeRemoteApp> {
       },
     );
   }
+}
+
+class _ScaledTextScaler extends TextScaler {
+  const _ScaledTextScaler({required this.base, required this.multiplier})
+    : assert(multiplier > 0);
+
+  final TextScaler base;
+  final double multiplier;
+
+  @override
+  double scale(double fontSize) => base.scale(fontSize) * multiplier;
+
+  @override
+  double get textScaleFactor => scale(1);
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) {
+      return true;
+    }
+    return other is _ScaledTextScaler &&
+        other.base == base &&
+        other.multiplier == multiplier;
+  }
+
+  @override
+  int get hashCode => Object.hash(base, multiplier);
 }

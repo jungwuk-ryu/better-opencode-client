@@ -55,6 +55,12 @@ class WebParityAppController extends ChangeNotifier {
   static const _chatCodeBlockHighlightingEnabledKey =
       'web_parity.chat_code_block_highlighting_enabled';
   static const _busyFollowupModeKey = 'web_parity.busy_followup_mode';
+  static const _textScaleFactorKey = 'web_parity.text_scale_factor';
+  static const double defaultTextScaleFactor = 1.0;
+  static const double minTextScaleFactor = 0.9;
+  static const double maxTextScaleFactor = 1.25;
+  static const double textScaleFactorStep = 0.05;
+  static const int textScaleFactorDivisions = 7;
 
   final ServerProfileStore _profileStore;
   final ProjectStore _projectStore;
@@ -72,6 +78,7 @@ class WebParityAppController extends ChangeNotifier {
   bool _sidebarChildSessionsVisible = false;
   bool _chatCodeBlockHighlightingEnabled = true;
   WorkspaceFollowupMode _busyFollowupMode = WorkspaceFollowupMode.queue;
+  double _textScaleFactor = defaultTextScaleFactor;
   final Map<String, WorkspaceController> _workspaceControllers =
       <String, WorkspaceController>{};
 
@@ -86,6 +93,7 @@ class WebParityAppController extends ChangeNotifier {
   bool get chatCodeBlockHighlightingEnabled =>
       _chatCodeBlockHighlightingEnabled;
   WorkspaceFollowupMode get busyFollowupMode => _busyFollowupMode;
+  double get textScaleFactor => _textScaleFactor;
   ServerProbeReport? get selectedReport {
     final selectedProfile = _selectedProfile;
     if (selectedProfile == null) {
@@ -114,6 +122,9 @@ class WebParityAppController extends ChangeNotifier {
     final busyFollowupMode = WorkspaceFollowupMode.fromStorage(
       prefs.getString(_busyFollowupModeKey),
     );
+    final textScaleFactor = _normalizeTextScaleFactor(
+      prefs.getDouble(_textScaleFactorKey),
+    );
 
     ServerProfile? selectedProfile;
     if (selectedProfileId != null) {
@@ -135,6 +146,7 @@ class WebParityAppController extends ChangeNotifier {
     _sidebarChildSessionsVisible = sidebarChildSessionsVisible;
     _chatCodeBlockHighlightingEnabled = chatCodeBlockHighlightingEnabled;
     _busyFollowupMode = busyFollowupMode;
+    _textScaleFactor = textScaleFactor;
     _loading = false;
     notifyListeners();
   }
@@ -199,6 +211,17 @@ class WebParityAppController extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_busyFollowupModeKey, value.storageValue);
+  }
+
+  Future<void> setTextScaleFactor(double value) async {
+    final normalized = _normalizeTextScaleFactor(value);
+    if ((_textScaleFactor - normalized).abs() < 0.0001) {
+      return;
+    }
+    _textScaleFactor = normalized;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_textScaleFactorKey, normalized);
   }
 
   Future<void> refreshProbe(ServerProfile profile) async {
@@ -343,5 +366,22 @@ class WebParityAppController extends ChangeNotifier {
     _workspaceControllers.clear();
     _probeService.dispose();
     super.dispose();
+  }
+
+  double _normalizeTextScaleFactor(double? value) {
+    final candidate = value;
+    if (candidate == null || !candidate.isFinite) {
+      return defaultTextScaleFactor;
+    }
+    final clamped = candidate
+        .clamp(minTextScaleFactor, maxTextScaleFactor)
+        .toDouble();
+    final snapped =
+        ((clamped - minTextScaleFactor) / textScaleFactorStep).round() *
+            textScaleFactorStep +
+        minTextScaleFactor;
+    return double.parse(
+      snapped.clamp(minTextScaleFactor, maxTextScaleFactor).toStringAsFixed(2),
+    );
   }
 }

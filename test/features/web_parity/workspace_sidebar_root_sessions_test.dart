@@ -196,6 +196,24 @@ void main() {
     expect(appController.busyFollowupMode, WorkspaceFollowupMode.steer);
 
     await tester.dragUntilVisible(
+      find.byKey(const ValueKey<String>('workspace-settings-text-scale-row')),
+      settingsListView,
+      const Offset(0, -160),
+    );
+    await tester.pump();
+
+    final textScaleSlider = tester.widget<Slider>(
+      find.byKey(
+        const ValueKey<String>('workspace-settings-text-scale-slider'),
+      ),
+    );
+    textScaleSlider.onChanged?.call(1.15);
+    await tester.pump();
+
+    expect(appController.textScaleFactor, 1.15);
+    expect(find.text('115%'), findsOneWidget);
+
+    await tester.dragUntilVisible(
       find.byKey(
         const ValueKey<String>(
           'workspace-settings-sidebar-child-sessions-toggle',
@@ -366,6 +384,7 @@ class _StaticAppController extends WebParityAppController {
     this.chatCodeBlockHighlightingEnabledValue = true,
     required WorkspaceControllerFactory workspaceControllerFactory,
   }) : busyFollowupModeValue = WorkspaceFollowupMode.queue,
+       textScaleFactorValue = WebParityAppController.defaultTextScaleFactor,
        super(workspaceControllerFactory: workspaceControllerFactory);
 
   final ServerProfile profile;
@@ -375,6 +394,7 @@ class _StaticAppController extends WebParityAppController {
   bool sidebarChildSessionsVisibleValue;
   bool chatCodeBlockHighlightingEnabledValue;
   WorkspaceFollowupMode busyFollowupModeValue;
+  double textScaleFactorValue;
 
   @override
   ServerProfile? get selectedProfile => profile;
@@ -398,6 +418,9 @@ class _StaticAppController extends WebParityAppController {
 
   @override
   WorkspaceFollowupMode get busyFollowupMode => busyFollowupModeValue;
+
+  @override
+  double get textScaleFactor => textScaleFactorValue;
 
   @override
   Future<void> setShellToolPartsExpanded(bool value) async {
@@ -426,6 +449,12 @@ class _StaticAppController extends WebParityAppController {
   @override
   Future<void> setBusyFollowupMode(WorkspaceFollowupMode value) async {
     busyFollowupModeValue = value;
+    notifyListeners();
+  }
+
+  @override
+  Future<void> setTextScaleFactor(double value) async {
+    textScaleFactorValue = value;
     notifyListeners();
   }
 }

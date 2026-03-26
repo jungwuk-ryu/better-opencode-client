@@ -2730,6 +2730,25 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                 ),
                                 const SizedBox(height: AppSpacing.lg),
                                 _WorkspaceSettingsSection(
+                                  title: 'Appearance',
+                                  child: _WorkspaceSettingsCard(
+                                    child: _WorkspaceSettingsTextScaleRow(
+                                      key: const ValueKey<String>(
+                                        'workspace-settings-text-scale-row',
+                                      ),
+                                      value:
+                                          widget.appController.textScaleFactor,
+                                      onChanged: (value) {
+                                        unawaited(
+                                          widget.appController
+                                              .setTextScaleFactor(value),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: AppSpacing.lg),
+                                _WorkspaceSettingsSection(
                                   title: 'Sidebar',
                                   child: _WorkspaceSettingsCard(
                                     child: _WorkspaceSettingsToggleRow(
@@ -2949,6 +2968,153 @@ class _WorkspaceSettingsFollowupModeRow extends StatelessWidget {
                 final next = selection.isEmpty ? value : selection.first;
                 onChanged(next);
               },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WorkspaceSettingsTextScaleRow extends StatelessWidget {
+  const _WorkspaceSettingsTextScaleRow({
+    required this.value,
+    required this.onChanged,
+    super.key,
+  });
+
+  final double value;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final percentLabel = '${(value * 100).round()}%';
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: surfaces.panelMuted.withValues(alpha: 0.52),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      'Text size',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xxs),
+                    Text(
+                      'Scale text across the app without changing layout density.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: surfaces.muted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Container(
+                key: const ValueKey<String>(
+                  'workspace-settings-text-scale-badge',
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.sm,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: surfaces.panel,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: surfaces.lineSoft),
+                ),
+                child: Text(
+                  percentLabel,
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Row(
+            children: <Widget>[
+              Text(
+                'A',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: surfaces.muted,
+                ),
+              ),
+              Expanded(
+                child: SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    overlayShape: const RoundSliderOverlayShape(
+                      overlayRadius: 14,
+                    ),
+                  ),
+                  child: Slider.adaptive(
+                    key: const ValueKey<String>(
+                      'workspace-settings-text-scale-slider',
+                    ),
+                    value: value,
+                    min: WebParityAppController.minTextScaleFactor,
+                    max: WebParityAppController.maxTextScaleFactor,
+                    divisions: WebParityAppController.textScaleFactorDivisions,
+                    label: percentLabel,
+                    onChanged: onChanged,
+                  ),
+                ),
+              ),
+              Text(
+                'A',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: theme.colorScheme.primary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md,
+              vertical: AppSpacing.sm,
+            ),
+            decoration: BoxDecoration(
+              color: surfaces.panel,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: surfaces.lineSoft),
+            ),
+            child: Row(
+              children: <Widget>[
+                Text(
+                  'Preview',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: surfaces.muted,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    'Readable session summaries and messages',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
