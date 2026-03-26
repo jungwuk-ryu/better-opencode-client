@@ -31,6 +31,114 @@ import '../tools/todo_service.dart';
 
 enum WorkspaceSideTab { review, files, context }
 
+enum WorkspaceFollowupMode {
+  queue,
+  steer;
+
+  static WorkspaceFollowupMode fromStorage(String? value) {
+    return switch (value?.trim().toLowerCase()) {
+      'steer' => WorkspaceFollowupMode.steer,
+      _ => WorkspaceFollowupMode.queue,
+    };
+  }
+
+  String get storageValue => name;
+}
+
+enum WorkspacePromptDispatchMode { queue, steer }
+
+class WorkspaceQueuedPrompt {
+  const WorkspaceQueuedPrompt({
+    required this.id,
+    required this.sessionId,
+    required this.prompt,
+    required this.attachments,
+    required this.createdAt,
+    this.agentName,
+    this.modelKey,
+    this.providerId,
+    this.modelId,
+    this.reasoning,
+  });
+
+  final String id;
+  final String sessionId;
+  final String prompt;
+  final List<PromptAttachment> attachments;
+  final DateTime createdAt;
+  final String? agentName;
+  final String? modelKey;
+  final String? providerId;
+  final String? modelId;
+  final String? reasoning;
+
+  String get previewText {
+    final firstLine = prompt
+        .split(RegExp(r'\r?\n'))
+        .map((line) => line.trim())
+        .firstWhere((line) => line.isNotEmpty, orElse: () => '');
+    if (firstLine.isNotEmpty) {
+      return firstLine;
+    }
+    if (attachments.isEmpty) {
+      return 'Queued follow-up';
+    }
+    if (attachments.length == 1) {
+      return '[Attachment] ${attachments.first.filename}';
+    }
+    return '[${attachments.length} attachments]';
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'id': id,
+    'sessionId': sessionId,
+    'prompt': prompt,
+    'createdAtMs': createdAt.millisecondsSinceEpoch,
+    'agentName': agentName,
+    'modelKey': modelKey,
+    'providerId': providerId,
+    'modelId': modelId,
+    'reasoning': reasoning,
+    'attachments': attachments
+        .map(
+          (attachment) => <String, Object?>{
+            'id': attachment.id,
+            'filename': attachment.filename,
+            'mime': attachment.mime,
+            'url': attachment.url,
+          },
+        )
+        .toList(growable: false),
+  };
+
+  factory WorkspaceQueuedPrompt.fromJson(Map<String, Object?> json) {
+    return WorkspaceQueuedPrompt(
+      id: (json['id'] as String?) ?? '',
+      sessionId: (json['sessionId'] as String?) ?? '',
+      prompt: (json['prompt'] as String?) ?? '',
+      createdAt: DateTime.fromMillisecondsSinceEpoch(
+        (json['createdAtMs'] as num?)?.toInt() ?? 0,
+      ),
+      agentName: json['agentName'] as String?,
+      modelKey: json['modelKey'] as String?,
+      providerId: json['providerId'] as String?,
+      modelId: json['modelId'] as String?,
+      reasoning: json['reasoning'] as String?,
+      attachments: ((json['attachments'] as List?) ?? const <Object?>[])
+          .whereType<Map>()
+          .map(
+            (item) => PromptAttachment(
+              id: item['id']?.toString() ?? '',
+              filename: item['filename']?.toString() ?? '',
+              mime: item['mime']?.toString() ?? '',
+              url: item['url']?.toString() ?? '',
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+}
+
 class WorkspaceComposerModelOption {
   const WorkspaceComposerModelOption({
     required this.key,
@@ -203,6 +311,13 @@ class WorkspaceController extends ChangeNotifier {
       const <String, int>{};
   int _activeChildSessionPreviewLoadSignature = 0;
   int _activeChildSessionPreviewLoadToken = 0;
+  Map<String, List<WorkspaceQueuedPrompt>> _queuedPromptsBySessionId =
+      const <String, List<WorkspaceQueuedPrompt>>{};
+  Map<String, String> _queuedPromptFailureBySessionId =
+      const <String, String>{};
+  Map<String, String> _sendingQueuedPromptBySessionId =
+      const <String, String>{};
+  int _queuedPromptSequence = 0;
 
   bool get loading => _loading;
   bool get sessionLoading => _sessionLoading;
@@ -351,6 +466,32 @@ class WorkspaceController extends ChangeNotifier {
   SessionSummary? get rootSelectedSession =>
       _rootSessionForId(selectedSessionId);
 
+  List<WorkspaceQueuedPrompt> get selectedSessionQueuedPrompts {
+    final sessionId = selectedSessionId;
+    if (sessionId == null || sessionId.isEmpty) {
+      return const <WorkspaceQueuedPrompt>[];
+    }
+    return List<WorkspaceQueuedPrompt>.unmodifiable(
+      _queuedPromptsBySessionId[sessionId] ?? const <WorkspaceQueuedPrompt>[],
+    );
+  }
+
+  String? get selectedSessionFailedQueuedPromptId {
+    final sessionId = selectedSessionId;
+    if (sessionId == null || sessionId.isEmpty) {
+      return null;
+    }
+    return _queuedPromptFailureBySessionId[sessionId];
+  }
+
+  String? get selectedSessionSendingQueuedPromptId {
+    final sessionId = selectedSessionId;
+    if (sessionId == null || sessionId.isEmpty) {
+      return null;
+    }
+    return _sendingQueuedPromptBySessionId[sessionId];
+  }
+
   List<SessionSummary> get activeChildSessions {
     final root = rootSelectedSession;
     if (root == null) {
@@ -477,6 +618,7 @@ class WorkspaceController extends ChangeNotifier {
           )
           ? availableProjects
           : <ProjectTarget>[resolvedProject, ...availableProjects];
+      await _restoreQueuedPrompts(resolvedProject);
 
       await _projectStore.recordRecentProject(resolvedProject);
       await _projectStore.saveLastWorkspace(
@@ -519,6 +661,7 @@ class WorkspaceController extends ChangeNotifier {
 
       await _loadProjectPanels();
       await _connectEvents();
+      _maybeFlushQueuedPrompts();
     } catch (error) {
       _error = error.toString();
     } finally {
@@ -556,6 +699,7 @@ class WorkspaceController extends ChangeNotifier {
       serverStorageKey: profile.storageKey,
       target: project,
     );
+    await _restoreQueuedPrompts(project);
 
     await _loadComposerState(project);
     final bundle = await _chatService.fetchBundle(
@@ -587,6 +731,7 @@ class WorkspaceController extends ChangeNotifier {
     }
     await _loadProjectPanels();
     await _connectEvents();
+    _maybeFlushQueuedPrompts();
     _notify();
   }
 
@@ -611,6 +756,7 @@ class WorkspaceController extends ChangeNotifier {
       _sessionLoadError = null;
       _applyDefaultComposerSelection();
       _notify();
+      _maybeFlushQueuedPrompts();
       return;
     }
 
@@ -620,6 +766,7 @@ class WorkspaceController extends ChangeNotifier {
       loadPanels: true,
       persistHint: true,
     );
+    _maybeFlushQueuedPrompts(sessionId: sessionId);
   }
 
   Future<void> retrySelectedSessionMessages() async {
@@ -960,92 +1107,151 @@ class WorkspaceController extends ChangeNotifier {
   Future<String?> submitPrompt(
     String prompt, {
     List<PromptAttachment> attachments = const <PromptAttachment>[],
+    WorkspacePromptDispatchMode? mode,
   }) async {
     final trimmed = prompt.trim();
     final project = _project;
     final selectedAgent = this.selectedAgent;
     final selectedModel = this.selectedModel;
-    if (_submittingPrompt ||
-        project == null ||
-        (trimmed.isEmpty && attachments.isEmpty)) {
+    if (project == null || (trimmed.isEmpty && attachments.isEmpty)) {
       return _selectedSessionId;
+    }
+
+    if (_submittingPrompt) {
+      return _selectedSessionId;
+    }
+
+    var sessionId = _selectedSessionId;
+    if (sessionId == null || sessionId.isEmpty) {
+      final created = await _chatService.createSession(
+        profile: profile,
+        project: project,
+      );
+      sessionId = created.id;
+      _selectedSessionId = sessionId;
+      _sessions = <SessionSummary>[created, ..._sessions];
+      _statuses = <String, SessionStatusSummary>{
+        ..._statuses,
+        sessionId:
+            _statuses[sessionId] ?? const SessionStatusSummary(type: 'idle'),
+      };
+      _notify();
+    }
+
+    final effectiveMode = mode;
+    if (effectiveMode == WorkspacePromptDispatchMode.queue &&
+        _isSessionBusyById(sessionId)) {
+      _enqueueQueuedPrompt(
+        sessionId: sessionId,
+        prompt: trimmed,
+        attachments: attachments,
+        agentName: selectedAgent?.name,
+        modelKey: _selectedModelKey,
+        providerId: selectedModel?.providerId,
+        modelId: selectedModel?.modelId,
+        reasoning: _selectedReasoning,
+      );
+      return sessionId;
     }
 
     _submittingPrompt = true;
     _notify();
 
     try {
-      var sessionId = _selectedSessionId;
-      ChatMessage? optimisticMessage;
-      if (sessionId == null || sessionId.isEmpty) {
-        final created = await _chatService.createSession(
-          profile: profile,
-          project: project,
-        );
-        sessionId = created.id;
-        _selectedSessionId = sessionId;
-        _sessions = <SessionSummary>[created, ..._sessions];
-      }
-      optimisticMessage = _appendOptimisticUserMessage(
+      await _dispatchPrompt(
         project: project,
         sessionId: sessionId,
         prompt: trimmed,
         attachments: attachments,
-      );
-
-      final slashCommand = _parseSlashCommand(trimmed);
-      try {
-        if (slashCommand != null &&
-            _findComposerCommand(slashCommand.name) != null) {
-          await _chatService.sendCommand(
-            profile: profile,
-            project: project,
-            sessionId: sessionId,
-            command: slashCommand.name,
-            arguments: slashCommand.arguments,
-            attachments: attachments,
-            agent: selectedAgent?.name,
-            providerId: selectedModel?.providerId,
-            modelId: selectedModel?.modelId,
-            variant: _selectedReasoning,
-          );
-        } else {
-          await _chatService.sendMessage(
-            profile: profile,
-            project: project,
-            sessionId: sessionId,
-            prompt: trimmed,
-            attachments: attachments,
-            agent: selectedAgent?.name,
-            providerId: selectedModel?.providerId,
-            modelId: selectedModel?.modelId,
-            variant: _selectedReasoning,
-            reasoning: _selectedReasoning,
-          );
-        }
-      } catch (error) {
-        if (optimisticMessage != null) {
-          _removeOptimisticMessage(
-            project: project,
-            sessionId: sessionId,
-            messageId: optimisticMessage.info.id,
-          );
-        }
-        rethrow;
-      }
-      final refreshRevision = ++_promptRefreshRevision;
-      unawaited(
-        _refreshAfterPrompt(
-          project: project,
-          sessionId: sessionId,
-          revision: refreshRevision,
-        ),
+        agentName: selectedAgent?.name,
+        providerId: selectedModel?.providerId,
+        modelId: selectedModel?.modelId,
+        reasoning: _selectedReasoning,
+        preferAsync:
+            effectiveMode == WorkspacePromptDispatchMode.steer &&
+            _isSessionBusyById(sessionId),
       );
       return sessionId;
     } finally {
       _submittingPrompt = false;
       _notify();
     }
+  }
+
+  Future<WorkspaceQueuedPrompt?> editSelectedQueuedPrompt(
+    String queuedPromptId,
+  ) async {
+    final sessionId = _selectedSessionId;
+    if (sessionId == null || sessionId.isEmpty) {
+      return null;
+    }
+    final queue = _queuedPromptsBySessionId[sessionId];
+    if (queue == null || queue.isEmpty) {
+      return null;
+    }
+    if (_sendingQueuedPromptBySessionId.containsKey(sessionId)) {
+      return null;
+    }
+    WorkspaceQueuedPrompt? target;
+    final nextQueue = <WorkspaceQueuedPrompt>[];
+    for (final item in queue) {
+      if (item.id == queuedPromptId && target == null) {
+        target = item;
+        continue;
+      }
+      nextQueue.add(item);
+    }
+    if (target == null) {
+      return null;
+    }
+    _setQueuedPromptsForSession(sessionId, nextQueue);
+    if (_queuedPromptFailureBySessionId[sessionId] == queuedPromptId) {
+      _queuedPromptFailureBySessionId = Map<String, String>.from(
+        _queuedPromptFailureBySessionId,
+      )..remove(sessionId);
+    }
+    await _persistQueuedPrompts();
+    _notify();
+    _maybeFlushQueuedPrompts(sessionId: sessionId);
+    return target;
+  }
+
+  Future<void> deleteSelectedQueuedPrompt(String queuedPromptId) async {
+    final sessionId = _selectedSessionId;
+    if (sessionId == null || sessionId.isEmpty) {
+      return;
+    }
+    final queue = _queuedPromptsBySessionId[sessionId];
+    if (queue == null || queue.isEmpty) {
+      return;
+    }
+    final nextQueue = queue
+        .where((item) => item.id != queuedPromptId)
+        .toList(growable: false);
+    if (nextQueue.length == queue.length) {
+      return;
+    }
+    _setQueuedPromptsForSession(sessionId, nextQueue);
+    if (_queuedPromptFailureBySessionId[sessionId] == queuedPromptId) {
+      _queuedPromptFailureBySessionId = Map<String, String>.from(
+        _queuedPromptFailureBySessionId,
+      )..remove(sessionId);
+    }
+    await _persistQueuedPrompts();
+    _notify();
+    _maybeFlushQueuedPrompts(sessionId: sessionId);
+  }
+
+  Future<void> sendSelectedQueuedPromptNow(String queuedPromptId) async {
+    final sessionId = _selectedSessionId;
+    if (sessionId == null || sessionId.isEmpty) {
+      return;
+    }
+    await _sendQueuedPrompt(
+      sessionId: sessionId,
+      queuedPromptId: queuedPromptId,
+      manual: true,
+    );
   }
 
   Future<void> _refreshAfterPrompt({
@@ -1117,7 +1323,358 @@ class WorkspaceController extends ChangeNotifier {
       return;
     }
 
+    _maybeFlushQueuedPrompts();
     _notify();
+  }
+
+  Future<void> _dispatchPrompt({
+    required ProjectTarget project,
+    required String sessionId,
+    required String prompt,
+    required List<PromptAttachment> attachments,
+    required String? agentName,
+    required String? providerId,
+    required String? modelId,
+    required String? reasoning,
+    bool preferAsync = false,
+  }) async {
+    ChatMessage? optimisticMessage;
+    if (prompt.isNotEmpty || attachments.isNotEmpty) {
+      optimisticMessage = _appendOptimisticUserMessage(
+        project: project,
+        sessionId: sessionId,
+        prompt: prompt,
+        attachments: attachments,
+      );
+    }
+
+    final slashCommand = _parseSlashCommand(prompt);
+    try {
+      if (slashCommand != null &&
+          _findComposerCommand(slashCommand.name) != null) {
+        await _chatService.sendCommand(
+          profile: profile,
+          project: project,
+          sessionId: sessionId,
+          command: slashCommand.name,
+          arguments: slashCommand.arguments,
+          attachments: attachments,
+          agent: agentName,
+          providerId: providerId,
+          modelId: modelId,
+          variant: reasoning,
+        );
+      } else if (preferAsync) {
+        final accepted = await _chatService.sendMessageAsync(
+          profile: profile,
+          project: project,
+          sessionId: sessionId,
+          prompt: prompt,
+          attachments: attachments,
+          messageId: optimisticMessage?.info.id,
+          agent: agentName,
+          providerId: providerId,
+          modelId: modelId,
+          variant: reasoning,
+          reasoning: reasoning,
+        );
+        if (!accepted) {
+          await _chatService.sendMessage(
+            profile: profile,
+            project: project,
+            sessionId: sessionId,
+            prompt: prompt,
+            attachments: attachments,
+            agent: agentName,
+            providerId: providerId,
+            modelId: modelId,
+            variant: reasoning,
+            reasoning: reasoning,
+          );
+        }
+      } else {
+        await _chatService.sendMessage(
+          profile: profile,
+          project: project,
+          sessionId: sessionId,
+          prompt: prompt,
+          attachments: attachments,
+          agent: agentName,
+          providerId: providerId,
+          modelId: modelId,
+          variant: reasoning,
+          reasoning: reasoning,
+        );
+      }
+    } catch (error) {
+      if (optimisticMessage != null) {
+        _removeOptimisticMessage(
+          project: project,
+          sessionId: sessionId,
+          messageId: optimisticMessage.info.id,
+        );
+      }
+      rethrow;
+    }
+
+    _markSessionBusy(sessionId);
+    _schedulePromptRefresh(project: project, sessionId: sessionId);
+  }
+
+  void _schedulePromptRefresh({
+    required ProjectTarget project,
+    required String sessionId,
+  }) {
+    final refreshRevision = ++_promptRefreshRevision;
+    unawaited(
+      _refreshAfterPrompt(
+        project: project,
+        sessionId: sessionId,
+        revision: refreshRevision,
+      ),
+    );
+  }
+
+  void _enqueueQueuedPrompt({
+    required String sessionId,
+    required String prompt,
+    required List<PromptAttachment> attachments,
+    required String? agentName,
+    required String? modelKey,
+    required String? providerId,
+    required String? modelId,
+    required String? reasoning,
+  }) {
+    final timestamp = DateTime.now();
+    final queuedPrompt = WorkspaceQueuedPrompt(
+      id: 'queued_${timestamp.microsecondsSinceEpoch}_${_queuedPromptSequence++}',
+      sessionId: sessionId,
+      prompt: prompt,
+      attachments: List<PromptAttachment>.unmodifiable(
+        List<PromptAttachment>.from(attachments),
+      ),
+      createdAt: timestamp,
+      agentName: agentName,
+      modelKey: modelKey,
+      providerId: providerId,
+      modelId: modelId,
+      reasoning: reasoning,
+    );
+    final nextQueue = <WorkspaceQueuedPrompt>[
+      ...?_queuedPromptsBySessionId[sessionId],
+      queuedPrompt,
+    ];
+    _setQueuedPromptsForSession(sessionId, nextQueue);
+    _queuedPromptFailureBySessionId = Map<String, String>.from(
+      _queuedPromptFailureBySessionId,
+    )..remove(sessionId);
+    unawaited(_persistQueuedPrompts());
+    _notify();
+  }
+
+  Future<void> _sendQueuedPrompt({
+    required String sessionId,
+    required String queuedPromptId,
+    bool manual = false,
+  }) async {
+    final project = _project;
+    if (project == null) {
+      return;
+    }
+    if (_sendingQueuedPromptBySessionId.containsKey(sessionId)) {
+      return;
+    }
+    final queuedPrompt = _findQueuedPrompt(
+      sessionId: sessionId,
+      queuedPromptId: queuedPromptId,
+    );
+    if (queuedPrompt == null) {
+      return;
+    }
+    if (!manual && _isSessionBusyById(sessionId)) {
+      return;
+    }
+
+    _sendingQueuedPromptBySessionId = <String, String>{
+      ..._sendingQueuedPromptBySessionId,
+      sessionId: queuedPromptId,
+    };
+    _queuedPromptFailureBySessionId = Map<String, String>.from(
+      _queuedPromptFailureBySessionId,
+    )..remove(sessionId);
+    _notify();
+
+    try {
+      await _dispatchPrompt(
+        project: project,
+        sessionId: sessionId,
+        prompt: queuedPrompt.prompt,
+        attachments: queuedPrompt.attachments,
+        agentName: queuedPrompt.agentName,
+        providerId: queuedPrompt.providerId,
+        modelId: queuedPrompt.modelId,
+        reasoning: queuedPrompt.reasoning,
+        preferAsync: true,
+      );
+      final queue = _queuedPromptsBySessionId[sessionId];
+      if (queue != null && queue.isNotEmpty) {
+        _setQueuedPromptsForSession(
+          sessionId,
+          queue
+              .where((item) => item.id != queuedPromptId)
+              .toList(growable: false),
+        );
+      }
+      await _persistQueuedPrompts();
+    } catch (error) {
+      _queuedPromptFailureBySessionId = <String, String>{
+        ..._queuedPromptFailureBySessionId,
+        sessionId: queuedPromptId,
+      };
+      rethrow;
+    } finally {
+      _sendingQueuedPromptBySessionId = Map<String, String>.from(
+        _sendingQueuedPromptBySessionId,
+      )..remove(sessionId);
+      _notify();
+    }
+  }
+
+  WorkspaceQueuedPrompt? _findQueuedPrompt({
+    required String sessionId,
+    required String queuedPromptId,
+  }) {
+    final queue = _queuedPromptsBySessionId[sessionId];
+    if (queue == null || queue.isEmpty) {
+      return null;
+    }
+    for (final item in queue) {
+      if (item.id == queuedPromptId) {
+        return item;
+      }
+    }
+    return null;
+  }
+
+  void _setQueuedPromptsForSession(
+    String sessionId,
+    List<WorkspaceQueuedPrompt> queuedPrompts,
+  ) {
+    final nextMap = Map<String, List<WorkspaceQueuedPrompt>>.from(
+      _queuedPromptsBySessionId,
+    );
+    if (queuedPrompts.isEmpty) {
+      nextMap.remove(sessionId);
+    } else {
+      nextMap[sessionId] = List<WorkspaceQueuedPrompt>.unmodifiable(
+        queuedPrompts,
+      );
+    }
+    _queuedPromptsBySessionId = nextMap;
+  }
+
+  void _clearQueuedPromptStateForSession(String? sessionId) {
+    if (sessionId == null || sessionId.isEmpty) {
+      return;
+    }
+    _setQueuedPromptsForSession(sessionId, const <WorkspaceQueuedPrompt>[]);
+    _queuedPromptFailureBySessionId = Map<String, String>.from(
+      _queuedPromptFailureBySessionId,
+    )..remove(sessionId);
+    _sendingQueuedPromptBySessionId = Map<String, String>.from(
+      _sendingQueuedPromptBySessionId,
+    )..remove(sessionId);
+    unawaited(_persistQueuedPrompts());
+  }
+
+  Future<void> _restoreQueuedPrompts(ProjectTarget project) async {
+    final entry = await _cacheStore.load(_queuedPromptCacheKey(project));
+    if (entry == null || entry.payloadJson.trim().isEmpty) {
+      _queuedPromptsBySessionId = const <String, List<WorkspaceQueuedPrompt>>{};
+      _queuedPromptFailureBySessionId = const <String, String>{};
+      _sendingQueuedPromptBySessionId = const <String, String>{};
+      return;
+    }
+    try {
+      final decoded = jsonDecode(entry.payloadJson);
+      final next = <String, List<WorkspaceQueuedPrompt>>{};
+      if (decoded is Map) {
+        decoded.forEach((key, value) {
+          final sessionId = key.toString().trim();
+          if (sessionId.isEmpty) {
+            return;
+          }
+          final items = ((value as List?) ?? const <Object?>[])
+              .whereType<Map>()
+              .map(
+                (item) => WorkspaceQueuedPrompt.fromJson(
+                  item.cast<String, Object?>(),
+                ),
+              )
+              .where((item) => item.id.isNotEmpty && item.sessionId.isNotEmpty)
+              .toList(growable: false);
+          if (items.isNotEmpty) {
+            next[sessionId] = items;
+          }
+        });
+      }
+      _queuedPromptsBySessionId = next;
+    } catch (_) {
+      _queuedPromptsBySessionId = const <String, List<WorkspaceQueuedPrompt>>{};
+      await _cacheStore.remove(_queuedPromptCacheKey(project));
+    }
+    _queuedPromptFailureBySessionId = const <String, String>{};
+    _sendingQueuedPromptBySessionId = const <String, String>{};
+  }
+
+  Future<void> _persistQueuedPrompts() async {
+    final project = _project;
+    if (project == null) {
+      return;
+    }
+    if (_queuedPromptsBySessionId.isEmpty) {
+      await _cacheStore.remove(_queuedPromptCacheKey(project));
+      return;
+    }
+    final payload = _queuedPromptsBySessionId.map(
+      (sessionId, items) => MapEntry(
+        sessionId,
+        items.map((item) => item.toJson()).toList(growable: false),
+      ),
+    );
+    await _cacheStore.save(_queuedPromptCacheKey(project), payload);
+  }
+
+  void _maybeFlushQueuedPrompts({String? sessionId}) {
+    final project = _project;
+    if (project == null || _disposed) {
+      return;
+    }
+    final sessionIds = sessionId == null
+        ? _queuedPromptsBySessionId.keys.toList(growable: false)
+        : <String>[sessionId];
+    for (final candidateSessionId in sessionIds) {
+      final queue = _queuedPromptsBySessionId[candidateSessionId];
+      if (queue == null || queue.isEmpty) {
+        continue;
+      }
+      if (_sendingQueuedPromptBySessionId.containsKey(candidateSessionId)) {
+        continue;
+      }
+      final nextItem = queue.first;
+      if (_queuedPromptFailureBySessionId[candidateSessionId] == nextItem.id) {
+        continue;
+      }
+      if (_isSessionBusyById(candidateSessionId)) {
+        continue;
+      }
+      unawaited(
+        _sendQueuedPrompt(
+          sessionId: candidateSessionId,
+          queuedPromptId: nextItem.id,
+        ).catchError((_) {}),
+      );
+    }
   }
 
   Future<SessionSummary?> createEmptySession({String? title}) async {
@@ -1369,6 +1926,9 @@ class WorkspaceController extends ChangeNotifier {
     _sessions = _sessions
         .where((session) => !removedSessionIds.contains(session.id))
         .toList(growable: false);
+    for (final removedSessionId in removedSessionIds) {
+      _clearQueuedPromptStateForSession(removedSessionId);
+    }
     _selectedSessionId = _sessions.isEmpty ? null : _sessions.first.id;
     if (_selectedSessionId == null) {
       _messages = const <ChatMessage>[];
@@ -1947,14 +2507,18 @@ class WorkspaceController extends ChangeNotifier {
     if (type == 'session.created' || type == 'session.updated') {
       _sessions = applySessionUpsertEvent(_sessions, event.properties);
     } else if (type == 'session.deleted') {
+      final removedSessionId =
+          event.properties['sessionID']?.toString() ??
+          (event.properties['info'] as Map?)?['id']?.toString();
       _sessions = applySessionDeletedEvent(_sessions, event.properties);
       _statuses = removeSessionStatusEvent(_statuses, event.properties);
-      _removeActiveChildPreviewState(
-        event.properties['sessionID']?.toString() ??
-            (event.properties['info'] as Map?)?['id']?.toString(),
-      );
+      _removeActiveChildPreviewState(removedSessionId);
+      _clearQueuedPromptStateForSession(removedSessionId);
     } else if (type == 'session.status') {
       _statuses = applySessionStatusEvent(_statuses, event.properties);
+      _maybeFlushQueuedPrompts(
+        sessionId: event.properties['sessionID']?.toString(),
+      );
     } else if (type == 'message.updated') {
       final project = _project;
       final sessionId = _selectedSessionId;
@@ -2235,6 +2799,32 @@ class WorkspaceController extends ChangeNotifier {
     return (status?.type.trim().toLowerCase() ?? 'idle') != 'idle';
   }
 
+  bool _isSessionBusyById(String? sessionId) {
+    final normalized = sessionId?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return false;
+    }
+    if (_sendingQueuedPromptBySessionId.containsKey(normalized)) {
+      return true;
+    }
+    if (_submittingPrompt && _selectedSessionId == normalized) {
+      return true;
+    }
+    return _isActiveStatus(_statuses[normalized]);
+  }
+
+  void _markSessionBusy(String sessionId) {
+    final existing = _statuses[sessionId];
+    if (_isActiveStatus(existing)) {
+      return;
+    }
+    _statuses = <String, SessionStatusSummary>{
+      ..._statuses,
+      sessionId: const SessionStatusSummary(type: 'busy'),
+    };
+    _notify();
+  }
+
   ProjectTarget? _matchProject(List<ProjectTarget> projects, String directory) {
     for (final project in projects) {
       if (project.directory == directory) {
@@ -2402,6 +2992,10 @@ class WorkspaceController extends ChangeNotifier {
     return 'workspace.messages::${profile.storageKey}::${project.directory}::$sessionId';
   }
 
+  String _queuedPromptCacheKey(ProjectTarget project) {
+    return 'workspace.followups::${profile.storageKey}::${project.directory}';
+  }
+
   String _optimisticSessionKey(ProjectTarget project, String sessionId) {
     return '${project.directory}::$sessionId';
   }
@@ -2417,7 +3011,7 @@ class WorkspaceController extends ChangeNotifier {
     }
     final timestamp = DateTime.now();
     final messageId =
-        'local_user_${timestamp.microsecondsSinceEpoch}_${_optimisticMessageSequence++}';
+        'msg_local_${timestamp.microsecondsSinceEpoch}_${_optimisticMessageSequence++}';
     final parts = <ChatPart>[
       if (prompt.trim().isNotEmpty)
         ChatPart(

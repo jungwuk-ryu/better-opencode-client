@@ -91,46 +91,15 @@ class ChatService {
         .replace(
           queryParameters: <String, String>{'directory': project.directory},
         );
-    final body = <String, Object?>{
-      'parts': <Map<String, Object?>>[
-        <String, Object?>{'type': 'text', 'text': prompt},
-        ...attachments.map(
-          (attachment) => <String, Object?>{
-            'type': 'file',
-            'mime': attachment.mime,
-            'filename': attachment.filename,
-            'url': attachment.url,
-          },
-        ),
-      ],
-    };
-    if (agent != null && agent.isNotEmpty) {
-      body['agent'] = agent;
-    }
-    if (providerId != null &&
-        providerId.isNotEmpty &&
-        modelId != null &&
-        modelId.isNotEmpty) {
-      body['model'] = <String, Object?>{
-        'providerID': providerId,
-        'modelID': modelId,
-      };
-    }
-    if (providerId != null && providerId.isNotEmpty) {
-      body['providerID'] = providerId;
-    }
-    if (modelId != null && modelId.isNotEmpty) {
-      body['modelID'] = modelId;
-    }
-    final resolvedVariant = variant?.trim().isNotEmpty == true
-        ? variant!.trim()
-        : reasoning?.trim();
-    if (resolvedVariant != null && resolvedVariant.isNotEmpty) {
-      body['variant'] = resolvedVariant;
-    }
-    if (reasoning != null && reasoning.isNotEmpty) {
-      body['reasoning'] = reasoning;
-    }
+    final body = _buildPromptRequestBody(
+      prompt: prompt,
+      attachments: attachments,
+      agent: agent,
+      providerId: providerId,
+      modelId: modelId,
+      variant: variant,
+      reasoning: reasoning,
+    );
     final response = await _client.post(
       uri,
       headers: headers,
@@ -143,6 +112,68 @@ class ChatService {
     }
     return ChatMessage.fromJson(
       (jsonDecode(response.body) as Map).cast<String, Object?>(),
+    );
+  }
+
+  Future<bool> sendMessageAsync({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String sessionId,
+    required String prompt,
+    List<PromptAttachment> attachments = const <PromptAttachment>[],
+    String? messageId,
+    String? agent,
+    String? providerId,
+    String? modelId,
+    String? variant,
+    String? reasoning,
+  }) async {
+    final baseUri = profile.uriOrNull;
+    if (baseUri == null) {
+      throw const FormatException('Invalid server profile URL.');
+    }
+
+    final headers = buildRequestHeaders(
+      profile,
+      accept: 'application/json',
+      jsonBody: true,
+    );
+    final basePath = switch (baseUri.path) {
+      '' => '/',
+      final value when value.endsWith('/') => value,
+      final value => '$value/',
+    };
+    final uri = baseUri
+        .replace(path: basePath)
+        .resolve('session/$sessionId/prompt_async')
+        .replace(
+          queryParameters: <String, String>{'directory': project.directory},
+        );
+    final body = _buildPromptRequestBody(
+      prompt: prompt,
+      attachments: attachments,
+      messageId: messageId,
+      agent: agent,
+      providerId: providerId,
+      modelId: modelId,
+      variant: variant,
+      reasoning: reasoning,
+    );
+    final response = await _client.post(
+      uri,
+      headers: headers,
+      body: jsonEncode(body),
+    );
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return true;
+    }
+    if (response.statusCode == 404 ||
+        response.statusCode == 405 ||
+        response.statusCode == 501) {
+      return false;
+    }
+    throw StateError(
+      'Request failed for $uri with status ${response.statusCode}.',
     );
   }
 
@@ -368,5 +399,63 @@ class ChatService {
 
   void dispose() {
     _client.close();
+  }
+
+  Map<String, Object?> _buildPromptRequestBody({
+    required String prompt,
+    required List<PromptAttachment> attachments,
+    String? messageId,
+    String? agent,
+    String? providerId,
+    String? modelId,
+    String? variant,
+    String? reasoning,
+  }) {
+    final body = <String, Object?>{
+      'parts': <Map<String, Object?>>[
+        if (prompt.trim().isNotEmpty)
+          <String, Object?>{'type': 'text', 'text': prompt},
+        ...attachments.map(
+          (attachment) => <String, Object?>{
+            'type': 'file',
+            'mime': attachment.mime,
+            'filename': attachment.filename,
+            'url': attachment.url,
+          },
+        ),
+      ],
+    };
+    final resolvedMessageId = messageId?.trim();
+    if (resolvedMessageId != null && resolvedMessageId.isNotEmpty) {
+      body['messageID'] = resolvedMessageId;
+    }
+    if (agent != null && agent.isNotEmpty) {
+      body['agent'] = agent;
+    }
+    if (providerId != null &&
+        providerId.isNotEmpty &&
+        modelId != null &&
+        modelId.isNotEmpty) {
+      body['model'] = <String, Object?>{
+        'providerID': providerId,
+        'modelID': modelId,
+      };
+    }
+    if (providerId != null && providerId.isNotEmpty) {
+      body['providerID'] = providerId;
+    }
+    if (modelId != null && modelId.isNotEmpty) {
+      body['modelID'] = modelId;
+    }
+    final resolvedVariant = variant?.trim().isNotEmpty == true
+        ? variant!.trim()
+        : reasoning?.trim();
+    if (resolvedVariant != null && resolvedVariant.isNotEmpty) {
+      body['variant'] = resolvedVariant;
+    }
+    if (reasoning != null && reasoning.isNotEmpty) {
+      body['reasoning'] = reasoning;
+    }
+    return body;
   }
 }

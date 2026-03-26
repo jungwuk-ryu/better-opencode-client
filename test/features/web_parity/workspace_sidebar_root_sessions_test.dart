@@ -175,10 +175,26 @@ void main() {
 
     expect(appController.chatCodeBlockHighlightingEnabled, isFalse);
 
+    expect(appController.busyFollowupMode, WorkspaceFollowupMode.queue);
+
     final settingsListView = find.descendant(
       of: find.byKey(const ValueKey<String>('workspace-settings-sheet')),
       matching: find.byType(ListView),
     );
+    await tester.dragUntilVisible(
+      find.byKey(
+        const ValueKey<String>('workspace-settings-followup-mode-row'),
+      ),
+      settingsListView,
+      const Offset(0, -160),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('Steer'));
+    await tester.pump();
+
+    expect(appController.busyFollowupMode, WorkspaceFollowupMode.steer);
+
     await tester.dragUntilVisible(
       find.byKey(
         const ValueKey<String>(
@@ -349,7 +365,8 @@ class _StaticAppController extends WebParityAppController {
     this.sidebarChildSessionsVisibleValue = false,
     this.chatCodeBlockHighlightingEnabledValue = true,
     required WorkspaceControllerFactory workspaceControllerFactory,
-  }) : super(workspaceControllerFactory: workspaceControllerFactory);
+  }) : busyFollowupModeValue = WorkspaceFollowupMode.queue,
+       super(workspaceControllerFactory: workspaceControllerFactory);
 
   final ServerProfile profile;
   final ServerProbeReport? report;
@@ -357,6 +374,7 @@ class _StaticAppController extends WebParityAppController {
   bool timelineProgressDetailsVisibleValue;
   bool sidebarChildSessionsVisibleValue;
   bool chatCodeBlockHighlightingEnabledValue;
+  WorkspaceFollowupMode busyFollowupModeValue;
 
   @override
   ServerProfile? get selectedProfile => profile;
@@ -379,6 +397,9 @@ class _StaticAppController extends WebParityAppController {
       chatCodeBlockHighlightingEnabledValue;
 
   @override
+  WorkspaceFollowupMode get busyFollowupMode => busyFollowupModeValue;
+
+  @override
   Future<void> setShellToolPartsExpanded(bool value) async {
     shellToolPartsExpandedValue = value;
     notifyListeners();
@@ -399,6 +420,12 @@ class _StaticAppController extends WebParityAppController {
   @override
   Future<void> setChatCodeBlockHighlightingEnabled(bool value) async {
     chatCodeBlockHighlightingEnabledValue = value;
+    notifyListeners();
+  }
+
+  @override
+  Future<void> setBusyFollowupMode(WorkspaceFollowupMode value) async {
+    busyFollowupModeValue = value;
     notifyListeners();
   }
 }

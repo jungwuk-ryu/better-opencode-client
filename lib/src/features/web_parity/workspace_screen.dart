@@ -769,7 +769,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     });
   }
 
-  Future<void> _submitPrompt() async {
+  Future<void> _submitPrompt(WorkspacePromptDispatchMode? mode) async {
     final controller = _controller;
     final draft = _promptController.text;
     final attachments = List<PromptAttachment>.from(_composerAttachments);
@@ -779,6 +779,18 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         (draft.trim().isEmpty && attachments.isEmpty)) {
       return;
     }
+
+    final appController = AppScope.of(context);
+    final effectiveMode =
+        mode ??
+        (_isActiveSessionStatus(controller.selectedStatus)
+            ? switch (appController.busyFollowupMode) {
+                WorkspaceFollowupMode.queue =>
+                  WorkspacePromptDispatchMode.queue,
+                WorkspaceFollowupMode.steer =>
+                  WorkspacePromptDispatchMode.steer,
+              }
+            : null);
 
     setState(() {
       _promptSubmitInFlight = true;
@@ -793,7 +805,11 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     );
 
     try {
-      await controller.submitPrompt(draft, attachments: attachments);
+      await controller.submitPrompt(
+        draft,
+        attachments: attachments,
+        mode: effectiveMode,
+      );
     } catch (error) {
       if (!mounted) {
         return;
@@ -816,6 +832,60 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
           _promptSubmitInFlight = false;
         });
       }
+    }
+  }
+
+  Future<void> _editQueuedPrompt(String queuedPromptId) async {
+    final controller = _controller;
+    if (controller == null) {
+      return;
+    }
+    final queuedPrompt = await controller.editSelectedQueuedPrompt(
+      queuedPromptId,
+    );
+    if (!mounted || queuedPrompt == null) {
+      return;
+    }
+    if (queuedPrompt.agentName != null) {
+      controller.selectAgent(queuedPrompt.agentName);
+    }
+    controller.selectModel(queuedPrompt.modelKey);
+    controller.selectReasoning(queuedPrompt.reasoning);
+    setState(() {
+      _composerAttachments = List<PromptAttachment>.from(
+        queuedPrompt.attachments,
+      );
+      _recentSubmittedPromptDraft = null;
+    });
+    _promptController.value = TextEditingValue(
+      text: queuedPrompt.prompt,
+      selection: TextSelection.collapsed(offset: queuedPrompt.prompt.length),
+      composing: TextRange.empty,
+    );
+  }
+
+  Future<void> _deleteQueuedPrompt(String queuedPromptId) async {
+    final controller = _controller;
+    if (controller == null) {
+      return;
+    }
+    await controller.deleteSelectedQueuedPrompt(queuedPromptId);
+  }
+
+  Future<void> _sendQueuedPromptNow(String queuedPromptId) async {
+    final controller = _controller;
+    if (controller == null) {
+      return;
+    }
+    try {
+      await controller.sendSelectedQueuedPromptNow(queuedPromptId);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to send queued message: $error')),
+      );
     }
   }
 
@@ -1493,6 +1563,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                 timelineScrollController:
                                     _timelineScrollController,
                                 compactPane: _compactPane,
+                                busyFollowupMode:
+                                    appController.busyFollowupMode,
                                 shellToolDefaultExpanded:
                                     appController.shellToolPartsExpanded,
                                 timelineProgressDetailsVisible: appController
@@ -1520,6 +1592,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                   });
                                 },
                                 onSubmitPrompt: _submitPrompt,
+                                onEditQueuedPrompt: _editQueuedPrompt,
+                                onDeleteQueuedPrompt: _deleteQueuedPrompt,
+                                onSendQueuedPromptNow: _sendQueuedPromptNow,
                                 onInterruptPrompt: _interruptSelectedSession,
                                 onCreateSession: () =>
                                     _createNewSession(controller),
@@ -2636,6 +2711,25 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                 ),
                                 const SizedBox(height: AppSpacing.lg),
                                 _WorkspaceSettingsSection(
+                                  title: 'Composer',
+                                  child: _WorkspaceSettingsCard(
+                                    child: _WorkspaceSettingsFollowupModeRow(
+                                      key: const ValueKey<String>(
+                                        'workspace-settings-followup-mode-row',
+                                      ),
+                                      value:
+                                          widget.appController.busyFollowupMode,
+                                      onChanged: (value) {
+                                        unawaited(
+                                          widget.appController
+                                              .setBusyFollowupMode(value),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: AppSpacing.lg),
+                                _WorkspaceSettingsSection(
                                   title: 'Sidebar',
                                   child: _WorkspaceSettingsCard(
                                     child: _WorkspaceSettingsToggleRow(
@@ -2788,6 +2882,75 @@ class _WorkspaceSettingsToggleRow extends StatelessWidget {
           ),
           const SizedBox(width: AppSpacing.md),
           Switch.adaptive(value: value, onChanged: onChanged),
+        ],
+      ),
+    );
+  }
+}
+
+class _WorkspaceSettingsFollowupModeRow extends StatelessWidget {
+  const _WorkspaceSettingsFollowupModeRow({
+    required this.value,
+    required this.onChanged,
+    super.key,
+  });
+
+  final WorkspaceFollowupMode value;
+  final ValueChanged<WorkspaceFollowupMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: surfaces.panelMuted.withValues(alpha: 0.52),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            'Default busy follow-up mode',
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            'Choose what a normal send does while the current agent is still working.',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<WorkspaceFollowupMode>(
+              key: const ValueKey<String>(
+                'workspace-settings-followup-mode-segments',
+              ),
+              showSelectedIcon: false,
+              segments: const <ButtonSegment<WorkspaceFollowupMode>>[
+                ButtonSegment<WorkspaceFollowupMode>(
+                  value: WorkspaceFollowupMode.queue,
+                  label: Text('Queue'),
+                  icon: Icon(Icons.schedule_send_rounded),
+                ),
+                ButtonSegment<WorkspaceFollowupMode>(
+                  value: WorkspaceFollowupMode.steer,
+                  label: Text('Steer'),
+                  icon: Icon(Icons.arrow_upward_rounded),
+                ),
+              ],
+              selected: <WorkspaceFollowupMode>{value},
+              onSelectionChanged: (selection) {
+                final next = selection.isEmpty ? value : selection.first;
+                onChanged(next);
+              },
+            ),
+          ),
         ],
       ),
     );
@@ -4589,12 +4752,16 @@ class _WorkspaceBody extends StatelessWidget {
     required this.recentSubmittedDraft,
     required this.timelineScrollController,
     required this.compactPane,
+    required this.busyFollowupMode,
     required this.shellToolDefaultExpanded,
     required this.timelineProgressDetailsVisible,
     required this.onForkMessage,
     required this.onRevertMessage,
     required this.onCompactPaneChanged,
     required this.onSubmitPrompt,
+    required this.onEditQueuedPrompt,
+    required this.onDeleteQueuedPrompt,
+    required this.onSendQueuedPromptNow,
     required this.onInterruptPrompt,
     required this.onCreateSession,
     required this.onOpenSession,
@@ -4623,12 +4790,16 @@ class _WorkspaceBody extends StatelessWidget {
   final String? recentSubmittedDraft;
   final ScrollController timelineScrollController;
   final _CompactWorkspacePane compactPane;
+  final WorkspaceFollowupMode busyFollowupMode;
   final bool shellToolDefaultExpanded;
   final bool timelineProgressDetailsVisible;
   final Future<void> Function(ChatMessage message) onForkMessage;
   final Future<void> Function(ChatMessage message) onRevertMessage;
   final ValueChanged<_CompactWorkspacePane> onCompactPaneChanged;
-  final VoidCallback onSubmitPrompt;
+  final Future<void> Function(WorkspacePromptDispatchMode? mode) onSubmitPrompt;
+  final Future<void> Function(String queuedPromptId) onEditQueuedPrompt;
+  final Future<void> Function(String queuedPromptId) onDeleteQueuedPrompt;
+  final Future<void> Function(String queuedPromptId) onSendQueuedPromptNow;
   final Future<void> Function() onInterruptPrompt;
   final Future<void> Function() onCreateSession;
   final ValueChanged<String> onOpenSession;
@@ -4736,10 +4907,16 @@ class _WorkspaceBody extends StatelessWidget {
             scopeKey:
                 '${controller.directory}::${controller.selectedSessionId ?? 'new'}',
             submitting: submittingPrompt,
+            busyFollowupMode: busyFollowupMode,
             interruptible: interruptiblePrompt,
             interrupting: interruptingPrompt,
             pickingAttachments: pickingAttachments,
             attachments: attachments,
+            queuedPrompts: controller.selectedSessionQueuedPrompts,
+            failedQueuedPromptId:
+                controller.selectedSessionFailedQueuedPromptId,
+            sendingQueuedPromptId:
+                controller.selectedSessionSendingQueuedPromptId,
             agents: controller.composerAgents,
             models: controller.composerModels,
             selectedAgentName: controller.selectedAgentName,
@@ -4754,6 +4931,9 @@ class _WorkspaceBody extends StatelessWidget {
             onInterrupt: onInterruptPrompt,
             onPickAttachments: onPickAttachments,
             onRemoveAttachment: onRemoveAttachment,
+            onEditQueuedPrompt: onEditQueuedPrompt,
+            onDeleteQueuedPrompt: onDeleteQueuedPrompt,
+            onSendQueuedPromptNow: onSendQueuedPromptNow,
             onShareSession: onShareSession,
             onUnshareSession: onUnshareSession,
             onSummarizeSession: onSummarizeSession,
@@ -6197,10 +6377,14 @@ class _PromptComposer extends StatefulWidget {
     required this.compact,
     required this.scopeKey,
     required this.submitting,
+    required this.busyFollowupMode,
     required this.interruptible,
     required this.interrupting,
     required this.pickingAttachments,
     required this.attachments,
+    required this.queuedPrompts,
+    required this.failedQueuedPromptId,
+    required this.sendingQueuedPromptId,
     required this.agents,
     required this.models,
     required this.selectedAgentName,
@@ -6215,6 +6399,9 @@ class _PromptComposer extends StatefulWidget {
     required this.onInterrupt,
     required this.onPickAttachments,
     required this.onRemoveAttachment,
+    required this.onEditQueuedPrompt,
+    required this.onDeleteQueuedPrompt,
+    required this.onSendQueuedPromptNow,
     required this.onToggleTerminal,
     required this.onSelectSideTab,
     required this.onSubmit,
@@ -6231,10 +6418,14 @@ class _PromptComposer extends StatefulWidget {
   final bool compact;
   final String scopeKey;
   final bool submitting;
+  final WorkspaceFollowupMode busyFollowupMode;
   final bool interruptible;
   final bool interrupting;
   final bool pickingAttachments;
   final List<PromptAttachment> attachments;
+  final List<WorkspaceQueuedPrompt> queuedPrompts;
+  final String? failedQueuedPromptId;
+  final String? sendingQueuedPromptId;
   final List<AgentDefinition> agents;
   final List<WorkspaceComposerModelOption> models;
   final String? selectedAgentName;
@@ -6249,9 +6440,12 @@ class _PromptComposer extends StatefulWidget {
   final Future<void> Function() onInterrupt;
   final Future<void> Function() onPickAttachments;
   final ValueChanged<String> onRemoveAttachment;
+  final Future<void> Function(String queuedPromptId) onEditQueuedPrompt;
+  final Future<void> Function(String queuedPromptId) onDeleteQueuedPrompt;
+  final Future<void> Function(String queuedPromptId) onSendQueuedPromptNow;
   final Future<void> Function() onToggleTerminal;
   final ValueChanged<WorkspaceSideTab> onSelectSideTab;
-  final VoidCallback onSubmit;
+  final Future<void> Function(WorkspacePromptDispatchMode? mode) onSubmit;
   final int submittedDraftEpoch;
   final Future<void> Function()? onShareSession;
   final Future<void> Function()? onUnshareSession;
@@ -6526,8 +6720,10 @@ class _PromptComposerState extends State<_PromptComposer> {
     return null;
   }
 
-  Future<void> _handleSubmit() async {
-    if (widget.interruptible) {
+  bool get _showsInterruptAction => widget.interruptible && !_canSubmit;
+
+  Future<void> _handleSubmit([WorkspacePromptDispatchMode? mode]) async {
+    if (_showsInterruptAction) {
       if (!widget.interrupting) {
         await widget.onInterrupt();
       }
@@ -6541,7 +6737,18 @@ class _PromptComposerState extends State<_PromptComposer> {
       await _selectSlashCommand(builtin);
       return;
     }
-    widget.onSubmit();
+    await widget.onSubmit(mode);
+  }
+
+  Future<void> _handleSubmitLongPress() async {
+    if (_showsInterruptAction || widget.submitting || !_canSubmit) {
+      return;
+    }
+    final selection = await _showSubmitModePicker(context);
+    if (selection == null) {
+      return;
+    }
+    await _handleSubmit(selection);
   }
 
   Future<void> _selectSlashCommand(_ComposerSlashCommand command) async {
@@ -6565,6 +6772,19 @@ class _PromptComposerState extends State<_PromptComposer> {
     widget.controller.value = const TextEditingValue(
       text: '',
       selection: TextSelection.collapsed(offset: 0),
+    );
+  }
+
+  Future<WorkspacePromptDispatchMode?> _showSubmitModePicker(
+    BuildContext context,
+  ) {
+    return showModalBottomSheet<WorkspacePromptDispatchMode>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _ComposerSubmitModeSheet(
+        defaultMode: widget.busyFollowupMode,
+        busy: widget.interruptible,
+      ),
     );
   }
 
@@ -6640,13 +6860,16 @@ class _PromptComposerState extends State<_PromptComposer> {
     final reasoningLabel = _reasoningLabel(widget.selectedReasoning);
     final slashCommands = _filteredSlashCommands;
     final isCompact = widget.compact;
-    final submitIcon = widget.interruptible
+    final submitIcon = _showsInterruptAction
         ? Icons.stop_rounded
+        : widget.interruptible &&
+              widget.busyFollowupMode == WorkspaceFollowupMode.queue
+        ? Icons.schedule_send_rounded
         : Icons.arrow_upward_rounded;
-    final submitEnabled = widget.interruptible
+    final submitEnabled = _showsInterruptAction
         ? !widget.interrupting
         : !(widget.submitting || !_canSubmit);
-    final submitBusy = !widget.interruptible && widget.submitting;
+    final submitBusy = !_showsInterruptAction && widget.submitting;
     return Padding(
       padding: EdgeInsets.fromLTRB(
         isCompact ? AppSpacing.sm : AppSpacing.md,
@@ -6673,6 +6896,19 @@ class _PromptComposerState extends State<_PromptComposer> {
             ),
             child: Column(
               children: <Widget>[
+                if (widget.queuedPrompts.isNotEmpty) ...<Widget>[
+                  _ComposerQueuedPromptDock(
+                    compact: isCompact,
+                    queuedPrompts: widget.queuedPrompts,
+                    failedQueuedPromptId: widget.failedQueuedPromptId,
+                    sendingQueuedPromptId: widget.sendingQueuedPromptId,
+                    busy: widget.interruptible,
+                    onEditQueuedPrompt: widget.onEditQueuedPrompt,
+                    onDeleteQueuedPrompt: widget.onDeleteQueuedPrompt,
+                    onSendQueuedPromptNow: widget.onSendQueuedPromptNow,
+                  ),
+                  SizedBox(height: isCompact ? AppSpacing.sm : AppSpacing.md),
+                ],
                 if (slashCommands.isNotEmpty) ...<Widget>[
                   ConstrainedBox(
                     constraints: BoxConstraints(
@@ -6904,9 +7140,16 @@ class _PromptComposerState extends State<_PromptComposer> {
                       key: const ValueKey<String>('composer-submit-button'),
                       compact: isCompact,
                       icon: submitIcon,
-                      onTap: submitEnabled ? _handleSubmit : null,
+                      onTap: submitEnabled
+                          ? () => unawaited(_handleSubmit())
+                          : null,
+                      onLongPress: submitEnabled
+                          ? () => unawaited(_handleSubmitLongPress())
+                          : null,
                       filled: true,
-                      busy: submitBusy,
+                      busy: _showsInterruptAction
+                          ? widget.interrupting
+                          : submitBusy,
                     ),
                   ],
                 ),
@@ -10561,6 +10804,7 @@ class _ComposerIconButton extends StatelessWidget {
     required this.icon,
     required this.onTap,
     super.key,
+    this.onLongPress,
     this.compact = false,
     this.filled = false,
     this.busy = false,
@@ -10568,6 +10812,7 @@ class _ComposerIconButton extends StatelessWidget {
 
   final IconData icon;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
   final bool compact;
   final bool filled;
   final bool busy;
@@ -10590,6 +10835,7 @@ class _ComposerIconButton extends StatelessWidget {
         : surfaces.muted;
     return InkWell(
       onTap: onTap,
+      onLongPress: onLongPress,
       borderRadius: BorderRadius.circular(compact ? 10 : 12),
       child: Container(
         width: compact ? 36 : 40,
@@ -10610,6 +10856,390 @@ class _ComposerIconButton extends StatelessWidget {
                   ),
                 )
               : Icon(icon, size: compact ? 16 : 18, color: foreground),
+        ),
+      ),
+    );
+  }
+}
+
+class _ComposerQueuedPromptDock extends StatelessWidget {
+  const _ComposerQueuedPromptDock({
+    required this.compact,
+    required this.queuedPrompts,
+    required this.failedQueuedPromptId,
+    required this.sendingQueuedPromptId,
+    required this.busy,
+    required this.onEditQueuedPrompt,
+    required this.onDeleteQueuedPrompt,
+    required this.onSendQueuedPromptNow,
+  });
+
+  final bool compact;
+  final List<WorkspaceQueuedPrompt> queuedPrompts;
+  final String? failedQueuedPromptId;
+  final String? sendingQueuedPromptId;
+  final bool busy;
+  final Future<void> Function(String queuedPromptId) onEditQueuedPrompt;
+  final Future<void> Function(String queuedPromptId) onDeleteQueuedPrompt;
+  final Future<void> Function(String queuedPromptId) onSendQueuedPromptNow;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final sessionSending = sendingQueuedPromptId != null;
+    return Container(
+      key: const ValueKey<String>('composer-queued-dock'),
+      padding: EdgeInsets.all(compact ? AppSpacing.sm : AppSpacing.md),
+      decoration: BoxDecoration(
+        color: surfaces.panelMuted,
+        borderRadius: BorderRadius.circular(compact ? 14 : 18),
+        border: Border.all(color: surfaces.lineSoft),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  queuedPrompts.length == 1
+                      ? '1 queued follow-up'
+                      : '${queuedPrompts.length} queued follow-ups',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              if (sessionSending)
+                Row(
+                  children: <Widget>[
+                    SizedBox(
+                      width: compact ? 14 : 16,
+                      height: compact ? 14 : 16,
+                      child: const CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    Text(
+                      'Sending',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: surfaces.muted,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          for (
+            var index = 0;
+            index < queuedPrompts.length;
+            index += 1
+          ) ...<Widget>[
+            if (index > 0) const SizedBox(height: AppSpacing.sm),
+            _ComposerQueuedPromptRow(
+              compact: compact,
+              queuedPrompt: queuedPrompts[index],
+              failed: failedQueuedPromptId == queuedPrompts[index].id,
+              sending: sendingQueuedPromptId == queuedPrompts[index].id,
+              actionsDisabled: sessionSending,
+              busy: busy,
+              onEditQueuedPrompt: onEditQueuedPrompt,
+              onDeleteQueuedPrompt: onDeleteQueuedPrompt,
+              onSendQueuedPromptNow: onSendQueuedPromptNow,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ComposerQueuedPromptRow extends StatelessWidget {
+  const _ComposerQueuedPromptRow({
+    required this.compact,
+    required this.queuedPrompt,
+    required this.failed,
+    required this.sending,
+    required this.actionsDisabled,
+    required this.busy,
+    required this.onEditQueuedPrompt,
+    required this.onDeleteQueuedPrompt,
+    required this.onSendQueuedPromptNow,
+  });
+
+  final bool compact;
+  final WorkspaceQueuedPrompt queuedPrompt;
+  final bool failed;
+  final bool sending;
+  final bool actionsDisabled;
+  final bool busy;
+  final Future<void> Function(String queuedPromptId) onEditQueuedPrompt;
+  final Future<void> Function(String queuedPromptId) onDeleteQueuedPrompt;
+  final Future<void> Function(String queuedPromptId) onSendQueuedPromptNow;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final colorScheme = theme.colorScheme;
+    final muted = failed
+        ? colorScheme.error.withValues(alpha: 0.9)
+        : surfaces.muted;
+    return Container(
+      key: ValueKey<String>('composer-queued-item-${queuedPrompt.id}'),
+      padding: EdgeInsets.all(compact ? AppSpacing.sm : AppSpacing.md),
+      decoration: BoxDecoration(
+        color: failed
+            ? colorScheme.error.withValues(alpha: 0.08)
+            : surfaces.panel,
+        borderRadius: BorderRadius.circular(compact ? 12 : 16),
+        border: Border.all(
+          color: failed
+              ? colorScheme.error.withValues(alpha: 0.4)
+              : surfaces.lineSoft,
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  queuedPrompt.previewText,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    height: 1.45,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xxs),
+                Text(
+                  failed
+                      ? 'Could not send automatically. Edit, delete, or send again.'
+                      : busy
+                      ? 'Waiting behind the current run.'
+                      : 'Will send as soon as the session is ready.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: muted,
+                    height: 1.45,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          if (sending)
+            SizedBox(
+              width: compact ? 18 : 20,
+              height: compact ? 18 : 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  theme.colorScheme.primary,
+                ),
+              ),
+            )
+          else
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                TextButton(
+                  key: ValueKey<String>(
+                    'composer-queued-send-button-${queuedPrompt.id}',
+                  ),
+                  onPressed: actionsDisabled
+                      ? null
+                      : () {
+                          unawaited(onSendQueuedPromptNow(queuedPrompt.id));
+                        },
+                  child: Text(busy ? 'Steer' : 'Send'),
+                ),
+                IconButton(
+                  key: ValueKey<String>(
+                    'composer-queued-edit-button-${queuedPrompt.id}',
+                  ),
+                  onPressed: actionsDisabled
+                      ? null
+                      : () {
+                          unawaited(onEditQueuedPrompt(queuedPrompt.id));
+                        },
+                  tooltip: 'Edit queued message',
+                  icon: const Icon(Icons.edit_rounded),
+                ),
+                IconButton(
+                  key: ValueKey<String>(
+                    'composer-queued-delete-button-${queuedPrompt.id}',
+                  ),
+                  onPressed: actionsDisabled
+                      ? null
+                      : () {
+                          unawaited(onDeleteQueuedPrompt(queuedPrompt.id));
+                        },
+                  tooltip: 'Delete queued message',
+                  icon: const Icon(Icons.delete_outline_rounded),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ComposerSubmitModeSheet extends StatelessWidget {
+  const _ComposerSubmitModeSheet({
+    required this.defaultMode,
+    required this.busy,
+  });
+
+  final WorkspaceFollowupMode defaultMode;
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final defaultLabel = switch (defaultMode) {
+      WorkspaceFollowupMode.queue => 'Queue',
+      WorkspaceFollowupMode.steer => 'Steer',
+    };
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.md,
+          AppSpacing.md,
+          AppSpacing.md,
+          AppSpacing.lg,
+        ),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: surfaces.panel,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: surfaces.lineSoft),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  'Send this message',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xxs),
+                Text(
+                  'Default while busy: $defaultLabel',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: surfaces.muted,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                _ComposerSubmitModeTile(
+                  key: const ValueKey<String>('composer-submit-mode-queue'),
+                  title: 'Queue',
+                  subtitle: busy
+                      ? 'Keep this follow-up waiting and send it automatically when the current run finishes.'
+                      : 'Send normally now, and keep this mode queued by default when the session is already busy.',
+                  icon: Icons.schedule_send_rounded,
+                  onTap: () => Navigator.of(
+                    context,
+                  ).pop(WorkspacePromptDispatchMode.queue),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                _ComposerSubmitModeTile(
+                  key: const ValueKey<String>('composer-submit-mode-steer'),
+                  title: 'Steer',
+                  subtitle: busy
+                      ? 'Send immediately to the running agent instead of waiting in the queue.'
+                      : 'Send immediately without queueing.',
+                  icon: Icons.arrow_upward_rounded,
+                  onTap: () => Navigator.of(
+                    context,
+                  ).pop(WorkspacePromptDispatchMode.steer),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ComposerSubmitModeTile extends StatelessWidget {
+  const _ComposerSubmitModeTile({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.onTap,
+    super.key,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Ink(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          decoration: BoxDecoration(
+            color: surfaces.panelMuted,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: surfaces.lineSoft),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: theme.colorScheme.primary),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      title,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xxs),
+                    Text(
+                      subtitle,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: surfaces.muted,
+                        height: 1.45,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

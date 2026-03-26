@@ -301,12 +301,187 @@ void main() {
       );
       await tester.pump();
 
+      expect(tester.widget<TextField>(fieldFinder).controller?.text, '다음 질문');
+    },
+  );
+
+  testWidgets(
+    'busy sessions queue by default and can steer explicitly from long press',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final workspaceController = _QueuedWorkspaceController(
+        profile: profile,
+        directory: '/workspace/demo',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceController: workspaceController,
+        busyFollowupModeValue: WorkspaceFollowupMode.queue,
+      );
+      addTearDown(appController.dispose);
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          initialRoute: buildWorkspaceRoute(
+            '/workspace/demo',
+            sessionId: 'ses_1',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      final fieldFinder = find.byKey(
+        const ValueKey<String>('composer-text-field'),
+      );
+      final buttonFinder = find.byKey(
+        const ValueKey<String>('composer-submit-button'),
+      );
+
+      await tester.enterText(fieldFinder, 'Queue this follow-up');
+      await tester.pump();
+      await tester.tap(buttonFinder);
+      await tester.pump();
+
+      expect(workspaceController.submissions.length, 1);
       expect(
-        tester.widget<TextField>(fieldFinder).controller?.text,
-        '다음 질문',
+        workspaceController.submissions.single.mode,
+        WorkspacePromptDispatchMode.queue,
+      );
+
+      await tester.enterText(fieldFinder, 'Steer this follow-up');
+      await tester.pump();
+      await tester.longPress(buttonFinder);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      expect(
+        find.byKey(const ValueKey<String>('composer-submit-mode-steer')),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('composer-submit-mode-steer')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      expect(workspaceController.submissions.length, 2);
+      expect(
+        workspaceController.submissions.last.mode,
+        WorkspacePromptDispatchMode.steer,
       );
     },
   );
+
+  testWidgets('queued follow-up rows can be edited and deleted', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final workspaceController = _QueuedWorkspaceController(
+      profile: profile,
+      directory: '/workspace/demo',
+      queuedPrompts: <WorkspaceQueuedPrompt>[
+        WorkspaceQueuedPrompt(
+          id: 'queued_1',
+          sessionId: 'ses_1',
+          prompt: 'Queued follow-up draft',
+          attachments: const <PromptAttachment>[
+            PromptAttachment(
+              id: 'att_1',
+              filename: 'notes.txt',
+              mime: 'text/plain',
+              url: 'data:text/plain;base64,bm90ZXM=',
+            ),
+          ],
+          createdAt: DateTime.fromMillisecondsSinceEpoch(1710000001000),
+          agentName: 'Sisyphus',
+          modelKey: 'openai/gpt-5.4',
+          reasoning: 'high',
+        ),
+        WorkspaceQueuedPrompt(
+          id: 'queued_2',
+          sessionId: 'ses_1',
+          prompt: 'Second queued draft',
+          attachments: const <PromptAttachment>[],
+          createdAt: DateTime.fromMillisecondsSinceEpoch(1710000002000),
+        ),
+      ],
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceController: workspaceController,
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(
+      find.byKey(const ValueKey<String>('composer-queued-dock')),
+      findsOneWidget,
+    );
+    expect(find.text('Queued follow-up draft'), findsOneWidget);
+    expect(find.text('Second queued draft'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('composer-queued-delete-button-queued_2'),
+      ),
+    );
+    await tester.pump();
+
+    expect(workspaceController.deletedQueuedPromptIds, <String>['queued_2']);
+    expect(find.text('Second queued draft'), findsNothing);
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('composer-queued-edit-button-queued_1'),
+      ),
+    );
+    await tester.pump();
+
+    expect(workspaceController.editedQueuedPromptIds, <String>['queued_1']);
+    expect(
+      tester
+          .widget<TextField>(
+            find.byKey(const ValueKey<String>('composer-text-field')),
+          )
+          .controller
+          ?.text,
+      'Queued follow-up draft',
+    );
+    expect(find.text('notes.txt'), findsOneWidget);
+    expect(find.text('Queued follow-up draft'), findsOneWidget);
+  });
 
   testWidgets('busy sessions show a stop button that interrupts the agent', (
     tester,
@@ -413,6 +588,7 @@ class _StaticAppController extends WebParityAppController {
   _StaticAppController({
     required this.profile,
     required this.workspaceController,
+    this.busyFollowupModeValue = WorkspaceFollowupMode.queue,
   }) : super(
          workspaceControllerFactory:
              ({required profile, required directory, initialSessionId}) {
@@ -422,9 +598,19 @@ class _StaticAppController extends WebParityAppController {
 
   final ServerProfile profile;
   final WorkspaceController workspaceController;
+  WorkspaceFollowupMode busyFollowupModeValue;
 
   @override
   ServerProfile? get selectedProfile => profile;
+
+  @override
+  WorkspaceFollowupMode get busyFollowupMode => busyFollowupModeValue;
+
+  @override
+  Future<void> setBusyFollowupMode(WorkspaceFollowupMode value) async {
+    busyFollowupModeValue = value;
+    notifyListeners();
+  }
 }
 
 class _SlashWorkspaceController extends WorkspaceController {
@@ -537,6 +723,7 @@ class _SlashWorkspaceController extends WorkspaceController {
   Future<String?> submitPrompt(
     String prompt, {
     List<PromptAttachment> attachments = const <PromptAttachment>[],
+    WorkspacePromptDispatchMode? mode,
   }) async {
     submitPromptCalls += 1;
     return selectedSessionId;
@@ -573,6 +760,7 @@ class _DelayedSubmitWorkspaceController extends _SlashWorkspaceController {
   Future<String?> submitPrompt(
     String prompt, {
     List<PromptAttachment> attachments = const <PromptAttachment>[],
+    WorkspacePromptDispatchMode? mode,
   }) async {
     submitPromptCalls += 1;
     _submitting = true;
@@ -611,6 +799,90 @@ class _InterruptibleWorkspaceController extends _SlashWorkspaceController {
     notifyListeners();
     return true;
   }
+}
+
+class _QueuedWorkspaceController extends _SlashWorkspaceController {
+  _QueuedWorkspaceController({
+    required super.profile,
+    required super.directory,
+    List<WorkspaceQueuedPrompt> queuedPrompts = const <WorkspaceQueuedPrompt>[],
+  }) : _queuedPrompts = List<WorkspaceQueuedPrompt>.from(queuedPrompts);
+  final List<_RecordedSubmission> submissions = <_RecordedSubmission>[];
+  final List<String> deletedQueuedPromptIds = <String>[];
+  final List<String> editedQueuedPromptIds = <String>[];
+  final List<String> sentQueuedPromptIds = <String>[];
+  List<WorkspaceQueuedPrompt> _queuedPrompts;
+
+  @override
+  SessionStatusSummary? get selectedStatus =>
+      const SessionStatusSummary(type: 'busy');
+
+  @override
+  bool get selectedSessionInterruptible => true;
+
+  @override
+  List<WorkspaceQueuedPrompt> get selectedSessionQueuedPrompts =>
+      List<WorkspaceQueuedPrompt>.unmodifiable(_queuedPrompts);
+
+  @override
+  Future<String?> submitPrompt(
+    String prompt, {
+    List<PromptAttachment> attachments = const <PromptAttachment>[],
+    WorkspacePromptDispatchMode? mode,
+  }) async {
+    submissions.add(
+      _RecordedSubmission(prompt: prompt, attachments: attachments, mode: mode),
+    );
+    return selectedSessionId;
+  }
+
+  @override
+  Future<WorkspaceQueuedPrompt?> editSelectedQueuedPrompt(
+    String queuedPromptId,
+  ) async {
+    WorkspaceQueuedPrompt? edited;
+    _queuedPrompts = _queuedPrompts
+        .where((item) {
+          final matches = item.id == queuedPromptId;
+          if (matches) {
+            edited = item;
+          }
+          return !matches;
+        })
+        .toList(growable: false);
+    if (edited != null) {
+      editedQueuedPromptIds.add(queuedPromptId);
+      notifyListeners();
+    }
+    return edited;
+  }
+
+  @override
+  Future<void> deleteSelectedQueuedPrompt(String queuedPromptId) async {
+    deletedQueuedPromptIds.add(queuedPromptId);
+    _queuedPrompts = _queuedPrompts
+        .where((item) => item.id != queuedPromptId)
+        .toList(growable: false);
+    notifyListeners();
+  }
+
+  @override
+  Future<void> sendSelectedQueuedPromptNow(String queuedPromptId) async {
+    sentQueuedPromptIds.add(queuedPromptId);
+    notifyListeners();
+  }
+}
+
+class _RecordedSubmission {
+  const _RecordedSubmission({
+    required this.prompt,
+    required this.attachments,
+    required this.mode,
+  });
+
+  final String prompt;
+  final List<PromptAttachment> attachments;
+  final WorkspacePromptDispatchMode? mode;
 }
 
 class _FakePtyService extends PtyService {

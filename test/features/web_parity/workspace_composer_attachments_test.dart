@@ -276,6 +276,7 @@ class _AttachmentWorkspaceController extends WorkspaceController {
   Future<String?> submitPrompt(
     String prompt, {
     List<PromptAttachment> attachments = const <PromptAttachment>[],
+    WorkspacePromptDispatchMode? mode,
   }) async {
     submitPromptCalls += 1;
     lastSubmittedPrompt = prompt;

@@ -54,6 +54,7 @@ class WebParityAppController extends ChangeNotifier {
       'web_parity.sidebar_child_sessions_visible';
   static const _chatCodeBlockHighlightingEnabledKey =
       'web_parity.chat_code_block_highlighting_enabled';
+  static const _busyFollowupModeKey = 'web_parity.busy_followup_mode';
 
   final ServerProfileStore _profileStore;
   final ProjectStore _projectStore;
@@ -70,6 +71,7 @@ class WebParityAppController extends ChangeNotifier {
   bool _timelineProgressDetailsVisible = false;
   bool _sidebarChildSessionsVisible = false;
   bool _chatCodeBlockHighlightingEnabled = true;
+  WorkspaceFollowupMode _busyFollowupMode = WorkspaceFollowupMode.queue;
   final Map<String, WorkspaceController> _workspaceControllers =
       <String, WorkspaceController>{};
 
@@ -83,6 +85,7 @@ class WebParityAppController extends ChangeNotifier {
   bool get sidebarChildSessionsVisible => _sidebarChildSessionsVisible;
   bool get chatCodeBlockHighlightingEnabled =>
       _chatCodeBlockHighlightingEnabled;
+  WorkspaceFollowupMode get busyFollowupMode => _busyFollowupMode;
   ServerProbeReport? get selectedReport {
     final selectedProfile = _selectedProfile;
     if (selectedProfile == null) {
@@ -108,6 +111,9 @@ class WebParityAppController extends ChangeNotifier {
         prefs.getBool(_sidebarChildSessionsVisibleKey) ?? false;
     final chatCodeBlockHighlightingEnabled =
         prefs.getBool(_chatCodeBlockHighlightingEnabledKey) ?? true;
+    final busyFollowupMode = WorkspaceFollowupMode.fromStorage(
+      prefs.getString(_busyFollowupModeKey),
+    );
 
     ServerProfile? selectedProfile;
     if (selectedProfileId != null) {
@@ -128,6 +134,7 @@ class WebParityAppController extends ChangeNotifier {
     _timelineProgressDetailsVisible = timelineProgressDetailsVisible;
     _sidebarChildSessionsVisible = sidebarChildSessionsVisible;
     _chatCodeBlockHighlightingEnabled = chatCodeBlockHighlightingEnabled;
+    _busyFollowupMode = busyFollowupMode;
     _loading = false;
     notifyListeners();
   }
@@ -182,6 +189,16 @@ class WebParityAppController extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_chatCodeBlockHighlightingEnabledKey, value);
+  }
+
+  Future<void> setBusyFollowupMode(WorkspaceFollowupMode value) async {
+    if (_busyFollowupMode == value) {
+      return;
+    }
+    _busyFollowupMode = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_busyFollowupModeKey, value.storageValue);
   }
 
   Future<void> refreshProbe(ServerProfile profile) async {

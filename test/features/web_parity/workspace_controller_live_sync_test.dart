@@ -266,6 +266,147 @@ void main() {
   });
 
   test(
+    'controller queues busy follow-ups and auto flushes them once idle',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final asyncPrompts = <String>[];
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_1',
+              title: 'Initial session',
+              createdAt: 1710000001000,
+              updatedAt: 1710000005000,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{
+            'ses_1': SessionStatusSummary(type: 'idle'),
+          },
+          messages: const <ChatMessage>[],
+          selectedSessionId: 'ses_1',
+        ),
+        sendMessageAsyncHandler:
+            ({
+              required ServerProfile profile,
+              required ProjectTarget project,
+              required String sessionId,
+              required String prompt,
+              List<PromptAttachment> attachments = const <PromptAttachment>[],
+              String? messageId,
+              String? agent,
+              String? providerId,
+              String? modelId,
+              String? variant,
+              String? reasoning,
+            }) async {
+              asyncPrompts.add(prompt);
+              return true;
+            },
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'session.status',
+          properties: <String, Object?>{
+            'sessionID': 'ses_1',
+            'status': <String, Object?>{'type': 'busy'},
+          },
+        ),
+      );
+
+      await controller.submitPrompt(
+        'Queue this follow-up',
+        mode: WorkspacePromptDispatchMode.queue,
+      );
+
+      expect(
+        controller.selectedSessionQueuedPrompts.map((item) => item.prompt),
+        <String>['Queue this follow-up'],
+      );
+      expect(asyncPrompts, isEmpty);
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'session.status',
+          properties: <String, Object?>{
+            'sessionID': 'ses_1',
+            'status': <String, Object?>{'type': 'idle'},
+          },
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(asyncPrompts, <String>['Queue this follow-up']);
+      expect(controller.selectedSessionQueuedPrompts, isEmpty);
+    },
+  );
+
+  test('controller restores queued follow-ups from cache on load', () async {
+    final cacheStore = StaleCacheStore();
+    final firstEventStreamService = _ControlledEventStreamService();
+    final firstController = _buildController(
+      profile: profile,
+      project: project,
+      eventStreamService: firstEventStreamService,
+      cacheStore: cacheStore,
+    );
+    addTearDown(firstController.dispose);
+
+    await firstController.load();
+
+    firstEventStreamService.emitToScope(
+      profile,
+      project,
+      const EventEnvelope(
+        type: 'session.status',
+        properties: <String, Object?>{
+          'sessionID': 'ses_1',
+          'status': <String, Object?>{'type': 'busy'},
+        },
+      ),
+    );
+
+    await firstController.submitPrompt(
+      'Persist this follow-up',
+      mode: WorkspacePromptDispatchMode.queue,
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    final restoredEventStreamService = _ControlledEventStreamService();
+    final restoredController = _buildController(
+      profile: profile,
+      project: project,
+      eventStreamService: restoredEventStreamService,
+      cacheStore: cacheStore,
+    );
+    addTearDown(restoredController.dispose);
+
+    await restoredController.load();
+
+    expect(
+      restoredController.selectedSessionQueuedPrompts.map(
+        (item) => item.prompt,
+      ),
+      <String>['Persist this follow-up'],
+    );
+  });
+
+  test(
     'controller surfaces child session questions for the selected root session',
     () async {
       final eventStreamService = _ControlledEventStreamService();
@@ -1112,6 +1253,7 @@ class _FakeChatService extends ChatService {
     required this.bundle,
     this.fetchMessagesHandler,
     this.sendMessageHandler,
+    this.sendMessageAsyncHandler,
   });
 
   final ChatSessionBundle bundle;
@@ -1134,6 +1276,20 @@ class _FakeChatService extends ChatService {
     String? reasoning,
   })?
   sendMessageHandler;
+  final Future<bool> Function({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String sessionId,
+    required String prompt,
+    List<PromptAttachment> attachments,
+    String? messageId,
+    String? agent,
+    String? providerId,
+    String? modelId,
+    String? variant,
+    String? reasoning,
+  })?
+  sendMessageAsyncHandler;
 
   @override
   Future<ChatSessionBundle> fetchBundle({
@@ -1192,6 +1348,39 @@ class _FakeChatService extends ChatService {
       ),
       parts: const <ChatPart>[],
     );
+  }
+
+  @override
+  Future<bool> sendMessageAsync({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String sessionId,
+    required String prompt,
+    List<PromptAttachment> attachments = const <PromptAttachment>[],
+    String? messageId,
+    String? agent,
+    String? providerId,
+    String? modelId,
+    String? variant,
+    String? reasoning,
+  }) async {
+    final handler = sendMessageAsyncHandler;
+    if (handler != null) {
+      return handler(
+        profile: profile,
+        project: project,
+        sessionId: sessionId,
+        prompt: prompt,
+        attachments: attachments,
+        messageId: messageId,
+        agent: agent,
+        providerId: providerId,
+        modelId: modelId,
+        variant: variant,
+        reasoning: reasoning,
+      );
+    }
+    return true;
   }
 
   @override
