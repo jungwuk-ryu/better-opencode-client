@@ -139,26 +139,26 @@ class ProjectCatalogService {
       'content-type': 'application/json',
     };
     final uri = baseUri.resolve('project/$projectId');
+    final queryParameters = Map<String, String>.from(uri.queryParameters);
+    final directory = project.directory.trim();
+    if (directory.isNotEmpty) {
+      queryParameters['directory'] = directory;
+    }
+    final requestUri = uri.replace(queryParameters: queryParameters);
+    final body = <String, Object?>{'name': name?.trim() ?? ''};
+    final iconPayload = _buildIconPayload(icon);
+    if (iconPayload != null) {
+      body['icon'] = iconPayload;
+    }
+    body['commands'] = _buildCommandsPayload(commands);
     final response = await _client.patch(
-      uri,
+      requestUri,
       headers: headers,
-      body: jsonEncode(<String, Object?>{
-        'name': name ?? '',
-        'icon': icon == null
-            ? null
-            : <String, Object?>{
-                'url': icon.effectiveImage,
-                'override': icon.override,
-                'color': icon.color,
-              },
-        'commands': commands == null
-            ? null
-            : <String, Object?>{'start': commands.start ?? ''},
-      }),
+      body: jsonEncode(body),
     );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw StateError(
-        'Request failed for $uri with status ${response.statusCode}.',
+        'Request failed for $requestUri with status ${response.statusCode}.',
       );
     }
     if (response.body.trim().isEmpty) {
@@ -181,6 +181,38 @@ class ProjectCatalogService {
       commands: summary.commands,
       lastSession: project.lastSession,
     );
+  }
+
+  Map<String, Object?>? _buildIconPayload(ProjectIconInfo? icon) {
+    if (icon == null) {
+      return null;
+    }
+    final payload = <String, Object?>{};
+    final effectiveImage = _trimToNull(icon.effectiveImage);
+    if (effectiveImage != null) {
+      payload['url'] = effectiveImage;
+    }
+    final override = _trimToNull(icon.override);
+    if (override != null) {
+      payload['override'] = override;
+    }
+    final color = _trimToNull(icon.color);
+    if (color != null) {
+      payload['color'] = color;
+    }
+    return payload.isEmpty ? null : payload;
+  }
+
+  Map<String, Object?> _buildCommandsPayload(ProjectCommandsInfo? commands) {
+    return <String, Object?>{'start': commands?.start?.trim() ?? ''};
+  }
+
+  String? _trimToNull(String? value) {
+    final trimmed = value?.trim();
+    if (trimmed == null || trimmed.isEmpty) {
+      return null;
+    }
+    return trimmed;
   }
 
   Future<Object?> _getJson(

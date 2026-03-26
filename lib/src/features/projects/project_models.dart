@@ -25,9 +25,9 @@ class ProjectIconInfo {
 
   factory ProjectIconInfo.fromJson(Map<String, Object?> json) {
     return ProjectIconInfo(
-      url: json['url'] as String?,
-      override: json['override'] as String?,
-      color: json['color'] as String?,
+      url: _normalizedOptionalString(json['url'] as String?),
+      override: _normalizedOptionalString(json['override'] as String?),
+      color: _normalizedOptionalString(json['color'] as String?),
     );
   }
 
@@ -55,7 +55,9 @@ class ProjectCommandsInfo {
   Map<String, Object?> toJson() => <String, Object?>{'start': start};
 
   factory ProjectCommandsInfo.fromJson(Map<String, Object?> json) {
-    return ProjectCommandsInfo(start: json['start'] as String?);
+    return ProjectCommandsInfo(
+      start: _normalizedOptionalString(json['start'] as String?),
+    );
   }
 
   ProjectCommandsInfo copyWith({String? start, bool clearStart = false}) {
@@ -97,6 +99,16 @@ class ProjectSummary {
   factory ProjectSummary.fromJson(Map<String, Object?> json) {
     final time = (json['time'] as Map?)?.cast<String, Object?>();
     final updatedValue = time?['updated'];
+    final parsedIcon = json['icon'] is Map
+        ? ProjectIconInfo.fromJson(
+            (json['icon'] as Map).cast<String, Object?>(),
+          )
+        : null;
+    final parsedCommands = json['commands'] is Map
+        ? ProjectCommandsInfo.fromJson(
+            (json['commands'] as Map).cast<String, Object?>(),
+          )
+        : null;
     return ProjectSummary(
       id: (json['id'] as String?) ?? (json['directory'] as String? ?? ''),
       directory:
@@ -105,16 +117,8 @@ class ProjectSummary {
           (json['worktree'] as String?) ?? (json['directory'] as String? ?? ''),
       name: json['name'] as String?,
       vcs: json['vcs'] as String?,
-      icon: json['icon'] is Map
-          ? ProjectIconInfo.fromJson(
-              (json['icon'] as Map).cast<String, Object?>(),
-            )
-          : null,
-      commands: json['commands'] is Map
-          ? ProjectCommandsInfo.fromJson(
-              (json['commands'] as Map).cast<String, Object?>(),
-            )
-          : null,
+      icon: _normalizedProjectIcon(parsedIcon),
+      commands: _normalizedProjectCommands(parsedCommands),
       updatedAt: updatedValue is num
           ? DateTime.fromMillisecondsSinceEpoch(updatedValue.toInt())
           : null,
@@ -241,6 +245,16 @@ class ProjectTarget {
     final id = json['lastSessionId'] as String?;
     final title = json['lastSessionTitle'] as String?;
     final status = json['lastSessionStatus'] as String?;
+    final parsedIcon = json['icon'] is Map
+        ? ProjectIconInfo.fromJson(
+            (json['icon'] as Map).cast<String, Object?>(),
+          )
+        : null;
+    final parsedCommands = json['commands'] is Map
+        ? ProjectCommandsInfo.fromJson(
+            (json['commands'] as Map).cast<String, Object?>(),
+          )
+        : null;
     return ProjectTarget(
       directory: json['directory']! as String,
       label: json['label']! as String,
@@ -249,16 +263,8 @@ class ProjectTarget {
       source: json['source'] as String?,
       vcs: json['vcs'] as String?,
       branch: json['branch'] as String?,
-      icon: json['icon'] is Map
-          ? ProjectIconInfo.fromJson(
-              (json['icon'] as Map).cast<String, Object?>(),
-            )
-          : null,
-      commands: json['commands'] is Map
-          ? ProjectCommandsInfo.fromJson(
-              (json['commands'] as Map).cast<String, Object?>(),
-            )
-          : null,
+      icon: _normalizedProjectIcon(parsedIcon),
+      commands: _normalizedProjectCommands(parsedCommands),
       lastSession: id == null && title == null && status == null
           ? null
           : ProjectSessionHint(id: id, title: title, status: status),
@@ -314,6 +320,31 @@ String projectDisplayLabel(String directory, {String? name}) {
     }
   }
   return normalized;
+}
+
+String? _normalizedOptionalString(String? value) {
+  final trimmed = value?.trim();
+  if (trimmed == null || trimmed.isEmpty) {
+    return null;
+  }
+  return trimmed;
+}
+
+ProjectIconInfo? _normalizedProjectIcon(ProjectIconInfo? icon) {
+  if (icon == null) {
+    return null;
+  }
+  if (icon.effectiveImage == null && icon.color == null) {
+    return null;
+  }
+  return icon;
+}
+
+ProjectCommandsInfo? _normalizedProjectCommands(ProjectCommandsInfo? commands) {
+  if (commands == null || commands.start == null) {
+    return null;
+  }
+  return commands;
 }
 
 class ProjectCatalog {
