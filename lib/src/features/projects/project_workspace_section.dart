@@ -52,6 +52,7 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
   bool _inspecting = false;
   String _catalogSignature = 'catalog-empty';
   String _projectQuery = '';
+  int _refreshRequestToken = 0;
 
   @override
   void initState() {
@@ -82,6 +83,9 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
   }
 
   Future<void> _refresh() async {
+    final requestToken = ++_refreshRequestToken;
+    final profile = widget.profile;
+    final profileStorageKey = profile.storageKey;
     final cacheKey = 'projectCatalog::${widget.profile.storageKey}';
     final recentProjects = await _projectStore.loadRecentProjects();
     final pinnedProjects = await _projectStore.loadPinnedProjects();
@@ -99,37 +103,43 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
                 source: 'current',
                 branch: catalog.vcsInfo?.branch,
               );
-        if (mounted) {
-          setState(() {
-            _catalog = catalog;
-            _recentProjects = recentProjects;
-            _pinnedProjectDirectories = pinnedProjects;
-            _hiddenProjectDirectories = hiddenProjects;
-            _selectedTarget = selected;
-            _catalogSignature = cached.signature;
-            _loading = false;
-            _error = null;
-          });
+        if (!_isActiveRefresh(requestToken, profileStorageKey)) {
+          return;
         }
+        setState(() {
+          _catalog = catalog;
+          _recentProjects = recentProjects;
+          _pinnedProjectDirectories = pinnedProjects;
+          _hiddenProjectDirectories = hiddenProjects;
+          _selectedTarget = selected;
+          _catalogSignature = cached.signature;
+          _loading = false;
+          _error = null;
+        });
         final ttl = await _cacheStore.loadTtl();
         if (cached.isFresh(ttl, DateTime.now())) {
           return;
         }
       } catch (_) {
-        if (mounted) {
-          setState(() {
-            _catalog = null;
-            _recentProjects = recentProjects;
-            _pinnedProjectDirectories = pinnedProjects;
-            _hiddenProjectDirectories = hiddenProjects;
-            _selectedTarget = null;
-            _catalogSignature = 'catalog-empty';
-            _loading = true;
-            _error = null;
-          });
+        await _cacheStore.remove(cacheKey);
+        if (!_isActiveRefresh(requestToken, profileStorageKey)) {
+          return;
         }
+        setState(() {
+          _catalog = null;
+          _recentProjects = recentProjects;
+          _pinnedProjectDirectories = pinnedProjects;
+          _hiddenProjectDirectories = hiddenProjects;
+          _selectedTarget = null;
+          _catalogSignature = 'catalog-empty';
+          _loading = true;
+          _error = null;
+        });
       }
     } else {
+      if (!_isActiveRefresh(requestToken, profileStorageKey)) {
+        return;
+      }
       setState(() {
         _recentProjects = recentProjects;
         _pinnedProjectDirectories = pinnedProjects;
@@ -139,7 +149,7 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
       });
     }
     try {
-      final catalog = await _catalogService.fetchCatalog(widget.profile);
+      final catalog = await _catalogService.fetchCatalog(profile);
       await _cacheStore.save(cacheKey, catalog.toJson());
       final recentProjects = await _projectStore.loadRecentProjects();
       final pinnedProjects = await _projectStore.loadPinnedProjects();
@@ -151,7 +161,7 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
               source: 'current',
               branch: catalog.vcsInfo?.branch,
             );
-      if (!mounted) {
+      if (!_isActiveRefresh(requestToken, profileStorageKey)) {
         return;
       }
       setState(() {
@@ -165,7 +175,7 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
         _error = null;
       });
     } catch (_) {
-      if (!mounted) {
+      if (!_isActiveRefresh(requestToken, profileStorageKey)) {
         return;
       }
       setState(() {
@@ -176,6 +186,12 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
         _loading = false;
       });
     }
+  }
+
+  bool _isActiveRefresh(int requestToken, String profileStorageKey) {
+    return mounted &&
+        requestToken == _refreshRequestToken &&
+        widget.profile.storageKey == profileStorageKey;
   }
 
   ProjectTarget _toTarget(

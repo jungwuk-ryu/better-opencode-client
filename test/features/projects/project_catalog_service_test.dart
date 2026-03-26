@@ -11,10 +11,12 @@ void main() {
   late Uri baseUri;
   Uri? lastPatchUri;
   Map<String, Object?>? lastPatchPayload;
+  Map<String, int> fileDirectoryRequestCounts = <String, int>{};
 
   setUp(() async {
     lastPatchUri = null;
     lastPatchPayload = null;
+    fileDirectoryRequestCounts = <String, int>{};
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     baseUri = Uri.parse('http://${server.address.address}:${server.port}');
     server.listen((request) async {
@@ -53,6 +55,11 @@ void main() {
         await request.response.close();
         return;
       }
+      if (request.uri.path == '/file') {
+        final directory = request.uri.queryParameters['directory'] ?? '';
+        fileDirectoryRequestCounts[directory] =
+            (fileDirectoryRequestCounts[directory] ?? 0) + 1;
+      }
       final body = switch (request.uri.path) {
         '/file' => switch (request.uri.queryParameters['directory']) {
           '/' => [
@@ -60,6 +67,27 @@ void main() {
               'name': 'workspace',
               'path': 'workspace',
               'absolute': '/workspace',
+              'type': 'directory',
+              'ignored': false,
+            },
+            {
+              'name': 'alpha',
+              'path': 'alpha',
+              'absolute': '/alpha',
+              'type': 'directory',
+              'ignored': false,
+            },
+            {
+              'name': 'beta',
+              'path': 'beta',
+              'absolute': '/beta',
+              'type': 'directory',
+              'ignored': false,
+            },
+            {
+              'name': 'gamma',
+              'path': 'gamma',
+              'absolute': '/gamma',
               'type': 'directory',
               'ignored': false,
             },
@@ -76,6 +104,33 @@ void main() {
               'name': 'demo',
               'path': 'demo',
               'absolute': '/workspace/demo',
+              'type': 'directory',
+              'ignored': false,
+            },
+          ],
+          '/alpha' => [
+            {
+              'name': 'feature',
+              'path': 'feature',
+              'absolute': '/alpha/feature',
+              'type': 'directory',
+              'ignored': false,
+            },
+          ],
+          '/beta' => [
+            {
+              'name': 'feature',
+              'path': 'feature',
+              'absolute': '/beta/feature',
+              'type': 'directory',
+              'ignored': false,
+            },
+          ],
+          '/gamma' => [
+            {
+              'name': 'feature',
+              'path': 'feature',
+              'absolute': '/gamma/feature',
               'type': 'directory',
               'ignored': false,
             },
@@ -268,6 +323,52 @@ void main() {
     expect(lastPatchPayload?['commands'], <String, Object?>{'start': ''});
     service.dispose();
   });
+
+  test(
+    'evicts older directory suggestions from the autocomplete cache',
+    () async {
+      final service = ProjectCatalogService(directoryListCacheSize: 2);
+      final profile = ServerProfile(
+        id: '1',
+        label: 'demo',
+        baseUrl: baseUri.toString(),
+      );
+      const pathInfo = PathInfo(
+        home: '/home/ubuntu',
+        state: '/state',
+        config: '/config',
+        worktree: '/workspace/demo',
+        directory: '/workspace/demo',
+      );
+
+      await service.suggestDirectories(
+        profile: profile,
+        input: '/alpha/fe',
+        pathInfo: pathInfo,
+      );
+      await service.suggestDirectories(
+        profile: profile,
+        input: '/beta/fe',
+        pathInfo: pathInfo,
+      );
+      await service.suggestDirectories(
+        profile: profile,
+        input: '/gamma/fe',
+        pathInfo: pathInfo,
+      );
+      await service.suggestDirectories(
+        profile: profile,
+        input: '/alpha/fe',
+        pathInfo: pathInfo,
+      );
+
+      expect(fileDirectoryRequestCounts['/'], 1);
+      expect(fileDirectoryRequestCounts['/alpha'], 2);
+      expect(fileDirectoryRequestCounts['/beta'], 1);
+      expect(fileDirectoryRequestCounts['/gamma'], 1);
+      service.dispose();
+    },
+  );
 }
 
 bool _isValidProjectPatchRequest(Uri uri, Map<String, Object?> payload) {

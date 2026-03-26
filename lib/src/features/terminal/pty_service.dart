@@ -217,9 +217,7 @@ Uri buildPtyWebSocketUri({
         : <String, String>{'cursor': '$cursor'},
   );
 
-  final username = profile.username?.trim() ?? '';
-  final password = profile.password ?? '';
-  final userInfo = profile.hasBasicAuth ? '$username:$password' : null;
+  final userInfo = profile.basicAuthUserInfo;
 
   return Uri(
     scheme: httpUri.scheme == 'https' ? 'wss' : 'ws',

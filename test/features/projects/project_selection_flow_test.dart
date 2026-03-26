@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -241,6 +243,105 @@ void main() {
     },
   );
 
+  testWidgets(
+    'stale catalog refreshes do not overwrite a newer server selection',
+    (tester) async {
+      _setLargeSurface(tester);
+      final service = _DelayedProjectCatalogService();
+      const alpha = ServerProfile(
+        id: 'alpha',
+        label: 'Alpha',
+        baseUrl: 'https://alpha.example.com',
+      );
+      const beta = ServerProfile(
+        id: 'beta',
+        label: 'Beta',
+        baseUrl: 'https://beta.example.com',
+      );
+
+      await tester.pumpWidget(
+        _TestApp(
+          child: ProjectWorkspaceSection(
+            profile: alpha,
+            onOpenProject: (_) {},
+            projectCatalogService: service,
+            projectStore: _FakeProjectStore(),
+            cacheStore: StaleCacheStore(),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await tester.pumpWidget(
+        _TestApp(
+          child: ProjectWorkspaceSection(
+            profile: beta,
+            onOpenProject: (_) {},
+            projectCatalogService: service,
+            projectStore: _FakeProjectStore(),
+            cacheStore: StaleCacheStore(),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      service.complete(
+        beta,
+        ProjectCatalog(
+          currentProject: null,
+          projects: const <ProjectSummary>[
+            ProjectSummary(
+              id: 'beta-demo',
+              directory: '/workspace/beta',
+              worktree: '/workspace/beta',
+              name: 'Beta workspace',
+              vcs: 'git',
+              updatedAt: null,
+            ),
+          ],
+          pathInfo: const PathInfo(
+            home: '/home/tester',
+            state: '/state',
+            config: '/config',
+            worktree: '/workspace/beta',
+            directory: '/workspace/beta',
+          ),
+          vcsInfo: const VcsInfo(branch: 'main'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      service.complete(
+        alpha,
+        ProjectCatalog(
+          currentProject: null,
+          projects: const <ProjectSummary>[
+            ProjectSummary(
+              id: 'alpha-demo',
+              directory: '/workspace/alpha',
+              worktree: '/workspace/alpha',
+              name: 'Alpha workspace',
+              vcs: 'git',
+              updatedAt: null,
+            ),
+          ],
+          pathInfo: const PathInfo(
+            home: '/home/tester',
+            state: '/state',
+            config: '/config',
+            worktree: '/workspace/alpha',
+            directory: '/workspace/alpha',
+          ),
+          vcsInfo: const VcsInfo(branch: 'main'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Beta workspace'), findsOneWidget);
+      expect(find.text('Alpha workspace'), findsNothing);
+    },
+  );
+
   testWidgets('connection screen no longer acts as a project chooser', (
     tester,
   ) async {
@@ -339,6 +440,25 @@ class _FakeProjectCatalogService extends ProjectCatalogService {
       return const <String>[];
     }
     return options.take(limit).toList(growable: false);
+  }
+}
+
+class _DelayedProjectCatalogService extends ProjectCatalogService {
+  final Map<String, Completer<ProjectCatalog>> _completers =
+      <String, Completer<ProjectCatalog>>{};
+
+  @override
+  Future<ProjectCatalog> fetchCatalog(ServerProfile profile) {
+    return (_completers[profile.storageKey] ??= Completer<ProjectCatalog>())
+        .future;
+  }
+
+  void complete(ServerProfile profile, ProjectCatalog catalog) {
+    final completer = _completers[profile.storageKey] ??=
+        Completer<ProjectCatalog>();
+    if (!completer.isCompleted) {
+      completer.complete(catalog);
+    }
   }
 }
 

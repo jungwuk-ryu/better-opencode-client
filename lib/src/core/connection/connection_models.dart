@@ -25,6 +25,9 @@ class ServerProfile {
 
   String get normalizedBaseUrl => _normalizeBaseUrl(baseUrl);
 
+  bool get hasExplicitBasicAuth =>
+      (username?.trim().isNotEmpty ?? false) || (password?.isNotEmpty ?? false);
+
   String get effectiveLabel {
     final trimmedLabel = label.trim();
     if (trimmedLabel.isNotEmpty) {
@@ -45,23 +48,48 @@ class ServerProfile {
     if (normalized.isEmpty) {
       return null;
     }
-    return Uri.tryParse(normalized);
-  }
-
-  bool get hasBasicAuth =>
-      (username?.trim().isNotEmpty ?? false) ||
-      (password?.trim().isNotEmpty ?? false);
-
-  String get storageKey => '$normalizedBaseUrl|${username?.trim() ?? ''}';
-
-  String? get basicAuthHeader {
-    if (!hasBasicAuth) {
+    final uri = Uri.tryParse(normalized);
+    if (uri == null || !_isSupportedServerScheme(uri.scheme)) {
       return null;
     }
-    final user = username?.trim() ?? '';
-    final secret = password ?? '';
-    final encoded = base64Encode(utf8.encode('$user:$secret'));
+    return uri.host.isEmpty ? null : uri;
+  }
+
+  bool get hasBasicAuth => _resolvedBasicAuthCredentials != null;
+
+  String get storageKey =>
+      '$normalizedBaseUrl|${_resolvedBasicAuthCredentials?.username.trim() ?? ''}';
+
+  String? get basicAuthUserInfo {
+    final credentials = _resolvedBasicAuthCredentials;
+    if (credentials == null) {
+      return null;
+    }
+    return '${credentials.username}:${credentials.password}';
+  }
+
+  String? get basicAuthHeader {
+    final credentials = _resolvedBasicAuthCredentials;
+    if (credentials == null) {
+      return null;
+    }
+    final encoded = base64Encode(
+      utf8.encode('${credentials.username}:${credentials.password}'),
+    );
     return 'Basic $encoded';
+  }
+
+  ServerProfile canonicalize() {
+    final embeddedCredentials = hasExplicitBasicAuth
+        ? null
+        : _embeddedBasicAuthCredentials(baseUrl);
+    return ServerProfile(
+      id: id,
+      label: label,
+      baseUrl: normalizedBaseUrl,
+      username: username ?? embeddedCredentials?.username,
+      password: password ?? embeddedCredentials?.password,
+    );
   }
 
   ServerProfile copyWith({
@@ -97,7 +125,7 @@ class ServerProfile {
       baseUrl: json['baseUrl']! as String,
       username: json['username'] as String?,
       password: json['password'] as String?,
-    );
+    ).canonicalize();
   }
 
   static String _normalizeBaseUrl(String value) {
@@ -117,6 +145,7 @@ class ServerProfile {
         : uri.path;
     return uri
         .replace(
+          userInfo: '',
           path: normalizedPath,
           queryParameters: uri.queryParameters.isEmpty
               ? null
@@ -125,6 +154,44 @@ class ServerProfile {
         )
         .toString();
   }
+
+  ({String username, String password})? get _resolvedBasicAuthCredentials {
+    if (hasExplicitBasicAuth) {
+      return (username: username?.trim() ?? '', password: password ?? '');
+    }
+    final embedded = _embeddedBasicAuthCredentials(baseUrl);
+    if (embedded == null) {
+      return null;
+    }
+    return (username: embedded.username, password: embedded.password);
+  }
+}
+
+bool _isSupportedServerScheme(String scheme) {
+  return scheme == 'http' || scheme == 'https';
+}
+
+({String username, String password})? _embeddedBasicAuthCredentials(
+  String baseUrl,
+) {
+  final raw = baseUrl.trim();
+  if (raw.isEmpty) {
+    return null;
+  }
+  final withScheme = raw.contains('://') ? raw : 'https://$raw';
+  final uri = Uri.tryParse(withScheme);
+  if (uri == null || uri.userInfo.isEmpty) {
+    return null;
+  }
+  final separator = uri.userInfo.indexOf(':');
+  final username = separator == -1
+      ? uri.userInfo
+      : uri.userInfo.substring(0, separator);
+  final password = separator == -1 ? '' : uri.userInfo.substring(separator + 1);
+  if (username.isEmpty && password.isEmpty) {
+    return null;
+  }
+  return (username: username, password: password);
 }
 
 class RecentConnection {

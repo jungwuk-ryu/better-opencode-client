@@ -41,13 +41,22 @@ class StaleCacheStore {
 
   Future<StaleCacheEntry?> load(String key) async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString('$cachePrefix$key');
+    final storageKey = '$cachePrefix$key';
+    final raw = prefs.getString(storageKey);
     if (raw == null || raw.isEmpty) {
       return null;
     }
-    return StaleCacheEntry.fromJson(
-      (jsonDecode(raw) as Map).cast<String, Object?>(),
-    );
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) {
+        await prefs.remove(storageKey);
+        return null;
+      }
+      return StaleCacheEntry.fromJson(decoded.cast<String, Object?>());
+    } catch (_) {
+      await prefs.remove(storageKey);
+      return null;
+    }
   }
 
   Future<void> save(String key, Object? payload) async {

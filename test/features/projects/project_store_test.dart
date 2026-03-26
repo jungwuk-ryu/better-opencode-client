@@ -82,6 +82,23 @@ void main() {
     expect(restored?.lastSession?.status, 'busy');
   });
 
+  test('malformed recent project entries are skipped and cleaned up', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'recent_projects': <String>[
+        '{bad json',
+        '{"directory":"/workspace/demo","label":"Demo","source":"server"}',
+      ],
+    });
+    final store = ProjectStore();
+
+    final recent = await store.loadRecentProjects();
+    final prefs = await SharedPreferences.getInstance();
+
+    expect(recent, hasLength(1));
+    expect(recent.single.directory, '/workspace/demo');
+    expect(prefs.getStringList('recent_projects'), hasLength(1));
+  });
+
   test(
     'reorders recent projects and keeps unspecified entries after them',
     () async {

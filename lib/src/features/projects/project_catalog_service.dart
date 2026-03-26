@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -7,14 +8,23 @@ import '../../core/network/request_headers.dart';
 import 'project_models.dart';
 
 class ProjectCatalogService {
-  ProjectCatalogService({http.Client? client})
-    : _client = client ?? http.Client();
+  ProjectCatalogService({
+    http.Client? client,
+    int pathInfoCacheSize = 8,
+    int directoryListCacheSize = 96,
+  }) : assert(pathInfoCacheSize > 0),
+       assert(directoryListCacheSize > 0),
+       _client = client ?? http.Client(),
+       _pathInfoCache = _FutureLruCache<String, PathInfo?>(
+         maximumSize: pathInfoCacheSize,
+       ),
+       _directoryListCache = _FutureLruCache<String, List<_DirectoryCandidate>>(
+         maximumSize: directoryListCacheSize,
+       );
 
   final http.Client _client;
-  final Map<String, Future<PathInfo?>> _pathInfoCache =
-      <String, Future<PathInfo?>>{};
-  final Map<String, Future<List<_DirectoryCandidate>>> _directoryListCache =
-      <String, Future<List<_DirectoryCandidate>>>{};
+  final _FutureLruCache<String, PathInfo?> _pathInfoCache;
+  final _FutureLruCache<String, List<_DirectoryCandidate>> _directoryListCache;
 
   Future<ProjectCatalog> fetchCatalog(ServerProfile profile) async {
     final baseUri = profile.uriOrNull;
@@ -49,7 +59,7 @@ class ProjectCatalogService {
         ? PathInfo.fromJson(pathBody.cast<String, Object?>())
         : null;
     if (pathInfo != null) {
-      _pathInfoCache[profile.storageKey] = Future<PathInfo?>.value(pathInfo);
+      _pathInfoCache.set(profile.storageKey, Future<PathInfo?>.value(pathInfo));
     }
 
     return ProjectCatalog(
@@ -342,7 +352,7 @@ class ProjectCatalogService {
 
   Future<PathInfo?> _resolvePathInfo(ServerProfile profile) {
     final storageKey = profile.storageKey;
-    final existing = _pathInfoCache[storageKey];
+    final existing = _pathInfoCache.get(storageKey);
     if (existing != null) {
       return existing;
     }
@@ -360,7 +370,7 @@ class ProjectCatalogService {
       return PathInfo.fromJson(body.cast<String, Object?>());
     }();
 
-    _pathInfoCache[storageKey] = request;
+    _pathInfoCache.set(storageKey, request);
     return request.whenComplete(() async {
       try {
         await request;
@@ -422,42 +432,47 @@ class ProjectCatalogService {
       directory: directory,
     );
     final normalizedQuery = query.trim().toLowerCase();
-    final ranked = directories.toList(growable: false)
-      ..sort((a, b) {
-        final scoreA = _directoryMatchScore(a.name, normalizedQuery);
-        final scoreB = _directoryMatchScore(b.name, normalizedQuery);
-        if (scoreA != scoreB) {
-          return scoreA.compareTo(scoreB);
-        }
-        if (a.name.length != b.name.length) {
-          return a.name.length.compareTo(b.name.length);
-        }
-        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-      });
+    final ranked = <_RankedDirectoryCandidate>[];
+    for (final candidate in directories) {
+      final lowerName = candidate.name.toLowerCase();
+      if (normalizedQuery.isNotEmpty && !lowerName.contains(normalizedQuery)) {
+        continue;
+      }
+      ranked.add(
+        _RankedDirectoryCandidate(
+          candidate: candidate,
+          lowerName: lowerName,
+          score: _directoryMatchScore(lowerName, normalizedQuery),
+        ),
+      );
+    }
+    ranked.sort((a, b) {
+      if (a.score != b.score) {
+        return a.score.compareTo(b.score);
+      }
+      if (a.candidate.name.length != b.candidate.name.length) {
+        return a.candidate.name.length.compareTo(b.candidate.name.length);
+      }
+      return a.lowerName.compareTo(b.lowerName);
+    });
 
     return ranked
-        .where(
-          (candidate) =>
-              normalizedQuery.isEmpty ||
-              candidate.name.toLowerCase().contains(normalizedQuery),
-        )
-        .map((candidate) => candidate.absolute)
+        .map((entry) => entry.candidate.absolute)
         .take(limit)
         .toList(growable: false);
   }
 
-  int _directoryMatchScore(String candidate, String query) {
+  int _directoryMatchScore(String lowerCandidate, String query) {
     if (query.isEmpty) {
       return 0;
     }
-    final lower = candidate.toLowerCase();
-    if (lower == query) {
+    if (lowerCandidate == query) {
       return 0;
     }
-    if (lower.startsWith(query)) {
+    if (lowerCandidate.startsWith(query)) {
       return 1;
     }
-    if (lower.contains(query)) {
+    if (lowerCandidate.contains(query)) {
       return 2;
     }
     return 3;
@@ -469,7 +484,7 @@ class ProjectCatalogService {
   }) {
     final normalizedDirectory = _trimDirectoryPath(directory);
     final cacheKey = '${profile.storageKey}\n$normalizedDirectory';
-    final existing = _directoryListCache[cacheKey];
+    final existing = _directoryListCache.get(cacheKey);
     if (existing != null) {
       return existing;
     }
@@ -523,7 +538,7 @@ class ProjectCatalogService {
       return results;
     }();
 
-    _directoryListCache[cacheKey] = request;
+    _directoryListCache.set(cacheKey, request);
     return request.whenComplete(() async {
       try {
         await request;
@@ -604,6 +619,50 @@ class _DirectoryCandidate {
 
   final String name;
   final String absolute;
+}
+
+class _RankedDirectoryCandidate {
+  const _RankedDirectoryCandidate({
+    required this.candidate,
+    required this.lowerName,
+    required this.score,
+  });
+
+  final _DirectoryCandidate candidate;
+  final String lowerName;
+  final int score;
+}
+
+class _FutureLruCache<K, V> {
+  _FutureLruCache({required this.maximumSize});
+
+  final int maximumSize;
+  final LinkedHashMap<K, Future<V>> _entries = LinkedHashMap<K, Future<V>>();
+
+  Future<V>? get(K key) {
+    if (!_entries.containsKey(key)) {
+      return null;
+    }
+    final value = _entries.remove(key)!;
+    _entries[key] = value;
+    return value;
+  }
+
+  void set(K key, Future<V> value) {
+    _entries.remove(key);
+    _entries[key] = value;
+    while (_entries.length > maximumSize) {
+      _entries.remove(_entries.keys.first);
+    }
+  }
+
+  void remove(K key) {
+    _entries.remove(key);
+  }
+
+  void clear() {
+    _entries.clear();
+  }
 }
 
 String _cleanDirectoryInput(String value) {

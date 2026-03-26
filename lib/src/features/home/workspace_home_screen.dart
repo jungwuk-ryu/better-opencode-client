@@ -253,6 +253,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
         (jsonDecode(entry.payloadJson) as Map).cast<String, Object?>(),
       );
     } catch (_) {
+      await _cacheStore.remove('probe::${profile.storageKey}');
       return null;
     }
   }

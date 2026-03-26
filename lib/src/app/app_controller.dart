@@ -465,6 +465,7 @@ class WebParityAppController extends ChangeNotifier {
             report,
           );
         } catch (_) {
+          await _cacheStore.remove('probe::${profile.storageKey}');
           return MapEntry<String, ServerProbeReport?>(profile.storageKey, null);
         }
       }),

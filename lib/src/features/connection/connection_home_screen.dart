@@ -185,9 +185,15 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
     if (entry == null || !mounted) {
       return;
     }
-    final report = ServerProbeReport.fromJson(
-      (jsonDecode(entry.payloadJson) as Map).cast<String, Object?>(),
-    );
+    ServerProbeReport report;
+    try {
+      report = ServerProbeReport.fromJson(
+        (jsonDecode(entry.payloadJson) as Map).cast<String, Object?>(),
+      );
+    } catch (_) {
+      await _cacheStore.remove(_probeCacheKey(profile));
+      return;
+    }
     setState(() {
       _latestProbe = report;
       _probeSignature = entry.signature;

@@ -17,14 +17,27 @@ class ProjectStore {
     final prefs = await SharedPreferences.getInstance();
     final hidden = await loadHiddenProjects();
     final raw = prefs.getStringList(_recentProjectsKey) ?? const <String>[];
-    return raw
-        .map(
-          (item) => ProjectTarget.fromJson(
-            (jsonDecode(item) as Map).cast<String, Object?>(),
-          ),
-        )
-        .where((item) => !hidden.contains(item.directory))
-        .toList(growable: false);
+    var needsRewrite = false;
+    final projects = <ProjectTarget>[];
+    for (final item in raw) {
+      try {
+        final decoded = jsonDecode(item);
+        if (decoded is! Map) {
+          needsRewrite = true;
+          continue;
+        }
+        final project = ProjectTarget.fromJson(decoded.cast<String, Object?>());
+        if (!hidden.contains(project.directory)) {
+          projects.add(project);
+        }
+      } catch (_) {
+        needsRewrite = true;
+      }
+    }
+    if (needsRewrite) {
+      await _saveRecentProjects(projects);
+    }
+    return List<ProjectTarget>.unmodifiable(projects);
   }
 
   Future<List<ProjectTarget>> recordRecentProject(ProjectTarget target) async {

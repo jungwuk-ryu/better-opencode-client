@@ -103,6 +103,48 @@ void main() {
     );
   });
 
+  test(
+    'saving a profile strips embedded url credentials into secure storage',
+    () async {
+      final secureStore = _MemorySecureKeyValueStore();
+      final store = ServerProfileStore(
+        secureStore: SecureServerProfileStore(storage: secureStore),
+      );
+      const profile = ServerProfile(
+        id: 'saved-2',
+        label: 'Embedded Auth',
+        baseUrl: 'https://operator:secret@demo.opencode.ai/api/',
+      );
+
+      final savedProfiles = await store.upsertProfile(profile);
+
+      final prefs = await SharedPreferences.getInstance();
+      final rawProfiles = prefs.getStringList('server_profiles');
+      final storedProfile =
+          jsonDecode(rawProfiles!.single) as Map<String, Object?>;
+
+      expect(
+        savedProfiles.single.normalizedBaseUrl,
+        'https://demo.opencode.ai/api',
+      );
+      expect(savedProfiles.single.username, 'operator');
+      expect(savedProfiles.single.password, 'secret');
+      expect(storedProfile['baseUrl'], 'https://demo.opencode.ai/api');
+      expect(storedProfile.containsKey('username'), isFalse);
+      expect(storedProfile.containsKey('password'), isFalse);
+      expect(
+        jsonDecode(
+              secureStore
+                  .values[SecureServerProfileStore.savedCredentialsKeyForProfile(
+                'saved-2',
+              )]!,
+            )
+            as Map<String, Object?>,
+        <String, Object?>{'username': 'operator', 'password': 'secret'},
+      );
+    },
+  );
+
   test('pinned profiles toggle on and off by storage key', () async {
     final store = ServerProfileStore();
     const profile = ServerProfile(
@@ -116,6 +158,30 @@ void main() {
 
     expect(pinned.contains(profile.storageKey), isTrue);
     expect(unpinned.contains(profile.storageKey), isFalse);
+  });
+
+  test('malformed recent connections are skipped and rewritten', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'recent_server_connections': <String>[
+        '{bad json',
+        jsonEncode(<String, Object?>{
+          'id': 'saved-1',
+          'label': 'Local Dev',
+          'baseUrl': 'https://demo.opencode.ai',
+          'attemptedAt': '2026-03-26T00:00:00.000Z',
+          'classification': 'ready',
+          'summary': 'Ready',
+        }),
+      ],
+    });
+    final store = ServerProfileStore();
+
+    final connections = await store.loadRecentConnections();
+    final prefs = await SharedPreferences.getInstance();
+
+    expect(connections, hasLength(1));
+    expect(connections.single.id, 'saved-1');
+    expect(prefs.getStringList('recent_server_connections'), hasLength(1));
   });
 }
 

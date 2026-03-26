@@ -31,13 +31,16 @@ class ServerProfileStore {
   Future<void> save(List<ServerProfile> profiles) async {
     final prefs = await SharedPreferences.getInstance();
     await _migrateLegacyCredentials(prefs);
+    final sanitizedProfiles = profiles
+        .map((profile) => profile.canonicalize())
+        .toList(growable: false);
     final existingIds = _storedProfileIds(prefs);
-    await _secureStore.writeSavedProfiles(profiles);
+    await _secureStore.writeSavedProfiles(sanitizedProfiles);
     await prefs.setStringList(
       _profilesKey,
-      profiles.map(_encodeSanitizedProfile).toList(growable: false),
+      sanitizedProfiles.map(_encodeSanitizedProfile).toList(growable: false),
     );
-    final nextIds = profiles.map((profile) => profile.id).toSet();
+    final nextIds = sanitizedProfiles.map((profile) => profile.id).toSet();
     await _secureStore.deleteSavedProfiles(existingIds.difference(nextIds));
   }
 
@@ -62,8 +65,12 @@ class ServerProfileStore {
   Future<void> saveDraftProfile(ServerProfile profile) async {
     final prefs = await SharedPreferences.getInstance();
     await _migrateLegacyCredentials(prefs);
-    await _secureStore.writeDraftProfile(profile);
-    await prefs.setString(_draftProfileKey, _encodeSanitizedProfile(profile));
+    final sanitizedProfile = profile.canonicalize();
+    await _secureStore.writeDraftProfile(sanitizedProfile);
+    await prefs.setString(
+      _draftProfileKey,
+      _encodeSanitizedProfile(sanitizedProfile),
+    );
   }
 
   Future<void> clearDraftProfile() async {
@@ -91,15 +98,27 @@ class ServerProfileStore {
   Future<List<RecentConnection>> loadRecentConnections() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getStringList(_recentConnectionsKey) ?? const <String>[];
-    final connections = raw
-        .map(
-          (entry) => RecentConnection.fromJson(
-            (jsonDecode(entry) as Map).cast<String, Object?>(),
-          ),
-        )
-        .toList(growable: false);
+    var needsRewrite = false;
+    final connections = <RecentConnection>[];
+    for (final entry in raw) {
+      try {
+        final decoded = jsonDecode(entry);
+        if (decoded is! Map) {
+          needsRewrite = true;
+          continue;
+        }
+        connections.add(
+          RecentConnection.fromJson(decoded.cast<String, Object?>()),
+        );
+      } catch (_) {
+        needsRewrite = true;
+      }
+    }
     final sorted = connections.toList()
       ..sort((a, b) => b.attemptedAt.compareTo(a.attemptedAt));
+    if (needsRewrite) {
+      await saveRecentConnections(sorted);
+    }
     return List<RecentConnection>.unmodifiable(sorted);
   }
 
@@ -130,15 +149,17 @@ class ServerProfileStore {
   }
 
   Future<List<ServerProfile>> upsertProfile(ServerProfile profile) async {
+    final canonicalProfile = profile.canonicalize();
     final profiles = (await load()).toList();
     final existingIndex = profiles.indexWhere(
       (entry) =>
-          entry.id == profile.id || entry.storageKey == profile.storageKey,
+          entry.id == canonicalProfile.id ||
+          entry.storageKey == canonicalProfile.storageKey,
     );
     if (existingIndex >= 0) {
-      profiles[existingIndex] = profile;
+      profiles[existingIndex] = canonicalProfile;
     } else {
-      profiles.insert(0, profile);
+      profiles.insert(0, canonicalProfile);
     }
     await save(profiles);
     return List<ServerProfile>.unmodifiable(profiles);
@@ -199,14 +220,15 @@ class ServerProfileStore {
         continue;
       }
 
-      if (_containsLegacyCredentials(decoded)) {
-        needsRewrite = true;
-      }
-
       final profile = _profileFromJsonOrNull(decoded);
       if (profile == null) {
         needsRewrite = true;
         continue;
+      }
+
+      if (_containsLegacyCredentials(decoded) ||
+          _needsCanonicalRewrite(decoded, profile)) {
+        needsRewrite = true;
       }
 
       profiles.add(profile);
@@ -236,14 +258,15 @@ class ServerProfileStore {
       return;
     }
 
-    if (!_containsLegacyCredentials(decoded)) {
-      return;
-    }
-
     final profile = _profileFromJsonOrNull(decoded);
     if (profile == null) {
       await prefs.remove(_draftProfileKey);
       await _secureStore.clearDraftProfile();
+      return;
+    }
+
+    if (!_containsLegacyCredentials(decoded) &&
+        !_needsCanonicalRewrite(decoded, profile)) {
       return;
     }
 
@@ -253,6 +276,15 @@ class ServerProfileStore {
 
   bool _containsLegacyCredentials(Map<String, Object?> json) {
     return json.containsKey('username') || json.containsKey('password');
+  }
+
+  bool _needsCanonicalRewrite(
+    Map<String, Object?> json,
+    ServerProfile profile,
+  ) {
+    return (json['baseUrl'] as String?)?.trim() != profile.normalizedBaseUrl ||
+        (json['username'] as String?) != profile.username ||
+        (json['password'] as String?) != profile.password;
   }
 
   ServerProfile? _decodeProfileOrNull(String entry) {
@@ -318,6 +350,6 @@ class ServerProfileStore {
       baseUrl: baseUrl,
       username: username as String?,
       password: password as String?,
-    );
+    ).canonicalize();
   }
 }

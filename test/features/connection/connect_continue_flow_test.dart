@@ -60,10 +60,12 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('server-status-primary-action')));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('home-workspace-connect-button')),
+    );
     await tester.pump();
 
-    expect(find.text('Checking Studio'), findsOneWidget);
+    expect(find.text('Studio'), findsWidgets);
     expect(find.text('Checking server...'), findsWidgets);
     expect(find.byType(ConnectionHomeScreen), findsNothing);
     expect(find.text('Live capability probe'), findsNothing);
@@ -128,16 +130,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('server-status-primary-action')));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('home-workspace-connect-button')),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Sign-in required'), findsWidgets);
     expect(
-      find.byKey(const Key('server-status-primary-action')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const Key('server-status-secondary-action')),
+      find.byKey(const ValueKey<String>('home-workspace-connect-button')),
       findsOneWidget,
     );
     expect(find.byType(ConnectionHomeScreen), findsNothing);

@@ -111,6 +111,46 @@ void main() {
     );
   });
 
+  test('migrates embedded url credentials into secure storage', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'server_profiles': <String>[
+        jsonEncode(<String, Object?>{
+          'id': 'saved-embedded',
+          'label': 'Embedded',
+          'baseUrl': 'https://operator:secret@demo.opencode.ai/api/',
+        }),
+      ],
+    });
+
+    final secureStorage = _MemorySecureKeyValueStore();
+    final store = ServerProfileStore(
+      secureStore: SecureServerProfileStore(storage: secureStorage),
+    );
+
+    final profiles = await store.load();
+    final prefs = await SharedPreferences.getInstance();
+    final storedProfile =
+        jsonDecode(prefs.getStringList('server_profiles')!.single)
+            as Map<String, Object?>;
+
+    expect(profiles.single.normalizedBaseUrl, 'https://demo.opencode.ai/api');
+    expect(profiles.single.username, 'operator');
+    expect(profiles.single.password, 'secret');
+    expect(storedProfile['baseUrl'], 'https://demo.opencode.ai/api');
+    expect(storedProfile.containsKey('username'), isFalse);
+    expect(storedProfile.containsKey('password'), isFalse);
+    expect(
+      jsonDecode(
+            secureStorage
+                .values[SecureServerProfileStore.savedCredentialsKeyForProfile(
+              'saved-embedded',
+            )]!,
+          )
+          as Map<String, Object?>,
+      <String, Object?>{'username': 'operator', 'password': 'secret'},
+    );
+  });
+
   test(
     'skips malformed and partial legacy saved profiles without throwing',
     () async {
