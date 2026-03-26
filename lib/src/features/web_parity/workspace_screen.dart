@@ -6991,26 +6991,45 @@ class _TimelineMessage extends StatelessWidget {
       message,
       showProgressDetails: timelineProgressDetailsVisible,
     );
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (final part in orderedParts)
+    final timelineItems = <Widget>[];
+    for (var index = 0; index < orderedParts.length; index += 1) {
+      final part = orderedParts[index];
+      if (_isReadToolPart(part)) {
+        final readParts = <ChatPart>[part];
+        while (index + 1 < orderedParts.length &&
+            _isReadToolPart(orderedParts[index + 1])) {
+          index += 1;
+          readParts.add(orderedParts[index]);
+        }
+        timelineItems.add(
           Padding(
             padding: const EdgeInsets.only(bottom: AppSpacing.md),
-            child: _TimelinePart(
-              currentSessionId: currentSessionId,
-              part: part,
-              sessions: sessions,
-              shellToolDefaultExpanded: shellToolDefaultExpanded,
-              textStreamingActive: _messageIsActive(message),
-              shimmerActive: _activityPartShimmerActive(
-                part,
-                messageIsActive: _messageIsActive(message),
-              ),
-              onOpenSession: onOpenSession,
-            ),
+            child: _TimelineExploredReadsPart(parts: readParts),
           ),
-      ],
+        );
+        continue;
+      }
+      timelineItems.add(
+        Padding(
+          padding: const EdgeInsets.only(bottom: AppSpacing.md),
+          child: _TimelinePart(
+            currentSessionId: currentSessionId,
+            part: part,
+            sessions: sessions,
+            shellToolDefaultExpanded: shellToolDefaultExpanded,
+            textStreamingActive: _messageIsActive(message),
+            shimmerActive: _activityPartShimmerActive(
+              part,
+              messageIsActive: _messageIsActive(message),
+            ),
+            onOpenSession: onOpenSession,
+          ),
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: timelineItems,
     );
   }
 }
@@ -7631,6 +7650,106 @@ class _TimelineActivityPartState extends State<_TimelineActivityPart> {
                       border: Border.all(color: surfaces.lineSoft),
                     ),
                     child: _StructuredTextBlock(text: widget.body),
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _TimelineExploredReadsPart extends StatefulWidget {
+  const _TimelineExploredReadsPart({required this.parts});
+
+  final List<ChatPart> parts;
+
+  @override
+  State<_TimelineExploredReadsPart> createState() =>
+      _TimelineExploredReadsPartState();
+}
+
+class _TimelineExploredReadsPartState extends State<_TimelineExploredReadsPart> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final count = widget.parts.length;
+    final titleStyle = theme.textTheme.titleSmall?.copyWith(
+      fontWeight: FontWeight.w600,
+      color: theme.colorScheme.onSurface.withValues(alpha: 0.92),
+    );
+    final detailStyle = theme.textTheme.bodyLarge?.copyWith(
+      height: 1.65,
+      color: theme.colorScheme.onSurface.withValues(alpha: 0.92),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            key: ValueKey<String>(
+              'timeline-explored-reads-header-${widget.parts.first.id}',
+            ),
+            onTap: () => setState(() => _expanded = !_expanded),
+            borderRadius: BorderRadius.circular(10),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.xs,
+                vertical: AppSpacing.xxs,
+              ),
+              child: Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Text(
+                      'Explored $count read${count == 1 ? '' : 's'}',
+                      style: titleStyle,
+                    ),
+                  ),
+                  Icon(
+                    _expanded
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    size: 18,
+                    color: surfaces.muted,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        ClipRect(
+          child: AnimatedSize(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            child: !_expanded
+                ? const SizedBox.shrink()
+                : Padding(
+                    padding: const EdgeInsets.only(
+                      left: AppSpacing.lg,
+                      top: AppSpacing.sm,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: widget.parts
+                          .map(
+                            (part) => Padding(
+                              padding: const EdgeInsets.only(
+                                bottom: AppSpacing.sm,
+                              ),
+                              child: Text(
+                                _readToolDetailLine(part),
+                                key: ValueKey<String>(
+                                  'timeline-explored-read-detail-${part.id}',
+                                ),
+                                style: detailStyle,
+                              ),
+                            ),
+                          )
+                          .toList(growable: false),
+                    ),
                   ),
           ),
         ),
@@ -8946,11 +9065,52 @@ bool _isShellToolPart(ChatPart part) {
   return part.type == 'tool' && part.tool?.trim().toLowerCase() == 'bash';
 }
 
+bool _isReadToolPart(ChatPart part) {
+  return part.type == 'tool' && part.tool?.trim().toLowerCase() == 'read';
+}
+
 String? _toolStateStatus(ChatPart part) {
   return _nestedValue(part.metadata, const <String>[
     'state',
     'status',
   ])?.toString().trim().toLowerCase();
+}
+
+String _readToolDetailLine(ChatPart part) {
+  final path = _firstNonEmpty(<String?>[
+    _nestedString(part.metadata, const <String>['state', 'input', 'filePath']),
+    _nestedString(part.metadata, const <String>['input', 'filePath']),
+    _nestedString(part.metadata, const <String>['filePath']),
+    _toolInputSummary(part),
+  ]);
+  final filename = _basename(path ?? '').trim();
+  final offset = _firstNonEmpty(<String?>[
+    _nestedValue(part.metadata, const <String>['state', 'input', 'offset'])
+        ?.toString(),
+    _nestedValue(part.metadata, const <String>['input', 'offset'])?.toString(),
+    _nestedValue(part.metadata, const <String>['offset'])?.toString(),
+  ]);
+  final limit = _firstNonEmpty(<String?>[
+    _nestedValue(part.metadata, const <String>['state', 'input', 'limit'])
+        ?.toString(),
+    _nestedValue(part.metadata, const <String>['input', 'limit'])?.toString(),
+    _nestedValue(part.metadata, const <String>['limit'])?.toString(),
+  ]);
+  final suffix = <String>[
+    if (offset != null) 'offset=$offset',
+    if (limit != null) 'limit=$limit',
+  ].join('  ');
+  final label = filename.isEmpty ? 'file' : filename;
+  return suffix.isEmpty ? 'Read  $label' : 'Read  $label  $suffix';
+}
+
+String _basename(String value) {
+  if (value.isEmpty) {
+    return value;
+  }
+  final normalized = value.replaceAll('\\', '/');
+  final segments = normalized.split('/');
+  return segments.isEmpty ? value : segments.last;
 }
 
 List<QuestionPromptSummary> _questionToolQuestions(ChatPart part) {

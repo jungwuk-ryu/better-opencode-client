@@ -98,6 +98,8 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('release-checklist'), findsOneWidget);
+    expect(find.text('Explored 4 reads'), findsOneWidget);
+    expect(find.textContaining('daily-job.spec.ts'), findsNothing);
     expect(
       tester
           .getTopLeft(
@@ -127,6 +129,65 @@ void main() {
       find.text('Detailed internal reasoning stays hidden.'),
       findsOneWidget,
     );
+  });
+
+  testWidgets('read tool calls are grouped into an explored summary', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      initialShellToolPartsExpanded: true,
+      initialTimelineProgressDetailsVisible: false,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _TimelineWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.text('Explored 4 reads'), findsOneWidget);
+    expect(find.textContaining('daily-job.spec.ts'), findsNothing);
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('timeline-explored-reads-header-part_read_1'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.textContaining('daily-job.spec.ts  offset=261'), findsOneWidget);
+    expect(
+      find.textContaining('runtime-state.spec.ts  offset=1  limit=220'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('bot-once.ts  offset=261  limit=80'), findsOneWidget);
   });
 
   testWidgets('shell output can be collapsed from the workspace setting', (
@@ -434,6 +495,66 @@ class _TimelineWorkspaceController extends WorkspaceController {
         sessionId: 'ses_1',
       ),
       parts: <ChatPart>[
+        const ChatPart(
+          id: 'part_read_1',
+          type: 'tool',
+          tool: 'read',
+          metadata: <String, Object?>{
+            'state': <String, Object?>{
+              'status': 'completed',
+              'input': <String, Object?>{
+                'filePath': 'test/unit/job/daily-job.spec.ts',
+                'offset': 261,
+                'limit': 260,
+              },
+            },
+          },
+        ),
+        const ChatPart(
+          id: 'part_read_2',
+          type: 'tool',
+          tool: 'read',
+          metadata: <String, Object?>{
+            'state': <String, Object?>{
+              'status': 'completed',
+              'input': <String, Object?>{
+                'filePath': 'test/unit/shared/runtime-state.spec.ts',
+                'offset': 1,
+                'limit': 220,
+              },
+            },
+          },
+        ),
+        const ChatPart(
+          id: 'part_read_3',
+          type: 'tool',
+          tool: 'read',
+          metadata: <String, Object?>{
+            'state': <String, Object?>{
+              'status': 'completed',
+              'input': <String, Object?>{
+                'filePath': 'test/integration/bot-once.ts',
+                'offset': 1,
+                'limit': 260,
+              },
+            },
+          },
+        ),
+        const ChatPart(
+          id: 'part_read_4',
+          type: 'tool',
+          tool: 'read',
+          metadata: <String, Object?>{
+            'state': <String, Object?>{
+              'status': 'completed',
+              'input': <String, Object?>{
+                'filePath': 'test/integration/bot-once.ts',
+                'offset': 261,
+                'limit': 80,
+              },
+            },
+          },
+        ),
         const ChatPart(
           id: 'part_reasoning',
           type: 'reasoning',
