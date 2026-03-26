@@ -83,6 +83,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   String? _activePtyId;
   String? _terminalError;
   bool _terminalPanelOpen = false;
+  bool _terminalPanelMounted = false;
   bool _loadingPtySessions = false;
   bool _creatingPtySession = false;
   int _terminalEpoch = 0;
@@ -279,6 +280,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     _activePtyId = null;
     _terminalError = null;
     _terminalPanelOpen = false;
+    _terminalPanelMounted = false;
     _loadingPtySessions = true;
     _creatingPtySession = false;
     unawaited(_loadPtySessions(epoch: _terminalEpoch, profile: profile));
@@ -345,6 +347,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       return;
     }
     setState(() {
+      _terminalPanelMounted = true;
       _terminalPanelOpen = true;
       _terminalError = null;
     });
@@ -361,6 +364,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     }
     setState(() {
       _creatingPtySession = true;
+      _terminalPanelMounted = true;
       _terminalPanelOpen = true;
       _terminalError = null;
     });
@@ -1542,7 +1546,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                           _summarizeSelectedSession(controller),
                                 onToggleTerminal: _toggleTerminalPanel,
                                 terminalPanelOpen: _terminalPanelOpen,
-                                terminalPanel: _ptyService == null
+                                terminalPanel:
+                                    !_terminalPanelMounted ||
+                                        _ptyService == null
                                     ? null
                                     : PtyTerminalPanel(
                                         profile: _profile!,
@@ -4699,7 +4705,14 @@ class _WorkspaceBody extends StatelessWidget {
             onSelectSideTab: controller.setSideTab,
             onSubmit: onSubmitPrompt,
           ),
-        if (terminalPanelOpen && terminalPanel != null) terminalPanel!,
+        if (terminalPanel != null)
+          Offstage(
+            offstage: !terminalPanelOpen,
+            child: IgnorePointer(
+              ignoring: !terminalPanelOpen,
+              child: terminalPanel!,
+            ),
+          ),
       ],
     );
 

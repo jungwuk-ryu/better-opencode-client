@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -15,6 +17,7 @@ import 'package:opencode_mobile_remote/src/features/terminal/pty_models.dart';
 import 'package:opencode_mobile_remote/src/features/terminal/pty_service.dart';
 import 'package:opencode_mobile_remote/src/features/web_parity/workspace_controller.dart';
 import 'package:opencode_mobile_remote/src/features/web_parity/workspace_screen.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -328,16 +331,78 @@ void main() {
 
     expect(appController.shellToolPartsExpanded, isFalse);
   });
+
+  testWidgets('hiding the terminal panel keeps the PTY connection alive', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1480, 960);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final terminalService = _TrackingPtyService();
+    addTearDown(terminalService.dispose);
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _HeaderWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+        ptyServiceFactory: () => terminalService,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(terminalService.connectCount('pty_1'), 0);
+
+    await tester.tap(find.byTooltip('Show terminal'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    expect(terminalService.connectCount('pty_1'), 1);
+
+    await tester.tap(find.byTooltip('Hide terminal'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    await tester.tap(find.byTooltip('Show terminal'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    expect(terminalService.connectCount('pty_1'), 1);
+  });
 }
 
 class _WorkspaceRouteHarness extends StatelessWidget {
   const _WorkspaceRouteHarness({
     required this.controller,
     required this.initialRoute,
+    this.ptyServiceFactory,
   });
 
   final WebParityAppController controller;
   final String initialRoute;
+  final PtyService Function()? ptyServiceFactory;
 
   @override
   Widget build(BuildContext context) {
@@ -358,7 +423,7 @@ class _WorkspaceRouteHarness extends StatelessWidget {
                     key: ValueKey<String>('workspace-$directory'),
                     directory: directory,
                     sessionId: sessionId,
-                    ptyServiceFactory: _FakePtyService.new,
+                    ptyServiceFactory: ptyServiceFactory ?? _FakePtyService.new,
                   ),
               };
             },
@@ -628,4 +693,129 @@ class _FakePtyService extends PtyService {
   }) async {
     return const <PtySessionInfo>[];
   }
+}
+
+class _TrackingPtyService extends PtyService {
+  _TrackingPtyService()
+    : super(client: MockClient((request) async => http.Response('[]', 200)));
+
+  final Map<String, int> _connectCounts = <String, int>{};
+  final List<_FakeWebSocketChannel> _channels = <_FakeWebSocketChannel>[];
+
+  int connectCount(String ptyId) => _connectCounts[ptyId] ?? 0;
+
+  PtySessionInfo _session(String directory, {String id = 'pty_1'}) =>
+      PtySessionInfo(
+        id: id,
+        title: 'Terminal 1',
+        command: '/bin/zsh',
+        args: const <String>['-l'],
+        cwd: directory,
+        status: PtySessionStatus.running,
+        pid: 1001,
+      );
+
+  @override
+  Future<List<PtySessionInfo>> listSessions({
+    required ServerProfile profile,
+    required String directory,
+  }) async {
+    return <PtySessionInfo>[_session(directory)];
+  }
+
+  @override
+  Future<PtySessionInfo?> getSession({
+    required ServerProfile profile,
+    required String directory,
+    required String ptyId,
+  }) async {
+    return _session(directory, id: ptyId);
+  }
+
+  @override
+  Future<PtySessionInfo> updateSession({
+    required ServerProfile profile,
+    required String directory,
+    required String ptyId,
+    String? title,
+    PtySessionSize? size,
+  }) async {
+    return _session(directory, id: ptyId).copyWith(title: title);
+  }
+
+  @override
+  WebSocketChannel connectSession({
+    required ServerProfile profile,
+    required String directory,
+    required String ptyId,
+    int? cursor,
+  }) {
+    _connectCounts.update(ptyId, (count) => count + 1, ifAbsent: () => 1);
+    final channel = _FakeWebSocketChannel();
+    _channels.add(channel);
+    return channel;
+  }
+
+  @override
+  void dispose() {
+    for (final channel in _channels) {
+      channel.close();
+    }
+    super.dispose();
+  }
+}
+
+class _FakeWebSocketChannel implements WebSocketChannel {
+  _FakeWebSocketChannel();
+
+  final StreamController<dynamic> _controller = StreamController<dynamic>();
+  late final _FakeWebSocketSink _sink = _FakeWebSocketSink(_controller);
+
+  @override
+  Stream<dynamic> get stream => _controller.stream;
+
+  @override
+  WebSocketSink get sink => _sink;
+
+  @override
+  Future<void> get ready => Future<void>.value();
+
+  @override
+  String? get protocol => null;
+
+  @override
+  int? get closeCode => null;
+
+  @override
+  String? get closeReason => null;
+
+  Future<void> close() => _sink.close();
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _FakeWebSocketSink implements WebSocketSink {
+  _FakeWebSocketSink(this._controller);
+
+  final StreamController<dynamic> _controller;
+
+  @override
+  void add(event) {}
+
+  @override
+  void addError(Object error, [StackTrace? stackTrace]) {}
+
+  @override
+  Future<void> addStream(Stream stream) async {}
+
+  @override
+  Future<void> close([int? closeCode, String? closeReason]) async {
+    if (!_controller.isClosed) {
+      await _controller.close();
+    }
+  }
+
+  @override
+  Future<void> get done => _controller.done;
 }
