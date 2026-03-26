@@ -55,7 +55,7 @@ class _OpenCodeRemoteAppState extends State<OpenCodeRemoteApp> {
                 data: mediaQuery.copyWith(
                   textScaler: _ScaledTextScaler(
                     base: mediaQuery.textScaler,
-                    multiplier: _appController.textScaleFactor,
+                    multiplier: _appController.effectiveTextScaleFactor,
                   ),
                 ),
                 child: child ?? const SizedBox.shrink(),

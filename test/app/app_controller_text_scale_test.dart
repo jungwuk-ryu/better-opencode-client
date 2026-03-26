@@ -62,6 +62,29 @@ void main() {
     expect(controller.textScaleFactor, 1.20);
   });
 
+  test('effective text scale uses a reduced baseline', () async {
+    final controller = WebParityAppController(
+      profileStore: _FakeProfileStore(),
+      projectStore: _FakeProjectStore(),
+    );
+    addTearDown(controller.dispose);
+
+    await controller.load();
+
+    expect(
+      controller.effectiveTextScaleFactor,
+      WebParityAppController.defaultTextScaleFactor *
+          WebParityAppController.textScaleBaselineMultiplier,
+    );
+
+    await controller.setTextScaleFactor(1.15);
+
+    expect(
+      controller.effectiveTextScaleFactor,
+      1.15 * WebParityAppController.textScaleBaselineMultiplier,
+    );
+  });
+
   test('layout density persists across controller loads', () async {
     final controller = WebParityAppController(
       profileStore: _FakeProfileStore(),

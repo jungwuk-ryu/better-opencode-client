@@ -90,6 +90,7 @@ class WebParityAppController extends ChangeNotifier {
   static const _multiPaneComposerModeKey =
       'web_parity.multi_pane_composer_mode';
   static const double defaultTextScaleFactor = 1.0;
+  static const double textScaleBaselineMultiplier = 0.9;
   static const double minTextScaleFactor = 0.9;
   static const double maxTextScaleFactor = 1.25;
   static const double textScaleFactorStep = 0.05;
@@ -131,6 +132,8 @@ class WebParityAppController extends ChangeNotifier {
       _chatCodeBlockHighlightingEnabled;
   WorkspaceFollowupMode get busyFollowupMode => _busyFollowupMode;
   double get textScaleFactor => _textScaleFactor;
+  double get effectiveTextScaleFactor =>
+      _textScaleFactor * textScaleBaselineMultiplier;
   WorkspaceLayoutDensity get layoutDensity => _layoutDensity;
   WorkspaceMultiPaneComposerMode get multiPaneComposerMode =>
       _multiPaneComposerMode;
