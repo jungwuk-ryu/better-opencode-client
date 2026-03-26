@@ -320,6 +320,29 @@ void main() {
       find.byKey(const ValueKey<String>('review-diff-blur')),
       findsOneWidget,
     );
+    expect(
+      find.byKey(const ValueKey<String>('review-diff-unified-view')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Split'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('review-diff-split-view')),
+      findsOneWidget,
+    );
+    expect(find.text('Before'), findsOneWidget);
+    expect(find.text('After'), findsOneWidget);
+    expect(find.text('void main() {'), findsOneWidget);
+
+    await tester.tap(find.text('Unified'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('review-diff-unified-view')),
+      findsOneWidget,
+    );
 
     final diffSurface = tester.widget<Container>(
       find.byKey(const ValueKey<String>('review-diff-surface')),

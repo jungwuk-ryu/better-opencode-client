@@ -12909,6 +12909,7 @@ class _ReviewPanelState extends State<_ReviewPanel> {
   static const double _minListHeight = 220;
 
   double _previewHeight = _defaultPreviewHeight;
+  _ReviewDiffMode _diffMode = _ReviewDiffMode.unified;
 
   void _resizePreview(double deltaDy, double availableHeight) {
     final maxPreviewHeight = (availableHeight - _minListHeight).clamp(
@@ -13083,11 +13084,50 @@ class _ReviewPanelState extends State<_ReviewPanel> {
                               padding: const EdgeInsets.only(
                                 bottom: AppSpacing.sm,
                               ),
-                              child: Text(
-                                widget.selectedPath!,
-                                style: theme.textTheme.labelMedium?.copyWith(
-                                  color: surfaces.muted,
-                                ),
+                              child: Row(
+                                children: <Widget>[
+                                  Expanded(
+                                    child: Text(
+                                      widget.selectedPath!,
+                                      style: theme.textTheme.labelMedium
+                                          ?.copyWith(color: surfaces.muted),
+                                    ),
+                                  ),
+                                  const SizedBox(width: AppSpacing.sm),
+                                  SegmentedButton<_ReviewDiffMode>(
+                                    key: const ValueKey<String>(
+                                      'review-diff-mode-toggle',
+                                    ),
+                                    showSelectedIcon: false,
+                                    segments:
+                                        const <ButtonSegment<_ReviewDiffMode>>[
+                                          ButtonSegment<_ReviewDiffMode>(
+                                            value: _ReviewDiffMode.unified,
+                                            label: Text('Unified'),
+                                            icon: Icon(
+                                              Icons.view_stream_rounded,
+                                            ),
+                                          ),
+                                          ButtonSegment<_ReviewDiffMode>(
+                                            value: _ReviewDiffMode.split,
+                                            label: Text('Split'),
+                                            icon: Icon(Icons.view_week_rounded),
+                                          ),
+                                        ],
+                                    selected: <_ReviewDiffMode>{_diffMode},
+                                    onSelectionChanged: (selection) {
+                                      final next = selection.isEmpty
+                                          ? _diffMode
+                                          : selection.first;
+                                      if (next == _diffMode) {
+                                        return;
+                                      }
+                                      setState(() {
+                                        _diffMode = next;
+                                      });
+                                    },
+                                  ),
+                                ],
                               ),
                             ),
                             Expanded(
@@ -13112,7 +13152,10 @@ class _ReviewPanelState extends State<_ReviewPanel> {
                                             ?.copyWith(color: surfaces.muted),
                                       ),
                                     )
-                                  : _ReviewDiffView(diff: widget.diff!),
+                                  : _ReviewDiffView(
+                                      diff: widget.diff!,
+                                      mode: _diffMode,
+                                    ),
                             ),
                           ],
                         ),
@@ -13128,15 +13171,19 @@ class _ReviewPanelState extends State<_ReviewPanel> {
   }
 }
 
+enum _ReviewDiffMode { unified, split }
+
 class _ReviewDiffView extends StatelessWidget {
-  const _ReviewDiffView({required this.diff});
+  const _ReviewDiffView({required this.diff, required this.mode});
 
   final FileDiffSummary diff;
+  final _ReviewDiffMode mode;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
+    final parsedDiff = _parseReviewDiff(diff.content);
     return ClipRRect(
       borderRadius: BorderRadius.circular(AppSpacing.md),
       child: BackdropFilter(
@@ -13161,23 +13208,47 @@ class _ReviewDiffView extends StatelessWidget {
           ),
           child: LayoutBuilder(
             builder: (context, constraints) {
-              return SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minWidth: constraints.maxWidth),
-                  child: SingleChildScrollView(
-                    child: SelectableText.rich(
-                      TextSpan(
-                        children: _buildReviewDiffSpans(
-                          diff.content,
-                          theme: theme,
-                          surfaces: surfaces,
+              final minWidth = mode == _ReviewDiffMode.split
+                  ? math.max(constraints.maxWidth, 940.0)
+                  : constraints.maxWidth;
+              if (mode == _ReviewDiffMode.unified) {
+                return SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(minWidth: minWidth),
+                    child: SingleChildScrollView(
+                      child: SelectionArea(
+                        child: SelectableText.rich(
+                          key: const ValueKey<String>(
+                            'review-diff-unified-view',
+                          ),
+                          TextSpan(
+                            children: _buildReviewDiffSpans(
+                              diff.content,
+                              theme: theme,
+                              surfaces: surfaces,
+                            ),
+                          ),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontFamily: 'monospace',
+                            height: 1.45,
+                          ),
                         ),
                       ),
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        fontFamily: 'monospace',
-                        height: 1.45,
-                      ),
+                    ),
+                  ),
+                );
+              }
+              return SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: SizedBox(
+                  width: minWidth,
+                  child: SingleChildScrollView(
+                    child: _ReviewSplitDiffBody(
+                      key: const ValueKey<String>('review-diff-split-view'),
+                      diff: parsedDiff,
+                      theme: theme,
+                      surfaces: surfaces,
                     ),
                   ),
                 ),
@@ -13291,6 +13362,507 @@ TextStyle? _reviewDiffLineStyle(
     );
   }
   return base;
+}
+
+class _ReviewSplitDiffBody extends StatelessWidget {
+  const _ReviewSplitDiffBody({
+    required this.diff,
+    required this.theme,
+    required this.surfaces,
+    super.key,
+  });
+
+  final _ParsedReviewDiff diff;
+  final ThemeData theme;
+  final AppSurfaces surfaces;
+
+  @override
+  Widget build(BuildContext context) {
+    return SelectionArea(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          for (
+            var index = 0;
+            index < diff.headers.length;
+            index += 1
+          ) ...<Widget>[
+            _ReviewDiffMetaRow(
+              text: diff.headers[index],
+              theme: theme,
+              surfaces: surfaces,
+            ),
+            const SizedBox(height: AppSpacing.xxs),
+          ],
+          for (
+            var hunkIndex = 0;
+            hunkIndex < diff.hunks.length;
+            hunkIndex += 1
+          ) ...<Widget>[
+            if (diff.headers.isNotEmpty || hunkIndex > 0)
+              const SizedBox(height: AppSpacing.sm),
+            _ReviewDiffHunkHeaderRow(
+              text: diff.hunks[hunkIndex].header,
+              theme: theme,
+              surfaces: surfaces,
+            ),
+            const SizedBox(height: AppSpacing.xxs),
+            _ReviewSplitSideHeader(theme: theme, surfaces: surfaces),
+            ..._buildReviewSplitRows(
+              diff.hunks[hunkIndex],
+              theme: theme,
+              surfaces: surfaces,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ReviewDiffMetaRow extends StatelessWidget {
+  const _ReviewDiffMetaRow({
+    required this.text,
+    required this.theme,
+    required this.surfaces,
+  });
+
+  final String text;
+  final ThemeData theme;
+  final AppSurfaces surfaces;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: 6,
+      ),
+      decoration: BoxDecoration(
+        color: surfaces.panelMuted.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        text,
+        softWrap: false,
+        style: _reviewDiffMetaTextStyle(theme: theme, surfaces: surfaces),
+      ),
+    );
+  }
+}
+
+class _ReviewDiffHunkHeaderRow extends StatelessWidget {
+  const _ReviewDiffHunkHeaderRow({
+    required this.text,
+    required this.theme,
+    required this.surfaces,
+  });
+
+  final String text;
+  final ThemeData theme;
+  final AppSurfaces surfaces;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: 6,
+      ),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primary.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: theme.colorScheme.primary.withValues(alpha: 0.22),
+        ),
+      ),
+      child: Text(
+        text,
+        softWrap: false,
+        style: _reviewDiffHunkTextStyle(theme: theme, surfaces: surfaces),
+      ),
+    );
+  }
+}
+
+class _ReviewSplitSideHeader extends StatelessWidget {
+  const _ReviewSplitSideHeader({required this.theme, required this.surfaces});
+
+  final ThemeData theme;
+  final AppSurfaces surfaces;
+
+  @override
+  Widget build(BuildContext context) {
+    final labelStyle = theme.textTheme.labelMedium?.copyWith(
+      color: surfaces.muted,
+      fontFamily: 'monospace',
+    );
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm,
+              vertical: 6,
+            ),
+            decoration: BoxDecoration(
+              color: surfaces.panelMuted.withValues(alpha: 0.62),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(10),
+              ),
+              border: Border.all(color: surfaces.lineSoft),
+            ),
+            child: Text('Before', style: labelStyle),
+          ),
+        ),
+        const SizedBox(width: 1),
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm,
+              vertical: 6,
+            ),
+            decoration: BoxDecoration(
+              color: surfaces.panelMuted.withValues(alpha: 0.62),
+              borderRadius: const BorderRadius.only(
+                topRight: Radius.circular(10),
+              ),
+              border: Border.all(color: surfaces.lineSoft),
+            ),
+            child: Text('After', style: labelStyle),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+List<Widget> _buildReviewSplitRows(
+  _ParsedReviewHunk hunk, {
+  required ThemeData theme,
+  required AppSurfaces surfaces,
+}) {
+  final rows = <Widget>[];
+  final pairs = _pairReviewSplitLines(hunk.lines);
+  for (final pair in pairs) {
+    rows.add(
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Expanded(
+            child: _ReviewSplitLineCell(
+              line: pair.left,
+              theme: theme,
+              surfaces: surfaces,
+              side: _ReviewSplitSide.before,
+            ),
+          ),
+          const SizedBox(width: 1),
+          Expanded(
+            child: _ReviewSplitLineCell(
+              line: pair.right,
+              theme: theme,
+              surfaces: surfaces,
+              side: _ReviewSplitSide.after,
+            ),
+          ),
+        ],
+      ),
+    );
+    rows.add(const SizedBox(height: 1));
+  }
+  return rows;
+}
+
+enum _ReviewSplitSide { before, after }
+
+class _ReviewSplitLineCell extends StatelessWidget {
+  const _ReviewSplitLineCell({
+    required this.line,
+    required this.theme,
+    required this.surfaces,
+    required this.side,
+  });
+
+  final _ParsedReviewLine? line;
+  final ThemeData theme;
+  final AppSurfaces surfaces;
+  final _ReviewSplitSide side;
+
+  @override
+  Widget build(BuildContext context) {
+    final lineKind = line?.kind;
+    final backgroundColor = switch (lineKind) {
+      _ParsedReviewLineKind.insert => surfaces.success.withValues(alpha: 0.08),
+      _ParsedReviewLineKind.delete => surfaces.danger.withValues(alpha: 0.08),
+      _ParsedReviewLineKind.context => Colors.transparent,
+      null => surfaces.panelEmphasis.withValues(alpha: 0.32),
+    };
+    final textColor = switch (lineKind) {
+      _ParsedReviewLineKind.insert => surfaces.success,
+      _ParsedReviewLineKind.delete => surfaces.danger,
+      _ParsedReviewLineKind.context || null => theme.colorScheme.onSurface,
+    };
+    final lineNumber = switch (side) {
+      _ReviewSplitSide.before => line?.oldNumber,
+      _ReviewSplitSide.after => line?.newNumber,
+    };
+    final prefix = switch (lineKind) {
+      _ParsedReviewLineKind.insert => '+',
+      _ParsedReviewLineKind.delete => '-',
+      _ParsedReviewLineKind.context || null => ' ',
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: 4,
+      ),
+      color: backgroundColor,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          SizedBox(
+            width: 46,
+            child: Text(
+              lineNumber?.toString() ?? '',
+              textAlign: TextAlign.right,
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontFamily: 'monospace',
+                color: surfaces.muted,
+              ),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          SizedBox(
+            width: 12,
+            child: Text(
+              line == null ? '' : prefix,
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontFamily: 'monospace',
+                color: textColor,
+              ),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          Expanded(
+            child: Text(
+              line?.text ?? '',
+              softWrap: false,
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontFamily: 'monospace',
+                height: 1.45,
+                color: textColor,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ParsedReviewDiff {
+  const _ParsedReviewDiff({required this.headers, required this.hunks});
+
+  final List<String> headers;
+  final List<_ParsedReviewHunk> hunks;
+}
+
+class _ParsedReviewHunk {
+  const _ParsedReviewHunk({required this.header, required this.lines});
+
+  final String header;
+  final List<_ParsedReviewLine> lines;
+}
+
+enum _ParsedReviewLineKind { context, delete, insert }
+
+class _ParsedReviewLine {
+  const _ParsedReviewLine({
+    required this.kind,
+    required this.text,
+    this.oldNumber,
+    this.newNumber,
+  });
+
+  final _ParsedReviewLineKind kind;
+  final String text;
+  final int? oldNumber;
+  final int? newNumber;
+}
+
+class _ReviewSplitLinePair {
+  const _ReviewSplitLinePair({this.left, this.right});
+
+  final _ParsedReviewLine? left;
+  final _ParsedReviewLine? right;
+}
+
+_ParsedReviewDiff _parseReviewDiff(String content) {
+  if (content.trim().isEmpty) {
+    return const _ParsedReviewDiff(
+      headers: <String>[],
+      hunks: <_ParsedReviewHunk>[],
+    );
+  }
+
+  final lines = content.split('\n');
+  final headers = <String>[];
+  final hunks = <_ParsedReviewHunk>[];
+  final hunkHeaderPattern = RegExp(r'^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@');
+
+  String? currentHunkHeader;
+  var currentHunkLines = <_ParsedReviewLine>[];
+  var oldNumber = 0;
+  var newNumber = 0;
+
+  void flushCurrentHunk() {
+    final header = currentHunkHeader;
+    if (header == null) {
+      return;
+    }
+    hunks.add(
+      _ParsedReviewHunk(
+        header: header,
+        lines: List<_ParsedReviewLine>.unmodifiable(currentHunkLines),
+      ),
+    );
+    currentHunkHeader = null;
+    currentHunkLines = <_ParsedReviewLine>[];
+  }
+
+  for (final rawLine in lines) {
+    if (rawLine.startsWith('@@')) {
+      flushCurrentHunk();
+      currentHunkHeader = rawLine;
+      final match = hunkHeaderPattern.firstMatch(rawLine);
+      oldNumber = int.tryParse(match?.group(1) ?? '') ?? 0;
+      newNumber = int.tryParse(match?.group(2) ?? '') ?? 0;
+      continue;
+    }
+
+    if (currentHunkHeader == null) {
+      headers.add(rawLine);
+      continue;
+    }
+
+    if (rawLine.startsWith('+') && !rawLine.startsWith('+++')) {
+      currentHunkLines.add(
+        _ParsedReviewLine(
+          kind: _ParsedReviewLineKind.insert,
+          text: rawLine.substring(1),
+          newNumber: newNumber,
+        ),
+      );
+      newNumber += 1;
+      continue;
+    }
+    if (rawLine.startsWith('-') && !rawLine.startsWith('---')) {
+      currentHunkLines.add(
+        _ParsedReviewLine(
+          kind: _ParsedReviewLineKind.delete,
+          text: rawLine.substring(1),
+          oldNumber: oldNumber,
+        ),
+      );
+      oldNumber += 1;
+      continue;
+    }
+    if (rawLine.startsWith(' ')) {
+      currentHunkLines.add(
+        _ParsedReviewLine(
+          kind: _ParsedReviewLineKind.context,
+          text: rawLine.substring(1),
+          oldNumber: oldNumber,
+          newNumber: newNumber,
+        ),
+      );
+      oldNumber += 1;
+      newNumber += 1;
+      continue;
+    }
+  }
+
+  flushCurrentHunk();
+
+  return _ParsedReviewDiff(
+    headers: List<String>.unmodifiable(headers),
+    hunks: List<_ParsedReviewHunk>.unmodifiable(hunks),
+  );
+}
+
+List<_ReviewSplitLinePair> _pairReviewSplitLines(
+  List<_ParsedReviewLine> lines,
+) {
+  final pairs = <_ReviewSplitLinePair>[];
+  var index = 0;
+  while (index < lines.length) {
+    final line = lines[index];
+    if (line.kind == _ParsedReviewLineKind.context) {
+      pairs.add(_ReviewSplitLinePair(left: line, right: line));
+      index += 1;
+      continue;
+    }
+    if (line.kind == _ParsedReviewLineKind.delete) {
+      final deletes = <_ParsedReviewLine>[];
+      while (index < lines.length &&
+          lines[index].kind == _ParsedReviewLineKind.delete) {
+        deletes.add(lines[index]);
+        index += 1;
+      }
+      final inserts = <_ParsedReviewLine>[];
+      while (index < lines.length &&
+          lines[index].kind == _ParsedReviewLineKind.insert) {
+        inserts.add(lines[index]);
+        index += 1;
+      }
+      final count = math.max(deletes.length, inserts.length);
+      for (var pairIndex = 0; pairIndex < count; pairIndex += 1) {
+        pairs.add(
+          _ReviewSplitLinePair(
+            left: pairIndex < deletes.length ? deletes[pairIndex] : null,
+            right: pairIndex < inserts.length ? inserts[pairIndex] : null,
+          ),
+        );
+      }
+      continue;
+    }
+    final inserts = <_ParsedReviewLine>[];
+    while (index < lines.length &&
+        lines[index].kind == _ParsedReviewLineKind.insert) {
+      inserts.add(lines[index]);
+      index += 1;
+    }
+    for (final insert in inserts) {
+      pairs.add(_ReviewSplitLinePair(right: insert));
+    }
+  }
+  return pairs;
+}
+
+TextStyle? _reviewDiffMetaTextStyle({
+  required ThemeData theme,
+  required AppSurfaces surfaces,
+}) {
+  return theme.textTheme.bodySmall?.copyWith(
+    fontFamily: 'monospace',
+    height: 1.45,
+    color: surfaces.warning,
+  );
+}
+
+TextStyle? _reviewDiffHunkTextStyle({
+  required ThemeData theme,
+  required AppSurfaces surfaces,
+}) {
+  return theme.textTheme.bodySmall?.copyWith(
+    fontFamily: 'monospace',
+    height: 1.45,
+    color: theme.colorScheme.primary,
+    fontWeight: FontWeight.w700,
+  );
 }
 
 class _FilesPanel extends StatefulWidget {
