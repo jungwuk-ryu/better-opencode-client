@@ -31,6 +31,20 @@ WorkspaceController _defaultWorkspaceControllerFactory({
   );
 }
 
+enum WorkspaceLayoutDensity {
+  normal,
+  compact;
+
+  String get storageValue => name;
+
+  static WorkspaceLayoutDensity fromStorage(String? value) {
+    return switch (value?.trim().toLowerCase()) {
+      'compact' => WorkspaceLayoutDensity.compact,
+      _ => WorkspaceLayoutDensity.normal,
+    };
+  }
+}
+
 class WebParityAppController extends ChangeNotifier {
   WebParityAppController({
     ServerProfileStore? profileStore,
@@ -56,6 +70,7 @@ class WebParityAppController extends ChangeNotifier {
       'web_parity.chat_code_block_highlighting_enabled';
   static const _busyFollowupModeKey = 'web_parity.busy_followup_mode';
   static const _textScaleFactorKey = 'web_parity.text_scale_factor';
+  static const _layoutDensityKey = 'web_parity.layout_density';
   static const double defaultTextScaleFactor = 1.0;
   static const double minTextScaleFactor = 0.9;
   static const double maxTextScaleFactor = 1.25;
@@ -79,6 +94,7 @@ class WebParityAppController extends ChangeNotifier {
   bool _chatCodeBlockHighlightingEnabled = true;
   WorkspaceFollowupMode _busyFollowupMode = WorkspaceFollowupMode.queue;
   double _textScaleFactor = defaultTextScaleFactor;
+  WorkspaceLayoutDensity _layoutDensity = WorkspaceLayoutDensity.normal;
   final Map<String, WorkspaceController> _workspaceControllers =
       <String, WorkspaceController>{};
 
@@ -94,6 +110,7 @@ class WebParityAppController extends ChangeNotifier {
       _chatCodeBlockHighlightingEnabled;
   WorkspaceFollowupMode get busyFollowupMode => _busyFollowupMode;
   double get textScaleFactor => _textScaleFactor;
+  WorkspaceLayoutDensity get layoutDensity => _layoutDensity;
   ServerProbeReport? get selectedReport {
     final selectedProfile = _selectedProfile;
     if (selectedProfile == null) {
@@ -125,6 +142,9 @@ class WebParityAppController extends ChangeNotifier {
     final textScaleFactor = _normalizeTextScaleFactor(
       prefs.getDouble(_textScaleFactorKey),
     );
+    final layoutDensity = WorkspaceLayoutDensity.fromStorage(
+      prefs.getString(_layoutDensityKey),
+    );
 
     ServerProfile? selectedProfile;
     if (selectedProfileId != null) {
@@ -147,6 +167,7 @@ class WebParityAppController extends ChangeNotifier {
     _chatCodeBlockHighlightingEnabled = chatCodeBlockHighlightingEnabled;
     _busyFollowupMode = busyFollowupMode;
     _textScaleFactor = textScaleFactor;
+    _layoutDensity = layoutDensity;
     _loading = false;
     notifyListeners();
   }
@@ -222,6 +243,16 @@ class WebParityAppController extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_textScaleFactorKey, normalized);
+  }
+
+  Future<void> setLayoutDensity(WorkspaceLayoutDensity value) async {
+    if (_layoutDensity == value) {
+      return;
+    }
+    _layoutDensity = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_layoutDensityKey, value.storageValue);
   }
 
   Future<void> refreshProbe(ServerProfile profile) async {

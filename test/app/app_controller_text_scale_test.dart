@@ -61,6 +61,32 @@ void main() {
 
     expect(controller.textScaleFactor, 1.20);
   });
+
+  test('layout density persists across controller loads', () async {
+    final controller = WebParityAppController(
+      profileStore: _FakeProfileStore(),
+      projectStore: _FakeProjectStore(),
+    );
+    addTearDown(controller.dispose);
+
+    await controller.load();
+
+    expect(controller.layoutDensity, WorkspaceLayoutDensity.normal);
+
+    await controller.setLayoutDensity(WorkspaceLayoutDensity.compact);
+
+    expect(controller.layoutDensity, WorkspaceLayoutDensity.compact);
+
+    final restored = WebParityAppController(
+      profileStore: _FakeProfileStore(),
+      projectStore: _FakeProjectStore(),
+    );
+    addTearDown(restored.dispose);
+
+    await restored.load();
+
+    expect(restored.layoutDensity, WorkspaceLayoutDensity.compact);
+  });
 }
 
 class _FakeProfileStore extends ServerProfileStore {

@@ -79,7 +79,12 @@ void main() {
       find.byKey(const ValueKey<String>('workspace-session-entry-ses_child-1')),
       findsNothing,
     );
-    expect(find.text('Sessions'), findsNothing);
+    expect(
+      find.byKey(
+        const ValueKey<String>('workspace-toggle-sessions-panel-button'),
+      ),
+      findsOneWidget,
+    );
     expect(find.text('idle'), findsNothing);
     expect(find.text('busy'), findsNothing);
     expect(
@@ -176,6 +181,11 @@ void main() {
     expect(appController.chatCodeBlockHighlightingEnabled, isFalse);
 
     expect(appController.busyFollowupMode, WorkspaceFollowupMode.queue);
+    final initialSidebarWidth = tester
+        .getSize(
+          find.byKey(const ValueKey<String>('workspace-desktop-sidebar-pane')),
+        )
+        .width;
 
     final settingsListView = find.descendant(
       of: find.byKey(const ValueKey<String>('workspace-settings-sheet')),
@@ -194,6 +204,38 @@ void main() {
     await tester.pump();
 
     expect(appController.busyFollowupMode, WorkspaceFollowupMode.steer);
+
+    await tester.dragUntilVisible(
+      find.byKey(
+        const ValueKey<String>('workspace-settings-layout-density-row'),
+      ),
+      settingsListView,
+      const Offset(0, -160),
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey<String>('workspace-settings-layout-density-row'),
+        ),
+        matching: find.text('Compact'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 280));
+
+    expect(appController.layoutDensity, WorkspaceLayoutDensity.compact);
+    expect(
+      tester
+          .getSize(
+            find.byKey(
+              const ValueKey<String>('workspace-desktop-sidebar-pane'),
+            ),
+          )
+          .width,
+      lessThan(initialSidebarWidth),
+    );
 
     await tester.dragUntilVisible(
       find.byKey(const ValueKey<String>('workspace-settings-text-scale-row')),
