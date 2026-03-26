@@ -223,6 +223,91 @@ void main() {
     },
   );
 
+  testWidgets(
+    'late restored draft updates are discarded after submit without blocking new input',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final workspaceController = _DelayedSubmitWorkspaceController(
+        profile: profile,
+        directory: '/workspace/demo',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceController: workspaceController,
+      );
+      addTearDown(appController.dispose);
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          initialRoute: buildWorkspaceRoute(
+            '/workspace/demo',
+            sessionId: 'ses_1',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      final fieldFinder = find.byKey(
+        const ValueKey<String>('composer-text-field'),
+      );
+      final buttonFinder = find.byKey(
+        const ValueKey<String>('composer-submit-button'),
+      );
+
+      await tester.tap(fieldFinder);
+      await tester.pump();
+
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: '안녕하세요',
+          selection: TextSelection.collapsed(offset: 5),
+          composing: TextRange(start: 0, end: 5),
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(buttonFinder);
+      await tester.pump();
+
+      expect(workspaceController.submitPromptCalls, 1);
+      expect(tester.widget<TextField>(fieldFinder).controller?.text, isEmpty);
+
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: '안녕하세요',
+          selection: TextSelection.collapsed(offset: 5),
+        ),
+      );
+      await tester.pump();
+
+      expect(tester.widget<TextField>(fieldFinder).controller?.text, isEmpty);
+
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: '다음 질문',
+          selection: TextSelection.collapsed(offset: 5),
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        tester.widget<TextField>(fieldFinder).controller?.text,
+        '다음 질문',
+      );
+    },
+  );
+
   testWidgets('busy sessions show a stop button that interrupts the agent', (
     tester,
   ) async {

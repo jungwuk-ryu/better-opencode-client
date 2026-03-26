@@ -93,6 +93,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   String? _pendingSessionRouteId;
   int _sessionRouteSyncRevision = 0;
   bool _promptSubmitInFlight = false;
+  int _promptSubmitEpoch = 0;
+  String? _recentSubmittedPromptDraft;
   late String _activeDirectory;
   String? _activeRouteSessionId;
   _WorkspaceProjectLoadingShellState? _projectLoadingShellState;
@@ -781,8 +783,14 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     setState(() {
       _promptSubmitInFlight = true;
       _composerAttachments = const <PromptAttachment>[];
+      _promptSubmitEpoch += 1;
+      _recentSubmittedPromptDraft = draft;
     });
-    _promptController.clear();
+    _promptController.value = const TextEditingValue(
+      text: '',
+      selection: TextSelection.collapsed(offset: 0),
+      composing: TextRange.empty,
+    );
 
     try {
       await controller.submitPrompt(draft, attachments: attachments);
@@ -792,6 +800,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       }
       setState(() {
         _composerAttachments = attachments;
+        _recentSubmittedPromptDraft = null;
+        _promptSubmitEpoch += 1;
       });
       _promptController.value = TextEditingValue(
         text: draft,
@@ -1477,6 +1487,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                 pickingAttachments: _pickingComposerAttachments,
                                 attachments: _composerAttachments,
                                 promptController: _promptController,
+                                submittedDraftEpoch: _promptSubmitEpoch,
+                                recentSubmittedDraft:
+                                    _recentSubmittedPromptDraft,
                                 timelineScrollController:
                                     _timelineScrollController,
                                 compactPane: _compactPane,
@@ -4572,6 +4585,8 @@ class _WorkspaceBody extends StatelessWidget {
     required this.pickingAttachments,
     required this.attachments,
     required this.promptController,
+    required this.submittedDraftEpoch,
+    required this.recentSubmittedDraft,
     required this.timelineScrollController,
     required this.compactPane,
     required this.shellToolDefaultExpanded,
@@ -4604,6 +4619,8 @@ class _WorkspaceBody extends StatelessWidget {
   final bool pickingAttachments;
   final List<PromptAttachment> attachments;
   final TextEditingController promptController;
+  final int submittedDraftEpoch;
+  final String? recentSubmittedDraft;
   final ScrollController timelineScrollController;
   final _CompactWorkspacePane compactPane;
   final bool shellToolDefaultExpanded;
@@ -4740,6 +4757,8 @@ class _WorkspaceBody extends StatelessWidget {
             onShareSession: onShareSession,
             onUnshareSession: onUnshareSession,
             onSummarizeSession: onSummarizeSession,
+            submittedDraftEpoch: submittedDraftEpoch,
+            recentSubmittedDraft: recentSubmittedDraft,
             onToggleTerminal: onToggleTerminal,
             onSelectSideTab: controller.setSideTab,
             onSubmit: onSubmitPrompt,
@@ -6199,9 +6218,11 @@ class _PromptComposer extends StatefulWidget {
     required this.onToggleTerminal,
     required this.onSelectSideTab,
     required this.onSubmit,
+    required this.submittedDraftEpoch,
     this.onShareSession,
     this.onUnshareSession,
     this.onSummarizeSession,
+    this.recentSubmittedDraft,
   });
 
   static const String _defaultReasoningSentinel = '__default_reasoning__';
@@ -6231,16 +6252,23 @@ class _PromptComposer extends StatefulWidget {
   final Future<void> Function() onToggleTerminal;
   final ValueChanged<WorkspaceSideTab> onSelectSideTab;
   final VoidCallback onSubmit;
+  final int submittedDraftEpoch;
   final Future<void> Function()? onShareSession;
   final Future<void> Function()? onUnshareSession;
   final Future<void> Function()? onSummarizeSession;
+  final String? recentSubmittedDraft;
 
   @override
   State<_PromptComposer> createState() => _PromptComposerState();
 }
 
 class _PromptComposerState extends State<_PromptComposer> {
+  static const Duration _restoredDraftGuardDuration = Duration(seconds: 1);
+
   final FocusNode _focusNode = FocusNode();
+  Timer? _restoredDraftGuardTimer;
+  String? _guardedRestoredDraft;
+  bool _clearingRestoredDraft = false;
 
   bool get _canSubmit =>
       widget.controller.text.trim().isNotEmpty || widget.attachments.isNotEmpty;
@@ -6258,22 +6286,66 @@ class _PromptComposerState extends State<_PromptComposer> {
       oldWidget.controller.removeListener(_handleComposerChanged);
       widget.controller.addListener(_handleComposerChanged);
     }
+    if (oldWidget.submittedDraftEpoch != widget.submittedDraftEpoch) {
+      _armRestoredDraftGuard(widget.recentSubmittedDraft);
+    }
     if (oldWidget.scopeKey != widget.scopeKey) {
+      _clearRestoredDraftGuard();
       _dismissFocus();
     }
   }
 
   @override
   void dispose() {
+    _restoredDraftGuardTimer?.cancel();
     widget.controller.removeListener(_handleComposerChanged);
     _focusNode.dispose();
     super.dispose();
   }
 
   void _handleComposerChanged() {
+    if (_clearingRestoredDraft) {
+      return;
+    }
+    final guardedDraft = _guardedRestoredDraft;
+    final currentText = widget.controller.text;
+    if (guardedDraft != null && currentText == guardedDraft) {
+      _clearingRestoredDraft = true;
+      widget.controller.value = const TextEditingValue(
+        text: '',
+        selection: TextSelection.collapsed(offset: 0),
+        composing: TextRange.empty,
+      );
+      _clearingRestoredDraft = false;
+      return;
+    }
+    if (guardedDraft != null && currentText.isNotEmpty) {
+      _clearRestoredDraftGuard();
+    }
     if (mounted) {
       setState(() {});
     }
+  }
+
+  void _armRestoredDraftGuard(String? draft) {
+    _restoredDraftGuardTimer?.cancel();
+    final normalizedDraft = draft == null || draft.isEmpty ? null : draft;
+    _guardedRestoredDraft = normalizedDraft;
+    if (normalizedDraft == null) {
+      return;
+    }
+    _restoredDraftGuardTimer = Timer(_restoredDraftGuardDuration, () {
+      if (!mounted) {
+        return;
+      }
+      _clearRestoredDraftGuard();
+    });
+  }
+
+  void _clearRestoredDraftGuard() {
+    _restoredDraftGuardTimer?.cancel();
+    _restoredDraftGuardTimer = null;
+    _guardedRestoredDraft = null;
   }
 
   void _dismissFocus() {
