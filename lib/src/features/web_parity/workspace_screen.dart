@@ -835,31 +835,12 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     if (selected == null) {
       return;
     }
-    final titleController = TextEditingController(text: selected.title);
     final nextTitle = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Rename Session'),
-        content: TextField(
-          controller: titleController,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: 'Session title'),
-          onSubmitted: (value) => Navigator.of(context).pop(value.trim()),
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () =>
-                Navigator.of(context).pop(titleController.text.trim()),
-            child: const Text('Save'),
-          ),
-        ],
+      builder: (context) => _RenameSessionDialog(
+        initialTitle: selected.title,
       ),
     );
-    titleController.dispose();
     if (nextTitle == null || nextTitle.isEmpty) {
       return;
     }
@@ -2014,13 +1995,32 @@ class _SessionOverflowMenuButton extends StatefulWidget {
 
 class _SessionOverflowMenuButtonState
     extends State<_SessionOverflowMenuButton> {
-  final LayerLink _layerLink = LayerLink();
+  final GlobalKey _buttonKey = GlobalKey();
+
+  Rect? _resolveButtonRect() {
+    final overlay = Overlay.maybeOf(context);
+    final buttonContext = _buttonKey.currentContext;
+    if (overlay == null || buttonContext == null) {
+      return null;
+    }
+    final buttonBox = buttonContext.findRenderObject() as RenderBox?;
+    final overlayBox = overlay.context.findRenderObject() as RenderBox?;
+    if (buttonBox == null || overlayBox == null || !buttonBox.hasSize) {
+      return null;
+    }
+    final topLeft = buttonBox.localToGlobal(Offset.zero, ancestor: overlayBox);
+    return topLeft & buttonBox.size;
+  }
 
   Future<void> _openMenu() async {
     if (widget.sections.isEmpty) {
       return;
     }
-    await showGeneralDialog<void>(
+    final anchorRect = _resolveButtonRect();
+    if (anchorRect == null) {
+      return;
+    }
+    final selected = await showGeneralDialog<_SessionOverflowMenuAction?>(
       context: context,
       barrierDismissible: true,
       barrierLabel: 'Dismiss session menu',
@@ -2028,7 +2028,7 @@ class _SessionOverflowMenuButtonState
       transitionDuration: const Duration(milliseconds: 170),
       pageBuilder: (dialogContext, animation, secondaryAnimation) {
         return _SessionOverflowMenuOverlay(
-          link: _layerLink,
+          anchorRect: anchorRect,
           sections: widget.sections,
           compact: widget.compact,
         );
@@ -2042,12 +2042,16 @@ class _SessionOverflowMenuButtonState
         return FadeTransition(opacity: curved, child: child);
       },
     );
+    if (!mounted || selected == null || !selected.enabled) {
+      return;
+    }
+    selected.onSelected?.call();
   }
 
   @override
   Widget build(BuildContext context) {
-    return CompositedTransformTarget(
-      link: _layerLink,
+    return SizedBox(
+      key: _buttonKey,
       child: IconButton(
         key: const ValueKey<String>('session-header-overflow-menu-button'),
         onPressed: _openMenu,
@@ -2061,17 +2065,34 @@ class _SessionOverflowMenuButtonState
 
 class _SessionOverflowMenuOverlay extends StatelessWidget {
   const _SessionOverflowMenuOverlay({
-    required this.link,
+    required this.anchorRect,
     required this.sections,
     required this.compact,
   });
 
-  final LayerLink link;
+  final Rect anchorRect;
   final List<List<_SessionOverflowMenuAction>> sections;
   final bool compact;
 
   @override
   Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    final horizontalMargin = compact ? AppSpacing.sm : AppSpacing.md;
+    final verticalMargin = AppSpacing.sm;
+    final screenSize = mediaQuery.size;
+    const menuWidth = 320.0;
+    final left = math.max(
+      horizontalMargin,
+      math.min(
+        anchorRect.right - menuWidth,
+        screenSize.width - menuWidth - horizontalMargin,
+      ),
+    );
+    final top = math.min(
+      anchorRect.bottom + 10,
+      screenSize.height - mediaQuery.padding.bottom - verticalMargin - 280,
+    );
+
     return Material(
       type: MaterialType.transparency,
       child: Stack(
@@ -2082,19 +2103,11 @@ class _SessionOverflowMenuOverlay extends StatelessWidget {
               onTap: () => Navigator.of(context).pop(),
             ),
           ),
-          SafeArea(
-            child: CompositedTransformFollower(
-              link: link,
-              showWhenUnlinked: false,
-              targetAnchor: Alignment.bottomRight,
-              followerAnchor: Alignment.topRight,
-              offset: const Offset(0, 10),
-              child: Padding(
-                padding: EdgeInsets.only(
-                  right: compact ? AppSpacing.sm : AppSpacing.md,
-                ),
-                child: _SessionOverflowMenuPanel(sections: sections),
-              ),
+          Positioned(
+            left: left,
+            top: top,
+            child: SafeArea(
+              child: _SessionOverflowMenuPanel(sections: sections),
             ),
           ),
         ],
@@ -2198,12 +2211,7 @@ class _SessionOverflowMenuItem extends StatelessWidget {
           ),
           onTap: !action.enabled
               ? null
-              : () {
-                  Navigator.of(context).pop();
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    action.onSelected?.call();
-                  });
-                },
+              : () => Navigator.of(context).pop(action),
           borderRadius: BorderRadius.circular(16),
           child: Padding(
             padding: const EdgeInsets.symmetric(
@@ -4468,6 +4476,51 @@ String _sessionHeaderTitle(SessionSummary? session, ProjectTarget? project) {
     return projectLabel;
   }
   return 'Session';
+}
+
+class _RenameSessionDialog extends StatefulWidget {
+  const _RenameSessionDialog({required this.initialTitle});
+
+  final String initialTitle;
+
+  @override
+  State<_RenameSessionDialog> createState() => _RenameSessionDialogState();
+}
+
+class _RenameSessionDialogState extends State<_RenameSessionDialog> {
+  late final TextEditingController _titleController = TextEditingController(
+    text: widget.initialTitle,
+  );
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Rename Session'),
+      content: TextField(
+        controller: _titleController,
+        autofocus: true,
+        decoration: const InputDecoration(labelText: 'Session title'),
+        onSubmitted: (value) => Navigator.of(context).pop(value.trim()),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () =>
+              Navigator.of(context).pop(_titleController.text.trim()),
+          child: const Text('Save'),
+        ),
+      ],
+    );
+  }
 }
 
 class _WorkspaceBody extends StatelessWidget {
