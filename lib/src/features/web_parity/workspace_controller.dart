@@ -698,6 +698,16 @@ class WorkspaceController extends ChangeNotifier {
     required String path,
     required ProjectTarget project,
   }) async {
+    final sessionId = _selectedSessionId;
+    if (sessionId == null || sessionId.isEmpty) {
+      _selectedReviewPath = path;
+      _reviewDiff = null;
+      _reviewDiffError = 'Select a session to review its diff.';
+      _loadingReviewDiff = false;
+      _notify();
+      return;
+    }
+
     FileStatusSummary? status;
     for (final item in _fileBundle?.statuses ?? const <FileStatusSummary>[]) {
       if (item.path == path) {
@@ -725,6 +735,7 @@ class WorkspaceController extends ChangeNotifier {
       final diff = await _reviewDiffService.fetchDiff(
         profile: profile,
         project: project,
+        sessionId: sessionId,
         status: status,
       );
       if (_disposed ||
@@ -1636,7 +1647,9 @@ class WorkspaceController extends ChangeNotifier {
     }
     await _loadSessionPanels();
     final selectedReviewPath = _selectedReviewPath;
-    if (_fileBundle != null && selectedReviewPath != null) {
+    if (_fileBundle != null &&
+        selectedReviewPath != null &&
+        _selectedSessionId != null) {
       unawaited(_loadReviewDiff(path: selectedReviewPath, project: project));
     }
   }
@@ -2299,7 +2312,10 @@ class WorkspaceController extends ChangeNotifier {
     required List<ChatMessage> messages,
   }) {
     final optimistic =
-        _optimisticMessagesBySessionKey[_optimisticSessionKey(project, sessionId)];
+        _optimisticMessagesBySessionKey[_optimisticSessionKey(
+          project,
+          sessionId,
+        )];
     if (optimistic == null || optimistic.isEmpty) {
       return messages;
     }

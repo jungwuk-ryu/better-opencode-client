@@ -1,44 +1,87 @@
-import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:opencode_mobile_remote/src/core/connection/connection_models.dart';
 import 'package:opencode_mobile_remote/src/features/files/file_models.dart';
 import 'package:opencode_mobile_remote/src/features/files/review_diff_service.dart';
 import 'package:opencode_mobile_remote/src/features/projects/project_models.dart';
-import 'package:opencode_mobile_remote/src/features/terminal/pty_models.dart';
-import 'package:opencode_mobile_remote/src/features/terminal/pty_service.dart';
-import 'package:web_socket_channel/web_socket_channel.dart';
 
 void main() {
-  test('builds a safe review diff command', () {
-    final command = buildReviewDiffCommand(
-      const FileStatusSummary(
-        path: "docs/it's here.md",
+  test('fetches diff output through the official session diff api', () async {
+    late Uri requestedUri;
+    late Map<String, String> requestedHeaders;
+    final client = MockClient((request) async {
+      requestedUri = request.url;
+      requestedHeaders = request.headers;
+      return http.Response(
+        jsonEncode(<Map<String, Object?>>[
+          <String, Object?>{
+            'file': 'README.md',
+            'before': 'Old title\n',
+            'after': 'README preview\nMore docs\n',
+            'additions': 2,
+            'deletions': 1,
+            'status': 'modified',
+          },
+        ]),
+        200,
+        headers: <String, String>{'content-type': 'application/json'},
+      );
+    });
+    final service = ReviewDiffService(client: client);
+
+    final diff = await service.fetchDiff(
+      profile: const ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'https://example.com/api',
+        username: 'demo',
+        password: 'secret',
+      ),
+      project: const ProjectTarget(directory: '/workspace/demo', label: 'Demo'),
+      sessionId: 'ses_1',
+      status: const FileStatusSummary(
+        path: 'README.md',
         status: 'modified',
-        added: 2,
+        added: 1,
         removed: 1,
       ),
     );
 
-    expect(command, contains('git -c color.ui=never --no-pager diff'));
-    expect(command, contains("'docs/it'\"'\"'s here.md'"));
-    expect(command, contains('diff --cached --'));
-    expect(command, contains('diff --no-index -- /dev/null'));
+    expect(
+      requestedUri.toString(),
+      'https://example.com/api/session/ses_1/diff?directory=%2Fworkspace%2Fdemo',
+    );
+    expect(requestedHeaders['authorization'], isNotEmpty);
+    expect(diff.path, 'README.md');
+    expect(diff.content, contains('diff --git a/README.md b/README.md'));
+    expect(diff.content, contains('--- a/README.md'));
+    expect(diff.content, contains('+++ b/README.md'));
+    expect(diff.content, contains('-Old title'));
+    expect(diff.content, contains('+README preview'));
+    expect(diff.content, contains('+More docs'));
   });
 
-  test('fetches diff output through an ephemeral PTY session', () async {
-    final ptyService = _FakePtyService(
-      events: <dynamic>[
-        'diff --git a/README.md b/README.md\n',
-        utf8.encode('@@ -1 +1 @@\n-Old\n+New\n'),
-        <int>[0, ...utf8.encode('{"cursor":42}')],
-      ],
-    );
-    final service = ReviewDiffService(
-      ptyService: ptyService,
-      timeout: const Duration(seconds: 1),
-    );
+  test('returns an empty diff when the selected path is absent', () async {
+    final client = MockClient((request) async {
+      return http.Response(
+        jsonEncode(<Map<String, Object?>>[
+          <String, Object?>{
+            'file': 'docs/guide.md',
+            'before': 'old\n',
+            'after': 'new\n',
+            'additions': 1,
+            'deletions': 1,
+            'status': 'modified',
+          },
+        ]),
+        200,
+        headers: <String, String>{'content-type': 'application/json'},
+      );
+    });
+    final service = ReviewDiffService(client: client);
 
     final diff = await service.fetchDiff(
       profile: const ServerProfile(
@@ -47,6 +90,7 @@ void main() {
         baseUrl: 'http://localhost:4096',
       ),
       project: const ProjectTarget(directory: '/workspace/demo', label: 'Demo'),
+      sessionId: 'ses_1',
       status: const FileStatusSummary(
         path: 'README.md',
         status: 'modified',
@@ -56,129 +100,21 @@ void main() {
     );
 
     expect(diff.path, 'README.md');
-    expect(diff.content, contains('diff --git a/README.md b/README.md'));
-    expect(diff.content, contains('+New'));
-    expect(ptyService.createdCommand, '/usr/bin/env');
-    expect(ptyService.createdArgs?.take(2).toList(), <String>['sh', '-lc']);
-    expect(ptyService.removedIds, <String>['pty_review']);
+    expect(diff.content, isEmpty);
   });
-}
 
-class _FakePtyService extends PtyService {
-  _FakePtyService({required this.events});
-
-  final List<dynamic> events;
-  String? createdCommand;
-  List<String>? createdArgs;
-  final List<String> removedIds = <String>[];
-
-  @override
-  Future<PtySessionInfo> createSession({
-    required ServerProfile profile,
-    required String directory,
-    String? title,
-    String? cwd,
-    String? command,
-    List<String>? args,
-    Map<String, String>? env,
-  }) async {
-    createdCommand = command;
-    createdArgs = args;
-    return const PtySessionInfo(
-      id: 'pty_review',
-      title: 'Review Diff',
-      command: '/usr/bin/env',
-      args: <String>['sh', '-lc', 'echo diff'],
-      cwd: '/workspace/demo',
-      status: PtySessionStatus.running,
-      pid: 4242,
+  test('builds a unified diff for added files', () {
+    final diff = buildReviewUnifiedDiff(
+      path: '.env.example',
+      status: 'added',
+      before: '',
+      after: 'API_KEY=demo\n',
     );
-  }
 
-  @override
-  WebSocketChannel connectSession({
-    required ServerProfile profile,
-    required String directory,
-    required String ptyId,
-    int? cursor,
-  }) {
-    return _FakeWebSocketChannel(events);
-  }
-
-  @override
-  Future<void> removeSession({
-    required ServerProfile profile,
-    required String directory,
-    required String ptyId,
-  }) async {
-    removedIds.add(ptyId);
-  }
-}
-
-class _FakeWebSocketChannel implements WebSocketChannel {
-  _FakeWebSocketChannel(this.events) {
-    scheduleMicrotask(() async {
-      for (final event in events) {
-        _controller.add(event);
-      }
-      await _controller.close();
-    });
-  }
-
-  final List<dynamic> events;
-  final StreamController<dynamic> _controller = StreamController<dynamic>();
-  final _FakeWebSocketSink _sink = _FakeWebSocketSink();
-
-  @override
-  Stream<dynamic> get stream => _controller.stream;
-
-  @override
-  WebSocketSink get sink => _sink;
-
-  @override
-  Future<void> get ready => Future<void>.value();
-
-  @override
-  String? get protocol => null;
-
-  @override
-  int? get closeCode => null;
-
-  @override
-  String? get closeReason => null;
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) {
-    return super.noSuchMethod(invocation);
-  }
-}
-
-class _FakeWebSocketSink implements WebSocketSink {
-  final Completer<void> _done = Completer<void>();
-
-  @override
-  Future<void> addStream(Stream<dynamic> stream) async {
-    await for (final _ in stream) {}
-  }
-
-  @override
-  Future<void> close([int? closeCode, String? closeReason]) {
-    if (!_done.isCompleted) {
-      _done.complete();
-    }
-    return Future<void>.value();
-  }
-
-  @override
-  Future<void> get done => _done.future;
-
-  @override
-  void add(dynamic data) {}
-
-  @override
-  void addError(Object error, [StackTrace? stackTrace]) {}
-
-  int? get closeCode => null;
-
-  String? get closeReason => null;
+    expect(diff, contains('new file mode 100644'));
+    expect(diff, contains('--- /dev/null'));
+    expect(diff, contains('+++ b/.env.example'));
+    expect(diff, contains('@@ -0,0 +1 @@'));
+    expect(diff, contains('+API_KEY=demo'));
+  });
 }
