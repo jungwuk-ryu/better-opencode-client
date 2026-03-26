@@ -8,6 +8,7 @@ class SessionSummary {
     this.createdAt,
     this.archivedAt,
     this.parentId,
+    this.shareUrl,
     this.revertMessageId,
     this.revertPartId,
   });
@@ -20,6 +21,7 @@ class SessionSummary {
   final DateTime? createdAt;
   final DateTime? archivedAt;
   final String? parentId;
+  final String? shareUrl;
   final String? revertMessageId;
   final String? revertPartId;
 
@@ -28,6 +30,7 @@ class SessionSummary {
     final created = time['created'];
     final updated = time['updated'];
     final archived = time['archived'];
+    final share = (json['share'] as Map?)?.cast<String, Object?>();
     final revert = (json['revert'] as Map?)?.cast<String, Object?>();
     return SessionSummary(
       id: json['id']! as String,
@@ -44,6 +47,7 @@ class SessionSummary {
           ? DateTime.fromMillisecondsSinceEpoch(archived.toInt())
           : null,
       parentId: json['parentID'] as String?,
+      shareUrl: share?['url']?.toString(),
       revertMessageId: revert?['messageID']?.toString(),
       revertPartId: revert?['partID']?.toString(),
     );
@@ -55,6 +59,7 @@ class SessionSummary {
     'title': title,
     'version': version,
     'parentID': parentId,
+    'share': shareUrl == null ? null : <String, Object?>{'url': shareUrl},
     'time': <String, Object?>{
       'created': createdAt?.millisecondsSinceEpoch,
       'updated': updatedAt.millisecondsSinceEpoch,

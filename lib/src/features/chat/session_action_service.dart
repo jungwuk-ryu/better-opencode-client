@@ -44,7 +44,7 @@ class SessionActionService {
     return body == true;
   }
 
-  Future<bool> shareSession({
+  Future<SessionSummary> shareSession({
     required ServerProfile profile,
     required ProjectTarget project,
     required String sessionId,
@@ -55,7 +55,7 @@ class SessionActionService {
       path: '/session/$sessionId/share',
       body: const <String, Object?>{},
     );
-    return body is Map;
+    return SessionSummary.fromJson((body as Map).cast<String, Object?>());
   }
 
   Future<bool> deleteSession({
@@ -102,7 +102,7 @@ class SessionActionService {
     );
   }
 
-  Future<bool> unshareSession({
+  Future<SessionSummary> unshareSession({
     required ServerProfile profile,
     required ProjectTarget project,
     required String sessionId,
@@ -114,7 +114,9 @@ class SessionActionService {
         'Request failed for $uri with status ${response.statusCode}.',
       );
     }
-    return response.body.trim().isNotEmpty;
+    return SessionSummary.fromJson(
+      (jsonDecode(response.body) as Map).cast<String, Object?>(),
+    );
   }
 
   Future<SessionSummary> revertSession({

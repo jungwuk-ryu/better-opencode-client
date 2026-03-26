@@ -1065,11 +1065,11 @@ class WorkspaceController extends ChangeNotifier {
     return created;
   }
 
-  Future<void> renameSelectedSession(String title) async {
+  Future<SessionSummary?> renameSelectedSession(String title) async {
     final project = _project;
     final sessionId = _selectedSessionId;
     if (project == null || sessionId == null || title.trim().isEmpty) {
-      return;
+      return null;
     }
     final updated = await _sessionActionService.updateSession(
       profile: profile,
@@ -1080,6 +1080,7 @@ class WorkspaceController extends ChangeNotifier {
     _replaceSession(updated);
     _actionNotice = 'Renamed session to "${updated.title}".';
     _notify();
+    return updated;
   }
 
   Future<void> replyToQuestion(
@@ -1116,11 +1117,11 @@ class WorkspaceController extends ChangeNotifier {
     _notify();
   }
 
-  Future<void> forkSelectedSession() async {
+  Future<SessionSummary?> forkSelectedSession() async {
     final project = _project;
     final sessionId = _selectedSessionId;
     if (project == null || sessionId == null) {
-      return;
+      return null;
     }
     final forked = await _sessionActionService.forkSession(
       profile: profile,
@@ -1138,36 +1139,43 @@ class WorkspaceController extends ChangeNotifier {
     );
     _actionNotice = 'Forked session into "${forked.title}".';
     _notify();
+    return forked;
   }
 
-  Future<void> shareSelectedSession() async {
+  Future<SessionSummary?> shareSelectedSession() async {
     final project = _project;
     final sessionId = _selectedSessionId;
     if (project == null || sessionId == null) {
-      return;
+      return null;
     }
-    await _sessionActionService.shareSession(
+    final shared = await _sessionActionService.shareSession(
       profile: profile,
       project: project,
       sessionId: sessionId,
     );
-    _actionNotice = 'Session share request sent.';
+    _replaceSession(shared);
+    _actionNotice = shared.shareUrl?.trim().isNotEmpty == true
+        ? 'Session share link ready.'
+        : 'Session share request sent.';
     _notify();
+    return shared;
   }
 
-  Future<void> unshareSelectedSession() async {
+  Future<SessionSummary?> unshareSelectedSession() async {
     final project = _project;
     final sessionId = _selectedSessionId;
     if (project == null || sessionId == null) {
-      return;
+      return null;
     }
-    await _sessionActionService.unshareSession(
+    final updated = await _sessionActionService.unshareSession(
       profile: profile,
       project: project,
       sessionId: sessionId,
     );
+    _replaceSession(updated);
     _actionNotice = 'Session share link removed.';
     _notify();
+    return updated;
   }
 
   Future<void> summarizeSelectedSession() async {
@@ -1188,19 +1196,20 @@ class WorkspaceController extends ChangeNotifier {
     _notify();
   }
 
-  Future<void> deleteSelectedSession() async {
+  Future<SessionSummary?> deleteSelectedSession() async {
     final project = _project;
     final sessionId = _selectedSessionId;
     if (project == null || sessionId == null) {
-      return;
+      return null;
     }
+    final removedSessionIds = _sessionTreeIds(sessionId).toSet();
     await _sessionActionService.deleteSession(
       profile: profile,
       project: project,
       sessionId: sessionId,
     );
     _sessions = _sessions
-        .where((session) => session.id != sessionId)
+        .where((session) => !removedSessionIds.contains(session.id))
         .toList(growable: false);
     _selectedSessionId = _sessions.isEmpty ? null : _sessions.first.id;
     if (_selectedSessionId == null) {
@@ -1208,12 +1217,24 @@ class WorkspaceController extends ChangeNotifier {
       _sessionLoading = false;
       _showingCachedSessionMessages = false;
       _sessionLoadError = null;
-      await _cacheStore.remove(_sessionMessagesCacheKey(project, sessionId));
+      for (final removedSessionId in removedSessionIds) {
+        await _cacheStore.remove(
+          _sessionMessagesCacheKey(project, removedSessionId),
+        );
+      }
+      await _projectStore.saveLastWorkspace(
+        serverStorageKey: profile.storageKey,
+        target: project.copyWith(clearLastSession: true),
+      );
       await _loadSessionPanels();
     } else {
       _messages = const <ChatMessage>[];
       _showingCachedSessionMessages = false;
-      await _cacheStore.remove(_sessionMessagesCacheKey(project, sessionId));
+      for (final removedSessionId in removedSessionIds) {
+        await _cacheStore.remove(
+          _sessionMessagesCacheKey(project, removedSessionId),
+        );
+      }
       await _loadSelectedSessionMessages(
         project: project,
         sessionId: _selectedSessionId!,
@@ -1223,6 +1244,7 @@ class WorkspaceController extends ChangeNotifier {
     }
     _actionNotice = 'Session deleted.';
     _notify();
+    return selectedSession;
   }
 
   Future<void> runTerminalCommand(String command) async {

@@ -840,7 +840,41 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     if (nextTitle == null || nextTitle.isEmpty) {
       return;
     }
-    await controller.renameSelectedSession(nextTitle);
+    try {
+      final updated = await controller.renameSelectedSession(nextTitle);
+      if (!mounted || updated == null) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Renamed session to "${updated.title}".')),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to rename session: $error')),
+      );
+    }
+  }
+
+  Future<void> _forkSelectedSession(WorkspaceController controller) async {
+    try {
+      final forked = await controller.forkSelectedSession();
+      if (!mounted || forked == null) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Forked into "${forked.title}".')));
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to fork session: $error')));
+    }
   }
 
   Future<void> _createNewSession(WorkspaceController controller) async {
@@ -858,7 +892,24 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
 
   Future<void> _shareSelectedSession(WorkspaceController controller) async {
     try {
-      await controller.shareSelectedSession();
+      final shared = await controller.shareSelectedSession();
+      if (!mounted || shared == null) {
+        return;
+      }
+      final shareUrl = shared.shareUrl?.trim();
+      if (shareUrl != null && shareUrl.isNotEmpty) {
+        await Clipboard.setData(ClipboardData(text: shareUrl));
+        if (!mounted) {
+          return;
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Share link copied to clipboard.')),
+        );
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Session shared.')));
     } catch (error) {
       if (!mounted) {
         return;
@@ -871,7 +922,13 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
 
   Future<void> _unshareSelectedSession(WorkspaceController controller) async {
     try {
-      await controller.unshareSelectedSession();
+      final updated = await controller.unshareSelectedSession();
+      if (!mounted || updated == null) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Share link removed.')));
     } catch (error) {
       if (!mounted) {
         return;
@@ -891,6 +948,55 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to compact session: $error')),
+      );
+    }
+  }
+
+  Future<void> _deleteSelectedSession(WorkspaceController controller) async {
+    final selected = controller.selectedSession;
+    if (selected == null) {
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Session'),
+        content: Text(
+          'Delete "${selected.title.trim().isEmpty ? 'this session' : selected.title.trim()}"? This action cannot be undone.',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) {
+      return;
+    }
+
+    try {
+      final nextSession = await controller.deleteSelectedSession();
+      if (!mounted) {
+        return;
+      }
+      final message = nextSession == null
+          ? 'Session deleted.'
+          : 'Session deleted. Opened "${nextSession.title}".';
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to delete session: $error')),
       );
     }
   }
@@ -1220,15 +1326,13 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                         onRename: () => _renameSelectedSession(controller),
                         onFork: controller.selectedSession == null
                             ? null
-                            : () async {
-                                await controller.forkSelectedSession();
-                              },
+                            : () => _forkSelectedSession(controller),
                         onShare: controller.selectedSession == null
                             ? null
-                            : controller.shareSelectedSession,
+                            : () => _shareSelectedSession(controller),
                         onDelete: controller.selectedSession == null
                             ? null
-                            : controller.deleteSelectedSession,
+                            : () => _deleteSelectedSession(controller),
                       ),
                       Expanded(
                         child: controller.loading
@@ -1910,7 +2014,9 @@ class _SessionOverflowMenuItem extends StatelessWidget {
               ? null
               : () {
                   Navigator.of(context).pop();
-                  action.onSelected?.call();
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    action.onSelected?.call();
+                  });
                 },
           borderRadius: BorderRadius.circular(16),
           child: Padding(

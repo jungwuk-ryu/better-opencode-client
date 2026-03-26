@@ -31,7 +31,14 @@ void main() {
       }
       if (request.method == 'POST' &&
           request.uri.path == '/session/ses_1/share') {
-        body = {'id': 'ses_1'};
+        body = {
+          'id': 'ses_1',
+          'directory': '/workspace/demo',
+          'title': 'Shared session',
+          'version': '1',
+          'share': {'url': 'https://share.example/ses_1'},
+          'time': {'updated': 1710000000000},
+        };
       }
       if (request.method == 'DELETE' && request.uri.path == '/session/ses_1') {
         body = true;
@@ -47,7 +54,13 @@ void main() {
       }
       if (request.method == 'DELETE' &&
           request.uri.path == '/session/ses_1/share') {
-        body = {'id': 'ses_1'};
+        body = {
+          'id': 'ses_1',
+          'directory': '/workspace/demo',
+          'title': 'Private session',
+          'version': '1',
+          'time': {'updated': 1710000000000},
+        };
       }
       if (request.method == 'POST' &&
           request.uri.path == '/session/ses_1/revert') {
@@ -115,20 +128,20 @@ void main() {
       isTrue,
     );
     expect(
-      await service.shareSession(
+      (await service.shareSession(
         profile: profile,
         project: project,
         sessionId: 'ses_1',
-      ),
-      isTrue,
+      )).shareUrl,
+      'https://share.example/ses_1',
     );
     expect(
-      await service.unshareSession(
+      (await service.unshareSession(
         profile: profile,
         project: project,
         sessionId: 'ses_1',
-      ),
-      isTrue,
+      )).shareUrl,
+      isNull,
     );
     expect(
       await service.deleteSession(
