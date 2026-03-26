@@ -143,6 +143,10 @@ void main() {
       find.byKey(const ValueKey<String>('workspace-settings-sheet')),
       findsOneWidget,
     );
+    expect(
+      find.byKey(const ValueKey<String>('workspace-settings-sheet-blur')),
+      findsOneWidget,
+    );
     expect(find.text('Workspace Settings'), findsOneWidget);
     expect(find.text('Manage Servers'), findsOneWidget);
     expect(find.text('Ready'), findsOneWidget);

@@ -1016,6 +1016,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       context: context,
       useSafeArea: true,
       isScrollControlled: true,
+      barrierColor: Colors.black.withValues(alpha: 0.38),
       backgroundColor: Colors.transparent,
       builder: (context) => FractionallySizedBox(
         heightFactor: 0.8,
@@ -2245,236 +2246,341 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
             AppSpacing.md,
             AppSpacing.md,
           ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(28),
-            child: BackdropFilter(
-              filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-              child: Container(
-                key: const ValueKey<String>('workspace-settings-sheet'),
-                decoration: BoxDecoration(
-                  color: surfaces.panelRaised.withValues(alpha: 0.94),
-                  borderRadius: BorderRadius.circular(28),
-                  border: Border.all(color: surfaces.lineSoft),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(28),
+              boxShadow: <BoxShadow>[
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.42),
+                  blurRadius: 40,
+                  spreadRadius: -10,
+                  offset: const Offset(0, 24),
                 ),
-                child: Column(
-                  children: <Widget>[
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(
-                        AppSpacing.lg,
-                        AppSpacing.lg,
-                        AppSpacing.md,
-                        AppSpacing.md,
+                BoxShadow(
+                  color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                  blurRadius: 36,
+                  spreadRadius: -18,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(28),
+              child: BackdropFilter(
+                key: const ValueKey<String>('workspace-settings-sheet-blur'),
+                filter: ui.ImageFilter.blur(sigmaX: 26, sigmaY: 26),
+                child: Container(
+                  key: const ValueKey<String>('workspace-settings-sheet'),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(28),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.12),
+                    ),
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: <Color>[
+                        Colors.white.withValues(alpha: 0.085),
+                        surfaces.panelRaised.withValues(alpha: 0.78),
+                        surfaces.panel.withValues(alpha: 0.72),
+                      ],
+                      stops: const <double>[0, 0.18, 1],
+                    ),
+                  ),
+                  child: Stack(
+                    children: <Widget>[
+                      Positioned(
+                        top: -120,
+                        left: -60,
+                        right: -60,
+                        height: 220,
+                        child: IgnorePointer(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: RadialGradient(
+                                center: const Alignment(-0.55, -0.95),
+                                radius: 1.2,
+                                colors: <Color>[
+                                  theme.colorScheme.primary.withValues(
+                                    alpha: 0.16,
+                                  ),
+                                  Colors.transparent,
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                      child: Row(
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        child: IgnorePointer(
+                          child: Container(
+                            height: 1,
+                            color: Colors.white.withValues(alpha: 0.12),
+                          ),
+                        ),
+                      ),
+                      Column(
                         children: <Widget>[
+                          Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: <Color>[
+                                  Colors.white.withValues(alpha: 0.055),
+                                  Colors.transparent,
+                                ],
+                              ),
+                              border: Border(
+                                bottom: BorderSide(
+                                  color: Colors.white.withValues(alpha: 0.08),
+                                ),
+                              ),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(
+                                AppSpacing.lg,
+                                AppSpacing.lg,
+                                AppSpacing.md,
+                                AppSpacing.md,
+                              ),
+                              child: Row(
+                                children: <Widget>[
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: <Widget>[
+                                        Text(
+                                          'Workspace Settings',
+                                          style: theme.textTheme.titleLarge
+                                              ?.copyWith(
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                        ),
+                                        const SizedBox(height: AppSpacing.xxs),
+                                        Text(
+                                          'Adjust workspace behavior and inspect the current server connection.',
+                                          style: theme.textTheme.bodyMedium
+                                              ?.copyWith(color: surfaces.muted),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  IconButton(
+                                    onPressed: () =>
+                                        Navigator.of(context).pop(),
+                                    icon: const Icon(Icons.close_rounded),
+                                    tooltip: 'Close settings',
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                           Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                            child: ListView(
+                              padding: const EdgeInsets.fromLTRB(
+                                AppSpacing.lg,
+                                AppSpacing.md,
+                                AppSpacing.lg,
+                                AppSpacing.lg,
+                              ),
                               children: <Widget>[
-                                Text(
-                                  'Workspace Settings',
-                                  style: theme.textTheme.titleLarge?.copyWith(
-                                    fontWeight: FontWeight.w700,
+                                _WorkspaceSettingsSection(
+                                  title: 'Server',
+                                  child: _WorkspaceSettingsCard(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: <Widget>[
+                                        Row(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: <Widget>[
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: <Widget>[
+                                                  Text(
+                                                    profile?.effectiveLabel ??
+                                                        'No server selected',
+                                                    style: theme
+                                                        .textTheme
+                                                        .titleMedium
+                                                        ?.copyWith(
+                                                          fontWeight:
+                                                              FontWeight.w700,
+                                                        ),
+                                                  ),
+                                                  const SizedBox(
+                                                    height: AppSpacing.xxs,
+                                                  ),
+                                                  Text(
+                                                    report?.summary ??
+                                                        profile
+                                                            ?.normalizedBaseUrl ??
+                                                        'Return to Home to choose a server.',
+                                                    style: theme
+                                                        .textTheme
+                                                        .bodyMedium
+                                                        ?.copyWith(
+                                                          color: surfaces.muted,
+                                                        ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            const SizedBox(
+                                              width: AppSpacing.sm,
+                                            ),
+                                            _WorkspaceSettingsStatusChip(
+                                              label: statusMeta.label,
+                                              color: statusMeta.color,
+                                            ),
+                                          ],
+                                        ),
+                                        if (currentProject != null) ...<Widget>[
+                                          const SizedBox(height: AppSpacing.md),
+                                          _WorkspaceSettingsMetaRow(
+                                            label: 'Project',
+                                            value: currentProject.directory,
+                                          ),
+                                        ],
+                                        if (profile != null) ...<Widget>[
+                                          const SizedBox(height: AppSpacing.md),
+                                          Wrap(
+                                            spacing: AppSpacing.sm,
+                                            runSpacing: AppSpacing.sm,
+                                            children: <Widget>[
+                                              OutlinedButton.icon(
+                                                key: const ValueKey<String>(
+                                                  'workspace-settings-refresh-probe-button',
+                                                ),
+                                                onPressed: _refreshingProbe
+                                                    ? null
+                                                    : _refreshProbe,
+                                                icon: _refreshingProbe
+                                                    ? const SizedBox.square(
+                                                        dimension: 16,
+                                                        child:
+                                                            CircularProgressIndicator(
+                                                              strokeWidth: 2,
+                                                            ),
+                                                      )
+                                                    : const Icon(
+                                                        Icons.refresh_rounded,
+                                                      ),
+                                                label: const Text(
+                                                  'Refresh Status',
+                                                ),
+                                              ),
+                                              FilledButton.icon(
+                                                key: const ValueKey<String>(
+                                                  'workspace-settings-manage-servers-button',
+                                                ),
+                                                onPressed:
+                                                    widget.onManageServers,
+                                                icon: const Icon(
+                                                  Icons.storage_rounded,
+                                                ),
+                                                label: const Text(
+                                                  'Manage Servers',
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ],
+                                    ),
                                   ),
                                 ),
-                                const SizedBox(height: AppSpacing.xxs),
-                                Text(
-                                  'Adjust workspace behavior and inspect the current server connection.',
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    color: surfaces.muted,
+                                const SizedBox(height: AppSpacing.lg),
+                                _WorkspaceSettingsSection(
+                                  title: 'Timeline',
+                                  child: _WorkspaceSettingsCard(
+                                    child: Column(
+                                      children: <Widget>[
+                                        _WorkspaceSettingsToggleRow(
+                                          key: const ValueKey<String>(
+                                            'workspace-settings-shell-toggle',
+                                          ),
+                                          title:
+                                              'Expand shell output by default',
+                                          subtitle:
+                                              'Show live shell command details immediately in the timeline.',
+                                          value: widget
+                                              .appController
+                                              .shellToolPartsExpanded,
+                                          onChanged: (value) {
+                                            unawaited(
+                                              widget.appController
+                                                  .setShellToolPartsExpanded(
+                                                    value,
+                                                  ),
+                                            );
+                                          },
+                                        ),
+                                        const SizedBox(height: AppSpacing.sm),
+                                        _WorkspaceSettingsToggleRow(
+                                          key: const ValueKey<String>(
+                                            'workspace-settings-progress-toggle',
+                                          ),
+                                          title:
+                                              'Show to-do and step details in timeline',
+                                          subtitle:
+                                              'Display internal progress events directly in the chat stream.',
+                                          value: widget
+                                              .appController
+                                              .timelineProgressDetailsVisible,
+                                          onChanged: (value) {
+                                            unawaited(
+                                              widget.appController
+                                                  .setTimelineProgressDetailsVisible(
+                                                    value,
+                                                  ),
+                                            );
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: AppSpacing.lg),
+                                _WorkspaceSettingsSection(
+                                  title: 'Sidebar',
+                                  child: _WorkspaceSettingsCard(
+                                    child: _WorkspaceSettingsToggleRow(
+                                      key: const ValueKey<String>(
+                                        'workspace-settings-sidebar-child-sessions-toggle',
+                                      ),
+                                      title: 'Show sub-sessions in sidebar',
+                                      subtitle:
+                                          'Display nested agent sessions under their root session in the session list.',
+                                      value: widget
+                                          .appController
+                                          .sidebarChildSessionsVisible,
+                                      onChanged: (value) {
+                                        unawaited(
+                                          widget.appController
+                                              .setSidebarChildSessionsVisible(
+                                                value,
+                                              ),
+                                        );
+                                      },
+                                    ),
                                   ),
                                 ),
                               ],
                             ),
                           ),
-                          IconButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            icon: const Icon(Icons.close_rounded),
-                            tooltip: 'Close settings',
-                          ),
                         ],
                       ),
-                    ),
-                    const Divider(height: 1),
-                    Expanded(
-                      child: ListView(
-                        padding: const EdgeInsets.fromLTRB(
-                          AppSpacing.lg,
-                          AppSpacing.md,
-                          AppSpacing.lg,
-                          AppSpacing.lg,
-                        ),
-                        children: <Widget>[
-                          _WorkspaceSettingsSection(
-                            title: 'Server',
-                            child: _WorkspaceSettingsCard(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: <Widget>[
-                                  Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: <Widget>[
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: <Widget>[
-                                            Text(
-                                              profile?.effectiveLabel ??
-                                                  'No server selected',
-                                              style: theme.textTheme.titleMedium
-                                                  ?.copyWith(
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                            ),
-                                            const SizedBox(
-                                              height: AppSpacing.xxs,
-                                            ),
-                                            Text(
-                                              report?.summary ??
-                                                  profile?.normalizedBaseUrl ??
-                                                  'Return to Home to choose a server.',
-                                              style: theme.textTheme.bodyMedium
-                                                  ?.copyWith(
-                                                    color: surfaces.muted,
-                                                  ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      const SizedBox(width: AppSpacing.sm),
-                                      _WorkspaceSettingsStatusChip(
-                                        label: statusMeta.label,
-                                        color: statusMeta.color,
-                                      ),
-                                    ],
-                                  ),
-                                  if (currentProject != null) ...<Widget>[
-                                    const SizedBox(height: AppSpacing.md),
-                                    _WorkspaceSettingsMetaRow(
-                                      label: 'Project',
-                                      value: currentProject.directory,
-                                    ),
-                                  ],
-                                  if (profile != null) ...<Widget>[
-                                    const SizedBox(height: AppSpacing.md),
-                                    Wrap(
-                                      spacing: AppSpacing.sm,
-                                      runSpacing: AppSpacing.sm,
-                                      children: <Widget>[
-                                        OutlinedButton.icon(
-                                          key: const ValueKey<String>(
-                                            'workspace-settings-refresh-probe-button',
-                                          ),
-                                          onPressed: _refreshingProbe
-                                              ? null
-                                              : _refreshProbe,
-                                          icon: _refreshingProbe
-                                              ? const SizedBox.square(
-                                                  dimension: 16,
-                                                  child:
-                                                      CircularProgressIndicator(
-                                                        strokeWidth: 2,
-                                                      ),
-                                                )
-                                              : const Icon(
-                                                  Icons.refresh_rounded,
-                                                ),
-                                          label: const Text('Refresh Status'),
-                                        ),
-                                        FilledButton.icon(
-                                          key: const ValueKey<String>(
-                                            'workspace-settings-manage-servers-button',
-                                          ),
-                                          onPressed: widget.onManageServers,
-                                          icon: const Icon(
-                                            Icons.storage_rounded,
-                                          ),
-                                          label: const Text('Manage Servers'),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.lg),
-                          _WorkspaceSettingsSection(
-                            title: 'Timeline',
-                            child: _WorkspaceSettingsCard(
-                              child: Column(
-                                children: <Widget>[
-                                  _WorkspaceSettingsToggleRow(
-                                    key: const ValueKey<String>(
-                                      'workspace-settings-shell-toggle',
-                                    ),
-                                    title: 'Expand shell output by default',
-                                    subtitle:
-                                        'Show live shell command details immediately in the timeline.',
-                                    value: widget
-                                        .appController
-                                        .shellToolPartsExpanded,
-                                    onChanged: (value) {
-                                      unawaited(
-                                        widget.appController
-                                            .setShellToolPartsExpanded(value),
-                                      );
-                                    },
-                                  ),
-                                  const SizedBox(height: AppSpacing.sm),
-                                  _WorkspaceSettingsToggleRow(
-                                    key: const ValueKey<String>(
-                                      'workspace-settings-progress-toggle',
-                                    ),
-                                    title:
-                                        'Show to-do and step details in timeline',
-                                    subtitle:
-                                        'Display internal progress events directly in the chat stream.',
-                                    value: widget
-                                        .appController
-                                        .timelineProgressDetailsVisible,
-                                    onChanged: (value) {
-                                      unawaited(
-                                        widget.appController
-                                            .setTimelineProgressDetailsVisible(
-                                              value,
-                                            ),
-                                      );
-                                    },
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.lg),
-                          _WorkspaceSettingsSection(
-                            title: 'Sidebar',
-                            child: _WorkspaceSettingsCard(
-                              child: _WorkspaceSettingsToggleRow(
-                                key: const ValueKey<String>(
-                                  'workspace-settings-sidebar-child-sessions-toggle',
-                                ),
-                                title: 'Show sub-sessions in sidebar',
-                                subtitle:
-                                    'Display nested agent sessions under their root session in the session list.',
-                                value: widget
-                                    .appController
-                                    .sidebarChildSessionsVisible,
-                                onChanged: (value) {
-                                  unawaited(
-                                    widget.appController
-                                        .setSidebarChildSessionsVisible(value),
-                                  );
-                                },
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -2519,15 +2625,37 @@ class _WorkspaceSettingsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: surfaces.panel.withValues(alpha: 0.82),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: surfaces.lineSoft),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(AppSpacing.md),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            boxShadow: <BoxShadow>[
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.22),
+                blurRadius: 18,
+                spreadRadius: -10,
+                offset: const Offset(0, 12),
+              ),
+            ],
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: <Color>[
+                Colors.white.withValues(alpha: 0.04),
+                surfaces.panelRaised.withValues(alpha: 0.56),
+                surfaces.panelMuted.withValues(alpha: 0.46),
+              ],
+            ),
+          ),
+          child: child,
+        ),
       ),
-      child: child,
     );
   }
 }
@@ -2555,9 +2683,17 @@ class _WorkspaceSettingsToggleRow extends StatelessWidget {
         vertical: AppSpacing.sm,
       ),
       decoration: BoxDecoration(
-        color: surfaces.panelRaised.withValues(alpha: 0.7),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[
+            Colors.white.withValues(alpha: 0.035),
+            surfaces.panelRaised.withValues(alpha: 0.44),
+            surfaces.panelMuted.withValues(alpha: 0.36),
+          ],
+        ),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: surfaces.lineSoft),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
       ),
       child: Row(
         children: <Widget>[
