@@ -5357,7 +5357,7 @@ class _PromptComposerLoadingPlaceholder extends StatelessWidget {
   }
 }
 
-class _MessageTimeline extends StatelessWidget {
+class _MessageTimeline extends StatefulWidget {
   const _MessageTimeline({
     required this.controller,
     required this.currentSessionId,
@@ -5396,10 +5396,138 @@ class _MessageTimeline extends StatelessWidget {
   final Future<void> Function() onRetry;
 
   @override
+  State<_MessageTimeline> createState() => _MessageTimelineState();
+}
+
+class _MessageTimelineState extends State<_MessageTimeline> {
+  static const int _initialWindowSize = 60;
+  static const int _windowGrowthSize = 40;
+  static const double _loadOlderThreshold = 96;
+
+  int _visibleStartIndex = 0;
+  bool _loadingOlder = false;
+
+  List<ChatMessage> get _visibleMessages => widget.messages.sublist(
+    _visibleStartIndex.clamp(0, widget.messages.length),
+  );
+
+  int get _hiddenMessageCount =>
+      _visibleStartIndex.clamp(0, widget.messages.length);
+
+  @override
+  void initState() {
+    super.initState();
+    _visibleStartIndex = _initialVisibleStart(widget.messages.length);
+    widget.controller.addListener(_handleScroll);
+  }
+
+  @override
+  void didUpdateWidget(covariant _MessageTimeline oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.controller, widget.controller)) {
+      oldWidget.controller.removeListener(_handleScroll);
+      widget.controller.addListener(_handleScroll);
+    }
+
+    final sessionChanged =
+        oldWidget.currentSessionId != widget.currentSessionId;
+    final becameNonEmpty =
+        oldWidget.messages.isEmpty && widget.messages.isNotEmpty;
+    final messagesShrank = widget.messages.length < oldWidget.messages.length;
+    if (sessionChanged || becameNonEmpty || messagesShrank) {
+      _visibleStartIndex = _initialVisibleStart(widget.messages.length);
+      _loadingOlder = false;
+      return;
+    }
+
+    if (_visibleStartIndex > widget.messages.length) {
+      _visibleStartIndex = _initialVisibleStart(widget.messages.length);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_handleScroll);
+    super.dispose();
+  }
+
+  int _initialVisibleStart(int messageCount) {
+    return math.max(0, messageCount - _initialWindowSize);
+  }
+
+  Future<void> _handleScroll() async {
+    if (_loadingOlder || _hiddenMessageCount == 0) {
+      return;
+    }
+    if (!widget.controller.hasClients) {
+      return;
+    }
+    final position = widget.controller.position;
+    if (!position.hasContentDimensions ||
+        position.pixels > _loadOlderThreshold) {
+      return;
+    }
+    await _loadOlderMessages();
+  }
+
+  Future<void> _loadOlderMessages() async {
+    if (_loadingOlder || _hiddenMessageCount == 0 || !mounted) {
+      return;
+    }
+    if (!widget.controller.hasClients) {
+      return;
+    }
+    final position = widget.controller.position;
+    if (!position.hasContentDimensions) {
+      return;
+    }
+
+    final previousPixels = position.pixels;
+    final previousMaxExtent = position.maxScrollExtent;
+    final nextStart = math.max(0, _visibleStartIndex - _windowGrowthSize);
+    if (nextStart == _visibleStartIndex) {
+      return;
+    }
+
+    setState(() {
+      _loadingOlder = true;
+      _visibleStartIndex = nextStart;
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      if (!widget.controller.hasClients) {
+        setState(() {
+          _loadingOlder = false;
+        });
+        return;
+      }
+      final nextPosition = widget.controller.position;
+      final deltaExtent = nextPosition.maxScrollExtent - previousMaxExtent;
+      final targetPixels = (previousPixels + deltaExtent).clamp(
+        0.0,
+        nextPosition.maxScrollExtent,
+      );
+      if ((targetPixels - nextPosition.pixels).abs() > 0.5) {
+        widget.controller.jumpTo(targetPixels);
+      }
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _loadingOlder = false;
+      });
+      unawaited(_handleScroll());
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final theme = Theme.of(context);
-    if (loading && messages.isEmpty) {
+    if (widget.loading && widget.messages.isEmpty) {
       return const _TimelineStatusCard(
         icon: SizedBox(
           width: 20,
@@ -5410,7 +5538,7 @@ class _MessageTimeline extends StatelessWidget {
         message: 'Connecting to the server and loading this session.',
       );
     }
-    if (error != null && messages.isEmpty) {
+    if (widget.error != null && widget.messages.isEmpty) {
       return _TimelineStatusCard(
         icon: Icon(
           Icons.wifi_tethering_error_rounded,
@@ -5418,14 +5546,14 @@ class _MessageTimeline extends StatelessWidget {
           size: 22,
         ),
         title: 'Couldn\'t load this session',
-        message: error!,
+        message: widget.error!,
         action: OutlinedButton(
-          onPressed: () => unawaited(onRetry()),
+          onPressed: () => unawaited(widget.onRetry()),
           child: const Text('Retry'),
         ),
       );
     }
-    if (messages.isEmpty) {
+    if (widget.messages.isEmpty) {
       return Center(
         child: Text(
           'No messages yet.',
@@ -5436,78 +5564,168 @@ class _MessageTimeline extends StatelessWidget {
 
     return Column(
       children: <Widget>[
-        if (showingCachedMessages && loading)
+        if (widget.showingCachedMessages && widget.loading)
           _TimelineCachedRefreshBanner(
             key: const ValueKey<String>('timeline-cached-refresh-banner'),
-            compact: compact,
+            compact: widget.compact,
             shimmering: true,
             title: 'Refreshing cached messages...',
             message:
                 'Showing the last saved snapshot while the server loads newer messages.',
           )
-        else if (showingCachedMessages && error != null)
+        else if (widget.showingCachedMessages && widget.error != null)
           _TimelineCachedRefreshBanner(
             key: const ValueKey<String>('timeline-cached-refresh-banner'),
-            compact: compact,
+            compact: widget.compact,
             shimmering: false,
             title: 'Showing cached messages',
-            message: error!,
+            message: widget.error!,
             action: OutlinedButton(
-              onPressed: () => unawaited(onRetry()),
+              onPressed: () => unawaited(widget.onRetry()),
               child: const Text('Retry'),
             ),
           ),
         Expanded(
-          child: SelectionArea(
-            child: Scrollbar(
-              controller: controller,
-              thumbVisibility: true,
-              interactive: true,
-              child: ListView.separated(
-                controller: controller,
-                key: const PageStorageKey<String>(
-                  'web-parity-message-timeline',
-                ),
-                restorationId: null,
-                padding: EdgeInsets.fromLTRB(
-                  compact ? AppSpacing.sm : AppSpacing.xl,
-                  compact ? AppSpacing.sm : AppSpacing.xl,
-                  compact ? AppSpacing.sm : AppSpacing.xl,
-                  compact ? AppSpacing.xs : AppSpacing.lg,
-                ),
-                itemCount: messages.length,
-                separatorBuilder: (_, _) =>
-                    SizedBox(height: compact ? AppSpacing.md : AppSpacing.xl),
-                itemBuilder: (context, index) {
-                  final message = messages[index];
-                  return Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 860),
-                      child: SizedBox(
-                        width: double.infinity,
-                        child: _TimelineMessage(
-                          currentSessionId: currentSessionId,
-                          message: message,
-                          compact: compact,
-                          sessions: sessions,
-                          selectedSession: selectedSession,
-                          configSnapshot: configSnapshot,
-                          shellToolDefaultExpanded: shellToolDefaultExpanded,
-                          timelineProgressDetailsVisible:
-                              timelineProgressDetailsVisible,
-                          onForkMessage: onForkMessage,
-                          onRevertMessage: onRevertMessage,
-                          onOpenSession: onOpenSession,
+          child: Scrollbar(
+            controller: widget.controller,
+            thumbVisibility: true,
+            interactive: true,
+            child: SingleChildScrollView(
+              controller: widget.controller,
+              key: const PageStorageKey<String>('web-parity-message-timeline'),
+              padding: EdgeInsets.fromLTRB(
+                widget.compact ? AppSpacing.sm : AppSpacing.xl,
+                widget.compact ? AppSpacing.sm : AppSpacing.xl,
+                widget.compact ? AppSpacing.sm : AppSpacing.xl,
+                widget.compact ? AppSpacing.xs : AppSpacing.lg,
+              ),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 860),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      if (_hiddenMessageCount > 0)
+                        Padding(
+                          padding: EdgeInsets.only(
+                            bottom: widget.compact
+                                ? AppSpacing.sm
+                                : AppSpacing.md,
+                          ),
+                          child: _TimelineLoadOlderIndicator(
+                            hiddenCount: _hiddenMessageCount,
+                            loading: _loadingOlder,
+                            compact: widget.compact,
+                          ),
                         ),
-                      ),
-                    ),
-                  );
-                },
+                      ..._visibleMessages.asMap().entries.map((entry) {
+                        final index = entry.key;
+                        final message = entry.value;
+                        final isLast = index == _visibleMessages.length - 1;
+                        return Padding(
+                          padding: EdgeInsets.only(
+                            bottom: isLast
+                                ? 0
+                                : (widget.compact
+                                      ? AppSpacing.md
+                                      : AppSpacing.xl),
+                          ),
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: _TimelineMessage(
+                              currentSessionId: widget.currentSessionId,
+                              message: message,
+                              compact: widget.compact,
+                              sessions: widget.sessions,
+                              selectedSession: widget.selectedSession,
+                              configSnapshot: widget.configSnapshot,
+                              shellToolDefaultExpanded:
+                                  widget.shellToolDefaultExpanded,
+                              timelineProgressDetailsVisible:
+                                  widget.timelineProgressDetailsVisible,
+                              onForkMessage: widget.onForkMessage,
+                              onRevertMessage: widget.onRevertMessage,
+                              onOpenSession: widget.onOpenSession,
+                            ),
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
         ),
       ],
+    );
+  }
+}
+
+class _TimelineLoadOlderIndicator extends StatelessWidget {
+  const _TimelineLoadOlderIndicator({
+    required this.hiddenCount,
+    required this.loading,
+    required this.compact,
+  });
+
+  final int hiddenCount;
+  final bool loading;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final label = loading
+        ? 'Loading earlier messages...'
+        : '$hiddenCount earlier messages';
+    final hint = loading ? null : 'Scroll up to load more';
+    return Align(
+      alignment: Alignment.center,
+      child: Container(
+        key: const ValueKey<String>('timeline-load-older-indicator'),
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? AppSpacing.sm : AppSpacing.md,
+          vertical: compact ? AppSpacing.xs : AppSpacing.sm,
+        ),
+        decoration: BoxDecoration(
+          color: surfaces.panelMuted.withValues(alpha: 0.92),
+          borderRadius: BorderRadius.circular(compact ? 12 : 14),
+          border: Border.all(color: surfaces.lineSoft),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            if (loading) ...<Widget>[
+              const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+            ] else
+              Icon(Icons.expand_less_rounded, size: 16, color: surfaces.muted),
+            Text(
+              label,
+              style:
+                  (compact
+                          ? theme.textTheme.labelMedium
+                          : theme.textTheme.bodySmall)
+                      ?.copyWith(fontWeight: FontWeight.w600),
+            ),
+            if (hint != null) ...<Widget>[
+              const SizedBox(width: AppSpacing.xs),
+              Text(
+                hint,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: surfaces.muted,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }

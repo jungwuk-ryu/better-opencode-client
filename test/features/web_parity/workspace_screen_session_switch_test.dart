@@ -432,7 +432,7 @@ void main() {
         const PageStorageKey<String>('web-parity-message-timeline'),
       );
       final initialPosition = tester
-          .widget<ListView>(listFinder)
+          .widget<SingleChildScrollView>(listFinder)
           .controller!
           .position;
       final initialMaxExtent = initialPosition.maxScrollExtent;
@@ -448,7 +448,7 @@ void main() {
       await tester.pumpAndSettle();
 
       final updatedPosition = tester
-          .widget<ListView>(listFinder)
+          .widget<SingleChildScrollView>(listFinder)
           .controller!
           .position;
       expect(updatedPosition.maxScrollExtent, greaterThan(initialMaxExtent));
@@ -513,10 +513,85 @@ void main() {
       final listFinder = find.byKey(
         const PageStorageKey<String>('web-parity-message-timeline'),
       );
-      final position = tester.widget<ListView>(listFinder).controller!.position;
+      final position = tester
+          .widget<SingleChildScrollView>(listFinder)
+          .controller!
+          .position;
 
       expect(position.maxScrollExtent, greaterThan(0));
       expect(position.pixels, closeTo(position.maxScrollExtent, 96));
+    },
+  );
+
+  testWidgets(
+    'scrolling to the top loads older timeline messages without resetting the viewport',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final createdControllers = <_LongSessionWorkspaceController>[];
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              final controller = _LongSessionWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+              createdControllers.add(controller);
+              return controller;
+            },
+      );
+      addTearDown(appController.dispose);
+
+      final navigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          navigatorKey: navigatorKey,
+          initialRoute: '/',
+        ),
+      );
+      navigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_long'),
+      );
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pumpAndSettle();
+
+      expect(find.text('user long session message 0'), findsNothing);
+      expect(
+        find.textContaining('assistant long session message 119'),
+        findsOneWidget,
+      );
+      expect(find.text('60 earlier messages'), findsOneWidget);
+
+      final listFinder = find.byKey(
+        const PageStorageKey<String>('web-parity-message-timeline'),
+      );
+      final scrollView = tester.widget<SingleChildScrollView>(listFinder);
+
+      scrollView.controller!.jumpTo(0);
+      await tester.pump();
+      await tester.pump();
+      await tester.pumpAndSettle();
+
+      expect(find.text('20 earlier messages'), findsOneWidget);
+      expect(
+        find.textContaining('user long session message 20'),
+        findsOneWidget,
+      );
+      expect(find.text('user long session message 0'), findsNothing);
     },
   );
 }

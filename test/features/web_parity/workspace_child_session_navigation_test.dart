@@ -141,7 +141,7 @@ void main() {
         const PageStorageKey<String>('web-parity-message-timeline'),
       );
       ScrollPosition position() =>
-          tester.widget<ListView>(listFinder).controller!.position;
+          tester.widget<SingleChildScrollView>(listFinder).controller!.position;
 
       expect(position().maxScrollExtent, greaterThan(0));
       expect(position().pixels, closeTo(position().maxScrollExtent, 96));
