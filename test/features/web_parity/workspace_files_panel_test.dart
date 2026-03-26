@@ -36,26 +36,26 @@ void main() {
     );
     final appController = _StaticAppController(
       profile: profile,
-      workspaceControllerFactory: ({
-        required profile,
-        required directory,
-        initialSessionId,
-      }) {
-        final controller = _FilesWorkspaceController(
-          profile: profile,
-          directory: directory,
-          initialSessionId: initialSessionId,
-        );
-        createdControllers.add(controller);
-        return controller;
-      },
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            final controller = _FilesWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+            createdControllers.add(controller);
+            return controller;
+          },
     );
     addTearDown(appController.dispose);
 
     await tester.pumpWidget(
       _WorkspaceRouteHarness(
         controller: appController,
-        initialRoute: buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -70,6 +70,16 @@ void main() {
     expect(createdControllers.single.selectFileCalls, <String>['pubspec.yaml']);
     expect(createdControllers.single.fileBundle?.selectedPath, 'pubspec.yaml');
     expect(find.text('name: demo_workspace'), findsOneWidget);
+
+    final previewWidget = tester.widget<SelectableText>(
+      find.byKey(const ValueKey<String>('files-preview-content')),
+    );
+    final previewSpans = _flattenTextSpans(previewWidget.textSpan!);
+    final themedApp = AppTheme.dark();
+    expect(
+      previewSpans.firstWhere((span) => span.text == 'name').style?.color,
+      themedApp.colorScheme.primary.withValues(alpha: 0.96),
+    );
   });
 
   testWidgets('files panel expands folders and reveals nested files', (
@@ -88,26 +98,26 @@ void main() {
     );
     final appController = _StaticAppController(
       profile: profile,
-      workspaceControllerFactory: ({
-        required profile,
-        required directory,
-        initialSessionId,
-      }) {
-        final controller = _FilesWorkspaceController(
-          profile: profile,
-          directory: directory,
-          initialSessionId: initialSessionId,
-        );
-        createdControllers.add(controller);
-        return controller;
-      },
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            final controller = _FilesWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+            createdControllers.add(controller);
+            return controller;
+          },
     );
     addTearDown(appController.dispose);
 
     await tester.pumpWidget(
       _WorkspaceRouteHarness(
         controller: appController,
-        initialRoute: buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -123,20 +133,19 @@ void main() {
     await tester.tap(find.text('main.dart').first);
     await tester.pumpAndSettle();
 
-    expect(
-      createdControllers.single.selectFileCalls,
-      <String>['lib/main.dart'],
-    );
+    expect(createdControllers.single.selectFileCalls, <String>[
+      'lib/main.dart',
+    ]);
     expect(createdControllers.single.fileBundle?.selectedPath, 'lib/main.dart');
     expect(find.text('// lib/main.dart preview'), findsOneWidget);
 
     await tester.tap(find.text('lib').first);
     await tester.pumpAndSettle();
 
-    expect(
-      createdControllers.single.toggleDirectoryCalls,
-      <String>['lib', 'lib'],
-    );
+    expect(createdControllers.single.toggleDirectoryCalls, <String>[
+      'lib',
+      'lib',
+    ]);
     expect(find.text('main.dart'), findsNothing);
   });
 
@@ -155,29 +164,31 @@ void main() {
     );
     final appController = _StaticAppController(
       profile: profile,
-      workspaceControllerFactory: ({
-        required profile,
-        required directory,
-        initialSessionId,
-      }) {
-        return _FilesWorkspaceController(
-          profile: profile,
-          directory: directory,
-          initialSessionId: initialSessionId,
-        );
-      },
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _FilesWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
     );
     addTearDown(appController.dispose);
 
     await tester.pumpWidget(
       _WorkspaceRouteHarness(
         controller: appController,
-        initialRoute: buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
       ),
     );
     await tester.pumpAndSettle();
 
-    final panelFinder = find.byKey(const ValueKey<String>('files-preview-panel'));
+    final panelFinder = find.byKey(
+      const ValueKey<String>('files-preview-panel'),
+    );
     final handleFinder = find.byKey(
       const ValueKey<String>('files-preview-resize-handle'),
     );
@@ -205,24 +216,24 @@ void main() {
     );
     final appController = _StaticAppController(
       profile: profile,
-      workspaceControllerFactory: ({
-        required profile,
-        required directory,
-        initialSessionId,
-      }) {
-        return _FilesWorkspaceController(
-          profile: profile,
-          directory: directory,
-          initialSessionId: initialSessionId,
-        );
-      },
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _FilesWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
     );
     addTearDown(appController.dispose);
 
     await tester.pumpWidget(
       _WorkspaceRouteHarness(
         controller: appController,
-        initialRoute: buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -268,26 +279,26 @@ void main() {
     );
     final appController = _StaticAppController(
       profile: profile,
-      workspaceControllerFactory: ({
-        required profile,
-        required directory,
-        initialSessionId,
-      }) {
-        final controller = _FilesWorkspaceController(
-          profile: profile,
-          directory: directory,
-          initialSessionId: initialSessionId,
-        );
-        createdControllers.add(controller);
-        return controller;
-      },
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            final controller = _FilesWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+            createdControllers.add(controller);
+            return controller;
+          },
     );
     addTearDown(appController.dispose);
 
     await tester.pumpWidget(
       _WorkspaceRouteHarness(
         controller: appController,
-        initialRoute: buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -300,10 +311,9 @@ void main() {
     await tester.tap(find.text('lib/main.dart').first);
     await tester.pumpAndSettle();
 
-    expect(
-      createdControllers.single.selectReviewFileCalls,
-      <String>['lib/main.dart'],
-    );
+    expect(createdControllers.single.selectReviewFileCalls, <String>[
+      'lib/main.dart',
+    ]);
     expect(find.textContaining('diff --git a/lib/main.dart'), findsOneWidget);
     expect(find.textContaining('+void main() {'), findsOneWidget);
   });
@@ -575,10 +585,7 @@ class _FilesWorkspaceController extends WorkspaceController {
   Future<void> selectReviewFile(String path) async {
     selectReviewFileCalls.add(path);
     _selectedReviewPath = path;
-    _reviewDiff = FileDiffSummary(
-      path: path,
-      content: _diffByPath[path] ?? '',
-    );
+    _reviewDiff = FileDiffSummary(path: path, content: _diffByPath[path] ?? '');
     notifyListeners();
   }
 }
@@ -594,4 +601,24 @@ class _FakePtyService extends PtyService {
   }) async {
     return const <PtySessionInfo>[];
   }
+}
+
+List<TextSpan> _flattenTextSpans(InlineSpan span) {
+  final flattened = <TextSpan>[];
+  void visit(InlineSpan current) {
+    if (current is TextSpan) {
+      if ((current.text ?? '').isNotEmpty) {
+        flattened.add(current);
+      }
+      final children = current.children;
+      if (children != null) {
+        for (final child in children) {
+          visit(child);
+        }
+      }
+    }
+  }
+
+  visit(span);
+  return flattened;
 }

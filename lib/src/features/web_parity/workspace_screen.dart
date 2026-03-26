@@ -10823,15 +10823,10 @@ class _FilesPanelState extends State<_FilesPanel> {
                                                 minWidth:
                                                     previewConstraints.maxWidth,
                                               ),
-                                              child: SelectableText(
-                                                bundle.preview!.content,
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .bodySmall
-                                                    ?.copyWith(
-                                                      fontFamily: 'monospace',
-                                                      height: 1.45,
-                                                    ),
+                                              child: _HighlightedFilePreview(
+                                                path: bundle.selectedPath,
+                                                content:
+                                                    bundle.preview!.content,
                                               ),
                                             ),
                                           );
@@ -10865,6 +10860,488 @@ class _VisibleFileTreeEntry {
   final int depth;
   final bool expanded;
   final bool loading;
+}
+
+class _HighlightedFilePreview extends StatelessWidget {
+  const _HighlightedFilePreview({required this.path, required this.content});
+
+  final String? path;
+  final String content;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final baseStyle = theme.textTheme.bodySmall?.copyWith(
+      fontFamily: 'monospace',
+      height: 1.45,
+      color: theme.colorScheme.onSurface.withValues(alpha: 0.94),
+    );
+    final syntaxTheme = _FilePreviewSyntaxTheme.from(
+      theme: theme,
+      surfaces: surfaces,
+      baseStyle: baseStyle,
+    );
+    final spans = _buildHighlightedFilePreviewSpans(
+      content: content,
+      path: path,
+      syntaxTheme: syntaxTheme,
+    );
+
+    return SelectableText.rich(
+      key: const ValueKey<String>('files-preview-content'),
+      TextSpan(style: syntaxTheme.base, children: spans),
+    );
+  }
+}
+
+enum _FilePreviewSyntaxLanguage {
+  plainText,
+  markdown,
+  yaml,
+  json,
+  dart,
+  javascript,
+  shell,
+  python,
+  rust,
+  go,
+}
+
+class _FilePreviewSyntaxTheme {
+  const _FilePreviewSyntaxTheme({
+    required this.base,
+    required this.comment,
+    required this.keyword,
+    required this.string,
+    required this.number,
+    required this.type,
+    required this.annotation,
+    required this.heading,
+    required this.link,
+    required this.inlineCode,
+    required this.command,
+  });
+
+  final TextStyle? base;
+  final TextStyle? comment;
+  final TextStyle? keyword;
+  final TextStyle? string;
+  final TextStyle? number;
+  final TextStyle? type;
+  final TextStyle? annotation;
+  final TextStyle? heading;
+  final TextStyle? link;
+  final TextStyle? inlineCode;
+  final TextStyle? command;
+
+  factory _FilePreviewSyntaxTheme.from({
+    required ThemeData theme,
+    required AppSurfaces surfaces,
+    required TextStyle? baseStyle,
+  }) {
+    final base =
+        baseStyle ??
+        theme.textTheme.bodySmall?.copyWith(
+          fontFamily: 'monospace',
+          height: 1.45,
+          color: theme.colorScheme.onSurface.withValues(alpha: 0.94),
+        ) ??
+        TextStyle(
+          fontFamily: 'monospace',
+          fontSize: 12,
+          height: 1.45,
+          color: theme.colorScheme.onSurface.withValues(alpha: 0.94),
+        );
+    return _FilePreviewSyntaxTheme(
+      base: base,
+      comment: base.copyWith(color: surfaces.muted),
+      keyword: base.copyWith(
+        color: theme.colorScheme.primary.withValues(alpha: 0.96),
+        fontWeight: FontWeight.w700,
+      ),
+      string: base.copyWith(color: surfaces.accentSoft),
+      number: base.copyWith(
+        color: surfaces.warning,
+        fontWeight: FontWeight.w600,
+      ),
+      type: base.copyWith(color: surfaces.success, fontWeight: FontWeight.w600),
+      annotation: base.copyWith(
+        color: surfaces.accentSoft,
+        fontWeight: FontWeight.w700,
+      ),
+      heading: base.copyWith(
+        color: theme.colorScheme.onSurface,
+        fontWeight: FontWeight.w700,
+      ),
+      link: base.copyWith(
+        color: theme.colorScheme.primary.withValues(alpha: 0.96),
+        decoration: TextDecoration.underline,
+      ),
+      inlineCode: base.copyWith(
+        color: surfaces.warning,
+        backgroundColor: surfaces.panelRaised,
+      ),
+      command: base.copyWith(
+        color: theme.colorScheme.primary.withValues(alpha: 0.9),
+        fontWeight: FontWeight.w600,
+      ),
+    );
+  }
+}
+
+class _FilePreviewHighlightPattern {
+  const _FilePreviewHighlightPattern({
+    required this.regex,
+    required this.style,
+  });
+
+  final RegExp regex;
+  final TextStyle? style;
+}
+
+List<InlineSpan> _buildHighlightedFilePreviewSpans({
+  required String content,
+  required String? path,
+  required _FilePreviewSyntaxTheme syntaxTheme,
+}) {
+  if (content.isEmpty) {
+    return const <InlineSpan>[TextSpan(text: '')];
+  }
+
+  const highlightLimit = 60000;
+  if (content.length > highlightLimit) {
+    return <InlineSpan>[
+      TextSpan(text: content.substring(0, highlightLimit)),
+      const TextSpan(
+        text:
+            '\n\n[Syntax highlighting paused for the rest of this preview because the file is very large.]',
+      ),
+    ];
+  }
+
+  final language = _previewSyntaxLanguageForPath(path);
+  final patterns = _filePreviewHighlightPatterns(language, syntaxTheme);
+  if (patterns.isEmpty) {
+    return <InlineSpan>[TextSpan(text: content)];
+  }
+  return _highlightPreviewText(content, patterns);
+}
+
+_FilePreviewSyntaxLanguage _previewSyntaxLanguageForPath(String? path) {
+  final normalized = (path ?? '').trim().toLowerCase();
+  final name = normalized.split('/').last;
+
+  if (name.endsWith('.md') || name.endsWith('.markdown')) {
+    return _FilePreviewSyntaxLanguage.markdown;
+  }
+  if (name.endsWith('.yaml') || name.endsWith('.yml')) {
+    return _FilePreviewSyntaxLanguage.yaml;
+  }
+  if (name.endsWith('.json') || name.endsWith('.jsonc')) {
+    return _FilePreviewSyntaxLanguage.json;
+  }
+  if (name.endsWith('.dart')) {
+    return _FilePreviewSyntaxLanguage.dart;
+  }
+  if (name.endsWith('.ts') ||
+      name.endsWith('.tsx') ||
+      name.endsWith('.js') ||
+      name.endsWith('.jsx') ||
+      name.endsWith('.mjs') ||
+      name.endsWith('.cjs')) {
+    return _FilePreviewSyntaxLanguage.javascript;
+  }
+  if (name == '.env' ||
+      name.startsWith('.env.') ||
+      name.endsWith('.sh') ||
+      name.endsWith('.bash') ||
+      name.endsWith('.zsh') ||
+      name == 'dockerfile') {
+    return _FilePreviewSyntaxLanguage.shell;
+  }
+  if (name.endsWith('.py')) {
+    return _FilePreviewSyntaxLanguage.python;
+  }
+  if (name.endsWith('.rs')) {
+    return _FilePreviewSyntaxLanguage.rust;
+  }
+  if (name.endsWith('.go')) {
+    return _FilePreviewSyntaxLanguage.go;
+  }
+  return _FilePreviewSyntaxLanguage.plainText;
+}
+
+List<_FilePreviewHighlightPattern> _filePreviewHighlightPatterns(
+  _FilePreviewSyntaxLanguage language,
+  _FilePreviewSyntaxTheme theme,
+) {
+  switch (language) {
+    case _FilePreviewSyntaxLanguage.markdown:
+      return <_FilePreviewHighlightPattern>[
+        _FilePreviewHighlightPattern(
+          regex: RegExp(r'^#{1,6}\s.*$', multiLine: true),
+          style: theme.heading,
+        ),
+        _FilePreviewHighlightPattern(
+          regex: RegExp(r'^```.*$', multiLine: true),
+          style: theme.keyword,
+        ),
+        _FilePreviewHighlightPattern(
+          regex: RegExp(r'^>\s.*$', multiLine: true),
+          style: theme.comment,
+        ),
+        _FilePreviewHighlightPattern(
+          regex: RegExp(r'\[[^\]]+\]\([^)]+\)'),
+          style: theme.link,
+        ),
+        _FilePreviewHighlightPattern(
+          regex: RegExp(r'`[^`\n]+`'),
+          style: theme.inlineCode,
+        ),
+        _FilePreviewHighlightPattern(
+          regex: RegExp(r'(?:(?:\*\*|__)(?:\\.|[^*_])+?(?:\*\*|__))'),
+          style: theme.type,
+        ),
+      ];
+    case _FilePreviewSyntaxLanguage.yaml:
+      return <_FilePreviewHighlightPattern>[
+        _FilePreviewHighlightPattern(
+          regex: RegExp(r'#.*$', multiLine: true),
+          style: theme.comment,
+        ),
+        _FilePreviewHighlightPattern(
+          regex: RegExp(
+            r'''^[ \t-]*[A-Za-z0-9_."'-]+(?=\s*:)''',
+            multiLine: true,
+          ),
+          style: theme.keyword,
+        ),
+        _FilePreviewHighlightPattern(
+          regex: RegExp(r""""(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'"""),
+          style: theme.string,
+        ),
+        _FilePreviewHighlightPattern(
+          regex: RegExp(r'\b(?:true|false|null|yes|no|on|off)\b'),
+          style: theme.type,
+        ),
+        _FilePreviewHighlightPattern(
+          regex: RegExp(r'[*&][A-Za-z0-9_-]+'),
+          style: theme.annotation,
+        ),
+        _FilePreviewHighlightPattern(
+          regex: RegExp(r'\b-?(?:0x[a-fA-F0-9]+|\d+(?:\.\d+)?)\b'),
+          style: theme.number,
+        ),
+      ];
+    case _FilePreviewSyntaxLanguage.json:
+      return <_FilePreviewHighlightPattern>[
+        _FilePreviewHighlightPattern(
+          regex: RegExp(r'"(?:\\.|[^"\\])*"(?=\s*:)'),
+          style: theme.keyword,
+        ),
+        _FilePreviewHighlightPattern(
+          regex: RegExp(r'"(?:\\.|[^"\\])*"'),
+          style: theme.string,
+        ),
+        _FilePreviewHighlightPattern(
+          regex: RegExp(r'\b(?:true|false|null)\b'),
+          style: theme.type,
+        ),
+        _FilePreviewHighlightPattern(
+          regex: RegExp(r'\b-?(?:0x[a-fA-F0-9]+|\d+(?:\.\d+)?)\b'),
+          style: theme.number,
+        ),
+      ];
+    case _FilePreviewSyntaxLanguage.shell:
+      return <_FilePreviewHighlightPattern>[
+        _FilePreviewHighlightPattern(
+          regex: RegExp(r'#.*$', multiLine: true),
+          style: theme.comment,
+        ),
+        _FilePreviewHighlightPattern(
+          regex: RegExp(r""""(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`[^`]*`"""),
+          style: theme.string,
+        ),
+        _FilePreviewHighlightPattern(
+          regex: RegExp(r'\$(?:[A-Za-z_][A-Za-z0-9_]*|\{[^}]+\})'),
+          style: theme.annotation,
+        ),
+        _FilePreviewHighlightPattern(
+          regex: RegExp(r'^[ \t]*[A-Za-z_][A-Za-z0-9_]*(?==)', multiLine: true),
+          style: theme.keyword,
+        ),
+        _FilePreviewHighlightPattern(
+          regex: RegExp(
+            r'\b(?:if|then|fi|for|while|do|done|case|esac|function|in|export|local)\b',
+          ),
+          style: theme.keyword,
+        ),
+        _FilePreviewHighlightPattern(
+          regex: RegExp(r'--?[A-Za-z0-9][A-Za-z0-9-]*'),
+          style: theme.type,
+        ),
+        _FilePreviewHighlightPattern(
+          regex: RegExp(
+            r'^[ \t]*(?:sudo\s+)?[A-Za-z0-9_./-]+',
+            multiLine: true,
+          ),
+          style: theme.command,
+        ),
+      ];
+    case _FilePreviewSyntaxLanguage.dart:
+      return _cStyleLanguagePatterns(
+        theme: theme,
+        keywords:
+            'abstract as assert async await base break case catch class const continue covariant default deferred do dynamic else enum export extends extension external factory false final finally for get hide if implements import in interface is late library mixin new null on operator part required rethrow return sealed set show static super switch sync this throw true try typedef var void while with yield',
+        types:
+            'bool BuildContext Color DateTime double Duration Future int Iterable List Map MaterialApp Object Offset Pattern RegExp Set Size State StatelessWidget Stream String Text ThemeData Uri Widget',
+        includeAnnotations: true,
+      );
+    case _FilePreviewSyntaxLanguage.javascript:
+      return _cStyleLanguagePatterns(
+        theme: theme,
+        keywords:
+            'async await break case catch class const continue debugger default delete do else export extends false finally for from function if import in instanceof let new null of return static super switch this throw true try typeof var void while with yield interface implements type enum public private protected readonly',
+        types:
+            'Array Boolean Error Map Number Object Promise Record RegExp Set String Symbol',
+      );
+    case _FilePreviewSyntaxLanguage.python:
+      return <_FilePreviewHighlightPattern>[
+        _FilePreviewHighlightPattern(
+          regex: RegExp(r'#.*$', multiLine: true),
+          style: theme.comment,
+        ),
+        _FilePreviewHighlightPattern(
+          regex: RegExp(
+            r""""{3}[\s\S]*?"{3}|'{3}[\s\S]*?'{3}|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'""",
+          ),
+          style: theme.string,
+        ),
+        _FilePreviewHighlightPattern(
+          regex: RegExp(
+            r'\b(?:and|as|assert|async|await|break|class|continue|def|del|elif|else|except|False|finally|for|from|global|if|import|in|is|lambda|None|nonlocal|not|or|pass|raise|return|True|try|while|with|yield)\b',
+          ),
+          style: theme.keyword,
+        ),
+        _FilePreviewHighlightPattern(
+          regex: RegExp(
+            r'\b(?:dict|float|int|list|set|str|tuple|bool|bytes|object)\b',
+          ),
+          style: theme.type,
+        ),
+        _FilePreviewHighlightPattern(
+          regex: RegExp(r'@[A-Za-z_][A-Za-z0-9_]*'),
+          style: theme.annotation,
+        ),
+        _FilePreviewHighlightPattern(
+          regex: RegExp(r'\b-?(?:0x[a-fA-F0-9]+|\d+(?:\.\d+)?)\b'),
+          style: theme.number,
+        ),
+      ];
+    case _FilePreviewSyntaxLanguage.rust:
+      return _cStyleLanguagePatterns(
+        theme: theme,
+        keywords:
+            'as async await break const continue crate dyn else enum extern false fn for if impl in let loop match mod move mut pub ref return self Self static struct super trait true type unsafe use where while',
+        types:
+            'Option Result String Vec bool char f32 f64 i128 i16 i32 i64 i8 isize str u128 u16 u32 u64 u8 usize',
+      );
+    case _FilePreviewSyntaxLanguage.go:
+      return _cStyleLanguagePatterns(
+        theme: theme,
+        keywords:
+            'break case chan const continue default defer else fallthrough for func go goto if import interface map package range return select struct switch type var',
+        types:
+            'bool byte complex128 complex64 error float32 float64 int int16 int32 int64 int8 rune string uint uint16 uint32 uint64 uint8 uintptr',
+      );
+    case _FilePreviewSyntaxLanguage.plainText:
+      return const <_FilePreviewHighlightPattern>[];
+  }
+}
+
+List<_FilePreviewHighlightPattern> _cStyleLanguagePatterns({
+  required _FilePreviewSyntaxTheme theme,
+  required String keywords,
+  required String types,
+  bool includeAnnotations = false,
+}) {
+  return <_FilePreviewHighlightPattern>[
+    _FilePreviewHighlightPattern(
+      regex: RegExp(r'//.*$|/\*[\s\S]*?\*/', multiLine: true),
+      style: theme.comment,
+    ),
+    _FilePreviewHighlightPattern(
+      regex: RegExp(
+        r""""{3}[\s\S]*?"{3}|'{3}[\s\S]*?'{3}|`(?:\\.|[^`\\])*`|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'""",
+      ),
+      style: theme.string,
+    ),
+    if (includeAnnotations)
+      _FilePreviewHighlightPattern(
+        regex: RegExp(r'@[A-Za-z_][A-Za-z0-9_]*'),
+        style: theme.annotation,
+      ),
+    _FilePreviewHighlightPattern(
+      regex: RegExp('\\b(?:${keywords.replaceAll(' ', '|')})\\b'),
+      style: theme.keyword,
+    ),
+    _FilePreviewHighlightPattern(
+      regex: RegExp('\\b(?:${types.replaceAll(' ', '|')})\\b'),
+      style: theme.type,
+    ),
+    _FilePreviewHighlightPattern(
+      regex: RegExp(r'\b-?(?:0x[a-fA-F0-9]+|\d+(?:\.\d+)?)\b'),
+      style: theme.number,
+    ),
+  ];
+}
+
+List<InlineSpan> _highlightPreviewText(
+  String text,
+  List<_FilePreviewHighlightPattern> patterns,
+) {
+  final spans = <InlineSpan>[];
+  var cursor = 0;
+
+  while (cursor < text.length) {
+    Match? nextMatch;
+    TextStyle? nextStyle;
+
+    for (final pattern in patterns) {
+      Match? candidate;
+      for (final match in pattern.regex.allMatches(text, cursor)) {
+        candidate = match;
+        break;
+      }
+      if (candidate == null) {
+        continue;
+      }
+      if (nextMatch == null || candidate.start < nextMatch.start) {
+        nextMatch = candidate;
+        nextStyle = pattern.style;
+      }
+    }
+
+    if (nextMatch == null) {
+      spans.add(TextSpan(text: text.substring(cursor)));
+      break;
+    }
+
+    if (nextMatch.start > cursor) {
+      spans.add(TextSpan(text: text.substring(cursor, nextMatch.start)));
+    }
+
+    spans.add(
+      TextSpan(
+        text: text.substring(nextMatch.start, nextMatch.end),
+        style: nextStyle,
+      ),
+    );
+    cursor = nextMatch.end;
+  }
+
+  return spans;
 }
 
 List<_VisibleFileTreeEntry> _buildVisibleFileNodes({
