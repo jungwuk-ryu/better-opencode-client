@@ -4135,31 +4135,37 @@ class _ProjectSidebarTileState extends State<_ProjectSidebarTile> {
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
-    return GestureDetector(
-      onSecondaryTapDown: (details) => _showMenu(details.globalPosition),
-      onLongPressStart: (details) => _showMenu(details.globalPosition),
-      child: InkWell(
-        onTap: widget.onSelect,
-        borderRadius: BorderRadius.circular(AppSpacing.md),
-        child: Container(
-          height: 48,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: widget.selected
-                ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.16)
-                : surfaces.panelRaised,
-            borderRadius: BorderRadius.circular(AppSpacing.md),
-            border: Border.all(
+    return Tooltip(
+      message: widget.project.title,
+      waitDuration: const Duration(milliseconds: 350),
+      child: GestureDetector(
+        onSecondaryTapDown: (details) => _showMenu(details.globalPosition),
+        onLongPressStart: (details) => _showMenu(details.globalPosition),
+        child: InkWell(
+          onTap: widget.onSelect,
+          borderRadius: BorderRadius.circular(AppSpacing.md),
+          child: Container(
+            height: 48,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
               color: widget.selected
-                  ? Theme.of(context).colorScheme.primary
-                  : surfaces.lineSoft,
+                  ? Theme.of(
+                      context,
+                    ).colorScheme.primary.withValues(alpha: 0.16)
+                  : surfaces.panelRaised,
+              borderRadius: BorderRadius.circular(AppSpacing.md),
+              border: Border.all(
+                color: widget.selected
+                    ? Theme.of(context).colorScheme.primary
+                    : surfaces.lineSoft,
+              ),
             ),
-          ),
-          child: _ProjectAvatar(
-            project: widget.project,
-            size: 38,
-            fontSize: 22,
-            rounded: 10,
+            child: _ProjectAvatar(
+              project: widget.project,
+              size: 38,
+              fontSize: 22,
+              rounded: 10,
+            ),
           ),
         ),
       ),
