@@ -131,6 +131,7 @@ class WorkspaceController extends ChangeNotifier {
   bool _sessionLoading = false;
   bool _showingCachedSessionMessages = false;
   bool _submittingPrompt = false;
+  bool _interruptingSession = false;
   bool _runningTerminal = false;
   bool _terminalOpen = false;
   bool _loadingFilePreview = false;
@@ -181,6 +182,7 @@ class WorkspaceController extends ChangeNotifier {
   bool get sessionLoading => _sessionLoading;
   bool get showingCachedSessionMessages => _showingCachedSessionMessages;
   bool get submittingPrompt => _submittingPrompt;
+  bool get interruptingSession => _interruptingSession;
   bool get runningTerminal => _runningTerminal;
   bool get terminalOpen => _terminalOpen;
   bool get loadingFilePreview => _loadingFilePreview;
@@ -275,6 +277,14 @@ class WorkspaceController extends ChangeNotifier {
       return null;
     }
     return _statuses[selectedSessionId];
+  }
+
+  bool get selectedSessionInterruptible {
+    final selectedSessionId = _selectedSessionId;
+    if (selectedSessionId == null || selectedSessionId.isEmpty) {
+      return false;
+    }
+    return submittingPrompt || _isActiveStatus(selectedStatus);
   }
 
   SessionSummary? get rootSelectedSession =>
@@ -1194,6 +1204,43 @@ class WorkspaceController extends ChangeNotifier {
     );
     _actionNotice = 'Session compaction requested.';
     _notify();
+  }
+
+  Future<bool> interruptSelectedSession() async {
+    final project = _project;
+    final sessionId = _selectedSessionId;
+    if (project == null ||
+        sessionId == null ||
+        _interruptingSession ||
+        !selectedSessionInterruptible) {
+      return false;
+    }
+
+    _interruptingSession = true;
+    _notify();
+
+    var interrupted = false;
+    try {
+      interrupted = await _sessionActionService.abortSession(
+        profile: profile,
+        project: project,
+        sessionId: sessionId,
+      );
+      if (interrupted) {
+        _statuses = <String, SessionStatusSummary>{
+          ..._statuses,
+          sessionId: const SessionStatusSummary(type: 'idle'),
+        };
+        _actionNotice = 'Interrupt requested.';
+      }
+      _notify();
+      return interrupted;
+    } finally {
+      if (!interrupted) {
+        _interruptingSession = false;
+      }
+      _notify();
+    }
   }
 
   Future<SessionSummary?> deleteSelectedSession() async {
@@ -2540,6 +2587,9 @@ class WorkspaceController extends ChangeNotifier {
   void _notify() {
     if (_disposed) {
       return;
+    }
+    if (_interruptingSession && !selectedSessionInterruptible) {
+      _interruptingSession = false;
     }
     notifyListeners();
   }

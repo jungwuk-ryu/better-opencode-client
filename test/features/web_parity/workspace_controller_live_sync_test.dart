@@ -6,6 +6,7 @@ import 'package:opencode_mobile_remote/src/core/spec/raw_json_document.dart';
 import 'package:opencode_mobile_remote/src/features/chat/chat_models.dart';
 import 'package:opencode_mobile_remote/src/features/chat/chat_service.dart';
 import 'package:opencode_mobile_remote/src/features/chat/prompt_attachment_models.dart';
+import 'package:opencode_mobile_remote/src/features/chat/session_action_service.dart';
 import 'package:opencode_mobile_remote/src/features/files/file_browser_service.dart';
 import 'package:opencode_mobile_remote/src/features/files/file_models.dart';
 import 'package:opencode_mobile_remote/src/features/projects/project_catalog_service.dart';
@@ -133,6 +134,42 @@ void main() {
     expect(controller.visibleSessions.map((item) => item.id), <String>[
       'ses_1',
     ]);
+  });
+
+  test('controller interrupts the selected busy session', () async {
+    final eventStreamService = _ControlledEventStreamService();
+    final sessionActionService = _RecordingSessionActionService();
+    final controller = _buildController(
+      profile: profile,
+      project: project,
+      eventStreamService: eventStreamService,
+      sessionActionService: sessionActionService,
+    );
+    addTearDown(controller.dispose);
+
+    await controller.load();
+
+    eventStreamService.emitToScope(
+      profile,
+      project,
+      const EventEnvelope(
+        type: 'session.status',
+        properties: <String, Object?>{
+          'sessionID': 'ses_1',
+          'status': <String, Object?>{'type': 'busy'},
+        },
+      ),
+    );
+
+    expect(controller.selectedSessionInterruptible, isTrue);
+
+    final interrupted = await controller.interruptSelectedSession();
+
+    expect(interrupted, isTrue);
+    expect(sessionActionService.abortCalls, 1);
+    expect(sessionActionService.lastAbortedSessionId, 'ses_1');
+    expect(controller.selectedStatus?.type, 'idle');
+    expect(controller.interruptingSession, isFalse);
   });
 
   test(
@@ -559,6 +596,7 @@ WorkspaceController _buildController({
   required ProjectTarget project,
   required _ControlledEventStreamService eventStreamService,
   ChatService? chatService,
+  SessionActionService? sessionActionService,
   StaleCacheStore? cacheStore,
   List<SessionSummary>? initialSessions,
   String? initialSelectedSessionId,
@@ -599,6 +637,7 @@ WorkspaceController _buildController({
     todoService: _FakeTodoService(),
     requestService: _FakeRequestService(pendingBundle: pendingBundle),
     eventStreamService: eventStreamService,
+    sessionActionService: sessionActionService,
     configService: _FakeConfigService(),
     agentService: _FakeAgentService(),
   );
@@ -650,6 +689,22 @@ class _ControlledEventStreamService extends EventStreamService {
 
   @override
   void dispose() {}
+}
+
+class _RecordingSessionActionService extends SessionActionService {
+  int abortCalls = 0;
+  String? lastAbortedSessionId;
+
+  @override
+  Future<bool> abortSession({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String sessionId,
+  }) async {
+    abortCalls += 1;
+    lastAbortedSessionId = sessionId;
+    return true;
+  }
 }
 
 String _scopeKeyFor(ServerProfile profile, ProjectTarget project) {
@@ -799,7 +854,11 @@ class _FakeChatService extends ChatService {
       );
     }
     return ChatMessage(
-      info: ChatMessageInfo(id: 'msg_stub', role: 'assistant', sessionId: sessionId),
+      info: ChatMessageInfo(
+        id: 'msg_stub',
+        role: 'assistant',
+        sessionId: sessionId,
+      ),
       parts: const <ChatPart>[],
     );
   }

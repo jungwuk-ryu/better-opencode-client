@@ -813,6 +813,23 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     }
   }
 
+  Future<void> _interruptSelectedSession() async {
+    final controller = _controller;
+    if (controller == null || controller.interruptingSession) {
+      return;
+    }
+    try {
+      await controller.interruptSelectedSession();
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to interrupt the session: $error')),
+      );
+    }
+  }
+
   Future<void> _renameSelectedSession(WorkspaceController controller) async {
     final selected = controller.selectedSession;
     if (selected == null) {
@@ -1432,6 +1449,13 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                     appController.shellToolPartsExpanded,
                                 timelineProgressDetailsVisible: appController
                                     .timelineProgressDetailsVisible,
+                                interruptiblePrompt:
+                                    controller.selectedSessionId != null &&
+                                    (_promptSubmitInFlight ||
+                                        controller
+                                            .selectedSessionInterruptible),
+                                interruptingPrompt:
+                                    controller.interruptingSession,
                                 onCompactPaneChanged: (value) {
                                   if (_compactPane == value) {
                                     return;
@@ -1441,6 +1465,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                   });
                                 },
                                 onSubmitPrompt: _submitPrompt,
+                                onInterruptPrompt: _interruptSelectedSession,
                                 onCreateSession: () =>
                                     _createNewSession(controller),
                                 onOpenSession: (sessionId) {
@@ -4418,6 +4443,8 @@ class _WorkspaceBody extends StatelessWidget {
     required this.controller,
     required this.allSessions,
     required this.submittingPrompt,
+    required this.interruptiblePrompt,
+    required this.interruptingPrompt,
     required this.pickingAttachments,
     required this.attachments,
     required this.promptController,
@@ -4427,6 +4454,7 @@ class _WorkspaceBody extends StatelessWidget {
     required this.timelineProgressDetailsVisible,
     required this.onCompactPaneChanged,
     required this.onSubmitPrompt,
+    required this.onInterruptPrompt,
     required this.onCreateSession,
     required this.onOpenSession,
     required this.onPickAttachments,
@@ -4443,6 +4471,8 @@ class _WorkspaceBody extends StatelessWidget {
   final WorkspaceController controller;
   final List<SessionSummary> allSessions;
   final bool submittingPrompt;
+  final bool interruptiblePrompt;
+  final bool interruptingPrompt;
   final bool pickingAttachments;
   final List<PromptAttachment> attachments;
   final TextEditingController promptController;
@@ -4452,6 +4482,7 @@ class _WorkspaceBody extends StatelessWidget {
   final bool timelineProgressDetailsVisible;
   final ValueChanged<_CompactWorkspacePane> onCompactPaneChanged;
   final VoidCallback onSubmitPrompt;
+  final Future<void> Function() onInterruptPrompt;
   final Future<void> Function() onCreateSession;
   final ValueChanged<String> onOpenSession;
   final Future<void> Function() onPickAttachments;
@@ -4545,6 +4576,8 @@ class _WorkspaceBody extends StatelessWidget {
           _PromptComposer(
             controller: promptController,
             submitting: submittingPrompt,
+            interruptible: interruptiblePrompt,
+            interrupting: interruptingPrompt,
             pickingAttachments: pickingAttachments,
             attachments: attachments,
             agents: controller.composerAgents,
@@ -4558,6 +4591,7 @@ class _WorkspaceBody extends StatelessWidget {
             onSelectModel: controller.selectModel,
             onSelectReasoning: controller.selectReasoning,
             onCreateSession: onCreateSession,
+            onInterrupt: onInterruptPrompt,
             onPickAttachments: onPickAttachments,
             onRemoveAttachment: onRemoveAttachment,
             onShareSession: onShareSession,
@@ -5504,6 +5538,8 @@ class _PromptComposer extends StatefulWidget {
   const _PromptComposer({
     required this.controller,
     required this.submitting,
+    required this.interruptible,
+    required this.interrupting,
     required this.pickingAttachments,
     required this.attachments,
     required this.agents,
@@ -5517,6 +5553,7 @@ class _PromptComposer extends StatefulWidget {
     required this.onSelectModel,
     required this.onSelectReasoning,
     required this.onCreateSession,
+    required this.onInterrupt,
     required this.onPickAttachments,
     required this.onRemoveAttachment,
     required this.onToggleTerminal,
@@ -5531,6 +5568,8 @@ class _PromptComposer extends StatefulWidget {
 
   final TextEditingController controller;
   final bool submitting;
+  final bool interruptible;
+  final bool interrupting;
   final bool pickingAttachments;
   final List<PromptAttachment> attachments;
   final List<AgentDefinition> agents;
@@ -5544,6 +5583,7 @@ class _PromptComposer extends StatefulWidget {
   final ValueChanged<String?> onSelectModel;
   final ValueChanged<String?> onSelectReasoning;
   final Future<void> Function() onCreateSession;
+  final Future<void> Function() onInterrupt;
   final Future<void> Function() onPickAttachments;
   final ValueChanged<String> onRemoveAttachment;
   final Future<void> Function() onToggleTerminal;
@@ -5763,6 +5803,12 @@ class _PromptComposerState extends State<_PromptComposer> {
   }
 
   Future<void> _handleSubmit() async {
+    if (widget.interruptible) {
+      if (!widget.interrupting) {
+        await widget.onInterrupt();
+      }
+      return;
+    }
     if (widget.submitting || !_canSubmit) {
       return;
     }
@@ -5869,6 +5915,13 @@ class _PromptComposerState extends State<_PromptComposer> {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final reasoningLabel = _reasoningLabel(widget.selectedReasoning);
     final slashCommands = _filteredSlashCommands;
+    final submitIcon = widget.interruptible
+        ? Icons.stop_rounded
+        : Icons.arrow_upward_rounded;
+    final submitEnabled = widget.interruptible
+        ? !widget.interrupting
+        : !(widget.submitting || !_canSubmit);
+    final submitBusy = !widget.interruptible && widget.submitting;
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.md,
@@ -6104,12 +6157,10 @@ class _PromptComposerState extends State<_PromptComposer> {
                     const SizedBox(width: AppSpacing.sm),
                     _ComposerIconButton(
                       key: const ValueKey<String>('composer-submit-button'),
-                      icon: Icons.arrow_upward_rounded,
-                      onTap: widget.submitting || !_canSubmit
-                          ? null
-                          : _handleSubmit,
+                      icon: submitIcon,
+                      onTap: submitEnabled ? _handleSubmit : null,
                       filled: true,
-                      busy: widget.submitting,
+                      busy: submitBusy,
                     ),
                   ],
                 ),

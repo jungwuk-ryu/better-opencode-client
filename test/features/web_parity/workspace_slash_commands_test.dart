@@ -136,7 +136,7 @@ void main() {
   });
 
   testWidgets(
-    'prompt clears immediately, shows busy state, and ignores duplicate taps',
+    'prompt clears immediately, shows an interrupt button, and ignores duplicate taps',
     (tester) async {
       tester.view.physicalSize = const Size(1600, 1000);
       tester.view.devicePixelRatio = 1;
@@ -191,6 +191,13 @@ void main() {
           of: buttonFinder,
           matching: find.byType(CircularProgressIndicator),
         ),
+        findsNothing,
+      );
+      expect(
+        find.descendant(
+          of: buttonFinder,
+          matching: find.byIcon(Icons.stop_rounded),
+        ),
         findsOneWidget,
       );
 
@@ -205,9 +212,77 @@ void main() {
         ),
         findsNothing,
       );
+      expect(
+        find.descendant(
+          of: buttonFinder,
+          matching: find.byIcon(Icons.arrow_upward_rounded),
+        ),
+        findsOneWidget,
+      );
       expect(tester.widget<TextField>(fieldFinder).controller?.text, isEmpty);
     },
   );
+
+  testWidgets('busy sessions show a stop button that interrupts the agent', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final workspaceController = _InterruptibleWorkspaceController(
+      profile: profile,
+      directory: '/workspace/demo',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceController: workspaceController,
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    final buttonFinder = find.byKey(
+      const ValueKey<String>('composer-submit-button'),
+    );
+
+    expect(
+      find.descendant(
+        of: buttonFinder,
+        matching: find.byIcon(Icons.stop_rounded),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: buttonFinder,
+        matching: find.byType(CircularProgressIndicator),
+      ),
+      findsNothing,
+    );
+
+    await tester.tap(buttonFinder);
+    await tester.pump();
+
+    expect(workspaceController.interruptCalls, 1);
+    expect(workspaceController.submitPromptCalls, 0);
+  });
 }
 
 class _WorkspaceRouteHarness extends StatelessWidget {
@@ -427,6 +502,29 @@ class _DelayedSubmitWorkspaceController extends _SlashWorkspaceController {
     if (!_submitCompleter.isCompleted) {
       _submitCompleter.complete(selectedSessionId);
     }
+  }
+}
+
+class _InterruptibleWorkspaceController extends _SlashWorkspaceController {
+  _InterruptibleWorkspaceController({
+    required super.profile,
+    required super.directory,
+  });
+
+  int interruptCalls = 0;
+
+  @override
+  SessionStatusSummary? get selectedStatus =>
+      const SessionStatusSummary(type: 'busy');
+
+  @override
+  bool get selectedSessionInterruptible => true;
+
+  @override
+  Future<bool> interruptSelectedSession() async {
+    interruptCalls += 1;
+    notifyListeners();
+    return true;
   }
 }
 
