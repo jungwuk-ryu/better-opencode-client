@@ -741,6 +741,77 @@ void main() {
       expect(savedMessages.single.parts.single.text, 'hello brave new world');
     },
   );
+
+  test('controller exposes cached previews for active child sessions', () async {
+    final eventStreamService = _ControlledEventStreamService();
+    final cacheStore = _RecordingCacheStore();
+    final childSessionId = 'ses_child_busy';
+    cacheStore
+            .entries['workspace.messages::${profile.storageKey}::${project.directory}::$childSessionId'] =
+        StaleCacheEntry(
+          payloadJson: jsonEncode(<Object?>[
+            ChatMessage(
+              info: ChatMessageInfo(
+                id: 'msg_child',
+                role: 'assistant',
+                sessionId: childSessionId,
+              ),
+              parts: <ChatPart>[
+                ChatPart(
+                  id: 'part_child',
+                  type: 'text',
+                  text: 'Preparing release checklist',
+                  messageId: 'msg_child',
+                  sessionId: childSessionId,
+                ),
+              ],
+            ).toJson(),
+          ]),
+          signature: 'child-preview',
+          fetchedAt: DateTime.fromMillisecondsSinceEpoch(1710000008000),
+        );
+    final chatService = _FakeChatService(
+      bundle: ChatSessionBundle(
+        sessions: <SessionSummary>[
+          _session(
+            id: 'ses_root',
+            title: 'Root session',
+            createdAt: 1710000001000,
+            updatedAt: 1710000005000,
+          ),
+          _session(
+            id: childSessionId,
+            title: 'Busy child',
+            createdAt: 1710000002000,
+            updatedAt: 1710000007000,
+            parentId: 'ses_root',
+          ),
+        ],
+        statuses: <String, SessionStatusSummary>{
+          'ses_root': const SessionStatusSummary(type: 'idle'),
+          childSessionId: const SessionStatusSummary(type: 'busy'),
+        },
+        messages: const <ChatMessage>[],
+        selectedSessionId: 'ses_root',
+      ),
+    );
+    final controller = _buildController(
+      profile: profile,
+      project: project,
+      eventStreamService: eventStreamService,
+      chatService: chatService,
+      cacheStore: cacheStore,
+    );
+    addTearDown(controller.dispose);
+
+    await controller.load();
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+
+    expect(
+      controller.activeChildSessionPreviewById[childSessionId],
+      'Preparing release checklist',
+    );
+  });
 }
 
 WorkspaceController _buildController({

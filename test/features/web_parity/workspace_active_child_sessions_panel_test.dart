@@ -55,7 +55,8 @@ void main() {
           ),
         ),
       );
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
 
       final controller = createdControllers.single;
 
@@ -63,8 +64,12 @@ void main() {
         find.byKey(const ValueKey<String>('active-subsessions-panel')),
         findsOneWidget,
       );
+      expect(find.text('Sub-agents Running'), findsOneWidget);
+      expect(find.text('2 running'), findsOneWidget);
       expect(find.text('Bootstrap repo tooling'), findsOneWidget);
       expect(find.text('Review release checklist'), findsOneWidget);
+      expect(find.text('Running bootstrap command'), findsOneWidget);
+      expect(find.text('Task: Compare release checklist'), findsOneWidget);
       expect(find.text('Idle child session'), findsNothing);
 
       await tester.tap(
@@ -225,6 +230,10 @@ class _ActiveChildSessionsWorkspaceController extends WorkspaceController {
     'ses_child_busy_2': const SessionStatusSummary(type: 'busy'),
     'ses_child_idle': const SessionStatusSummary(type: 'idle'),
   };
+  final Map<String, String> _previewBySessionId = <String, String>{
+    'ses_child_busy_1': 'Running bootstrap command',
+    'ses_child_busy_2': 'Task: Compare release checklist',
+  };
 
   final List<String?> selectSessionCalls = <String?>[];
 
@@ -244,6 +253,9 @@ class _ActiveChildSessionsWorkspaceController extends WorkspaceController {
 
   @override
   Map<String, SessionStatusSummary> get statuses => _statuses;
+
+  @override
+  Map<String, String> get activeChildSessionPreviewById => _previewBySessionId;
 
   @override
   String? get selectedSessionId => _selectedSessionId;

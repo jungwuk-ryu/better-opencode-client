@@ -195,6 +195,12 @@ class WorkspaceController extends ChangeNotifier {
   String? _queuedSessionMessagesCacheSessionId;
   List<ChatMessage>? _queuedSessionMessagesCacheMessages;
   int _queuedSessionMessagesCacheToken = 0;
+  Map<String, String> _activeChildSessionCachedPreviewById =
+      const <String, String>{};
+  Map<String, int> _activeChildSessionCachedPreviewVersionById =
+      const <String, int>{};
+  int _activeChildSessionPreviewLoadSignature = 0;
+  int _activeChildSessionPreviewLoadToken = 0;
 
   bool get loading => _loading;
   bool get sessionLoading => _sessionLoading;
@@ -371,6 +377,17 @@ class WorkspaceController extends ChangeNotifier {
       return left.title.toLowerCase().compareTo(right.title.toLowerCase());
     });
     return children;
+  }
+
+  Map<String, String> get activeChildSessionPreviewById {
+    final previews = <String, String>{};
+    for (final session in activeChildSessions) {
+      final preview = _resolveActiveChildSessionPreview(session);
+      if (preview != null) {
+        previews[session.id] = preview;
+      }
+    }
+    return UnmodifiableMapView<String, String>(previews);
   }
 
   void selectAgent(String? name) {
@@ -2786,6 +2803,402 @@ class WorkspaceController extends ChangeNotifier {
     _queuedSessionMessagesCacheMessages = null;
   }
 
+  String? _resolveActiveChildSessionPreview(SessionSummary session) {
+    final livePreview = session.id == _selectedSessionId
+        ? _sessionActivityPreviewText(_messages)
+        : null;
+    final cachedPreview = _activeChildSessionCachedPreviewById[session.id];
+    final statusPreview = _statusActivityPreviewText(_statuses[session.id]);
+    return _firstNonEmptyText(<String?>[
+      livePreview,
+      cachedPreview,
+      statusPreview,
+      _genericActiveStatusPreviewText(_statuses[session.id]),
+    ]);
+  }
+
+  void _ensureActiveChildSessionPreviewCache() {
+    final activeSessions = activeChildSessions;
+    final activeIds = activeSessions.map((session) => session.id).toSet();
+    if (_activeChildSessionCachedPreviewById.isNotEmpty ||
+        _activeChildSessionCachedPreviewVersionById.isNotEmpty) {
+      _activeChildSessionCachedPreviewById = Map<String, String>.unmodifiable(
+        Map<String, String>.fromEntries(
+          _activeChildSessionCachedPreviewById.entries.where(
+            (entry) => activeIds.contains(entry.key),
+          ),
+        ),
+      );
+      _activeChildSessionCachedPreviewVersionById =
+          Map<String, int>.unmodifiable(
+            Map<String, int>.fromEntries(
+              _activeChildSessionCachedPreviewVersionById.entries.where(
+                (entry) => activeIds.contains(entry.key),
+              ),
+            ),
+          );
+    }
+
+    final selectedSessionId = _selectedSessionId;
+    if (selectedSessionId != null && activeIds.contains(selectedSessionId)) {
+      final livePreview = _sessionActivityPreviewText(_messages);
+      if (livePreview != null) {
+        final nextPreviewById = Map<String, String>.from(
+          _activeChildSessionCachedPreviewById,
+        );
+        nextPreviewById[selectedSessionId] = livePreview;
+        _activeChildSessionCachedPreviewById = Map<String, String>.unmodifiable(
+          nextPreviewById,
+        );
+      }
+      for (final session in activeSessions) {
+        if (session.id != selectedSessionId) {
+          continue;
+        }
+        final nextVersionById = Map<String, int>.from(
+          _activeChildSessionCachedPreviewVersionById,
+        );
+        nextVersionById[selectedSessionId] =
+            session.updatedAt.millisecondsSinceEpoch;
+        _activeChildSessionCachedPreviewVersionById =
+            Map<String, int>.unmodifiable(nextVersionById);
+        break;
+      }
+    }
+
+    final project = _project;
+    final loadSignature = _activeChildSessionPreviewCacheSignature(
+      activeSessions,
+      project: project,
+    );
+    if (loadSignature == _activeChildSessionPreviewLoadSignature) {
+      return;
+    }
+    _activeChildSessionPreviewLoadSignature = loadSignature;
+    if (project == null || activeSessions.isEmpty) {
+      return;
+    }
+
+    final sessionsToLoad = activeSessions
+        .where((session) => session.id != selectedSessionId)
+        .where(
+          (session) =>
+              _activeChildSessionCachedPreviewVersionById[session.id] !=
+              session.updatedAt.millisecondsSinceEpoch,
+        )
+        .toList(growable: false);
+    if (sessionsToLoad.isEmpty) {
+      return;
+    }
+
+    final token = ++_activeChildSessionPreviewLoadToken;
+    unawaited(
+      _loadActiveChildSessionPreviewCache(
+        project: project,
+        sessions: sessionsToLoad,
+        token: token,
+      ),
+    );
+  }
+
+  int _activeChildSessionPreviewCacheSignature(
+    List<SessionSummary> sessions, {
+    required ProjectTarget? project,
+  }) {
+    var signature = Object.hash(project?.directory, _selectedSessionId);
+    for (final session in sessions) {
+      if (session.id == _selectedSessionId) {
+        continue;
+      }
+      signature = Object.hash(
+        signature,
+        session.id,
+        session.updatedAt.millisecondsSinceEpoch,
+      );
+    }
+    return signature;
+  }
+
+  Future<void> _loadActiveChildSessionPreviewCache({
+    required ProjectTarget project,
+    required List<SessionSummary> sessions,
+    required int token,
+  }) async {
+    final nextPreviewById = Map<String, String>.from(
+      _activeChildSessionCachedPreviewById,
+    );
+    final nextVersionById = Map<String, int>.from(
+      _activeChildSessionCachedPreviewVersionById,
+    );
+
+    for (final session in sessions) {
+      if (_disposed || token != _activeChildSessionPreviewLoadToken) {
+        return;
+      }
+
+      final cachedMessages = await _loadCachedSessionMessages(
+        project: project,
+        sessionId: session.id,
+      );
+      if (_disposed || token != _activeChildSessionPreviewLoadToken) {
+        return;
+      }
+
+      final preview = cachedMessages == null
+          ? null
+          : _sessionActivityPreviewText(cachedMessages);
+      nextVersionById[session.id] = session.updatedAt.millisecondsSinceEpoch;
+      if (preview == null) {
+        nextPreviewById.remove(session.id);
+      } else {
+        nextPreviewById[session.id] = preview;
+      }
+    }
+
+    if (mapEquals(nextPreviewById, _activeChildSessionCachedPreviewById) &&
+        mapEquals(
+          nextVersionById,
+          _activeChildSessionCachedPreviewVersionById,
+        )) {
+      return;
+    }
+
+    _activeChildSessionCachedPreviewById = Map<String, String>.unmodifiable(
+      nextPreviewById,
+    );
+    _activeChildSessionCachedPreviewVersionById = Map<String, int>.unmodifiable(
+      nextVersionById,
+    );
+    _notify();
+  }
+
+  String? _sessionActivityPreviewText(List<ChatMessage> messages) {
+    for (var index = messages.length - 1; index >= 0; index -= 1) {
+      final message = messages[index];
+      if (message.info.role != 'assistant') {
+        continue;
+      }
+      final preview = _messageActivityPreviewText(message);
+      if (preview != null) {
+        return preview;
+      }
+    }
+
+    for (var index = messages.length - 1; index >= 0; index -= 1) {
+      final preview = _messageActivityPreviewText(messages[index]);
+      if (preview != null) {
+        return preview;
+      }
+    }
+    return null;
+  }
+
+  String? _messageActivityPreviewText(ChatMessage message) {
+    for (var index = message.parts.length - 1; index >= 0; index -= 1) {
+      final preview = _partActivityPreviewText(message.parts[index]);
+      if (preview != null) {
+        return preview;
+      }
+    }
+    return null;
+  }
+
+  String? _partActivityPreviewText(ChatPart part) {
+    final type = part.type.trim().toLowerCase();
+    return switch (type) {
+      'tool' => _toolActivityPreviewText(part),
+      'text' => _previewSnippet(_partPreviewSourceText(part)),
+      'reasoning' => _previewSnippet(
+        _firstNonEmptyText(<String?>[
+              _previewNestedString(part.metadata, const <String>['summary']),
+              part.text,
+            ]) ??
+            'Thinking through the task',
+      ),
+      'step-start' => _previewSnippet(
+        _firstNonEmptyText(<String?>[
+              _previewNestedString(part.metadata, const <String>['title']),
+              _previewNestedString(part.metadata, const <String>[
+                'description',
+              ]),
+              part.text,
+            ]) ??
+            'Starting the next step',
+      ),
+      'step-finish' => _previewSnippet(
+        _firstNonEmptyText(<String?>[
+              _previewNestedString(part.metadata, const <String>['message']),
+              _previewNestedString(part.metadata, const <String>['reason']),
+              part.text,
+            ]) ??
+            'Step finished',
+      ),
+      'agent' || 'subtask' => _previewSnippet(
+        _firstNonEmptyText(<String?>[
+              _previewNestedString(part.metadata, const <String>[
+                'description',
+              ]),
+              _previewNestedString(part.metadata, const <String>['summary']),
+              part.text,
+            ]) ??
+            'Delegating work',
+      ),
+      'patch' => _previewSnippet(
+        _firstNonEmptyText(<String?>[
+              _previewNestedString(part.metadata, const <String>['summary']),
+              _previewNestedString(part.metadata, const <String>[
+                'description',
+              ]),
+              part.text,
+            ]) ??
+            'Preparing changes',
+      ),
+      _ => _previewSnippet(
+        _firstNonEmptyText(<String?>[
+          _previewNestedString(part.metadata, const <String>['summary']),
+          _previewNestedString(part.metadata, const <String>['description']),
+          _previewNestedString(part.metadata, const <String>['message']),
+          _partPreviewSourceText(part),
+        ]),
+      ),
+    };
+  }
+
+  String? _toolActivityPreviewText(ChatPart part) {
+    final label = _toolPreviewLabel(part.tool);
+    final detail = _firstNonEmptyText(<String?>[
+      _previewNestedString(part.metadata, const <String>['state', 'title']),
+      _previewNestedString(part.metadata, const <String>[
+        'state',
+        'input',
+        'description',
+      ]),
+      _previewNestedString(part.metadata, const <String>[
+        'input',
+        'description',
+      ]),
+      _previewNestedString(part.metadata, const <String>['description']),
+      _previewNestedString(part.metadata, const <String>[
+        'state',
+        'input',
+        'command',
+      ]),
+      _previewNestedString(part.metadata, const <String>['input', 'command']),
+      _previewNestedString(part.metadata, const <String>['command']),
+      _previewNestedString(part.metadata, const <String>[
+        'state',
+        'input',
+        'query',
+      ]),
+      _previewNestedString(part.metadata, const <String>['input', 'query']),
+      _previewNestedString(part.metadata, const <String>['query']),
+      _previewNestedString(part.metadata, const <String>[
+        'state',
+        'input',
+        'path',
+      ]),
+      _previewNestedString(part.metadata, const <String>['input', 'path']),
+      _previewNestedString(part.metadata, const <String>['path']),
+      _previewNestedString(part.metadata, const <String>[
+        'state',
+        'input',
+        'url',
+      ]),
+      _previewNestedString(part.metadata, const <String>['input', 'url']),
+      _previewNestedString(part.metadata, const <String>['url']),
+      _partPreviewSourceText(part),
+    ]);
+    if (detail != null) {
+      return _previewSnippet('$label: $detail');
+    }
+    return _previewSnippet('Running $label');
+  }
+
+  String _toolPreviewLabel(String? tool) {
+    final normalized = tool?.trim().toLowerCase();
+    if (normalized == null || normalized.isEmpty) {
+      return 'Tool';
+    }
+    return switch (normalized) {
+      'bash' => 'Shell',
+      'task' => 'Task',
+      'todowrite' => 'Todo',
+      'websearch' => 'Web Search',
+      'codesearch' => 'Code Search',
+      'webfetch' => 'Web Fetch',
+      _ =>
+        normalized
+            .split(RegExp(r'[_\\-]+'))
+            .where((segment) => segment.trim().isNotEmpty)
+            .map(
+              (segment) => '${segment[0].toUpperCase()}${segment.substring(1)}',
+            )
+            .join(' '),
+    };
+  }
+
+  String? _partPreviewSourceText(ChatPart part) {
+    return _firstNonEmptyText(<String?>[
+      part.text,
+      part.metadata['summary']?.toString(),
+      part.metadata['content']?.toString(),
+      part.metadata['description']?.toString(),
+      part.metadata['text']?.toString(),
+    ]);
+  }
+
+  String? _statusActivityPreviewText(SessionStatusSummary? status) {
+    return _previewSnippet(status?.message);
+  }
+
+  String? _genericActiveStatusPreviewText(SessionStatusSummary? status) {
+    final type = status?.type.trim().toLowerCase();
+    return switch (type) {
+      'pending' => 'Queued and waiting to start',
+      'busy' || 'running' => 'Working on the latest step',
+      _ => null,
+    };
+  }
+
+  String? _previewNestedString(Map<String, Object?> source, List<String> path) {
+    Object? current = source;
+    for (final segment in path) {
+      if (current is! Map) {
+        return null;
+      }
+      current = current[segment];
+    }
+    final value = current?.toString().trim();
+    if (value == null || value.isEmpty) {
+      return null;
+    }
+    return value;
+  }
+
+  String? _firstNonEmptyText(Iterable<String?> values) {
+    for (final value in values) {
+      final normalized = value?.trim();
+      if (normalized != null && normalized.isNotEmpty) {
+        return normalized;
+      }
+    }
+    return null;
+  }
+
+  String? _previewSnippet(String? value) {
+    final normalized = value
+        ?.replaceAll(RegExp(r'\s+'), ' ')
+        .replaceAll(RegExp(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])'), '')
+        .trim();
+    if (normalized == null || normalized.isEmpty) {
+      return null;
+    }
+    if (normalized.length <= 120) {
+      return normalized;
+    }
+    return '${normalized.substring(0, 117).trimRight()}...';
+  }
+
   ProjectTarget? _projectTargetFromEvent(Map<String, Object?> properties) {
     try {
       final summary = ProjectSummary.fromJson(properties);
@@ -2870,6 +3283,7 @@ class WorkspaceController extends ChangeNotifier {
     if (_interruptingSession && !selectedSessionInterruptible) {
       _interruptingSession = false;
     }
+    _ensureActiveChildSessionPreviewCache();
     notifyListeners();
   }
 

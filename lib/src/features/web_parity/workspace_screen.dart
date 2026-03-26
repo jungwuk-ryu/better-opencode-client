@@ -4629,6 +4629,8 @@ class _WorkspaceBody extends StatelessWidget {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final questionRequest = controller.currentQuestionRequest;
     final activeChildSessions = controller.activeChildSessions;
+    final activeChildSessionPreviewById =
+        controller.activeChildSessionPreviewById;
     final todoLive =
         (controller.selectedStatus?.type ?? 'idle') != 'idle' ||
         questionRequest != null;
@@ -4642,6 +4644,7 @@ class _WorkspaceBody extends StatelessWidget {
     final activeSubSessionPanel = _ActiveSubSessionPanel(
       rootSessionId: controller.rootSelectedSession?.id,
       sessions: activeChildSessions,
+      previewBySessionId: activeChildSessionPreviewById,
       currentSessionId: controller.selectedSessionId,
       compact: compact,
       onOpenSession: openActiveChildSession,
@@ -4796,6 +4799,7 @@ class _ActiveSubSessionPanel extends StatefulWidget {
   const _ActiveSubSessionPanel({
     required this.rootSessionId,
     required this.sessions,
+    required this.previewBySessionId,
     required this.currentSessionId,
     required this.compact,
     required this.onOpenSession,
@@ -4803,6 +4807,7 @@ class _ActiveSubSessionPanel extends StatefulWidget {
 
   final String? rootSessionId;
   final List<SessionSummary> sessions;
+  final Map<String, String> previewBySessionId;
   final String? currentSessionId;
   final bool compact;
   final ValueChanged<String> onOpenSession;
@@ -4858,6 +4863,7 @@ class _ActiveSubSessionPanelState extends State<_ActiveSubSessionPanel> {
           : _ActiveSubSessionPanelBody(
               key: const ValueKey<String>('active-subsessions-panel'),
               sessions: widget.sessions,
+              previewBySessionId: widget.previewBySessionId,
               currentSessionId: widget.currentSessionId,
               compact: widget.compact,
               collapsed: _collapsed,
@@ -4871,6 +4877,7 @@ class _ActiveSubSessionPanelState extends State<_ActiveSubSessionPanel> {
 class _ActiveSubSessionPanelBody extends StatelessWidget {
   const _ActiveSubSessionPanelBody({
     required this.sessions,
+    required this.previewBySessionId,
     required this.currentSessionId,
     required this.compact,
     required this.collapsed,
@@ -4880,6 +4887,7 @@ class _ActiveSubSessionPanelBody extends StatelessWidget {
   });
 
   final List<SessionSummary> sessions;
+  final Map<String, String> previewBySessionId;
   final String? currentSessionId;
   final bool compact;
   final bool collapsed;
@@ -4890,9 +4898,13 @@ class _ActiveSubSessionPanelBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
-    final preview = sessions.take(2).map(_sessionDisplayTitle).join('  •  ');
+    final preview = _activeSubSessionCollapsedPreview(
+      sessions,
+      previewBySessionId,
+    );
     final showPreview = collapsed && !compact && preview.isNotEmpty;
     final idsSignature = sessions.map((session) => session.id).join('|');
+    final panelRadius = compact ? 18.0 : 20.0;
 
     return Padding(
       padding: compact
@@ -4913,125 +4925,157 @@ class _ActiveSubSessionPanelBody extends StatelessWidget {
           constraints: const BoxConstraints(maxWidth: 920),
           child: Container(
             decoration: BoxDecoration(
-              color: surfaces.panel,
-              borderRadius: BorderRadius.circular(compact ? 16 : 18),
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: <Color>[
+                  surfaces.panelRaised.withValues(alpha: 0.98),
+                  surfaces.panel,
+                ],
+              ),
+              borderRadius: BorderRadius.circular(panelRadius),
               border: Border.all(color: surfaces.lineSoft),
+              boxShadow: <BoxShadow>[
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.18),
+                  blurRadius: 24,
+                  offset: const Offset(0, 12),
+                ),
+              ],
             ),
             child: Column(
               children: <Widget>[
-                InkWell(
-                  onTap: onToggleCollapsed,
-                  borderRadius: BorderRadius.circular(compact ? 16 : 18),
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      compact ? AppSpacing.sm : AppSpacing.md,
-                      compact ? AppSpacing.xs : AppSpacing.sm,
-                      AppSpacing.xs,
-                      compact ? AppSpacing.xs : AppSpacing.sm,
+                Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: onToggleCollapsed,
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(panelRadius),
                     ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Padding(
-                          padding: const EdgeInsets.only(top: 2),
-                          child: Icon(
-                            Icons.hub_rounded,
-                            size: 18,
-                            color: theme.colorScheme.primary.withValues(
-                              alpha: 0.92,
-                            ),
-                          ),
+                    child: Ink(
+                      decoration: BoxDecoration(
+                        color: surfaces.panelEmphasis.withValues(alpha: 0.72),
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(panelRadius),
                         ),
-                        const SizedBox(width: AppSpacing.sm),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: <Widget>[
-                              Row(
+                        border: Border(
+                          bottom: BorderSide(color: surfaces.lineSoft),
+                        ),
+                      ),
+                      child: Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          compact ? AppSpacing.sm : AppSpacing.md,
+                          compact ? AppSpacing.sm : AppSpacing.md,
+                          compact ? AppSpacing.sm : AppSpacing.md,
+                          compact ? AppSpacing.sm : AppSpacing.md,
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: <Widget>[
+                            Container(
+                              width: compact ? 34 : 38,
+                              height: compact ? 34 : 38,
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.primary.withValues(
+                                  alpha: 0.14,
+                                ),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: theme.colorScheme.primary.withValues(
+                                    alpha: 0.26,
+                                  ),
+                                ),
+                              ),
+                              child: Icon(
+                                Icons.hub_rounded,
+                                size: compact ? 18 : 20,
+                                color: theme.colorScheme.primary.withValues(
+                                  alpha: 0.94,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.sm),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: <Widget>[
-                                  Expanded(
-                                    child: Text(
-                                      'Sub-agents Running',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
+                                  _ShimmeringRichText(
+                                    key: const ValueKey<String>(
+                                      'active-subsessions-title',
+                                    ),
+                                    text: TextSpan(
+                                      text: 'Sub-agents Running',
                                       style: theme.textTheme.titleSmall
                                           ?.copyWith(
-                                            fontWeight: FontWeight.w700,
+                                            fontWeight: FontWeight.w800,
+                                            letterSpacing: -0.15,
                                           ),
                                     ),
+                                    active: true,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
-                                  const SizedBox(width: AppSpacing.xs),
-                                  Container(
-                                    padding: EdgeInsets.symmetric(
-                                      horizontal: compact
-                                          ? AppSpacing.xxs
-                                          : AppSpacing.xs,
-                                      vertical: compact ? 1 : 2,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: theme.colorScheme.primary
-                                          .withValues(alpha: 0.16),
-                                      borderRadius: BorderRadius.circular(999),
-                                    ),
-                                    child: Text(
-                                      '${sessions.length}',
-                                      style: theme.textTheme.labelSmall
-                                          ?.copyWith(
-                                            color: theme.colorScheme.primary,
-                                            fontWeight: FontWeight.w700,
+                                  AnimatedSwitcher(
+                                    duration: const Duration(milliseconds: 180),
+                                    switchInCurve: Curves.easeOutCubic,
+                                    switchOutCurve: Curves.easeInCubic,
+                                    child: !showPreview
+                                        ? const SizedBox.shrink()
+                                        : Padding(
+                                            key: const ValueKey<String>(
+                                              'active-subsessions-preview',
+                                            ),
+                                            padding: const EdgeInsets.only(
+                                              top: AppSpacing.xxs,
+                                              right: AppSpacing.sm,
+                                            ),
+                                            child: Text(
+                                              preview,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: theme.textTheme.bodySmall
+                                                  ?.copyWith(
+                                                    color: surfaces.muted,
+                                                    height: 1.2,
+                                                  ),
+                                            ),
                                           ),
-                                    ),
                                   ),
                                 ],
                               ),
-                              AnimatedSwitcher(
-                                duration: const Duration(milliseconds: 180),
-                                switchInCurve: Curves.easeOutCubic,
-                                switchOutCurve: Curves.easeInCubic,
-                                child: !showPreview
-                                    ? const SizedBox.shrink()
-                                    : Padding(
-                                        key: const ValueKey<String>(
-                                          'active-subsessions-preview',
-                                        ),
-                                        padding: const EdgeInsets.only(
-                                          top: AppSpacing.xs,
-                                          right: AppSpacing.xs,
-                                        ),
-                                        child: Text(
-                                          preview,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: theme.textTheme.bodySmall
-                                              ?.copyWith(color: surfaces.muted),
-                                        ),
-                                      ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        IconButton(
-                          key: const ValueKey<String>(
-                            'active-subsessions-toggle-button',
-                          ),
-                          onPressed: onToggleCollapsed,
-                          icon: AnimatedRotation(
-                            turns: collapsed ? 0.5 : 0,
-                            duration: const Duration(milliseconds: 180),
-                            child: Icon(
-                              Icons.keyboard_arrow_down_rounded,
-                              color: surfaces.muted,
                             ),
-                          ),
-                          padding: EdgeInsets.zero,
-                          constraints: BoxConstraints.tightFor(
-                            width: compact ? 32 : 36,
-                            height: compact ? 32 : 36,
-                          ),
-                          splashRadius: compact ? 16 : 18,
-                          tooltip: collapsed ? 'Expand' : 'Collapse',
+                            const SizedBox(width: AppSpacing.sm),
+                            _ActiveSubSessionCountBadge(
+                              count: sessions.length,
+                              compact: compact,
+                            ),
+                            SizedBox(
+                              width: compact ? AppSpacing.xs : AppSpacing.sm,
+                            ),
+                            IconButton(
+                              key: const ValueKey<String>(
+                                'active-subsessions-toggle-button',
+                              ),
+                              onPressed: onToggleCollapsed,
+                              icon: AnimatedRotation(
+                                turns: collapsed ? 0.5 : 0,
+                                duration: const Duration(milliseconds: 180),
+                                child: Icon(
+                                  Icons.keyboard_arrow_down_rounded,
+                                  color: surfaces.muted,
+                                ),
+                              ),
+                              padding: EdgeInsets.zero,
+                              constraints: BoxConstraints.tightFor(
+                                width: compact ? 34 : 38,
+                                height: compact ? 34 : 38,
+                              ),
+                              splashRadius: compact ? 17 : 19,
+                              tooltip: collapsed ? 'Expand' : 'Collapse',
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
@@ -5044,50 +5088,72 @@ class _ActiveSubSessionPanelBody extends StatelessWidget {
                         : Padding(
                             padding: EdgeInsets.fromLTRB(
                               compact ? AppSpacing.sm : AppSpacing.md,
-                              0,
+                              compact ? AppSpacing.sm : AppSpacing.md,
                               compact ? AppSpacing.sm : AppSpacing.md,
                               compact ? AppSpacing.sm : AppSpacing.md,
                             ),
-                            child: AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 220),
-                              switchInCurve: Curves.easeOutCubic,
-                              switchOutCurve: Curves.easeInCubic,
-                              transitionBuilder: (child, animation) {
-                                final curved = CurvedAnimation(
-                                  parent: animation,
-                                  curve: Curves.easeOutCubic,
+                            child: LayoutBuilder(
+                              builder: (context, constraints) {
+                                final spacing = compact
+                                    ? AppSpacing.xs
+                                    : AppSpacing.sm;
+                                final columns = _activeSubSessionColumnCount(
+                                  constraints.maxWidth,
+                                  spacing: spacing,
+                                  compact: compact,
                                 );
-                                return FadeTransition(
-                                  opacity: curved,
-                                  child: SizeTransition(
-                                    sizeFactor: curved,
-                                    axisAlignment: -1,
-                                    child: child,
+                                final itemWidth = columns <= 1
+                                    ? constraints.maxWidth
+                                    : (constraints.maxWidth -
+                                              (columns - 1) * spacing) /
+                                          columns;
+                                return AnimatedSwitcher(
+                                  duration: const Duration(milliseconds: 220),
+                                  switchInCurve: Curves.easeOutCubic,
+                                  switchOutCurve: Curves.easeInCubic,
+                                  transitionBuilder: (child, animation) {
+                                    final curved = CurvedAnimation(
+                                      parent: animation,
+                                      curve: Curves.easeOutCubic,
+                                    );
+                                    return FadeTransition(
+                                      opacity: curved,
+                                      child: SizeTransition(
+                                        sizeFactor: curved,
+                                        axisAlignment: -1,
+                                        child: child,
+                                      ),
+                                    );
+                                  },
+                                  child: Wrap(
+                                    key: ValueKey<String>(
+                                      'active-subsessions-list-$idsSignature',
+                                    ),
+                                    spacing: spacing,
+                                    runSpacing: spacing,
+                                    children: sessions
+                                        .map(
+                                          (session) => SizedBox(
+                                            width: itemWidth,
+                                            child: _ActiveSubSessionChip(
+                                              session: session,
+                                              preview:
+                                                  previewBySessionId[session
+                                                      .id] ??
+                                                  'Working on the latest step',
+                                              selected:
+                                                  session.id ==
+                                                  currentSessionId,
+                                              compact: compact,
+                                              onTap: () =>
+                                                  onOpenSession(session.id),
+                                            ),
+                                          ),
+                                        )
+                                        .toList(growable: false),
                                   ),
                                 );
                               },
-                              child: Wrap(
-                                key: ValueKey<String>(
-                                  'active-subsessions-list-$idsSignature',
-                                ),
-                                spacing: compact
-                                    ? AppSpacing.xs
-                                    : AppSpacing.sm,
-                                runSpacing: compact
-                                    ? AppSpacing.xs
-                                    : AppSpacing.sm,
-                                children: sessions
-                                    .map(
-                                      (session) => _ActiveSubSessionChip(
-                                        session: session,
-                                        selected:
-                                            session.id == currentSessionId,
-                                        compact: compact,
-                                        onTap: () => onOpenSession(session.id),
-                                      ),
-                                    )
-                                    .toList(growable: false),
-                              ),
                             ),
                           ),
                   ),
@@ -5104,12 +5170,14 @@ class _ActiveSubSessionPanelBody extends StatelessWidget {
 class _ActiveSubSessionChip extends StatelessWidget {
   const _ActiveSubSessionChip({
     required this.session,
+    required this.preview,
     required this.selected,
     required this.compact,
     required this.onTap,
   });
 
   final SessionSummary session;
+  final String preview;
   final bool selected;
   final bool compact;
   final VoidCallback onTap;
@@ -5125,52 +5193,100 @@ class _ActiveSubSessionChip extends StatelessWidget {
       child: InkWell(
         key: ValueKey<String>('active-subsession-chip-${session.id}'),
         onTap: onTap,
-        borderRadius: BorderRadius.circular(compact ? 12 : 14),
+        borderRadius: BorderRadius.circular(compact ? 14 : 16),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           curve: Curves.easeOutCubic,
-          constraints: BoxConstraints(maxWidth: compact ? 280 : 280),
-          padding: EdgeInsets.symmetric(
-            horizontal: compact ? AppSpacing.xs : AppSpacing.sm,
-            vertical: compact ? AppSpacing.xs : AppSpacing.sm,
+          constraints: BoxConstraints(minHeight: compact ? 76 : 84),
+          padding: EdgeInsets.fromLTRB(
+            compact ? AppSpacing.sm : AppSpacing.md,
+            compact ? AppSpacing.sm : AppSpacing.md,
+            compact ? AppSpacing.sm : AppSpacing.md,
+            compact ? AppSpacing.sm : AppSpacing.md,
           ),
           decoration: BoxDecoration(
-            color: selected
-                ? selectedColor.withValues(alpha: 0.14)
-                : surfaces.panelRaised.withValues(alpha: 0.9),
-            borderRadius: BorderRadius.circular(compact ? 12 : 14),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: <Color>[
+                selected
+                    ? selectedColor.withValues(alpha: 0.18)
+                    : surfaces.panelRaised.withValues(alpha: 0.98),
+                selected
+                    ? selectedColor.withValues(alpha: 0.08)
+                    : surfaces.panelEmphasis.withValues(alpha: 0.9),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(compact ? 14 : 16),
             border: Border.all(
               color: selected
                   ? selectedColor.withValues(alpha: 0.52)
                   : surfaces.lineSoft,
             ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Container(
-                width: compact ? 7 : 8,
-                height: compact ? 7 : 8,
-                decoration: BoxDecoration(
-                  color: selected ? selectedColor : const Color(0xFF64D7C4),
-                  shape: BoxShape.circle,
-                ),
+            boxShadow: <BoxShadow>[
+              BoxShadow(
+                color: Colors.black.withValues(alpha: selected ? 0.12 : 0.08),
+                blurRadius: selected ? 18 : 14,
+                offset: const Offset(0, 8),
               ),
-              SizedBox(width: compact ? AppSpacing.xs : AppSpacing.sm),
-              Expanded(
-                child: Text(
-                  _sessionDisplayTitle(session),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  Container(
+                    width: compact ? 9 : 10,
+                    height: compact ? 9 : 10,
+                    decoration: BoxDecoration(
+                      color: selected ? selectedColor : const Color(0xFF64D7C4),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  SizedBox(width: compact ? AppSpacing.xs : AppSpacing.sm),
+                  Expanded(
+                    child: Text(
+                      _sessionDisplayTitle(session),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style:
+                          (compact
+                                  ? theme.textTheme.bodySmall
+                                  : theme.textTheme.bodyMedium)
+                              ?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: selected ? selectedColor : null,
+                              ),
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: compact ? AppSpacing.xxs : AppSpacing.xs),
+              _ShimmeringRichText(
+                key: ValueKey<String>(
+                  'active-subsession-preview-${session.id}',
+                ),
+                text: TextSpan(
+                  text: preview,
                   style:
                       (compact
                               ? theme.textTheme.bodySmall
                               : theme.textTheme.bodyMedium)
                           ?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: selected ? selectedColor : null,
+                            color: selected
+                                ? Color.lerp(
+                                    surfaces.muted,
+                                    selectedColor,
+                                    0.38,
+                                  )
+                                : surfaces.muted,
+                            height: 1.25,
                           ),
                 ),
+                active: true,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
@@ -5178,6 +5294,94 @@ class _ActiveSubSessionChip extends StatelessWidget {
       ),
     );
   }
+}
+
+class _ActiveSubSessionCountBadge extends StatelessWidget {
+  const _ActiveSubSessionCountBadge({
+    required this.count,
+    required this.compact,
+  });
+
+  final int count;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final label = '$count running';
+    return Container(
+      key: const ValueKey<String>('active-subsessions-count-badge'),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? AppSpacing.xs : AppSpacing.sm,
+        vertical: compact ? AppSpacing.xxs : AppSpacing.xs,
+      ),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primary.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
+        border: Border.all(
+          color: theme.colorScheme.primary.withValues(alpha: 0.28),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Container(
+            width: compact ? 6 : 7,
+            height: compact ? 6 : 7,
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primary,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.primary,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+int _activeSubSessionColumnCount(
+  double maxWidth, {
+  required double spacing,
+  required bool compact,
+}) {
+  if (maxWidth <= 0) {
+    return 1;
+  }
+  final minCardWidth = compact ? 250.0 : 270.0;
+  final estimated = ((maxWidth + spacing) / (minCardWidth + spacing)).floor();
+  final maxColumns = compact ? 2 : 3;
+  if (estimated < 1) {
+    return 1;
+  }
+  if (estimated > maxColumns) {
+    return maxColumns;
+  }
+  return estimated;
+}
+
+String _activeSubSessionCollapsedPreview(
+  List<SessionSummary> sessions,
+  Map<String, String> previewBySessionId,
+) {
+  return sessions
+      .take(2)
+      .map((session) {
+        final title = _sessionDisplayTitle(session);
+        final preview = previewBySessionId[session.id]?.trim() ?? '';
+        if (preview.isEmpty) {
+          return title;
+        }
+        return '$title: $preview';
+      })
+      .join('  •  ');
 }
 
 String _sessionDisplayTitle(SessionSummary session) {
@@ -9459,11 +9663,15 @@ class _ShimmeringRichText extends StatefulWidget {
   const _ShimmeringRichText({
     required this.text,
     required this.active,
+    this.maxLines,
+    this.overflow = TextOverflow.clip,
     super.key,
   });
 
   final InlineSpan text;
   final bool active;
+  final int? maxLines;
+  final TextOverflow overflow;
 
   @override
   State<_ShimmeringRichText> createState() => _ShimmeringRichTextState();
@@ -9507,7 +9715,11 @@ class _ShimmeringRichTextState extends State<_ShimmeringRichText>
 
   @override
   Widget build(BuildContext context) {
-    final child = Text.rich(widget.text);
+    final child = Text.rich(
+      widget.text,
+      maxLines: widget.maxLines,
+      overflow: widget.overflow,
+    );
     if (!widget.active) {
       return child;
     }
