@@ -170,6 +170,9 @@ class WorkspaceController extends ChangeNotifier {
   String? _selectedReasoning;
   String? _serverDefaultModelKey;
   String? _serverDefaultReasoning;
+  final Map<String, List<ChatMessage>> _optimisticMessagesBySessionKey =
+      <String, List<ChatMessage>>{};
+  int _optimisticMessageSequence = 0;
   int _promptRefreshRevision = 0;
   int _sessionLoadRevision = 0;
   int _reviewDiffRevision = 0;
@@ -770,7 +773,11 @@ class WorkspaceController extends ChangeNotifier {
       return;
     }
     if (cachedMessages != null) {
-      _messages = cachedMessages;
+      _messages = _mergeSessionMessages(
+        project: project,
+        sessionId: sessionId,
+        serverMessages: cachedMessages,
+      );
       _showingCachedSessionMessages = cachedMessages.isNotEmpty;
       if (_messages.isEmpty) {
         _applyDefaultComposerSelection();
@@ -792,7 +799,11 @@ class WorkspaceController extends ChangeNotifier {
         return;
       }
 
-      _messages = messages;
+      _messages = _mergeSessionMessages(
+        project: project,
+        sessionId: sessionId,
+        serverMessages: messages,
+      );
       _showingCachedSessionMessages = false;
       if (_messages.isEmpty) {
         _applyDefaultComposerSelection();
@@ -871,6 +882,7 @@ class WorkspaceController extends ChangeNotifier {
 
     try {
       var sessionId = _selectedSessionId;
+      ChatMessage? optimisticMessage;
       if (sessionId == null || sessionId.isEmpty) {
         final created = await _chatService.createSession(
           profile: profile,
@@ -880,35 +892,52 @@ class WorkspaceController extends ChangeNotifier {
         _selectedSessionId = sessionId;
         _sessions = <SessionSummary>[created, ..._sessions];
       }
+      optimisticMessage = _appendOptimisticUserMessage(
+        project: project,
+        sessionId: sessionId,
+        prompt: trimmed,
+        attachments: attachments,
+      );
 
       final slashCommand = _parseSlashCommand(trimmed);
-      if (slashCommand != null &&
-          _findComposerCommand(slashCommand.name) != null) {
-        await _chatService.sendCommand(
-          profile: profile,
-          project: project,
-          sessionId: sessionId,
-          command: slashCommand.name,
-          arguments: slashCommand.arguments,
-          attachments: attachments,
-          agent: selectedAgent?.name,
-          providerId: selectedModel?.providerId,
-          modelId: selectedModel?.modelId,
-          variant: _selectedReasoning,
-        );
-      } else {
-        await _chatService.sendMessage(
-          profile: profile,
-          project: project,
-          sessionId: sessionId,
-          prompt: trimmed,
-          attachments: attachments,
-          agent: selectedAgent?.name,
-          providerId: selectedModel?.providerId,
-          modelId: selectedModel?.modelId,
-          variant: _selectedReasoning,
-          reasoning: _selectedReasoning,
-        );
+      try {
+        if (slashCommand != null &&
+            _findComposerCommand(slashCommand.name) != null) {
+          await _chatService.sendCommand(
+            profile: profile,
+            project: project,
+            sessionId: sessionId,
+            command: slashCommand.name,
+            arguments: slashCommand.arguments,
+            attachments: attachments,
+            agent: selectedAgent?.name,
+            providerId: selectedModel?.providerId,
+            modelId: selectedModel?.modelId,
+            variant: _selectedReasoning,
+          );
+        } else {
+          await _chatService.sendMessage(
+            profile: profile,
+            project: project,
+            sessionId: sessionId,
+            prompt: trimmed,
+            attachments: attachments,
+            agent: selectedAgent?.name,
+            providerId: selectedModel?.providerId,
+            modelId: selectedModel?.modelId,
+            variant: _selectedReasoning,
+            reasoning: _selectedReasoning,
+          );
+        }
+      } catch (error) {
+        if (optimisticMessage != null) {
+          _removeOptimisticMessage(
+            project: project,
+            sessionId: sessionId,
+            messageId: optimisticMessage.info.id,
+          );
+        }
+        rethrow;
       }
       final refreshRevision = ++_promptRefreshRevision;
       unawaited(
@@ -946,7 +975,11 @@ class WorkspaceController extends ChangeNotifier {
     }
 
     if (_selectedSessionId == sessionId && messages != null) {
-      _messages = messages;
+      _messages = _mergeSessionMessages(
+        project: project,
+        sessionId: sessionId,
+        serverMessages: messages,
+      );
       _sessionLoading = false;
       _showingCachedSessionMessages = false;
       _sessionLoadError = null;
@@ -1678,42 +1711,96 @@ class WorkspaceController extends ChangeNotifier {
     } else if (type == 'session.status') {
       _statuses = applySessionStatusEvent(_statuses, event.properties);
     } else if (type == 'message.updated') {
-      final nextMessages = applyMessageUpdatedEvent(
-        _messages,
+      final project = _project;
+      final sessionId = _selectedSessionId;
+      final baseMessages =
+          project != null && sessionId != null && sessionId.isNotEmpty
+          ? _stripOptimisticMessages(
+              project: project,
+              sessionId: sessionId,
+              messages: _messages,
+            )
+          : _messages;
+      final nextServerMessages = applyMessageUpdatedEvent(
+        baseMessages,
         event.properties,
         selectedSessionId: _selectedSessionId,
       );
+      final nextMessages =
+          project != null && sessionId != null && sessionId.isNotEmpty
+          ? _mergeSessionMessages(
+              project: project,
+              sessionId: sessionId,
+              serverMessages: nextServerMessages,
+            )
+          : nextServerMessages;
       if (!identical(nextMessages, _messages)) {
         _sessionLoading = false;
         _showingCachedSessionMessages = false;
         _sessionLoadError = null;
-        unawaited(_persistSelectedSessionMessagesCache(nextMessages));
+        unawaited(_persistSelectedSessionMessagesCache(nextServerMessages));
       }
       _messages = nextMessages;
     } else if (type == 'message.part.updated') {
-      final nextMessages = applyMessagePartUpdatedEvent(
-        _messages,
+      final project = _project;
+      final sessionId = _selectedSessionId;
+      final baseMessages =
+          project != null && sessionId != null && sessionId.isNotEmpty
+          ? _stripOptimisticMessages(
+              project: project,
+              sessionId: sessionId,
+              messages: _messages,
+            )
+          : _messages;
+      final nextServerMessages = applyMessagePartUpdatedEvent(
+        baseMessages,
         event.properties,
         selectedSessionId: _selectedSessionId,
       );
+      final nextMessages =
+          project != null && sessionId != null && sessionId.isNotEmpty
+          ? _mergeSessionMessages(
+              project: project,
+              sessionId: sessionId,
+              serverMessages: nextServerMessages,
+            )
+          : nextServerMessages;
       if (!identical(nextMessages, _messages)) {
         _sessionLoading = false;
         _showingCachedSessionMessages = false;
         _sessionLoadError = null;
-        unawaited(_persistSelectedSessionMessagesCache(nextMessages));
+        unawaited(_persistSelectedSessionMessagesCache(nextServerMessages));
       }
       _messages = nextMessages;
     } else if (type == 'message.removed') {
-      final nextMessages = applyMessageRemovedEvent(
-        _messages,
+      final project = _project;
+      final sessionId = _selectedSessionId;
+      final baseMessages =
+          project != null && sessionId != null && sessionId.isNotEmpty
+          ? _stripOptimisticMessages(
+              project: project,
+              sessionId: sessionId,
+              messages: _messages,
+            )
+          : _messages;
+      final nextServerMessages = applyMessageRemovedEvent(
+        baseMessages,
         event.properties,
         selectedSessionId: _selectedSessionId,
       );
+      final nextMessages =
+          project != null && sessionId != null && sessionId.isNotEmpty
+          ? _mergeSessionMessages(
+              project: project,
+              sessionId: sessionId,
+              serverMessages: nextServerMessages,
+            )
+          : nextServerMessages;
       if (!identical(nextMessages, _messages)) {
         _sessionLoading = false;
         _showingCachedSessionMessages = false;
         _sessionLoadError = null;
-        unawaited(_persistSelectedSessionMessagesCache(nextMessages));
+        unawaited(_persistSelectedSessionMessagesCache(nextServerMessages));
       }
       _messages = nextMessages;
     } else if (type == 'todo.updated') {
@@ -2056,6 +2143,236 @@ class WorkspaceController extends ChangeNotifier {
 
   String _sessionMessagesCacheKey(ProjectTarget project, String sessionId) {
     return 'workspace.messages::${profile.storageKey}::${project.directory}::$sessionId';
+  }
+
+  String _optimisticSessionKey(ProjectTarget project, String sessionId) {
+    return '${project.directory}::$sessionId';
+  }
+
+  ChatMessage? _appendOptimisticUserMessage({
+    required ProjectTarget project,
+    required String sessionId,
+    required String prompt,
+    required List<PromptAttachment> attachments,
+  }) {
+    if (prompt.trim().isEmpty && attachments.isEmpty) {
+      return null;
+    }
+    final timestamp = DateTime.now();
+    final messageId =
+        'local_user_${timestamp.microsecondsSinceEpoch}_${_optimisticMessageSequence++}';
+    final parts = <ChatPart>[
+      if (prompt.trim().isNotEmpty)
+        ChatPart(
+          id: '${messageId}_text',
+          type: 'text',
+          text: prompt.trim(),
+          messageId: messageId,
+          sessionId: sessionId,
+          metadata: <String, Object?>{
+            'id': '${messageId}_text',
+            'type': 'text',
+            'text': prompt.trim(),
+            'messageID': messageId,
+            'sessionID': sessionId,
+          },
+        ),
+      for (var index = 0; index < attachments.length; index += 1)
+        ChatPart(
+          id: '${messageId}_file_$index',
+          type: 'file',
+          filename: attachments[index].filename,
+          messageId: messageId,
+          sessionId: sessionId,
+          metadata: <String, Object?>{
+            'id': '${messageId}_file_$index',
+            'type': 'file',
+            'filename': attachments[index].filename,
+            'mime': attachments[index].mime,
+            'url': attachments[index].url,
+            'messageID': messageId,
+            'sessionID': sessionId,
+          },
+        ),
+    ];
+    final message = ChatMessage(
+      info: ChatMessageInfo(
+        id: messageId,
+        role: 'user',
+        sessionId: sessionId,
+        createdAt: timestamp,
+        completedAt: timestamp,
+        metadata: <String, Object?>{
+          'id': messageId,
+          'role': 'user',
+          'sessionID': sessionId,
+          'time': <String, Object?>{
+            'created': timestamp.millisecondsSinceEpoch,
+            'completed': timestamp.millisecondsSinceEpoch,
+          },
+          '_optimistic': true,
+        },
+      ),
+      parts: parts,
+    );
+    final key = _optimisticSessionKey(project, sessionId);
+    final optimistic = <ChatMessage>[
+      ...?_optimisticMessagesBySessionKey[key],
+      message,
+    ];
+    _optimisticMessagesBySessionKey[key] = optimistic;
+    if (_selectedSessionId == sessionId) {
+      _messages = _mergeSessionMessages(
+        project: project,
+        sessionId: sessionId,
+        serverMessages: _stripOptimisticMessages(
+          project: project,
+          sessionId: sessionId,
+          messages: _messages,
+        ),
+      );
+      _sessionLoading = false;
+      _showingCachedSessionMessages = false;
+      _sessionLoadError = null;
+      _notify();
+    }
+    return message;
+  }
+
+  void _removeOptimisticMessage({
+    required ProjectTarget project,
+    required String sessionId,
+    required String messageId,
+  }) {
+    final key = _optimisticSessionKey(project, sessionId);
+    final optimistic = _optimisticMessagesBySessionKey[key];
+    if (optimistic == null || optimistic.isEmpty) {
+      return;
+    }
+    final next = optimistic
+        .where((message) => message.info.id != messageId)
+        .toList(growable: false);
+    if (next.isEmpty) {
+      _optimisticMessagesBySessionKey.remove(key);
+    } else {
+      _optimisticMessagesBySessionKey[key] = next;
+    }
+    if (_selectedSessionId == sessionId) {
+      _messages = _mergeSessionMessages(
+        project: project,
+        sessionId: sessionId,
+        serverMessages: _stripOptimisticMessages(
+          project: project,
+          sessionId: sessionId,
+          messages: _messages,
+        ),
+      );
+      _notify();
+    }
+  }
+
+  List<ChatMessage> _mergeSessionMessages({
+    required ProjectTarget project,
+    required String sessionId,
+    required List<ChatMessage> serverMessages,
+  }) {
+    final key = _optimisticSessionKey(project, sessionId);
+    final optimistic = _optimisticMessagesBySessionKey[key];
+    if (optimistic == null || optimistic.isEmpty) {
+      return serverMessages;
+    }
+    final unresolved = _resolveOptimisticMessages(
+      serverMessages: serverMessages,
+      optimisticMessages: optimistic,
+    );
+    if (unresolved.isEmpty) {
+      _optimisticMessagesBySessionKey.remove(key);
+      return serverMessages;
+    }
+    _optimisticMessagesBySessionKey[key] = unresolved;
+    return <ChatMessage>[...serverMessages, ...unresolved];
+  }
+
+  List<ChatMessage> _stripOptimisticMessages({
+    required ProjectTarget project,
+    required String sessionId,
+    required List<ChatMessage> messages,
+  }) {
+    final optimistic =
+        _optimisticMessagesBySessionKey[_optimisticSessionKey(project, sessionId)];
+    if (optimistic == null || optimistic.isEmpty) {
+      return messages;
+    }
+    final optimisticIds = optimistic.map((message) => message.info.id).toSet();
+    return messages
+        .where((message) => !optimisticIds.contains(message.info.id))
+        .toList(growable: false);
+  }
+
+  List<ChatMessage> _resolveOptimisticMessages({
+    required List<ChatMessage> serverMessages,
+    required List<ChatMessage> optimisticMessages,
+  }) {
+    final serverCounts = <String, int>{};
+    for (final message in serverMessages) {
+      final signature = _userMessageSignature(message);
+      if (signature == null) {
+        continue;
+      }
+      serverCounts[signature] = (serverCounts[signature] ?? 0) + 1;
+    }
+
+    final consumed = <String, int>{};
+    final unresolved = <ChatMessage>[];
+    for (final message in optimisticMessages) {
+      final signature = _userMessageSignature(message);
+      if (signature == null) {
+        unresolved.add(message);
+        continue;
+      }
+      final matched = consumed[signature] ?? 0;
+      final available = serverCounts[signature] ?? 0;
+      if (matched < available) {
+        consumed[signature] = matched + 1;
+        continue;
+      }
+      unresolved.add(message);
+    }
+    return unresolved;
+  }
+
+  String? _userMessageSignature(ChatMessage message) {
+    if (message.info.role != 'user') {
+      return null;
+    }
+    final encodedParts = <String>[];
+    for (final part in message.parts) {
+      if (part.type == 'text') {
+        encodedParts.add('text:${_partSignatureText(part)}');
+        continue;
+      }
+      if (part.type == 'file') {
+        encodedParts.add(
+          'file:${part.filename ?? ''}:${part.metadata['mime'] ?? ''}:${part.metadata['url'] ?? ''}',
+        );
+      }
+    }
+    if (encodedParts.isEmpty) {
+      return null;
+    }
+    return encodedParts.join('|');
+  }
+
+  String _partSignatureText(ChatPart part) {
+    final text = part.text?.trim();
+    if (text != null && text.isNotEmpty) {
+      return text;
+    }
+    final metadataText = part.metadata['text']?.toString().trim();
+    if (metadataText != null && metadataText.isNotEmpty) {
+      return metadataText;
+    }
+    return '';
   }
 
   Future<List<ChatMessage>?> _loadCachedSessionMessages({

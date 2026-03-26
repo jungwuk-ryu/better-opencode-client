@@ -5,6 +5,7 @@ import 'package:opencode_mobile_remote/src/core/persistence/stale_cache_store.da
 import 'package:opencode_mobile_remote/src/core/spec/raw_json_document.dart';
 import 'package:opencode_mobile_remote/src/features/chat/chat_models.dart';
 import 'package:opencode_mobile_remote/src/features/chat/chat_service.dart';
+import 'package:opencode_mobile_remote/src/features/chat/prompt_attachment_models.dart';
 import 'package:opencode_mobile_remote/src/features/files/file_browser_service.dart';
 import 'package:opencode_mobile_remote/src/features/files/file_models.dart';
 import 'package:opencode_mobile_remote/src/features/projects/project_catalog_service.dart';
@@ -452,6 +453,105 @@ void main() {
       expect(controller.messages.single.parts.single.text, 'Recovered message');
     },
   );
+
+  test(
+    'controller keeps an optimistic user message visible until the server catches up',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      var fetchMessagesCount = 0;
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_1',
+              title: 'Initial session',
+              createdAt: 1710000001000,
+              updatedAt: 1710000005000,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{
+            'ses_1': SessionStatusSummary(type: 'idle'),
+          },
+          messages: const <ChatMessage>[],
+          selectedSessionId: 'ses_1',
+        ),
+        fetchMessagesHandler:
+            ({required profile, required project, required sessionId}) async {
+              fetchMessagesCount += 1;
+              if (fetchMessagesCount >= 3) {
+                return <ChatMessage>[
+                  ChatMessage(
+                    info: ChatMessageInfo(
+                      id: 'msg_server_user',
+                      role: 'user',
+                      sessionId: sessionId,
+                      createdAt: DateTime.fromMillisecondsSinceEpoch(
+                        1710000009000,
+                      ),
+                      completedAt: DateTime.fromMillisecondsSinceEpoch(
+                        1710000009000,
+                      ),
+                    ),
+                    parts: const <ChatPart>[
+                      ChatPart(
+                        id: 'part_server_user',
+                        type: 'text',
+                        text: 'Ship the fix',
+                        messageId: 'msg_server_user',
+                        sessionId: 'ses_1',
+                      ),
+                    ],
+                  ),
+                ];
+              }
+              return const <ChatMessage>[];
+            },
+        sendMessageHandler:
+            ({
+              required profile,
+              required project,
+              required sessionId,
+              required prompt,
+              attachments = const <PromptAttachment>[],
+              agent,
+              providerId,
+              modelId,
+              variant,
+              reasoning,
+            }) async => ChatMessage(
+              info: ChatMessageInfo(
+                id: 'msg_send_ack',
+                role: 'assistant',
+                sessionId: sessionId,
+              ),
+              parts: const <ChatPart>[],
+            ),
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+      expect(controller.messages, isEmpty);
+
+      await controller.submitPrompt('Ship the fix');
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(controller.messages, hasLength(1));
+      expect(controller.messages.single.info.role, 'user');
+      expect(controller.messages.single.parts.single.text, 'Ship the fix');
+
+      await controller.retrySelectedSessionMessages();
+
+      expect(controller.messages, hasLength(1));
+      expect(controller.messages.single.info.id, 'msg_server_user');
+      expect(controller.messages.single.parts.single.text, 'Ship the fix');
+    },
+  );
 }
 
 WorkspaceController _buildController({
@@ -622,7 +722,11 @@ class _MemoryProjectStore extends ProjectStore {
 }
 
 class _FakeChatService extends ChatService {
-  _FakeChatService({required this.bundle, this.fetchMessagesHandler});
+  _FakeChatService({
+    required this.bundle,
+    this.fetchMessagesHandler,
+    this.sendMessageHandler,
+  });
 
   final ChatSessionBundle bundle;
   final Future<List<ChatMessage>> Function({
@@ -631,6 +735,19 @@ class _FakeChatService extends ChatService {
     required String sessionId,
   })?
   fetchMessagesHandler;
+  final Future<ChatMessage> Function({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String sessionId,
+    required String prompt,
+    List<PromptAttachment> attachments,
+    String? agent,
+    String? providerId,
+    String? modelId,
+    String? variant,
+    String? reasoning,
+  })?
+  sendMessageHandler;
 
   @override
   Future<ChatSessionBundle> fetchBundle({
@@ -651,6 +768,40 @@ class _FakeChatService extends ChatService {
       return handler(profile: profile, project: project, sessionId: sessionId);
     }
     return const <ChatMessage>[];
+  }
+
+  @override
+  Future<ChatMessage> sendMessage({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String sessionId,
+    required String prompt,
+    List<PromptAttachment> attachments = const <PromptAttachment>[],
+    String? agent,
+    String? providerId,
+    String? modelId,
+    String? variant,
+    String? reasoning,
+  }) async {
+    final handler = sendMessageHandler;
+    if (handler != null) {
+      return handler(
+        profile: profile,
+        project: project,
+        sessionId: sessionId,
+        prompt: prompt,
+        attachments: attachments,
+        agent: agent,
+        providerId: providerId,
+        modelId: modelId,
+        variant: variant,
+        reasoning: reasoning,
+      );
+    }
+    return ChatMessage(
+      info: ChatMessageInfo(id: 'msg_stub', role: 'assistant', sessionId: sessionId),
+      parts: const <ChatPart>[],
+    );
   }
 
   @override
