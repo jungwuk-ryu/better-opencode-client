@@ -214,6 +214,101 @@ void main() {
   );
 
   testWidgets(
+    'desktop layout lets users collapse and reopen both side panels',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final createdControllers = <_RecordingWorkspaceController>[];
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              final controller = _RecordingWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+              createdControllers.add(controller);
+              return controller;
+            },
+      );
+      addTearDown(appController.dispose);
+
+      final navigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          navigatorKey: navigatorKey,
+          initialRoute: '/',
+        ),
+      );
+      navigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+      );
+      await tester.pumpAndSettle();
+
+      final sidebarReveal = find.byKey(
+        const ValueKey<String>('workspace-desktop-sidebar-reveal'),
+      );
+      final sidePanelReveal = find.byKey(
+        const ValueKey<String>('workspace-desktop-side-panel-reveal'),
+      );
+
+      expect(tester.getSize(sidebarReveal).width, greaterThan(300));
+      expect(tester.getSize(sidePanelReveal).width, greaterThan(300));
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('workspace-toggle-sessions-panel-button'),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 260));
+
+      expect(tester.getSize(sidebarReveal).width, closeTo(0, 0.1));
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('workspace-toggle-side-panel-button'),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 260));
+
+      expect(tester.getSize(sidePanelReveal).width, closeTo(0, 0.1));
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('workspace-toggle-side-panel-button'),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 260));
+
+      expect(tester.getSize(sidePanelReveal).width, greaterThan(300));
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('workspace-toggle-sessions-panel-button'),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 260));
+
+      expect(tester.getSize(sidebarReveal).width, greaterThan(300));
+    },
+  );
+
+  testWidgets(
     'switching projects stays on the same page and reuses cached workspace controllers',
     (tester) async {
       tester.view.physicalSize = const Size(1600, 1000);

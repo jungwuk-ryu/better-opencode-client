@@ -136,6 +136,71 @@ void main() {
   });
 
   testWidgets(
+    'builtin side-tab slash commands reopen the side panel on desktop layouts',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final workspaceController = _SlashWorkspaceController(
+        profile: profile,
+        directory: '/workspace/demo',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceController: workspaceController,
+      );
+      addTearDown(appController.dispose);
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          initialRoute: buildWorkspaceRoute(
+            '/workspace/demo',
+            sessionId: 'ses_1',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      final sidePanelReveal = find.byKey(
+        const ValueKey<String>('workspace-desktop-side-panel-reveal'),
+      );
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('workspace-toggle-side-panel-button'),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 260));
+
+      expect(tester.getSize(sidePanelReveal).width, closeTo(0, 0.1));
+
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('composer-text-field')),
+        '/context',
+      );
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('composer-submit-button')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 260));
+
+      expect(workspaceController.sideTab, WorkspaceSideTab.context);
+      expect(tester.getSize(sidePanelReveal).width, greaterThan(300));
+    },
+  );
+
+  testWidgets(
     'prompt clears immediately, shows an interrupt button, and ignores duplicate taps',
     (tester) async {
       tester.view.physicalSize = const Size(1600, 1000);

@@ -87,6 +87,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   bool _terminalPanelMounted = false;
   bool _loadingPtySessions = false;
   bool _creatingPtySession = false;
+  bool _desktopSidebarVisible = true;
+  bool _desktopSidePanelVisible = true;
   int _terminalEpoch = 0;
   bool _hasPendingSessionRouteSync = false;
   bool _sessionRouteSyncInFlight = false;
@@ -226,6 +228,32 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     _sessionRouteSyncInFlight = false;
     _pendingSessionRouteId = null;
     _sessionRouteSyncRevision = 0;
+  }
+
+  void _setDesktopSidebarVisible(bool visible) {
+    if (_desktopSidebarVisible == visible) {
+      return;
+    }
+    setState(() {
+      _desktopSidebarVisible = visible;
+    });
+  }
+
+  void _toggleDesktopSidebarVisibility() {
+    _setDesktopSidebarVisible(!_desktopSidebarVisible);
+  }
+
+  void _setDesktopSidePanelVisible(bool visible) {
+    if (_desktopSidePanelVisible == visible) {
+      return;
+    }
+    setState(() {
+      _desktopSidePanelVisible = visible;
+    });
+  }
+
+  void _toggleDesktopSidePanelVisibility() {
+    _setDesktopSidePanelVisible(!_desktopSidePanelVisible);
   }
 
   void _queueRouteSessionSync(String? sessionId) {
@@ -1428,6 +1456,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         final selectedSession = showProjectLoadingShell
             ? null
             : controller.selectedSession;
+        final desktopSidebarVisible = !compact && _desktopSidebarVisible;
+        final desktopSidePanelVisible = !compact && _desktopSidePanelVisible;
         final mainSession = _rootSessionFor(
           displayAllSessions,
           selectedSession,
@@ -1465,7 +1495,29 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
           body: SafeArea(
             child: Row(
               children: <Widget>[
-                if (!compact) sidebar,
+                if (!compact)
+                  _HorizontalReveal(
+                    key: const ValueKey<String>(
+                      'workspace-desktop-sidebar-reveal',
+                    ),
+                    visible: desktopSidebarVisible,
+                    alignment: Alignment.centerLeft,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        KeyedSubtree(
+                          key: const ValueKey<String>(
+                            'workspace-desktop-sidebar-pane',
+                          ),
+                          child: sidebar,
+                        ),
+                        Container(
+                          width: 1,
+                          color: Theme.of(context).dividerColor,
+                        ),
+                      ],
+                    ),
+                  ),
                 Expanded(
                   child: Column(
                     children: <Widget>[
@@ -1496,6 +1548,15 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                         onBackHome: () => Navigator.of(
                           context,
                         ).pushNamedAndRemoveUntil('/', (route) => false),
+                        sessionsPanelVisible: desktopSidebarVisible,
+                        sidePanelVisible: desktopSidePanelVisible,
+                        sidePanelLabel: _desktopSidePanelLabel(controller),
+                        onToggleSessionsPanel: compact
+                            ? null
+                            : _toggleDesktopSidebarVisibility,
+                        onToggleSidePanel: compact
+                            ? null
+                            : _toggleDesktopSidePanelVisibility,
                         onOpenDrawer: compact
                             ? () => _scaffoldKey.currentState?.openDrawer()
                             : null,
@@ -1550,6 +1611,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                 controller: controller,
                                 allSessions: controller.sessions,
                                 selectedSession: controller.selectedSession,
+                                sidePanelVisible: desktopSidePanelVisible,
                                 configSnapshot: controller.configSnapshot,
                                 submittingPrompt:
                                     _promptSubmitInFlight ||
@@ -1609,6 +1671,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                 },
                                 onPickAttachments: _pickComposerAttachments,
                                 onRemoveAttachment: _removeComposerAttachment,
+                                onShowSidePanel: compact
+                                    ? null
+                                    : () => _setDesktopSidePanelVisible(true),
                                 onShareSession:
                                     controller.selectedSession == null
                                     ? null
@@ -1705,8 +1770,13 @@ class _WorkspaceTopBar extends StatelessWidget {
     required this.timelineProgressDetailsVisible,
     required this.onSetTimelineProgressDetailsVisible,
     required this.terminalOpen,
+    required this.sessionsPanelVisible,
+    required this.sidePanelVisible,
+    required this.sidePanelLabel,
     required this.onBackHome,
     required this.onToggleTerminal,
+    this.onToggleSessionsPanel,
+    this.onToggleSidePanel,
     this.onOpenDrawer,
     this.onBackToMainSession,
     this.onRename,
@@ -1727,8 +1797,13 @@ class _WorkspaceTopBar extends StatelessWidget {
   final bool timelineProgressDetailsVisible;
   final Future<void> Function(bool value) onSetTimelineProgressDetailsVisible;
   final bool terminalOpen;
+  final bool sessionsPanelVisible;
+  final bool sidePanelVisible;
+  final String sidePanelLabel;
   final VoidCallback onBackHome;
   final VoidCallback onToggleTerminal;
+  final VoidCallback? onToggleSessionsPanel;
+  final VoidCallback? onToggleSidePanel;
   final VoidCallback? onOpenDrawer;
   final VoidCallback? onBackToMainSession;
   final VoidCallback? onRename;
@@ -1939,6 +2014,37 @@ class _WorkspaceTopBar extends StatelessWidget {
               onPressed: onBackHome,
               icon: const Icon(Icons.arrow_back_rounded),
             ),
+            if (onToggleSessionsPanel != null) ...<Widget>[
+              const SizedBox(width: AppSpacing.xs),
+              _WorkspacePanelToggleChip(
+                key: const ValueKey<String>(
+                  'workspace-toggle-sessions-panel-button',
+                ),
+                label: 'Sessions',
+                icon: Icons.view_sidebar_rounded,
+                active: sessionsPanelVisible,
+                tooltip: sessionsPanelVisible
+                    ? 'Hide sessions panel'
+                    : 'Show sessions panel',
+                onTap: onToggleSessionsPanel!,
+              ),
+            ],
+            if (onToggleSidePanel != null) ...<Widget>[
+              const SizedBox(width: AppSpacing.xs),
+              _WorkspacePanelToggleChip(
+                key: const ValueKey<String>(
+                  'workspace-toggle-side-panel-button',
+                ),
+                label: sidePanelLabel,
+                icon: Icons.dashboard_rounded,
+                active: sidePanelVisible,
+                tooltip: sidePanelVisible
+                    ? 'Hide $sidePanelLabel panel'
+                    : 'Show $sidePanelLabel panel',
+                onTap: onToggleSidePanel!,
+              ),
+            ],
+            const SizedBox(width: AppSpacing.sm),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2031,6 +2137,75 @@ class _WorkspaceTopBar extends StatelessWidget {
             ),
             _SessionOverflowMenuButton(sections: menuSections),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WorkspacePanelToggleChip extends StatelessWidget {
+  const _WorkspacePanelToggleChip({
+    required this.label,
+    required this.icon,
+    required this.active,
+    required this.tooltip,
+    required this.onTap,
+    super.key,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool active;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final accent = theme.colorScheme.primary;
+    final backgroundColor = active
+        ? accent.withValues(alpha: 0.12)
+        : surfaces.panelRaised.withValues(alpha: 0.78);
+    final borderColor = active
+        ? accent.withValues(alpha: 0.26)
+        : surfaces.lineSoft;
+    final foregroundColor = active ? accent : surfaces.muted;
+
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm,
+              vertical: AppSpacing.xs,
+            ),
+            decoration: BoxDecoration(
+              color: backgroundColor,
+              borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
+              border: Border.all(color: borderColor),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Icon(icon, size: 16, color: foregroundColor),
+                const SizedBox(width: AppSpacing.xs),
+                Text(
+                  label,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: active ? theme.colorScheme.onSurface : null,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -4907,6 +5082,7 @@ class _WorkspaceBody extends StatelessWidget {
     required this.controller,
     required this.allSessions,
     required this.selectedSession,
+    required this.sidePanelVisible,
     required this.configSnapshot,
     required this.submittingPrompt,
     required this.interruptiblePrompt,
@@ -4933,6 +5109,7 @@ class _WorkspaceBody extends StatelessWidget {
     required this.onOpenSession,
     required this.onPickAttachments,
     required this.onRemoveAttachment,
+    this.onShowSidePanel,
     required this.onToggleTerminal,
     required this.terminalPanelOpen,
     required this.terminalPanel,
@@ -4945,6 +5122,7 @@ class _WorkspaceBody extends StatelessWidget {
   final WorkspaceController controller;
   final List<SessionSummary> allSessions;
   final SessionSummary? selectedSession;
+  final bool sidePanelVisible;
   final ConfigSnapshot? configSnapshot;
   final bool submittingPrompt;
   final bool interruptiblePrompt;
@@ -4971,6 +5149,7 @@ class _WorkspaceBody extends StatelessWidget {
   final ValueChanged<String> onOpenSession;
   final Future<void> Function() onPickAttachments;
   final ValueChanged<String> onRemoveAttachment;
+  final VoidCallback? onShowSidePanel;
   final Future<void> Function() onToggleTerminal;
   final bool terminalPanelOpen;
   final Widget? terminalPanel;
@@ -5106,7 +5285,12 @@ class _WorkspaceBody extends StatelessWidget {
             submittedDraftEpoch: submittedDraftEpoch,
             recentSubmittedDraft: recentSubmittedDraft,
             onToggleTerminal: onToggleTerminal,
-            onSelectSideTab: controller.setSideTab,
+            onSelectSideTab: (tab) {
+              if (!compact && !sidePanelVisible) {
+                onShowSidePanel?.call();
+              }
+              controller.setSideTab(tab);
+            },
             onSubmit: onSubmitPrompt,
           ),
         if (terminalPanel != null)
@@ -5142,8 +5326,22 @@ class _WorkspaceBody extends StatelessWidget {
     return Row(
       children: <Widget>[
         Expanded(child: content),
-        Container(width: 1, color: Theme.of(context).dividerColor),
-        SizedBox(width: 360, child: sidePanel),
+        _HorizontalReveal(
+          key: const ValueKey<String>('workspace-desktop-side-panel-reveal'),
+          visible: sidePanelVisible,
+          alignment: Alignment.centerRight,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Container(width: 1, color: Theme.of(context).dividerColor),
+              SizedBox(
+                key: const ValueKey<String>('workspace-desktop-side-panel'),
+                width: 360,
+                child: sidePanel,
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -5158,6 +5356,46 @@ String _compactSideLabel(WorkspaceController controller) {
     WorkspaceSideTab.files => 'Files',
     WorkspaceSideTab.context => 'Context',
   };
+}
+
+String _desktopSidePanelLabel(WorkspaceController controller) {
+  return switch (controller.sideTab) {
+    WorkspaceSideTab.review => 'Review',
+    WorkspaceSideTab.files => 'Files',
+    WorkspaceSideTab.context => 'Context',
+  };
+}
+
+class _HorizontalReveal extends StatelessWidget {
+  const _HorizontalReveal({
+    required this.visible,
+    required this.alignment,
+    required this.child,
+    super.key,
+  });
+
+  final bool visible;
+  final Alignment alignment;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: visible ? 1 : 0, end: visible ? 1 : 0),
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      child: IgnorePointer(ignoring: !visible, child: child),
+      builder: (context, value, child) {
+        return ClipRect(
+          child: Align(
+            alignment: alignment,
+            widthFactor: value,
+            child: Opacity(opacity: value.clamp(0, 1).toDouble(), child: child),
+          ),
+        );
+      },
+    );
+  }
 }
 
 class _ActiveSubSessionPanel extends StatefulWidget {
