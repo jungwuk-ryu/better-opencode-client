@@ -11646,6 +11646,8 @@ class _SessionTodoDock extends StatefulWidget {
 
 class _SessionTodoDockState extends State<_SessionTodoDock> {
   static const Duration _closeDelay = Duration(milliseconds: 400);
+  static const String _todoItemSeparator = '\u001f';
+  static const String _todoListSeparator = '\u001e';
 
   final ScrollController _scrollController = ScrollController();
   final Map<String, GlobalKey> _itemKeys = <String, GlobalKey>{};
@@ -11656,6 +11658,8 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
   bool _collapsed = false;
   bool _stuck = false;
   bool _clearQueued = false;
+  String? _dismissedCompletedSignature;
+  String? _scheduledCloseSignature;
 
   @override
   void initState() {
@@ -11667,11 +11671,16 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
   @override
   void didUpdateWidget(covariant _SessionTodoDock oldWidget) {
     super.didUpdateWidget(oldWidget);
+    final previousSignature = _todoSignatureFor(oldWidget.todos);
+    final nextSignature = _todoSignature;
     if (oldWidget.sessionId != widget.sessionId) {
       _collapsed = false;
       _stuck = false;
       _clearQueued = false;
+      _dismissedCompletedSignature = null;
       _cancelCloseTimer();
+    } else if (previousSignature != nextSignature || !_done || !widget.live) {
+      _dismissedCompletedSignature = null;
     }
     _syncState();
   }
@@ -11690,6 +11699,24 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
       widget.todos.every(
         (todo) => todo.status == 'completed' || todo.status == 'cancelled',
       );
+
+  String get _todoSignature => _todoSignatureFor(widget.todos);
+
+  String _todoSignatureFor(List<TodoItem> todos) {
+    if (todos.isEmpty) {
+      return '';
+    }
+    return todos
+        .map(
+          (todo) => <String>[
+            todo.id,
+            todo.status,
+            todo.priority,
+            todo.content,
+          ].join(_todoItemSeparator),
+        )
+        .join(_todoListSeparator);
+  }
 
   int get _doneCount =>
       widget.todos.where((todo) => todo.status == 'completed').length;
@@ -11727,6 +11754,7 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
   }
 
   void _syncState({bool initial = false}) {
+    final todoSignature = _todoSignature;
     final next = _todoDockState(
       count: widget.todos.length,
       done: _done,
@@ -11734,6 +11762,7 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
     );
 
     if (next == _TodoDockState.hide) {
+      _dismissedCompletedSignature = null;
       _cancelCloseTimer();
       if (_visible || _closing) {
         setState(() {
@@ -11745,6 +11774,7 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
     }
 
     if (next == _TodoDockState.clear) {
+      _dismissedCompletedSignature = null;
       _cancelCloseTimer();
       if (_visible || _closing) {
         setState(() {
@@ -11757,6 +11787,7 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
     }
 
     if (next == _TodoDockState.open) {
+      _dismissedCompletedSignature = null;
       _cancelCloseTimer();
       if (!_visible || _closing) {
         setState(() {
@@ -11770,13 +11801,18 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
       return;
     }
 
+    if (_dismissedCompletedSignature == todoSignature &&
+        !_visible &&
+        !_closing) {
+      return;
+    }
     if (!_visible || !_closing) {
       setState(() {
         _visible = true;
         _closing = true;
       });
     }
-    _scheduleClose();
+    _scheduleClose(todoSignature);
     if (initial && !_collapsed) {
       _scheduleEnsureVisible();
     }
@@ -11799,21 +11835,30 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
   void _cancelCloseTimer() {
     _closeTimer?.cancel();
     _closeTimer = null;
+    _scheduledCloseSignature = null;
   }
 
-  void _scheduleClose() {
-    if (_closeTimer != null) {
+  void _scheduleClose(String todoSignature) {
+    if (_closeTimer != null && _scheduledCloseSignature == todoSignature) {
       return;
     }
+    _cancelCloseTimer();
+    _scheduledCloseSignature = todoSignature;
     _closeTimer = Timer(_closeDelay, () {
       if (!mounted) {
         return;
       }
+      final shouldDismiss =
+          widget.live && _done && _todoSignature == todoSignature;
       setState(() {
         _visible = false;
         _closing = false;
       });
+      if (shouldDismiss) {
+        _dismissedCompletedSignature = todoSignature;
+      }
       _closeTimer = null;
+      _scheduledCloseSignature = null;
     });
   }
 

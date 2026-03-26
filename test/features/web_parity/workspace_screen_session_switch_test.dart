@@ -889,6 +889,63 @@ void main() {
   );
 
   testWidgets(
+    'completed todo dock stays hidden after unchanged workspace updates',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      late _CompletedTodoWorkspaceController controller;
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              controller = _CompletedTodoWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+              return controller;
+            },
+      );
+      addTearDown(appController.dispose);
+
+      final navigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          navigatorKey: navigatorKey,
+          initialRoute: '/',
+        ),
+      );
+      navigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.text('completed todo alpha'), findsOneWidget);
+
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('completed todo alpha'), findsNothing);
+
+      controller.emitUnchangedUpdate();
+      await tester.pump();
+      expect(find.text('completed todo alpha'), findsNothing);
+
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('completed todo alpha'), findsNothing);
+    },
+  );
+
+  testWidgets(
     'switching projects stays on the same page and reuses cached workspace controllers',
     (tester) async {
       tester.view.physicalSize = const Size(1600, 1000);
@@ -1880,6 +1937,44 @@ class _PaneMetadataWorkspaceController extends _RecordingWorkspaceController {
       return;
     }
     _todosBySession.remove(normalizedSessionId);
+    notifyListeners();
+  }
+}
+
+class _CompletedTodoWorkspaceController extends _RecordingWorkspaceController {
+  _CompletedTodoWorkspaceController({
+    required super.profile,
+    required super.directory,
+    super.initialSessionId,
+  });
+
+  static const List<TodoItem> _completedTodos = <TodoItem>[
+    TodoItem(
+      id: 'todo_completed_alpha',
+      content: 'completed todo alpha',
+      status: 'completed',
+      priority: 'medium',
+    ),
+    TodoItem(
+      id: 'todo_completed_beta',
+      content: 'completed todo beta',
+      status: 'completed',
+      priority: 'low',
+    ),
+  ];
+
+  @override
+  List<TodoItem> get todos => todosForSession(selectedSessionId);
+
+  @override
+  List<TodoItem> todosForSession(String? sessionId) {
+    return switch (sessionId?.trim()) {
+      'ses_1' => _completedTodos,
+      _ => const <TodoItem>[],
+    };
+  }
+
+  void emitUnchangedUpdate() {
     notifyListeners();
   }
 }
