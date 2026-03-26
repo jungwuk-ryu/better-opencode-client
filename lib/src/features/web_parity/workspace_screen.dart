@@ -74,6 +74,37 @@ class _WorkspaceSessionPaneSpec {
   }
 }
 
+class _ResolvedChatSearchState {
+  const _ResolvedChatSearchState({
+    required this.query,
+    required this.sessionId,
+    required this.matchMessageIds,
+    required this.activeMatchIndex,
+    required this.revision,
+  });
+
+  final String query;
+  final String? sessionId;
+  final List<String> matchMessageIds;
+  final int activeMatchIndex;
+  final int revision;
+
+  bool get hasQuery => query.trim().isNotEmpty;
+  bool get hasMatches => matchMessageIds.isNotEmpty;
+  String? get activeMessageId =>
+      hasMatches ? matchMessageIds[activeMatchIndex] : null;
+
+  String get statusText {
+    if (!hasQuery) {
+      return 'Type to search';
+    }
+    if (!hasMatches) {
+      return 'No matches';
+    }
+    return '${activeMatchIndex + 1} / ${matchMessageIds.length}';
+  }
+}
+
 class WebParityWorkspaceScreen extends StatefulWidget {
   const WebParityWorkspaceScreen({
     required this.directory,
@@ -103,8 +134,14 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   WorkspaceController? _controller;
   ServerProfile? _profile;
   final TextEditingController _promptController = TextEditingController();
+  final TextEditingController _chatSearchController = TextEditingController();
+  final FocusNode _chatSearchFocusNode = FocusNode();
   List<PromptAttachment> _composerAttachments = const <PromptAttachment>[];
   bool _pickingComposerAttachments = false;
+  bool _chatSearchVisible = false;
+  int _chatSearchActiveMatchIndex = 0;
+  int _chatSearchRevision = 0;
+  String? _chatSearchSessionId;
   _CompactWorkspacePane _compactPane = _CompactWorkspacePane.session;
   PtyService? _ptyService;
   List<PtySessionInfo> _ptySessions = const <PtySessionInfo>[];
@@ -228,6 +265,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   void dispose() {
     _disposeController();
     _promptController.dispose();
+    _chatSearchController.dispose();
+    _chatSearchFocusNode.dispose();
     _ptyService?.dispose();
     if (_ownsProjectCatalogService) {
       _projectCatalogService.dispose();
@@ -313,6 +352,117 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
 
   void _toggleDesktopSidePanelVisibility() {
     _setDesktopSidePanelVisible(!_desktopSidePanelVisible);
+  }
+
+  void _focusChatSearchField() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _chatSearchFocusNode.requestFocus();
+      final value = _chatSearchController.value;
+      _chatSearchController.value = value.copyWith(
+        selection: TextSelection(
+          baseOffset: 0,
+          extentOffset: value.text.length,
+        ),
+      );
+    });
+  }
+
+  void _openChatSearch() {
+    if (_chatSearchVisible) {
+      _focusChatSearchField();
+      return;
+    }
+    setState(() {
+      _chatSearchVisible = true;
+      _chatSearchRevision += 1;
+    });
+    _focusChatSearchField();
+  }
+
+  void _closeChatSearch() {
+    if (!_chatSearchVisible && _chatSearchController.text.isEmpty) {
+      return;
+    }
+    _chatSearchController.clear();
+    setState(() {
+      _chatSearchVisible = false;
+      _chatSearchActiveMatchIndex = 0;
+      _chatSearchSessionId = null;
+      _chatSearchRevision += 1;
+    });
+  }
+
+  void _handleChatSearchChanged(String value) {
+    final controller = _controller;
+    setState(() {
+      _chatSearchActiveMatchIndex = 0;
+      _chatSearchSessionId = controller?.selectedSessionId;
+      _chatSearchRevision += 1;
+    });
+  }
+
+  void _moveChatSearchMatch(int delta) {
+    final controller = _controller;
+    if (controller == null) {
+      return;
+    }
+    final searchState = _resolveChatSearchState(controller);
+    if (!searchState.hasMatches) {
+      return;
+    }
+    final count = searchState.matchMessageIds.length;
+    final nextIndex = (searchState.activeMatchIndex + delta + count) % count;
+    setState(() {
+      _chatSearchActiveMatchIndex = nextIndex;
+      _chatSearchSessionId = controller.selectedSessionId;
+      _chatSearchRevision += 1;
+    });
+    _focusChatSearchField();
+  }
+
+  _ResolvedChatSearchState _resolveChatSearchState(
+    WorkspaceController controller,
+  ) {
+    final rawQuery = _chatSearchController.text;
+    final query = rawQuery.trim();
+    final sessionId = controller.selectedSessionId;
+    if (query.isEmpty) {
+      return _ResolvedChatSearchState(
+        query: rawQuery,
+        sessionId: sessionId,
+        matchMessageIds: const <String>[],
+        activeMatchIndex: 0,
+        revision: _chatSearchRevision,
+      );
+    }
+
+    final terms = _normalizedSearchTerms(query);
+    final messages = controller
+        .timelineStateForSession(sessionId)
+        .orderedMessages;
+    final matches = <String>[];
+    for (final message in messages) {
+      if (_messageMatchesSearch(message, terms)) {
+        matches.add(message.info.id);
+      }
+    }
+
+    final baseIndex = _chatSearchSessionId == sessionId
+        ? _chatSearchActiveMatchIndex
+        : 0;
+    final activeIndex = matches.isEmpty
+        ? 0
+        : baseIndex.clamp(0, matches.length - 1);
+    return _ResolvedChatSearchState(
+      query: rawQuery,
+      sessionId: sessionId,
+      matchMessageIds: List<String>.unmodifiable(matches),
+      activeMatchIndex: activeIndex,
+      revision: _chatSearchRevision,
+    );
   }
 
   void _queueRouteSessionSync(String? sessionId) {
@@ -1552,6 +1702,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
           displayAllSessions,
           selectedSession,
         );
+        final chatSearch = _resolveChatSearchState(controller);
         final sidebar = _WorkspaceSidebar(
           currentDirectory: _currentDirectory,
           currentSessionId: showProjectLoadingShell
@@ -1635,6 +1786,17 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                         onSetTimelineProgressDetailsVisible:
                             appController.setTimelineProgressDetailsVisible,
                         terminalOpen: _terminalPanelOpen,
+                        chatSearchVisible: _chatSearchVisible,
+                        chatSearchController: _chatSearchController,
+                        chatSearchFocusNode: _chatSearchFocusNode,
+                        chatSearchStatusText: chatSearch.statusText,
+                        chatSearchNavigationEnabled: chatSearch.hasMatches,
+                        onOpenChatSearch: _openChatSearch,
+                        onCloseChatSearch: _closeChatSearch,
+                        onChatSearchChanged: _handleChatSearchChanged,
+                        onPreviousChatSearchMatch: () =>
+                            _moveChatSearchMatch(-1),
+                        onNextChatSearchMatch: () => _moveChatSearchMatch(1),
                         onBackHome: () => Navigator.of(
                           context,
                         ).pushNamedAndRemoveUntil('/', (route) => false),
@@ -1733,6 +1895,12 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                     appController.shellToolPartsExpanded,
                                 timelineProgressDetailsVisible: appController
                                     .timelineProgressDetailsVisible,
+                                chatSearchQuery: chatSearch.query,
+                                chatSearchMatchMessageIds:
+                                    chatSearch.matchMessageIds,
+                                chatSearchActiveMessageId:
+                                    chatSearch.activeMessageId,
+                                chatSearchRevision: chatSearch.revision,
                                 timelineJumpEpoch: _timelineJumpEpoch,
                                 onForkMessage: (message) =>
                                     _forkMessageIntoSession(
@@ -1886,6 +2054,16 @@ class _WorkspaceTopBar extends StatelessWidget {
     required this.timelineProgressDetailsVisible,
     required this.onSetTimelineProgressDetailsVisible,
     required this.terminalOpen,
+    required this.chatSearchVisible,
+    required this.chatSearchController,
+    required this.chatSearchFocusNode,
+    required this.chatSearchStatusText,
+    required this.chatSearchNavigationEnabled,
+    required this.onOpenChatSearch,
+    required this.onCloseChatSearch,
+    required this.onChatSearchChanged,
+    required this.onPreviousChatSearchMatch,
+    required this.onNextChatSearchMatch,
     required this.sessionsPanelVisible,
     required this.sidePanelVisible,
     required this.sidePanelLabel,
@@ -1916,6 +2094,16 @@ class _WorkspaceTopBar extends StatelessWidget {
   final bool timelineProgressDetailsVisible;
   final Future<void> Function(bool value) onSetTimelineProgressDetailsVisible;
   final bool terminalOpen;
+  final bool chatSearchVisible;
+  final TextEditingController chatSearchController;
+  final FocusNode chatSearchFocusNode;
+  final String chatSearchStatusText;
+  final bool chatSearchNavigationEnabled;
+  final VoidCallback onOpenChatSearch;
+  final VoidCallback onCloseChatSearch;
+  final ValueChanged<String> onChatSearchChanged;
+  final VoidCallback onPreviousChatSearchMatch;
+  final VoidCallback onNextChatSearchMatch;
   final bool sessionsPanelVisible;
   final bool sidePanelVisible;
   final String sidePanelLabel;
@@ -1963,6 +2151,34 @@ class _WorkspaceTopBar extends StatelessWidget {
         profile!.effectiveLabel.trim(),
       if (project?.directory.trim().isNotEmpty == true) project!.directory,
     ];
+    final searchBar = chatSearchVisible
+        ? Padding(
+            padding: compact
+                ? EdgeInsets.fromLTRB(
+                    density.inset(AppSpacing.sm, min: AppSpacing.xs),
+                    0,
+                    density.inset(AppSpacing.sm, min: AppSpacing.xs),
+                    density.inset(AppSpacing.xs, min: 4),
+                  )
+                : EdgeInsets.fromLTRB(
+                    desktopHorizontal,
+                    0,
+                    desktopHorizontal,
+                    desktopVertical,
+                  ),
+            child: _WorkspaceChatSearchBar(
+              compact: compact,
+              controller: chatSearchController,
+              focusNode: chatSearchFocusNode,
+              statusText: chatSearchStatusText,
+              navigationEnabled: chatSearchNavigationEnabled,
+              onChanged: onChatSearchChanged,
+              onPreviousMatch: onPreviousChatSearchMatch,
+              onNextMatch: onNextChatSearchMatch,
+              onClose: onCloseChatSearch,
+            ),
+          )
+        : const SizedBox.shrink();
     final menuSections = <List<_SessionOverflowMenuAction>>[
       <_SessionOverflowMenuAction>[
         if (compact)
@@ -2041,247 +2257,405 @@ class _WorkspaceTopBar extends StatelessWidget {
     if (compact) {
       return Material(
         color: surfaces.panel,
-        child: Container(
-          constraints: BoxConstraints(minHeight: density.inset(54, min: 46)),
-          padding: EdgeInsets.symmetric(
-            horizontal: density.inset(AppSpacing.xxs, min: 2),
-            vertical: 2,
-          ),
-          decoration: BoxDecoration(
-            border: Border(bottom: BorderSide(color: surfaces.lineSoft)),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: <Widget>[
-              IconButton(
-                onPressed: onOpenDrawer,
-                icon: const Icon(Icons.menu_rounded, size: 18),
-                splashRadius: 18,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Container(
+              constraints: BoxConstraints(
+                minHeight: density.inset(54, min: 46),
               ),
-              if (canReturnToMain)
-                IconButton(
-                  key: const ValueKey<String>(
-                    'workspace-back-to-main-session-button',
+              padding: EdgeInsets.symmetric(
+                horizontal: density.inset(AppSpacing.xxs, min: 2),
+                vertical: 2,
+              ),
+              decoration: BoxDecoration(
+                border: Border(bottom: BorderSide(color: surfaces.lineSoft)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: <Widget>[
+                  IconButton(
+                    onPressed: onOpenDrawer,
+                    icon: const Icon(Icons.menu_rounded, size: 18),
+                    splashRadius: 18,
                   ),
-                  tooltip: 'Back to main session',
-                  onPressed: onBackToMainSession,
-                  icon: const Icon(
-                    Icons.subdirectory_arrow_left_rounded,
-                    size: 18,
+                  if (canReturnToMain)
+                    IconButton(
+                      key: const ValueKey<String>(
+                        'workspace-back-to-main-session-button',
+                      ),
+                      tooltip: 'Back to main session',
+                      onPressed: onBackToMainSession,
+                      icon: const Icon(
+                        Icons.subdirectory_arrow_left_rounded,
+                        size: 18,
+                      ),
+                      splashRadius: 18,
+                    ),
+                  Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: density.inset(AppSpacing.xxs, min: 2),
+                      ),
+                      child: _SessionIdentity(
+                        compact: true,
+                        title: title,
+                        titleKey: ValueKey<String>(
+                          'session-header-title-${session?.id ?? 'new'}',
+                        ),
+                        titleStyle: titleStyle,
+                        busy: busy,
+                        busyKey: ValueKey<String>(
+                          'session-header-busy-${session?.id ?? 'new'}',
+                        ),
+                      ),
+                    ),
                   ),
-                  splashRadius: 18,
-                ),
-              Expanded(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: density.inset(AppSpacing.xxs, min: 2),
+                  if (session != null)
+                    Padding(
+                      padding: EdgeInsets.only(
+                        right: density.inset(AppSpacing.xxs, min: 2),
+                      ),
+                      child: _SessionContextUsageRing(
+                        key: ValueKey<String>(
+                          'session-header-context-ring-${session!.id}',
+                        ),
+                        usagePercent: contextSnapshot?.usagePercent,
+                        totalTokens: contextSnapshot?.totalTokens,
+                        contextLimit: contextSnapshot?.contextLimit,
+                        compact: true,
+                      ),
+                    ),
+                  IconButton(
+                    key: const ValueKey<String>('workspace-chat-search-button'),
+                    onPressed: onOpenChatSearch,
+                    icon: const Icon(Icons.search_rounded, size: 18),
+                    tooltip: 'Search chat',
+                    splashRadius: 18,
                   ),
-                  child: _SessionIdentity(
+                  IconButton(
+                    onPressed: onToggleTerminal,
+                    icon: Icon(
+                      terminalOpen
+                          ? Icons.terminal_rounded
+                          : Icons.terminal_outlined,
+                      size: 18,
+                    ),
+                    tooltip: terminalOpen ? 'Hide terminal' : 'Show terminal',
+                    splashRadius: 18,
+                  ),
+                  _SessionOverflowMenuButton(
                     compact: true,
-                    title: title,
-                    titleKey: ValueKey<String>(
-                      'session-header-title-${session?.id ?? 'new'}',
-                    ),
-                    titleStyle: titleStyle,
-                    busy: busy,
-                    busyKey: ValueKey<String>(
-                      'session-header-busy-${session?.id ?? 'new'}',
-                    ),
+                    sections: menuSections,
                   ),
-                ),
+                ],
               ),
-              if (session != null)
-                Padding(
-                  padding: EdgeInsets.only(
-                    right: density.inset(AppSpacing.xxs, min: 2),
-                  ),
-                  child: _SessionContextUsageRing(
-                    key: ValueKey<String>(
-                      'session-header-context-ring-${session!.id}',
-                    ),
-                    usagePercent: contextSnapshot?.usagePercent,
-                    totalTokens: contextSnapshot?.totalTokens,
-                    contextLimit: contextSnapshot?.contextLimit,
-                    compact: true,
-                  ),
-                ),
-              IconButton(
-                onPressed: onToggleTerminal,
-                icon: Icon(
-                  terminalOpen
-                      ? Icons.terminal_rounded
-                      : Icons.terminal_outlined,
-                  size: 18,
-                ),
-                tooltip: terminalOpen ? 'Hide terminal' : 'Show terminal',
-                splashRadius: 18,
-              ),
-              _SessionOverflowMenuButton(compact: true, sections: menuSections),
-            ],
-          ),
+            ),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 180),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              child: searchBar,
+            ),
+          ],
         ),
       );
     }
     return Material(
       color: surfaces.panel,
-      child: Padding(
-        padding: EdgeInsets.symmetric(
-          horizontal: desktopHorizontal,
-          vertical: desktopVertical,
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: <Widget>[
-            if (compact)
-              IconButton(
-                onPressed: onOpenDrawer,
-                icon: const Icon(Icons.menu_rounded),
-              ),
-            IconButton(
-              onPressed: onBackHome,
-              icon: const Icon(Icons.arrow_back_rounded),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: desktopHorizontal,
+              vertical: desktopVertical,
             ),
-            if (onToggleSessionsPanel != null) ...<Widget>[
-              SizedBox(width: density.inset(AppSpacing.xs, min: 4)),
-              _WorkspacePanelToggleChip(
-                key: const ValueKey<String>(
-                  'workspace-toggle-sessions-panel-button',
-                ),
-                label: 'Sessions',
-                icon: Icons.view_sidebar_rounded,
-                active: sessionsPanelVisible,
-                tooltip: sessionsPanelVisible
-                    ? 'Hide sessions panel'
-                    : 'Show sessions panel',
-                onTap: onToggleSessionsPanel!,
-              ),
-            ],
-            if (onToggleSidePanel != null) ...<Widget>[
-              SizedBox(width: density.inset(AppSpacing.xs, min: 4)),
-              _WorkspacePanelToggleChip(
-                key: const ValueKey<String>(
-                  'workspace-toggle-side-panel-button',
-                ),
-                label: sidePanelLabel,
-                icon: Icons.dashboard_rounded,
-                active: sidePanelVisible,
-                tooltip: sidePanelVisible
-                    ? 'Hide $sidePanelLabel panel'
-                    : 'Show $sidePanelLabel panel',
-                onTap: onToggleSidePanel!,
-              ),
-            ],
-            if (onSplitSessionPane != null) ...<Widget>[
-              SizedBox(width: density.inset(AppSpacing.xs, min: 4)),
-              _WorkspaceActionChip(
-                key: const ValueKey<String>(
-                  'workspace-split-session-pane-button',
-                ),
-                label: sessionPaneCount > 1
-                    ? 'Split ($sessionPaneCount)'
-                    : 'Split',
-                icon: Icons.splitscreen_rounded,
-                enabled: canSplitSessionPane,
-                tooltip: canSplitSessionPane
-                    ? 'Split the chat area into another session pane'
-                    : 'Maximum number of session panes open',
-                onTap: onSplitSessionPane,
-              ),
-            ],
-            SizedBox(width: density.inset(AppSpacing.sm, min: 6)),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  if (canReturnToMain)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: AppSpacing.xxs),
-                      child: InkWell(
-                        key: const ValueKey<String>(
-                          'workspace-back-to-main-session-link',
-                        ),
-                        onTap: onBackToMainSession,
-                        borderRadius: BorderRadius.circular(AppSpacing.sm),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.xs,
-                            vertical: 2,
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: <Widget>[
-                              Icon(
-                                Icons.subdirectory_arrow_left_rounded,
-                                size: 14,
-                                color: surfaces.muted,
-                              ),
-                              const SizedBox(width: AppSpacing.xxs),
-                              Flexible(
-                                child: Text(
-                                  rootSession.title.isNotEmpty
-                                      ? rootSession.title
-                                      : 'Main session',
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(
-                                        color: surfaces.muted,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  _SessionIdentity(
-                    compact: false,
-                    title: title,
-                    titleKey: ValueKey<String>(
-                      'session-header-title-${session?.id ?? 'new'}',
-                    ),
-                    titleStyle: titleStyle,
-                    busy: busy,
-                    busyKey: ValueKey<String>(
-                      'session-header-busy-${session?.id ?? 'new'}',
-                    ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: <Widget>[
+                if (compact)
+                  IconButton(
+                    onPressed: onOpenDrawer,
+                    icon: const Icon(Icons.menu_rounded),
                   ),
-                  if (metaParts.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: AppSpacing.xxs),
-                      child: Text(
-                        metaParts.join('  •  '),
-                        style: Theme.of(
-                          context,
-                        ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                IconButton(
+                  onPressed: onBackHome,
+                  icon: const Icon(Icons.arrow_back_rounded),
+                ),
+                if (onToggleSessionsPanel != null) ...<Widget>[
+                  SizedBox(width: density.inset(AppSpacing.xs, min: 4)),
+                  _WorkspacePanelToggleChip(
+                    key: const ValueKey<String>(
+                      'workspace-toggle-sessions-panel-button',
                     ),
+                    label: 'Sessions',
+                    icon: Icons.view_sidebar_rounded,
+                    active: sessionsPanelVisible,
+                    tooltip: sessionsPanelVisible
+                        ? 'Hide sessions panel'
+                        : 'Show sessions panel',
+                    onTap: onToggleSessionsPanel!,
+                  ),
                 ],
-              ),
-            ),
-            if (session != null)
-              Padding(
-                padding: const EdgeInsets.only(right: AppSpacing.sm),
-                child: _SessionContextUsageRing(
-                  key: ValueKey<String>(
-                    'session-header-context-ring-${session!.id}',
+                if (onToggleSidePanel != null) ...<Widget>[
+                  SizedBox(width: density.inset(AppSpacing.xs, min: 4)),
+                  _WorkspacePanelToggleChip(
+                    key: const ValueKey<String>(
+                      'workspace-toggle-side-panel-button',
+                    ),
+                    label: sidePanelLabel,
+                    icon: Icons.dashboard_rounded,
+                    active: sidePanelVisible,
+                    tooltip: sidePanelVisible
+                        ? 'Hide $sidePanelLabel panel'
+                        : 'Show $sidePanelLabel panel',
+                    onTap: onToggleSidePanel!,
                   ),
-                  usagePercent: contextSnapshot?.usagePercent,
-                  totalTokens: contextSnapshot?.totalTokens,
-                  contextLimit: contextSnapshot?.contextLimit,
+                ],
+                if (onSplitSessionPane != null) ...<Widget>[
+                  SizedBox(width: density.inset(AppSpacing.xs, min: 4)),
+                  _WorkspaceActionChip(
+                    key: const ValueKey<String>(
+                      'workspace-split-session-pane-button',
+                    ),
+                    label: sessionPaneCount > 1
+                        ? 'Split ($sessionPaneCount)'
+                        : 'Split',
+                    icon: Icons.splitscreen_rounded,
+                    enabled: canSplitSessionPane,
+                    tooltip: canSplitSessionPane
+                        ? 'Split the chat area into another session pane'
+                        : 'Maximum number of session panes open',
+                    onTap: onSplitSessionPane,
+                  ),
+                ],
+                SizedBox(width: density.inset(AppSpacing.sm, min: 6)),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      if (canReturnToMain)
+                        Padding(
+                          padding: const EdgeInsets.only(
+                            bottom: AppSpacing.xxs,
+                          ),
+                          child: InkWell(
+                            key: const ValueKey<String>(
+                              'workspace-back-to-main-session-link',
+                            ),
+                            onTap: onBackToMainSession,
+                            borderRadius: BorderRadius.circular(AppSpacing.sm),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: AppSpacing.xs,
+                                vertical: 2,
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: <Widget>[
+                                  Icon(
+                                    Icons.subdirectory_arrow_left_rounded,
+                                    size: 14,
+                                    color: surfaces.muted,
+                                  ),
+                                  const SizedBox(width: AppSpacing.xxs),
+                                  Flexible(
+                                    child: Text(
+                                      rootSession.title.isNotEmpty
+                                          ? rootSession.title
+                                          : 'Main session',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: surfaces.muted,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      _SessionIdentity(
+                        compact: false,
+                        title: title,
+                        titleKey: ValueKey<String>(
+                          'session-header-title-${session?.id ?? 'new'}',
+                        ),
+                        titleStyle: titleStyle,
+                        busy: busy,
+                        busyKey: ValueKey<String>(
+                          'session-header-busy-${session?.id ?? 'new'}',
+                        ),
+                      ),
+                      if (metaParts.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: AppSpacing.xxs),
+                          child: Text(
+                            metaParts.join('  •  '),
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: surfaces.muted),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                if (session != null)
+                  Padding(
+                    padding: const EdgeInsets.only(right: AppSpacing.sm),
+                    child: _SessionContextUsageRing(
+                      key: ValueKey<String>(
+                        'session-header-context-ring-${session!.id}',
+                      ),
+                      usagePercent: contextSnapshot?.usagePercent,
+                      totalTokens: contextSnapshot?.totalTokens,
+                      contextLimit: contextSnapshot?.contextLimit,
+                    ),
+                  ),
+                IconButton(
+                  key: const ValueKey<String>('workspace-chat-search-button'),
+                  onPressed: onOpenChatSearch,
+                  icon: const Icon(Icons.search_rounded),
+                  tooltip: 'Search chat',
+                ),
+                IconButton(
+                  onPressed: onToggleTerminal,
+                  icon: Icon(
+                    terminalOpen
+                        ? Icons.terminal_rounded
+                        : Icons.terminal_outlined,
+                  ),
+                  tooltip: terminalOpen ? 'Hide terminal' : 'Show terminal',
+                ),
+                _SessionOverflowMenuButton(sections: menuSections),
+              ],
+            ),
+          ),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 180),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            child: searchBar,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WorkspaceChatSearchBar extends StatelessWidget {
+  const _WorkspaceChatSearchBar({
+    required this.compact,
+    required this.controller,
+    required this.focusNode,
+    required this.statusText,
+    required this.navigationEnabled,
+    required this.onChanged,
+    required this.onPreviousMatch,
+    required this.onNextMatch,
+    required this.onClose,
+  });
+
+  final bool compact;
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final String statusText;
+  final bool navigationEnabled;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onPreviousMatch;
+  final VoidCallback onNextMatch;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final density = _workspaceDensity(context);
+    return Container(
+      key: const ValueKey<String>('workspace-chat-search-panel'),
+      width: double.infinity,
+      padding: EdgeInsets.symmetric(
+        horizontal: density.inset(compact ? AppSpacing.sm : AppSpacing.md),
+        vertical: density.inset(compact ? AppSpacing.xs : AppSpacing.sm),
+      ),
+      decoration: BoxDecoration(
+        color: surfaces.panelRaised.withValues(alpha: 0.94),
+        borderRadius: BorderRadius.circular(compact ? 16 : 18),
+        border: Border.all(color: surfaces.lineSoft),
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(Icons.search_rounded, size: 18, color: surfaces.muted),
+          SizedBox(width: density.inset(AppSpacing.sm, min: 6)),
+          Expanded(
+            child: TextField(
+              key: const ValueKey<String>('workspace-chat-search-field'),
+              controller: controller,
+              focusNode: focusNode,
+              onChanged: onChanged,
+              textInputAction: TextInputAction.search,
+              onSubmitted: (_) => onNextMatch(),
+              style: theme.textTheme.bodyMedium,
+              decoration: InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                hintText: 'Search this chat',
+                hintStyle: theme.textTheme.bodyMedium?.copyWith(
+                  color: surfaces.muted,
                 ),
               ),
-            IconButton(
-              onPressed: onToggleTerminal,
-              icon: Icon(
-                terminalOpen ? Icons.terminal_rounded : Icons.terminal_outlined,
-              ),
-              tooltip: terminalOpen ? 'Hide terminal' : 'Show terminal',
             ),
-            _SessionOverflowMenuButton(sections: menuSections),
-          ],
-        ),
+          ),
+          SizedBox(width: density.inset(AppSpacing.sm, min: 6)),
+          Container(
+            key: const ValueKey<String>('workspace-chat-search-status'),
+            padding: EdgeInsets.symmetric(
+              horizontal: density.inset(AppSpacing.xs, min: 4),
+              vertical: density.inset(AppSpacing.xxs, min: 2),
+            ),
+            decoration: BoxDecoration(
+              color: surfaces.panelMuted.withValues(alpha: 0.92),
+              borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
+              border: Border.all(color: surfaces.lineSoft),
+            ),
+            child: Text(
+              statusText,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: surfaces.muted,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          SizedBox(width: density.inset(AppSpacing.xs, min: 4)),
+          IconButton(
+            key: const ValueKey<String>(
+              'workspace-chat-search-previous-button',
+            ),
+            onPressed: navigationEnabled ? onPreviousMatch : null,
+            tooltip: 'Previous match',
+            splashRadius: compact ? 16 : 18,
+            icon: const Icon(Icons.keyboard_arrow_up_rounded),
+          ),
+          IconButton(
+            key: const ValueKey<String>('workspace-chat-search-next-button'),
+            onPressed: navigationEnabled ? onNextMatch : null,
+            tooltip: 'Next match',
+            splashRadius: compact ? 16 : 18,
+            icon: const Icon(Icons.keyboard_arrow_down_rounded),
+          ),
+          IconButton(
+            key: const ValueKey<String>('workspace-chat-search-close-button'),
+            onPressed: onClose,
+            tooltip: 'Close search',
+            splashRadius: compact ? 16 : 18,
+            icon: const Icon(Icons.close_rounded),
+          ),
+        ],
       ),
     );
   }
@@ -5420,6 +5794,10 @@ class _WorkspaceBody extends StatelessWidget {
     required this.busyFollowupMode,
     required this.shellToolDefaultExpanded,
     required this.timelineProgressDetailsVisible,
+    required this.chatSearchQuery,
+    required this.chatSearchMatchMessageIds,
+    required this.chatSearchActiveMessageId,
+    required this.chatSearchRevision,
     required this.timelineJumpEpoch,
     required this.onForkMessage,
     required this.onRevertMessage,
@@ -5464,6 +5842,10 @@ class _WorkspaceBody extends StatelessWidget {
   final WorkspaceFollowupMode busyFollowupMode;
   final bool shellToolDefaultExpanded;
   final bool timelineProgressDetailsVisible;
+  final String chatSearchQuery;
+  final List<String> chatSearchMatchMessageIds;
+  final String? chatSearchActiveMessageId;
+  final int chatSearchRevision;
   final int timelineJumpEpoch;
   final Future<void> Function(ChatMessage message) onForkMessage;
   final Future<void> Function(ChatMessage message) onRevertMessage;
@@ -5547,6 +5929,10 @@ class _WorkspaceBody extends StatelessWidget {
               configSnapshot: configSnapshot,
               shellToolDefaultExpanded: shellToolDefaultExpanded,
               timelineProgressDetailsVisible: timelineProgressDetailsVisible,
+              chatSearchQuery: chatSearchQuery,
+              chatSearchMatchMessageIds: chatSearchMatchMessageIds,
+              chatSearchActiveMessageId: chatSearchActiveMessageId,
+              chatSearchRevision: chatSearchRevision,
               timelineJumpEpoch: timelineJumpEpoch,
               onSelectPane: onSelectSessionPane,
               onClosePane: onCloseSessionPane,
@@ -5742,6 +6128,10 @@ class _WorkspaceSessionPaneDeck extends StatelessWidget {
     required this.configSnapshot,
     required this.shellToolDefaultExpanded,
     required this.timelineProgressDetailsVisible,
+    required this.chatSearchQuery,
+    required this.chatSearchMatchMessageIds,
+    required this.chatSearchActiveMessageId,
+    required this.chatSearchRevision,
     required this.timelineJumpEpoch,
     required this.onSelectPane,
     required this.onClosePane,
@@ -5761,6 +6151,10 @@ class _WorkspaceSessionPaneDeck extends StatelessWidget {
   final ConfigSnapshot? configSnapshot;
   final bool shellToolDefaultExpanded;
   final bool timelineProgressDetailsVisible;
+  final String chatSearchQuery;
+  final List<String> chatSearchMatchMessageIds;
+  final String? chatSearchActiveMessageId;
+  final int chatSearchRevision;
   final int timelineJumpEpoch;
   final Future<void> Function(String paneId) onSelectPane;
   final ValueChanged<String> onClosePane;
@@ -5810,6 +6204,10 @@ class _WorkspaceSessionPaneDeck extends StatelessWidget {
                 configSnapshot: configSnapshot,
                 shellToolDefaultExpanded: shellToolDefaultExpanded,
                 timelineProgressDetailsVisible: timelineProgressDetailsVisible,
+                chatSearchQuery: chatSearchQuery,
+                chatSearchMatchMessageIds: chatSearchMatchMessageIds,
+                chatSearchActiveMessageId: chatSearchActiveMessageId,
+                chatSearchRevision: chatSearchRevision,
                 timelineJumpEpoch: timelineJumpEpoch,
                 allSessions: allSessions,
                 onSelectPane: onSelectPane,
@@ -5841,6 +6239,10 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
     required this.configSnapshot,
     required this.shellToolDefaultExpanded,
     required this.timelineProgressDetailsVisible,
+    required this.chatSearchQuery,
+    required this.chatSearchMatchMessageIds,
+    required this.chatSearchActiveMessageId,
+    required this.chatSearchRevision,
     required this.timelineJumpEpoch,
     required this.allSessions,
     required this.onSelectPane,
@@ -5862,6 +6264,10 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
   final ConfigSnapshot? configSnapshot;
   final bool shellToolDefaultExpanded;
   final bool timelineProgressDetailsVisible;
+  final String chatSearchQuery;
+  final List<String> chatSearchMatchMessageIds;
+  final String? chatSearchActiveMessageId;
+  final int chatSearchRevision;
   final int timelineJumpEpoch;
   final List<SessionSummary> allSessions;
   final Future<void> Function(String paneId) onSelectPane;
@@ -5877,6 +6283,8 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
     final surfaces = theme.extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
     final sessionId = pane.sessionId;
+    final searchScoped =
+        sessionId != null && sessionId == controller.selectedSessionId;
     final timelineState = controller.timelineStateForSession(sessionId);
     final status = sessionId == null ? null : controller.statuses[sessionId];
     final busy = _isActiveSessionStatus(status);
@@ -6070,12 +6478,15 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                         )
                       : _MessageTimeline(
                           key: ValueKey<String>(
-                            'timeline-${pane.id}-${sessionId.isEmpty ? 'new' : sessionId}',
+                            'timeline-${pane.id}-${sessionId.isEmpty ? 'new' : sessionId}'
+                            '${searchScoped && chatSearchQuery.trim().isNotEmpty ? '::search-$chatSearchRevision-${chatSearchActiveMessageId ?? 'none'}' : ''}',
                           ),
                           storageScopeKey:
                               '${pane.id}::${sessionId.isEmpty ? 'new' : sessionId}',
-                          pageStorageKeyValue: selected
-                              ? 'web-parity-message-timeline'
+                          pageStorageKeyValue: searchScoped
+                              ? (chatSearchQuery.trim().isEmpty
+                                    ? 'web-parity-message-timeline'
+                                    : 'web-parity-message-timeline-search-$chatSearchRevision')
                               : 'web-parity-message-timeline-${pane.id}::${sessionId.isEmpty ? 'new' : sessionId}',
                           currentSessionId: sessionId,
                           loading: timelineState.loading,
@@ -6090,11 +6501,21 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                           shellToolDefaultExpanded: shellToolDefaultExpanded,
                           timelineProgressDetailsVisible:
                               timelineProgressDetailsVisible,
+                          searchQuery: searchScoped ? chatSearchQuery : '',
+                          matchingMessageIds: searchScoped
+                              ? chatSearchMatchMessageIds.toSet()
+                              : const <String>{},
+                          activeMatchMessageId: searchScoped
+                              ? chatSearchActiveMessageId
+                              : null,
+                          searchRevision: searchScoped ? chatSearchRevision : 0,
                           onForkMessage: handleForkMessage,
                           onRevertMessage: handleRevertMessage,
                           onOpenSession: handleOpenSession,
                           onRetry: handleRetry,
-                          jumpToBottomEpoch: selected ? timelineJumpEpoch : 0,
+                          jumpToBottomEpoch: searchScoped
+                              ? timelineJumpEpoch
+                              : 0,
                         ),
                 ),
               ],
@@ -7030,6 +7451,10 @@ class _MessageTimeline extends StatefulWidget {
     required this.configSnapshot,
     required this.shellToolDefaultExpanded,
     required this.timelineProgressDetailsVisible,
+    required this.searchQuery,
+    required this.matchingMessageIds,
+    required this.activeMatchMessageId,
+    required this.searchRevision,
     required this.onForkMessage,
     required this.onRevertMessage,
     required this.onOpenSession,
@@ -7051,6 +7476,10 @@ class _MessageTimeline extends StatefulWidget {
   final ConfigSnapshot? configSnapshot;
   final bool shellToolDefaultExpanded;
   final bool timelineProgressDetailsVisible;
+  final String searchQuery;
+  final Set<String> matchingMessageIds;
+  final String? activeMatchMessageId;
+  final int searchRevision;
   final Future<void> Function(ChatMessage message) onForkMessage;
   final Future<void> Function(ChatMessage message) onRevertMessage;
   final ValueChanged<String> onOpenSession;
@@ -7086,6 +7515,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
   int _bottomLockAttempts = 0;
   bool _bottomLockScheduled = false;
   String? _bottomLockScopeKey;
+  final Map<String, GlobalKey> _messageItemKeys = <String, GlobalKey>{};
 
   List<ChatMessage> get _visibleMessages => widget.messages.sublist(
     _visibleStartIndex.clamp(0, widget.messages.length),
@@ -7094,10 +7524,21 @@ class _MessageTimelineState extends State<_MessageTimeline> {
   int get _hiddenMessageCount =>
       _visibleStartIndex.clamp(0, widget.messages.length);
 
+  bool get _searchActive => widget.searchQuery.trim().isNotEmpty;
+
   @override
   void initState() {
     super.initState();
     _visibleStartIndex = _initialVisibleStart(widget.messages.length);
+    final initialSearchMessageId = widget.activeMatchMessageId;
+    if (initialSearchMessageId != null && initialSearchMessageId.isNotEmpty) {
+      final targetIndex = widget.messages.indexWhere(
+        (message) => message.info.id == initialSearchMessageId,
+      );
+      if (targetIndex >= 0) {
+        _visibleStartIndex = math.max(0, targetIndex - 2);
+      }
+    }
     _lastJumpToBottomEpoch = widget.jumpToBottomEpoch;
     _scrollController.addListener(_handleScroll);
   }
@@ -7111,10 +7552,18 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     final becameNonEmpty =
         oldWidget.messages.isEmpty && widget.messages.isNotEmpty;
     final messagesShrank = widget.messages.length < oldWidget.messages.length;
+    final searchChanged =
+        oldWidget.activeMatchMessageId != widget.activeMatchMessageId ||
+        oldWidget.searchRevision != widget.searchRevision;
+    final messageIds = widget.messages
+        .map((message) => message.info.id)
+        .toSet();
+    _messageItemKeys.removeWhere(
+      (messageId, _) => !messageIds.contains(messageId),
+    );
     if (sessionChanged || becameNonEmpty || messagesShrank) {
       _visibleStartIndex = _initialVisibleStart(widget.messages.length);
       _loadingOlder = false;
-      return;
     }
 
     if (_visibleStartIndex > widget.messages.length) {
@@ -7125,9 +7574,18 @@ class _MessageTimelineState extends State<_MessageTimeline> {
       if (!mounted) {
         return;
       }
-      _syncTimelinePosition(
-        forceBottom: _lastJumpToBottomEpoch != widget.jumpToBottomEpoch,
-      );
+      if (widget.activeMatchMessageId != null &&
+          widget.activeMatchMessageId!.isNotEmpty &&
+          (searchChanged ||
+              sessionChanged ||
+              becameNonEmpty ||
+              messagesShrank)) {
+        _revealSearchMatch(widget.activeMatchMessageId!);
+      } else {
+        _syncTimelinePosition(
+          forceBottom: _lastJumpToBottomEpoch != widget.jumpToBottomEpoch,
+        );
+      }
     });
     _lastJumpToBottomEpoch = widget.jumpToBottomEpoch;
   }
@@ -7141,6 +7599,59 @@ class _MessageTimelineState extends State<_MessageTimeline> {
 
   int _initialVisibleStart(int messageCount) {
     return math.max(0, messageCount - _initialWindowSize);
+  }
+
+  GlobalKey _messageItemKey(String messageId) {
+    return _messageItemKeys.putIfAbsent(
+      messageId,
+      () => GlobalKey(debugLabel: 'timeline-message-$messageId'),
+    );
+  }
+
+  void _revealSearchMatch(String messageId) {
+    final targetIndex = widget.messages.indexWhere(
+      (message) => message.info.id == messageId,
+    );
+    if (targetIndex < 0) {
+      return;
+    }
+    final preferredStart = math.max(0, targetIndex - 2);
+    if (preferredStart != _visibleStartIndex) {
+      setState(() {
+        _visibleStartIndex = preferredStart;
+        _loadingOlder = false;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          return;
+        }
+        if (_scrollController.hasClients) {
+          _scrollController.jumpTo(0);
+        }
+        _revealSearchMatch(messageId);
+      });
+      return;
+    }
+    if (_scrollController.hasClients &&
+        _scrollController.position.hasPixels &&
+        _scrollController.offset > 1) {
+      _scrollController.jumpTo(0);
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      final targetContext = _messageItemKeys[messageId]?.currentContext;
+      if (targetContext == null) {
+        return;
+      }
+      Scrollable.ensureVisible(
+        targetContext,
+        alignment: 0.18,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      );
+    });
   }
 
   Future<void> _handleScroll() async {
@@ -7312,6 +7823,13 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     if (!position.hasContentDimensions) {
       return;
     }
+    if (_searchActive && !forceBottom) {
+      _lastScopeKey = scopeKey;
+      _lastMessageCount = messageCount;
+      _lastContentSignature = contentSignature;
+      _lastLoading = widget.loading;
+      return;
+    }
     final nearBottomNow =
         !position.hasPixels ||
         (position.maxScrollExtent - position.pixels) <= 120;
@@ -7351,6 +7869,13 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     _scheduleLoadOlderCheck();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
+        return;
+      }
+      final activeMatchMessageId = widget.activeMatchMessageId;
+      if (_searchActive &&
+          activeMatchMessageId != null &&
+          activeMatchMessageId.isNotEmpty) {
+        _revealSearchMatch(activeMatchMessageId);
         return;
       }
       _syncTimelinePosition();
@@ -7443,7 +7968,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
                     ),
                   ),
                   itemCount: itemCount,
-                  cacheExtent: 1600,
+                  cacheExtent: _searchActive ? 200000 : 1600,
                   itemBuilder: (context, index) {
                     if (hasHiddenMessages && index == 0) {
                       return KeyedSubtree(
@@ -7473,10 +7998,13 @@ class _MessageTimelineState extends State<_MessageTimeline> {
                     final messageIndex = index - (hasHiddenMessages ? 1 : 0);
                     final message = visibleMessages[messageIndex];
                     final isLast = messageIndex == visibleMessages.length - 1;
+                    final matched = widget.matchingMessageIds.contains(
+                      message.info.id,
+                    );
+                    final activeMatch =
+                        widget.activeMatchMessageId == message.info.id;
                     return KeyedSubtree(
-                      key: ValueKey<String>(
-                        'timeline-message-${message.info.id}',
-                      ),
+                      key: _messageItemKey(message.info.id),
                       child: RepaintBoundary(
                         child: Center(
                           child: ConstrainedBox(
@@ -7497,6 +8025,8 @@ class _MessageTimelineState extends State<_MessageTimeline> {
                                   currentSessionId: widget.currentSessionId,
                                   message: message,
                                   compact: widget.compact,
+                                  searchMatched: matched,
+                                  searchActive: activeMatch,
                                   sessions: widget.sessions,
                                   selectedSession: widget.selectedSession,
                                   configSnapshot: widget.configSnapshot,
@@ -10076,6 +10606,8 @@ class _TimelineMessage extends StatefulWidget {
     required this.currentSessionId,
     required this.message,
     required this.compact,
+    required this.searchMatched,
+    required this.searchActive,
     required this.sessions,
     required this.selectedSession,
     required this.configSnapshot,
@@ -10089,6 +10621,8 @@ class _TimelineMessage extends StatefulWidget {
   final String? currentSessionId;
   final ChatMessage message;
   final bool compact;
+  final bool searchMatched;
+  final bool searchActive;
   final List<SessionSummary> sessions;
   final SessionSummary? selectedSession;
   final ConfigSnapshot? configSnapshot;
@@ -10155,15 +10689,34 @@ class _TimelineMessageState extends State<_TimelineMessage> {
   Widget build(BuildContext context) {
     final isUser = widget.message.info.role == 'user';
     if (isUser) {
-      return _UserTimelineMessage(
+      Widget child = _UserTimelineMessage(
         message: widget.message,
         text: _cachedUserText,
         compact: widget.compact,
         attachments: _cachedAttachments,
+        searchMatched: widget.searchMatched,
+        searchActive: widget.searchActive,
         configSnapshot: widget.configSnapshot,
         selectedSession: widget.selectedSession,
         onForkMessage: widget.onForkMessage,
         onRevertMessage: widget.onRevertMessage,
+      );
+      if (!widget.searchMatched) {
+        return child;
+      }
+      if (widget.searchActive) {
+        child = KeyedSubtree(
+          key: ValueKey<String>(
+            'timeline-search-active-${widget.message.info.id}',
+          ),
+          child: child,
+        );
+      }
+      return KeyedSubtree(
+        key: ValueKey<String>(
+          'timeline-search-match-${widget.message.info.id}',
+        ),
+        child: child,
       );
     }
 
@@ -10208,9 +10761,66 @@ class _TimelineMessageState extends State<_TimelineMessage> {
         ),
       );
     }
-    return Column(
+    final content = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: timelineItems,
+    );
+    if (!widget.searchMatched) {
+      return content;
+    }
+    Widget child = _TimelineSearchFrame(
+      key: ValueKey<String>('timeline-search-match-${widget.message.info.id}'),
+      compact: widget.compact,
+      active: widget.searchActive,
+      child: content,
+    );
+    if (widget.searchActive) {
+      child = KeyedSubtree(
+        key: ValueKey<String>(
+          'timeline-search-active-${widget.message.info.id}',
+        ),
+        child: child,
+      );
+    }
+    return child;
+  }
+}
+
+class _TimelineSearchFrame extends StatelessWidget {
+  const _TimelineSearchFrame({
+    required this.compact,
+    required this.active,
+    required this.child,
+    super.key,
+  });
+
+  final bool compact;
+  final bool active;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final accent = theme.colorScheme.primary;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+      padding: EdgeInsets.all(compact ? AppSpacing.xs : AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: active ? 0.08 : 0.04),
+        borderRadius: BorderRadius.circular(compact ? 18 : 20),
+        border: Border.all(
+          color: accent.withValues(alpha: active ? 0.46 : 0.2),
+        ),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: accent.withValues(alpha: active ? 0.16 : 0.08),
+            blurRadius: active ? 18 : 12,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: child,
     );
   }
 }
@@ -10221,6 +10831,8 @@ class _UserTimelineMessage extends StatefulWidget {
     required this.text,
     required this.compact,
     required this.attachments,
+    required this.searchMatched,
+    required this.searchActive,
     required this.configSnapshot,
     required this.selectedSession,
     required this.onForkMessage,
@@ -10231,6 +10843,8 @@ class _UserTimelineMessage extends StatefulWidget {
   final String text;
   final bool compact;
   final List<ChatPart> attachments;
+  final bool searchMatched;
+  final bool searchActive;
   final ConfigSnapshot? configSnapshot;
   final SessionSummary? selectedSession;
   final Future<void> Function(ChatMessage message) onForkMessage;
@@ -10408,9 +11022,31 @@ class _UserTimelineMessageState extends State<_UserTimelineMessage> {
 
   @override
   Widget build(BuildContext context) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final searchAccent = theme.colorScheme.primary;
     final hasText = widget.text.trim().isNotEmpty;
     final hasActions = _canCopy || _canFork || _canRevert;
+    final matched = widget.searchMatched;
+    final active = widget.searchActive;
+    final bubbleColor = matched
+        ? Color.alphaBlend(
+            searchAccent.withValues(alpha: active ? 0.12 : 0.07),
+            surfaces.panelRaised,
+          )
+        : surfaces.panelRaised;
+    final borderColor = matched
+        ? searchAccent.withValues(alpha: active ? 0.5 : 0.26)
+        : surfaces.lineSoft;
+    final boxShadow = matched
+        ? <BoxShadow>[
+            BoxShadow(
+              color: searchAccent.withValues(alpha: active ? 0.18 : 0.1),
+              blurRadius: active ? 20 : 14,
+              offset: const Offset(0, 8),
+            ),
+          ]
+        : null;
 
     return Align(
       alignment: Alignment.centerRight,
@@ -10440,11 +11076,12 @@ class _UserTimelineMessageState extends State<_UserTimelineMessage> {
                     widget.compact ? AppSpacing.sm : AppSpacing.md,
                   ),
                   decoration: BoxDecoration(
-                    color: surfaces.panelRaised,
+                    color: bubbleColor,
                     borderRadius: BorderRadius.circular(
                       widget.compact ? 16 : 18,
                     ),
-                    border: Border.all(color: surfaces.lineSoft),
+                    border: Border.all(color: borderColor),
+                    boxShadow: boxShadow,
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -13388,6 +14025,108 @@ String _toolTitle(ChatPart part) {
     'skill' => _skillToolName(part) ?? 'Skill',
     final other => _titleCase(other),
   };
+}
+
+class _MessageSearchTextCacheEntry {
+  const _MessageSearchTextCacheEntry({
+    required this.signature,
+    required this.value,
+  });
+
+  final int signature;
+  final String value;
+}
+
+final LinkedHashMap<String, _MessageSearchTextCacheEntry>
+_messageSearchTextCache = LinkedHashMap<String, _MessageSearchTextCacheEntry>();
+
+List<String> _normalizedSearchTerms(String query) {
+  return query
+      .trim()
+      .toLowerCase()
+      .split(RegExp(r'\s+'))
+      .where((term) => term.isNotEmpty)
+      .toList(growable: false);
+}
+
+bool _messageMatchesSearch(ChatMessage message, List<String> terms) {
+  if (terms.isEmpty) {
+    return false;
+  }
+  final haystack = _searchableMessageText(message);
+  for (final term in terms) {
+    if (!haystack.contains(term)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+int _messageSearchSignature(ChatMessage message) {
+  var signature = Object.hash(
+    message.info.id,
+    message.info.role,
+    message.parts.length,
+  );
+  for (final part in message.parts) {
+    signature = Object.hash(
+      signature,
+      part.id,
+      part.type,
+      part.tool,
+      part.filename,
+      _timelineStringSignature(part.text),
+      _timelineStringSignature(part.metadata['summary']?.toString()),
+      _timelineStringSignature(part.metadata['content']?.toString()),
+      _timelineStringSignature(part.metadata['command']?.toString()),
+      _timelineStringSignature(part.metadata['output']?.toString()),
+      _timelineStringSignature(part.metadata['description']?.toString()),
+    );
+  }
+  return signature;
+}
+
+String _searchableMessageText(ChatMessage message) {
+  final cacheKey = message.info.id.isEmpty
+      ? '${message.info.role}:${message.parts.length}'
+      : message.info.id;
+  final signature = _messageSearchSignature(message);
+  final cached = _messageSearchTextCache[cacheKey];
+  if (cached != null && cached.signature == signature) {
+    return cached.value;
+  }
+
+  final fragments = <String>[];
+  if (message.info.role == 'user') {
+    final body = _messageBody(message).trim();
+    if (body.isNotEmpty) {
+      fragments.add(body);
+    }
+  }
+  for (final part in message.parts) {
+    final title = _partTitle(part).trim();
+    final body = _partText(part).trim();
+    final filename = _attachmentPartFilename(part).trim();
+    if (part.type != 'text' && part.type != 'file' && title.isNotEmpty) {
+      fragments.add(title);
+    }
+    if (body.isNotEmpty) {
+      fragments.add(body);
+    }
+    if (part.type == 'file' && filename.isNotEmpty) {
+      fragments.add(filename);
+    }
+  }
+  final searchable = fragments.join('\n').toLowerCase();
+  _messageSearchTextCache.remove(cacheKey);
+  _messageSearchTextCache[cacheKey] = _MessageSearchTextCacheEntry(
+    signature: signature,
+    value: searchable,
+  );
+  while (_messageSearchTextCache.length > 512) {
+    _messageSearchTextCache.remove(_messageSearchTextCache.keys.first);
+  }
+  return searchable;
 }
 
 String? _skillToolName(ChatPart part) {

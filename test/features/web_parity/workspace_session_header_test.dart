@@ -323,7 +323,9 @@ void main() {
 
     await tester.tap(
       find.byKey(
-        const ValueKey<String>('session-header-overflow-menu-item-shell-default'),
+        const ValueKey<String>(
+          'session-header-overflow-menu-item-shell-default',
+        ),
       ),
     );
     await tester.pump();
@@ -331,6 +333,102 @@ void main() {
 
     expect(appController.shellToolPartsExpanded, isFalse);
   });
+
+  testWidgets(
+    'session header chat search reveals older matches and navigates between them',
+    (tester) async {
+      tester.view.physicalSize = const Size(1480, 960);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              return _LargeSearchWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+            },
+      );
+      addTearDown(appController.dispose);
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          initialRoute: buildWorkspaceRoute(
+            '/workspace/demo',
+            sessionId: 'ses_1',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 120));
+
+      expect(
+        find.byKey(const ValueKey<String>('timeline-user-message-msg_user_4')),
+        findsNothing,
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('workspace-chat-search-button')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 220));
+
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('workspace-chat-search-field')),
+        'needle',
+      );
+      await tester.pump();
+      for (var index = 0; index < 5; index += 1) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+
+      expect(
+        find.byKey(const ValueKey<String>('timeline-user-message-msg_user_4')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('timeline-search-match-msg_user_4')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('timeline-search-active-msg_user_4')),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('workspace-chat-search-next-button')),
+      );
+      await tester.pump();
+      for (var index = 0; index < 5; index += 1) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+
+      expect(
+        find.byKey(const ValueKey<String>('timeline-search-active-msg_user_4')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('timeline-search-match-msg_user_87')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>('timeline-search-active-msg_user_87'),
+        ),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('hiding the terminal panel keeps the PTY connection alive', (
     tester,
@@ -679,6 +777,60 @@ class _ActionWorkspaceController extends _HeaderWorkspaceController {
     _selectedSessionId = _sessions.isEmpty ? null : _sessions.last.id;
     notifyListeners();
     return selectedSession;
+  }
+}
+
+class _LargeSearchWorkspaceController extends _HeaderWorkspaceController {
+  _LargeSearchWorkspaceController({
+    required super.profile,
+    required super.directory,
+    super.initialSessionId,
+  });
+
+  static final List<ChatMessage> _largeMessages = List<ChatMessage>.generate(
+    90,
+    (index) => ChatMessage(
+      info: ChatMessageInfo(
+        id: 'msg_user_$index',
+        role: 'user',
+        createdAt: DateTime.fromMillisecondsSinceEpoch(
+          1774453800000 + index * 1000,
+        ),
+      ),
+      parts: <ChatPart>[
+        ChatPart(
+          id: 'part_user_$index',
+          type: 'text',
+          text: switch (index) {
+            4 => 'Needle result hidden in the earlier part of the chat',
+            87 => 'Needle result near the bottom of the chat',
+            _ => 'Filler timeline entry $index',
+          },
+        ),
+      ],
+    ),
+  );
+
+  @override
+  List<ChatMessage> get messages => _largeMessages;
+
+  @override
+  List<ChatMessage> get orderedMessages => _largeMessages;
+
+  @override
+  WorkspaceSessionTimelineState timelineStateForSession(String? sessionId) {
+    final normalized = sessionId?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return const WorkspaceSessionTimelineState.empty();
+    }
+    return WorkspaceSessionTimelineState(
+      sessionId: normalized,
+      messages: _largeMessages,
+      orderedMessages: _largeMessages,
+      loading: false,
+      showingCachedMessages: false,
+      error: null,
+    );
   }
 }
 
