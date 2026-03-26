@@ -159,6 +159,26 @@ class ServerProfileStore {
     return profiles;
   }
 
+  Future<List<ServerProfile>> moveProfile(String profileId, int offset) async {
+    final profiles = (await load()).toList();
+    final currentIndex = profiles.indexWhere(
+      (profile) => profile.id == profileId,
+    );
+    if (currentIndex < 0 || offset == 0) {
+      return List<ServerProfile>.unmodifiable(profiles);
+    }
+
+    final nextIndex = (currentIndex + offset).clamp(0, profiles.length - 1);
+    if (nextIndex == currentIndex) {
+      return List<ServerProfile>.unmodifiable(profiles);
+    }
+
+    final profile = profiles.removeAt(currentIndex);
+    profiles.insert(nextIndex, profile);
+    await save(profiles);
+    return List<ServerProfile>.unmodifiable(profiles);
+  }
+
   Future<void> _migrateLegacyCredentials(SharedPreferences prefs) async {
     await _migrateLegacySavedProfiles(prefs);
     await _migrateLegacyDraftProfile(prefs);

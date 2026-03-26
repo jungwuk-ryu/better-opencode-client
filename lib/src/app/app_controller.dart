@@ -95,6 +95,7 @@ class WebParityAppController extends ChangeNotifier {
   WorkspaceFollowupMode _busyFollowupMode = WorkspaceFollowupMode.queue;
   double _textScaleFactor = defaultTextScaleFactor;
   WorkspaceLayoutDensity _layoutDensity = WorkspaceLayoutDensity.normal;
+  Set<String> _refreshingProfileKeys = const <String>{};
   final Map<String, WorkspaceController> _workspaceControllers =
       <String, WorkspaceController>{};
 
@@ -111,6 +112,11 @@ class WebParityAppController extends ChangeNotifier {
   WorkspaceFollowupMode get busyFollowupMode => _busyFollowupMode;
   double get textScaleFactor => _textScaleFactor;
   WorkspaceLayoutDensity get layoutDensity => _layoutDensity;
+  bool isRefreshingProfile(ServerProfile? profile) {
+    return profile != null &&
+        _refreshingProfileKeys.contains(profile.storageKey);
+  }
+
   ServerProbeReport? get selectedReport {
     final selectedProfile = _selectedProfile;
     if (selectedProfile == null) {
@@ -180,8 +186,7 @@ class WebParityAppController extends ChangeNotifier {
     }
     _selectedProfile = profile;
     notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_selectedProfileKey, profile.id);
+    await _persistSelectedProfile(profile);
   }
 
   Future<void> setShellToolPartsExpanded(bool value) async {
@@ -256,12 +261,71 @@ class WebParityAppController extends ChangeNotifier {
   }
 
   Future<void> refreshProbe(ServerProfile profile) async {
-    final report = await _probeService.probe(profile);
-    await _cacheStore.save('probe::${profile.storageKey}', report.toJson());
-    _reports = <String, ServerProbeReport>{
-      ..._reports,
-      profile.storageKey: report,
+    if (_refreshingProfileKeys.contains(profile.storageKey)) {
+      return;
+    }
+    _refreshingProfileKeys = <String>{
+      ..._refreshingProfileKeys,
+      profile.storageKey,
     };
+    notifyListeners();
+    try {
+      final report = await _probeService.probe(profile);
+      await _cacheStore.save('probe::${profile.storageKey}', report.toJson());
+      _reports = <String, ServerProbeReport>{
+        ..._reports,
+        profile.storageKey: report,
+      };
+    } finally {
+      _refreshingProfileKeys = Set<String>.unmodifiable(
+        _refreshingProfileKeys.where((key) => key != profile.storageKey),
+      );
+      notifyListeners();
+    }
+  }
+
+  Future<ServerProfile> saveProfile(ServerProfile profile) async {
+    final profiles = await _profileStore.upsertProfile(profile);
+    final savedProfile = profiles.firstWhere(
+      (item) => item.id == profile.id || item.storageKey == profile.storageKey,
+      orElse: () => profile,
+    );
+    _profiles = profiles;
+    _reports = _retainReportsForProfiles(profiles);
+    _selectedProfile = savedProfile;
+    notifyListeners();
+    await _persistSelectedProfile(savedProfile);
+    await refreshProbe(savedProfile);
+    return savedProfile;
+  }
+
+  Future<void> deleteServerProfile(ServerProfile profile) async {
+    final profiles = await _profileStore.deleteProfile(profile.id);
+    _profiles = profiles;
+    _reports = _retainReportsForProfiles(profiles);
+    final selectedId = _selectedProfile?.id;
+    _selectedProfile = selectedId == null
+        ? (profiles.isEmpty ? null : profiles.first)
+        : profiles.cast<ServerProfile?>().firstWhere(
+            (item) => item?.id == selectedId,
+            orElse: () => profiles.isEmpty ? null : profiles.first,
+          );
+    notifyListeners();
+    await _persistSelectedProfile(_selectedProfile);
+  }
+
+  Future<void> moveProfile(String profileId, int offset) async {
+    final profiles = await _profileStore.moveProfile(profileId, offset);
+    _profiles = profiles;
+    final selectedId = _selectedProfile?.id;
+    if (selectedId != null) {
+      for (final profile in profiles) {
+        if (profile.id == selectedId) {
+          _selectedProfile = profile;
+          break;
+        }
+      }
+    }
     notifyListeners();
   }
 
@@ -414,5 +478,24 @@ class WebParityAppController extends ChangeNotifier {
     return double.parse(
       snapped.clamp(minTextScaleFactor, maxTextScaleFactor).toStringAsFixed(2),
     );
+  }
+
+  Map<String, ServerProbeReport> _retainReportsForProfiles(
+    List<ServerProfile> profiles,
+  ) {
+    final keys = profiles.map((profile) => profile.storageKey).toSet();
+    return <String, ServerProbeReport>{
+      for (final entry in _reports.entries)
+        if (keys.contains(entry.key)) entry.key: entry.value,
+    };
+  }
+
+  Future<void> _persistSelectedProfile(ServerProfile? profile) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (profile == null) {
+      await prefs.remove(_selectedProfileKey);
+      return;
+    }
+    await prefs.setString(_selectedProfileKey, profile.id);
   }
 }
