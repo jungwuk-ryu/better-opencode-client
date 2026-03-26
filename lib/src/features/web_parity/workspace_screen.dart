@@ -10459,7 +10459,7 @@ class _SidePanel extends StatelessWidget {
   }
 }
 
-class _ReviewPanel extends StatelessWidget {
+class _ReviewPanel extends StatefulWidget {
   const _ReviewPanel({
     required this.statuses,
     required this.selectedPath,
@@ -10477,10 +10477,38 @@ class _ReviewPanel extends StatelessWidget {
   final ValueChanged<String> onSelectFile;
 
   @override
+  State<_ReviewPanel> createState() => _ReviewPanelState();
+}
+
+class _ReviewPanelState extends State<_ReviewPanel> {
+  static const double _defaultPreviewHeight = 280;
+  static const double _minPreviewHeight = 160;
+  static const double _minListHeight = 220;
+
+  double _previewHeight = _defaultPreviewHeight;
+
+  void _resizePreview(double deltaDy, double availableHeight) {
+    final maxPreviewHeight = (availableHeight - _minListHeight).clamp(
+      _minPreviewHeight,
+      availableHeight,
+    );
+    final next = (_previewHeight - deltaDy).clamp(
+      _minPreviewHeight,
+      maxPreviewHeight,
+    );
+    if (next == _previewHeight) {
+      return;
+    }
+    setState(() {
+      _previewHeight = next;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
-    if (statuses.isEmpty) {
+    if (widget.statuses.isEmpty) {
       return Center(
         child: Text(
           'No file changes yet.',
@@ -10490,125 +10518,189 @@ class _ReviewPanel extends StatelessWidget {
         ),
       );
     }
-    return Column(
-      children: <Widget>[
-        Expanded(
-          child: ListView.separated(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            itemCount: statuses.length,
-            separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.xs),
-            itemBuilder: (context, index) {
-              final item = statuses[index];
-              final statusColor = _reviewStatusColor(item.status, surfaces);
-              final addedColor = item.added > 0
-                  ? surfaces.success
-                  : surfaces.muted;
-              final removedColor = item.removed > 0
-                  ? surfaces.danger
-                  : surfaces.muted;
-              final selected = item.path == selectedPath;
-              return ListTile(
-                selected: selected,
-                tileColor: selected
-                    ? theme.colorScheme.primary.withValues(alpha: 0.12)
-                    : null,
-                leading: Icon(
-                  _reviewStatusIcon(item.status),
-                  color: statusColor,
-                  size: 18,
+    final hasPreview = widget.selectedPath != null;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableHeight = constraints.maxHeight.isFinite
+            ? constraints.maxHeight
+            : 700.0;
+        final previewHeight = hasPreview
+            ? _previewHeight.clamp(
+                _minPreviewHeight,
+                (availableHeight - _minListHeight).clamp(
+                  _minPreviewHeight,
+                  availableHeight,
                 ),
-                title: Text(
-                  item.path,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                subtitle: Text.rich(
-                  key: ValueKey<String>('review-status-${item.path}'),
-                  TextSpan(
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: surfaces.muted,
+              )
+            : 0.0;
+
+        return Column(
+          children: <Widget>[
+            Expanded(
+              child: ListView.separated(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                itemCount: widget.statuses.length,
+                separatorBuilder: (_, _) =>
+                    const SizedBox(height: AppSpacing.xs),
+                itemBuilder: (context, index) {
+                  final item = widget.statuses[index];
+                  final statusColor = _reviewStatusColor(item.status, surfaces);
+                  final addedColor = item.added > 0
+                      ? surfaces.success
+                      : surfaces.muted;
+                  final removedColor = item.removed > 0
+                      ? surfaces.danger
+                      : surfaces.muted;
+                  final selected = item.path == widget.selectedPath;
+                  return ListTile(
+                    selected: selected,
+                    tileColor: selected
+                        ? theme.colorScheme.primary.withValues(alpha: 0.12)
+                        : null,
+                    leading: Icon(
+                      _reviewStatusIcon(item.status),
+                      color: statusColor,
+                      size: 18,
                     ),
-                    children: <InlineSpan>[
-                      TextSpan(
-                        text: item.status,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: statusColor,
-                          fontWeight: FontWeight.w700,
-                        ),
+                    title: Text(
+                      item.path,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
                       ),
-                      const TextSpan(text: '  •  '),
-                      TextSpan(
-                        text: '+${item.added}',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: addedColor,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const TextSpan(text: '  '),
-                      TextSpan(
-                        text: '-${item.removed}',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: removedColor,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                onTap: () => onSelectFile(item.path),
-              );
-            },
-          ),
-        ),
-        if (selectedPath != null)
-          Container(
-            height: 280,
-            width: double.infinity,
-            decoration: BoxDecoration(
-              border: Border(top: BorderSide(color: surfaces.lineSoft)),
-            ),
-            padding: const EdgeInsets.all(AppSpacing.md),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Padding(
-                  padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                  child: Text(
-                    selectedPath!,
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: surfaces.muted,
                     ),
-                  ),
-                ),
-                Expanded(
-                  child: loadingDiff
-                      ? const Center(child: CircularProgressIndicator())
-                      : diffError != null
-                      ? Center(
-                          child: Text(
-                            diffError!,
-                            textAlign: TextAlign.center,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: surfaces.muted,
+                    subtitle: Text.rich(
+                      key: ValueKey<String>('review-status-${item.path}'),
+                      TextSpan(
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: surfaces.muted,
+                        ),
+                        children: <InlineSpan>[
+                          TextSpan(
+                            text: item.status,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: statusColor,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
-                        )
-                      : diff == null || diff!.isEmpty
-                      ? Center(
-                          child: Text(
-                            'No diff output for this file.',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: surfaces.muted,
+                          const TextSpan(text: '  •  '),
+                          TextSpan(
+                            text: '+${item.added}',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: addedColor,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
-                        )
-                      : _ReviewDiffView(diff: diff!),
-                ),
-              ],
+                          const TextSpan(text: '  '),
+                          TextSpan(
+                            text: '-${item.removed}',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: removedColor,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    onTap: () => widget.onSelectFile(item.path),
+                  );
+                },
+              ),
             ),
-          ),
-      ],
+            if (hasPreview)
+              Container(
+                key: const ValueKey<String>('review-preview-panel'),
+                height: previewHeight,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  border: Border(top: BorderSide(color: surfaces.lineSoft)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    GestureDetector(
+                      key: const ValueKey<String>(
+                        'review-preview-resize-handle',
+                      ),
+                      behavior: HitTestBehavior.opaque,
+                      onVerticalDragUpdate: (details) {
+                        _resizePreview(details.delta.dy, availableHeight);
+                      },
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.resizeUpDown,
+                        child: SizedBox(
+                          height: 20,
+                          width: double.infinity,
+                          child: Center(
+                            child: Container(
+                              width: 42,
+                              height: 4,
+                              decoration: BoxDecoration(
+                                color: surfaces.muted.withValues(alpha: 0.75),
+                                borderRadius: BorderRadius.circular(
+                                  AppSpacing.pillRadius,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          AppSpacing.md,
+                          0,
+                          AppSpacing.md,
+                          AppSpacing.md,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Padding(
+                              padding: const EdgeInsets.only(
+                                bottom: AppSpacing.sm,
+                              ),
+                              child: Text(
+                                widget.selectedPath!,
+                                style: theme.textTheme.labelMedium?.copyWith(
+                                  color: surfaces.muted,
+                                ),
+                              ),
+                            ),
+                            Expanded(
+                              child: widget.loadingDiff
+                                  ? const Center(
+                                      child: CircularProgressIndicator(),
+                                    )
+                                  : widget.diffError != null
+                                  ? Center(
+                                      child: Text(
+                                        widget.diffError!,
+                                        textAlign: TextAlign.center,
+                                        style: theme.textTheme.bodyMedium
+                                            ?.copyWith(color: surfaces.muted),
+                                      ),
+                                    )
+                                  : widget.diff == null || widget.diff!.isEmpty
+                                  ? Center(
+                                      child: Text(
+                                        'No diff output for this file.',
+                                        style: theme.textTheme.bodyMedium
+                                            ?.copyWith(color: surfaces.muted),
+                                      ),
+                                    )
+                                  : _ReviewDiffView(diff: widget.diff!),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }
@@ -10622,38 +10714,61 @@ class _ReviewDiffView extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: surfaces.panelMuted,
-        borderRadius: BorderRadius.circular(AppSpacing.md),
-        border: Border.all(color: surfaces.lineSoft),
-      ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          return SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minWidth: constraints.maxWidth),
-              child: SingleChildScrollView(
-                child: SelectableText.rich(
-                  TextSpan(
-                    children: _buildReviewDiffSpans(
-                      diff.content,
-                      theme: theme,
-                      surfaces: surfaces,
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(AppSpacing.md),
+      child: BackdropFilter(
+        key: const ValueKey<String>('review-diff-blur'),
+        filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(AppSpacing.md),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: <Color>[
+                Colors.white.withValues(alpha: 0.045),
+                surfaces.panelRaised.withValues(alpha: 0.7),
+                surfaces.panelMuted.withValues(alpha: 0.62),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(AppSpacing.md),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            boxShadow: <BoxShadow>[
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.18),
+                blurRadius: 16,
+                spreadRadius: -8,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                  child: SingleChildScrollView(
+                    child: SelectableText.rich(
+                      TextSpan(
+                        children: _buildReviewDiffSpans(
+                          diff.content,
+                          theme: theme,
+                          surfaces: surfaces,
+                        ),
+                      ),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontFamily: 'monospace',
+                        height: 1.45,
+                      ),
                     ),
                   ),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    fontFamily: 'monospace',
-                    height: 1.45,
-                  ),
                 ),
-              ),
-            ),
-          );
-        },
+              );
+            },
+          ),
+        ),
       ),
     );
   }
