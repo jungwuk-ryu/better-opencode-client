@@ -20,9 +20,14 @@ import 'package:opencode_mobile_remote/src/features/terminal/pty_service.dart';
 import 'package:opencode_mobile_remote/src/features/tools/todo_models.dart';
 import 'package:opencode_mobile_remote/src/features/web_parity/workspace_controller.dart';
 import 'package:opencode_mobile_remote/src/features/web_parity/workspace_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+  });
 
   testWidgets(
     'switching sessions keeps the same page and reuses the directory controller',
@@ -887,6 +892,99 @@ void main() {
       expect(find.text('todo for two'), findsOneWidget);
     },
   );
+
+  testWidgets('desktop split panes restore across app launches', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+
+    final firstAppController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _RecordingWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(firstAppController.dispose);
+
+    final firstNavigatorKey = GlobalKey<NavigatorState>();
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: firstAppController,
+        navigatorKey: firstNavigatorKey,
+        initialRoute: '/',
+      ),
+    );
+    firstNavigatorKey.currentState!.pushNamed(
+      buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('workspace-split-session-pane-button')),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Session Two'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('workspace-project-/workspace/lab')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('hello from one'), findsOneWidget);
+    expect(find.text('hello from lab'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+
+    final restoredAppController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _RecordingWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(restoredAppController.dispose);
+
+    final restoredNavigatorKey = GlobalKey<NavigatorState>();
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: restoredAppController,
+        navigatorKey: restoredNavigatorKey,
+        initialRoute: '/',
+      ),
+    );
+    restoredNavigatorKey.currentState!.pushNamed(
+      buildWorkspaceRoute('/workspace/lab', sessionId: 'ses_lab_1'),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pumpAndSettle();
+
+    expect(find.text('hello from one'), findsOneWidget);
+    expect(find.text('hello from lab'), findsOneWidget);
+  });
 
   testWidgets(
     'completed todo dock stays hidden after unchanged workspace updates',

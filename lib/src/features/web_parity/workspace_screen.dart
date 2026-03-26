@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../app/app_controller.dart';
 import '../../app/app_scope.dart';
@@ -62,6 +63,8 @@ class _WorkspaceDensity {
 }
 
 class _WorkspaceSessionPaneSpec {
+  static const Object _sessionIdUnset = Object();
+
   const _WorkspaceSessionPaneSpec({
     required this.id,
     required this.directory,
@@ -75,14 +78,121 @@ class _WorkspaceSessionPaneSpec {
   _WorkspaceSessionPaneSpec copyWith({
     String? id,
     String? directory,
-    String? sessionId,
+    Object? sessionId = _sessionIdUnset,
   }) {
     return _WorkspaceSessionPaneSpec(
       id: id ?? this.id,
       directory: directory ?? this.directory,
-      sessionId: sessionId ?? this.sessionId,
+      sessionId: identical(sessionId, _sessionIdUnset)
+          ? this.sessionId
+          : sessionId as String?,
     );
   }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'id': id,
+    'directory': directory,
+    'sessionId': sessionId,
+  };
+
+  static _WorkspaceSessionPaneSpec? tryFromJson(Map<String, Object?> json) {
+    final id = json['id']?.toString().trim();
+    final directory = json['directory']?.toString().trim();
+    if (id == null || id.isEmpty || directory == null || directory.isEmpty) {
+      return null;
+    }
+    final normalizedSessionId = _normalizePaneSessionId(
+      json['sessionId']?.toString(),
+    );
+    return _WorkspaceSessionPaneSpec(
+      id: id,
+      directory: directory,
+      sessionId: normalizedSessionId,
+    );
+  }
+}
+
+class _WorkspaceSessionPaneLayoutSnapshot {
+  const _WorkspaceSessionPaneLayoutSnapshot({
+    required this.panes,
+    required this.activePaneId,
+  });
+
+  final List<_WorkspaceSessionPaneSpec> panes;
+  final String activePaneId;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'version': 1,
+    'activePaneId': activePaneId,
+    'panes': panes.map((pane) => pane.toJson()).toList(growable: false),
+  };
+
+  _WorkspaceSessionPaneLayoutSnapshot retargetActivePane({
+    required String directory,
+    String? sessionId,
+  }) {
+    return _WorkspaceSessionPaneLayoutSnapshot(
+      panes: panes
+          .map(
+            (pane) => pane.id == activePaneId
+                ? pane.copyWith(
+                    directory: directory,
+                    sessionId: _normalizePaneSessionId(sessionId),
+                  )
+                : pane,
+          )
+          .toList(growable: false),
+      activePaneId: activePaneId,
+    );
+  }
+
+  static _WorkspaceSessionPaneLayoutSnapshot? tryDecode(String raw) {
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) {
+        return null;
+      }
+      final rawPanes = decoded['panes'];
+      if (rawPanes is! List) {
+        return null;
+      }
+      final panes = <_WorkspaceSessionPaneSpec>[];
+      final seenPaneIds = <String>{};
+      for (final item in rawPanes) {
+        if (item is! Map) {
+          continue;
+        }
+        final pane = _WorkspaceSessionPaneSpec.tryFromJson(
+          item.cast<String, Object?>(),
+        );
+        if (pane == null || !seenPaneIds.add(pane.id)) {
+          continue;
+        }
+        panes.add(pane);
+      }
+      if (panes.isEmpty) {
+        return null;
+      }
+      final requestedActivePaneId = decoded['activePaneId']?.toString().trim();
+      final activePaneId = panes.any((pane) => pane.id == requestedActivePaneId)
+          ? requestedActivePaneId!
+          : panes.first.id;
+      return _WorkspaceSessionPaneLayoutSnapshot(
+        panes: List<_WorkspaceSessionPaneSpec>.unmodifiable(panes),
+        activePaneId: activePaneId,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+String? _normalizePaneSessionId(String? sessionId) {
+  final normalized = sessionId?.trim();
+  if (normalized == null || normalized.isEmpty) {
+    return null;
+  }
+  return normalized;
 }
 
 class _ResolvedChatSearchState {
@@ -139,6 +249,8 @@ class WebParityWorkspaceScreen extends StatefulWidget {
 
 class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   static const int _maxDesktopSessionPanes = 4;
+  static const String _desktopSessionPaneLayoutKeyPrefix =
+      'workspace.desktopSessionPanes';
   static final PromptAttachmentService _attachmentService =
       PromptAttachmentService();
   static const Object _composerRecentDraftUnset = Object();
@@ -187,6 +299,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   Map<WorkspaceController, Set<String>> _syncedWatchedSessionIdsByController =
       const <WorkspaceController, Set<String>>{};
   bool _watchedSessionSyncScheduled = false;
+  int _desktopSessionPaneLayoutRevision = 0;
   late String _activeDirectory;
   String? _activeRouteSessionId;
   _WorkspaceProjectLoadingShellState? _projectLoadingShellState;
@@ -317,16 +430,23 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     if (!mounted || controller == null) {
       return;
     }
+    final paneLayoutChanged = _commitSelectedSessionToActivePane(controller);
     final scopeKey = _composerScopeKey(
       directory: controller.directory,
       sessionId: controller.selectedSessionId,
     );
     if (scopeKey == _activeComposerScopeKey) {
+      if (paneLayoutChanged) {
+        unawaited(_persistDesktopSessionPaneLayout());
+      }
       return;
     }
     setState(() {
       _activateComposerScope(scopeKey);
     });
+    if (paneLayoutChanged) {
+      unawaited(_persistDesktopSessionPaneLayout());
+    }
   }
 
   void _showSnackBar(
@@ -346,6 +466,142 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     );
   }
 
+  String _desktopSessionPaneLayoutKey(String profileStorageKey) =>
+      '$_desktopSessionPaneLayoutKeyPrefix::$profileStorageKey';
+
+  int _nextSessionPaneSequenceFor(Iterable<_WorkspaceSessionPaneSpec> panes) {
+    final pattern = RegExp(r'^pane_(\d+)$');
+    var nextSequence = 0;
+    for (final pane in panes) {
+      final match = pattern.firstMatch(pane.id);
+      final value = match == null ? null : int.tryParse(match.group(1)!);
+      if (value != null && value >= nextSequence) {
+        nextSequence = value + 1;
+      }
+    }
+    return math.max(nextSequence, panes.length);
+  }
+
+  bool _sameDesktopSessionPaneSpecs(
+    List<_WorkspaceSessionPaneSpec> left,
+    List<_WorkspaceSessionPaneSpec> right,
+  ) {
+    if (identical(left, right)) {
+      return true;
+    }
+    if (left.length != right.length) {
+      return false;
+    }
+    for (var index = 0; index < left.length; index += 1) {
+      final leftPane = left[index];
+      final rightPane = right[index];
+      if (leftPane.id != rightPane.id ||
+          leftPane.directory != rightPane.directory ||
+          leftPane.sessionId != rightPane.sessionId) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  _WorkspaceSessionPaneLayoutSnapshot? _desktopSessionPaneLayoutSnapshot() {
+    if (_desktopSessionPanes.isEmpty) {
+      return null;
+    }
+    final activePaneId =
+        _activeDesktopSessionPaneId ??
+        (_desktopSessionPanes.isNotEmpty
+            ? _desktopSessionPanes.first.id
+            : null);
+    if (activePaneId == null) {
+      return null;
+    }
+    final normalizedPanes = _desktopSessionPanes
+        .map(
+          (pane) => pane.id == activePaneId
+              ? pane.copyWith(
+                  directory: _activeDirectory,
+                  sessionId: _normalizePaneSessionId(
+                    _controller?.selectedSessionId ?? pane.sessionId,
+                  ),
+                )
+              : pane.copyWith(
+                  sessionId: _normalizePaneSessionId(pane.sessionId),
+                ),
+        )
+        .toList(growable: false);
+    final resolvedActivePaneId =
+        normalizedPanes.any((pane) => pane.id == activePaneId)
+        ? activePaneId
+        : normalizedPanes.first.id;
+    return _WorkspaceSessionPaneLayoutSnapshot(
+      panes: List<_WorkspaceSessionPaneSpec>.unmodifiable(normalizedPanes),
+      activePaneId: resolvedActivePaneId,
+    );
+  }
+
+  void _recordDesktopSessionPaneLayoutChange() {
+    _desktopSessionPaneLayoutRevision += 1;
+  }
+
+  Future<void> _persistDesktopSessionPaneLayout() async {
+    final profile = _profile;
+    final snapshot = _desktopSessionPaneLayoutSnapshot();
+    if (profile == null || snapshot == null) {
+      return;
+    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _desktopSessionPaneLayoutKey(profile.storageKey),
+      jsonEncode(snapshot.toJson()),
+    );
+  }
+
+  Future<void> _restorePersistedDesktopSessionPaneLayout({
+    required ServerProfile profile,
+    required String initialDirectory,
+    String? initialSessionId,
+  }) async {
+    final startingRevision = _desktopSessionPaneLayoutRevision;
+    final prefs = await SharedPreferences.getInstance();
+    final storageKey = _desktopSessionPaneLayoutKey(profile.storageKey);
+    final raw = prefs.getString(storageKey);
+    final stillCurrentProfile =
+        mounted &&
+        _profile?.storageKey == profile.storageKey &&
+        _desktopSessionPaneLayoutRevision == startingRevision;
+    if (!stillCurrentProfile) {
+      return;
+    }
+    if (raw == null || raw.isEmpty) {
+      await _persistDesktopSessionPaneLayout();
+      return;
+    }
+    final snapshot = _WorkspaceSessionPaneLayoutSnapshot.tryDecode(raw);
+    if (snapshot == null) {
+      await prefs.remove(storageKey);
+      await _persistDesktopSessionPaneLayout();
+      return;
+    }
+    final restored = snapshot.retargetActivePane(
+      directory: initialDirectory,
+      sessionId: initialSessionId,
+    );
+    if (!_sameDesktopSessionPaneSpecs(_desktopSessionPanes, restored.panes) ||
+        _activeDesktopSessionPaneId != restored.activePaneId) {
+      setState(() {
+        _desktopSessionPanes = restored.panes;
+        _activeDesktopSessionPaneId = restored.activePaneId;
+        _sessionPaneSequence = _nextSessionPaneSequenceFor(restored.panes);
+        _timelineJumpEpoch += 1;
+      });
+      _recordDesktopSessionPaneLayoutChange();
+    } else {
+      _sessionPaneSequence = _nextSessionPaneSequenceFor(restored.panes);
+    }
+    await _persistDesktopSessionPaneLayout();
+  }
+
   void _resetDesktopSessionPanes({
     required String initialDirectory,
     String? initialSessionId,
@@ -358,6 +614,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     _desktopSessionPanes = <_WorkspaceSessionPaneSpec>[pane];
     _activeDesktopSessionPaneId = pane.id;
     _timelineJumpEpoch += 1;
+    _recordDesktopSessionPaneLayoutChange();
   }
 
   void _retargetActivePane({required String directory, String? sessionId}) {
@@ -384,7 +641,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         initialDirectory: directory,
         initialSessionId: sessionId,
       );
+      return;
     }
+    _recordDesktopSessionPaneLayoutChange();
   }
 
   @override
@@ -498,6 +757,13 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         initialSessionId: routeSessionId,
       );
       _resetTerminalState(profile);
+      unawaited(
+        _restorePersistedDesktopSessionPaneLayout(
+          profile: profile,
+          initialDirectory: directory,
+          initialSessionId: routeSessionId,
+        ),
+      );
     } else if (bindingChanged) {
       _compactPane = _CompactWorkspacePane.session;
       _retargetActivePane(
@@ -507,6 +773,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       if (directoryChanged) {
         _resetTerminalState(profile);
       }
+      unawaited(_persistDesktopSessionPaneLayout());
     }
 
     if (routeSessionId != null && hadCachedController) {
@@ -1499,6 +1766,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       );
       _desktopSessionPanes = <_WorkspaceSessionPaneSpec>[fallback];
       _activeDesktopSessionPaneId = fallback.id;
+      _recordDesktopSessionPaneLayoutChange();
+      unawaited(_persistDesktopSessionPaneLayout());
       return <_WorkspaceSessionPaneSpec>[fallback];
     }
 
@@ -1509,10 +1778,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     return List<_WorkspaceSessionPaneSpec>.unmodifiable(resolved);
   }
 
-  void _commitSelectedSessionToActivePane(WorkspaceController controller) {
+  bool _commitSelectedSessionToActivePane(WorkspaceController controller) {
     final activePaneId = _activeDesktopSessionPaneId;
     if (activePaneId == null) {
-      return;
+      return false;
     }
     final selectedSessionId = controller.selectedSessionId;
     var changed = false;
@@ -1533,9 +1802,11 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         })
         .toList(growable: false);
     if (!changed) {
-      return;
+      return false;
     }
     _desktopSessionPanes = next;
+    _recordDesktopSessionPaneLayoutChange();
+    return true;
   }
 
   bool _sameWatchedSessionMap(
@@ -1639,6 +1910,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       _activeDesktopSessionPaneId = paneId;
       _timelineJumpEpoch += 1;
     });
+    _recordDesktopSessionPaneLayoutChange();
     _bindWorkspace(
       appController: appController,
       profile: profile,
@@ -1648,9 +1920,11 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     final targetController = _controller;
     if (targetController == null ||
         targetController.selectedSessionId == targetPane.sessionId) {
+      unawaited(_persistDesktopSessionPaneLayout());
       return;
     }
     await targetController.selectSession(targetPane.sessionId);
+    unawaited(_persistDesktopSessionPaneLayout());
   }
 
   void _splitDesktopSessionPane(WorkspaceController controller) {
@@ -1681,6 +1955,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       _activeDesktopSessionPaneId = newPane.id;
       _timelineJumpEpoch += 1;
     });
+    _recordDesktopSessionPaneLayoutChange();
+    unawaited(_persistDesktopSessionPaneLayout());
   }
 
   Future<void> _closeDesktopSessionPane(
@@ -1718,6 +1994,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         _timelineJumpEpoch += 1;
       }
     });
+    _recordDesktopSessionPaneLayoutChange();
     if (wasActive && nextActivePane != null && profile != null) {
       final appController = AppScope.of(context);
       _bindWorkspace(
@@ -1732,6 +2009,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         await nextController.selectSession(nextActivePane.sessionId);
       }
     }
+    unawaited(_persistDesktopSessionPaneLayout());
   }
 
   bool _paneSessionVisibleElsewhere({
