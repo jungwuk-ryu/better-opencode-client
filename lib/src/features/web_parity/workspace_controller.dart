@@ -852,33 +852,57 @@ class WorkspaceController extends ChangeNotifier {
     _notify();
   }
 
+  void preserveSelectedSessionTimelineForWatch() {
+    _cacheSelectedTimelineForSession(_selectedSessionId, requireWatched: false);
+  }
+
   Future<void> selectSession(String? sessionId) async {
     if (_project == null) {
       return;
     }
+    final normalizedSessionId = sessionId?.trim();
+    final nextSessionId =
+        normalizedSessionId != null && normalizedSessionId.isNotEmpty
+        ? normalizedSessionId
+        : null;
     final previousSessionId = _selectedSessionId;
-    _cacheSelectedTimelineForWatchedSession(previousSessionId);
-    _selectedSessionId = sessionId;
-    if (sessionId != null && sessionId.isNotEmpty) {
-      final nextTimelineById = Map<String, WorkspaceSessionTimelineState>.from(
-        _watchedSessionTimelineById,
-      )..remove(sessionId);
-      _watchedSessionTimelineById =
-          Map<String, WorkspaceSessionTimelineState>.unmodifiable(
-            nextTimelineById,
-          );
+    if (previousSessionId == nextSessionId) {
+      return;
     }
-    _messages = const <ChatMessage>[];
-    _sessionLoading = false;
-    _showingCachedSessionMessages = false;
-    _sessionLoadError = null;
+    _cacheSelectedTimelineForWatchedSession(previousSessionId);
+    final promotedWatchedTimeline = nextSessionId == null
+        ? null
+        : _takeWatchedSessionTimeline(nextSessionId);
+    final canReuseWatchedTimeline =
+        promotedWatchedTimeline != null &&
+        !promotedWatchedTimeline.loading &&
+        promotedWatchedTimeline.error == null;
+
+    _selectedSessionId = nextSessionId;
+    if (canReuseWatchedTimeline) {
+      _messages = promotedWatchedTimeline.messages;
+      _sessionLoading = false;
+      _showingCachedSessionMessages =
+          promotedWatchedTimeline.showingCachedMessages;
+      _sessionLoadError = null;
+      if (_messages.isEmpty) {
+        _applyDefaultComposerSelection();
+      } else {
+        _restoreComposerSelectionFromMessages();
+      }
+    } else {
+      _messages = const <ChatMessage>[];
+      _sessionLoading = false;
+      _showingCachedSessionMessages = false;
+      _sessionLoadError = null;
+    }
     _todos = const <TodoItem>[];
     _loadingReviewDiff = false;
     _reviewDiffError = null;
     _reviewDiff = null;
     _notify();
 
-    if (sessionId == null || sessionId.isEmpty) {
+    if (nextSessionId == null) {
       _sessionLoading = false;
       _showingCachedSessionMessages = false;
       _sessionLoadError = null;
@@ -888,13 +912,27 @@ class WorkspaceController extends ChangeNotifier {
       return;
     }
 
+    if (canReuseWatchedTimeline) {
+      await _loadSessionPanels();
+      if (_disposed || _selectedSessionId != nextSessionId) {
+        return;
+      }
+      await _persistSessionHint(nextSessionId);
+      if (_disposed || _selectedSessionId != nextSessionId) {
+        return;
+      }
+      _maybeFlushQueuedPrompts(sessionId: nextSessionId);
+      _notify();
+      return;
+    }
+
     await _loadSelectedSessionMessages(
       project: _project!,
-      sessionId: sessionId,
+      sessionId: nextSessionId,
       loadPanels: true,
       persistHint: true,
     );
-    _maybeFlushQueuedPrompts(sessionId: sessionId);
+    _maybeFlushQueuedPrompts(sessionId: nextSessionId);
   }
 
   Future<void> retrySelectedSessionMessages() async {
@@ -1266,11 +1304,18 @@ class WorkspaceController extends ChangeNotifier {
   }
 
   void _cacheSelectedTimelineForWatchedSession(String? sessionId) {
+    _cacheSelectedTimelineForSession(sessionId, requireWatched: true);
+  }
+
+  void _cacheSelectedTimelineForSession(
+    String? sessionId, {
+    required bool requireWatched,
+  }) {
     final normalized = sessionId?.trim() ?? '';
-    if (normalized.isEmpty || !_watchedSessionIds.contains(normalized)) {
+    if (normalized.isEmpty) {
       return;
     }
-    _setWatchedSessionTimeline(
+    _setSessionTimelineState(
       normalized,
       WorkspaceSessionTimelineState(
         sessionId: normalized,
@@ -1280,6 +1325,7 @@ class WorkspaceController extends ChangeNotifier {
         showingCachedMessages: _showingCachedSessionMessages,
         error: _sessionLoadError,
       ),
+      requireWatched: requireWatched,
     );
   }
 
@@ -1287,7 +1333,15 @@ class WorkspaceController extends ChangeNotifier {
     String sessionId,
     WorkspaceSessionTimelineState state,
   ) {
-    if (!_watchedSessionIds.contains(sessionId)) {
+    _setSessionTimelineState(sessionId, state);
+  }
+
+  void _setSessionTimelineState(
+    String sessionId,
+    WorkspaceSessionTimelineState state, {
+    bool requireWatched = true,
+  }) {
+    if (requireWatched && !_watchedSessionIds.contains(sessionId)) {
       return;
     }
     final current = _watchedSessionTimelineById[sessionId];
@@ -1304,6 +1358,27 @@ class WorkspaceController extends ChangeNotifier {
     )..[sessionId] = state;
     _watchedSessionTimelineById =
         Map<String, WorkspaceSessionTimelineState>.unmodifiable(next);
+  }
+
+  WorkspaceSessionTimelineState? _takeWatchedSessionTimeline(String sessionId) {
+    final current = _watchedSessionTimelineById[sessionId];
+    if (current == null) {
+      return null;
+    }
+    final nextTimelineById = Map<String, WorkspaceSessionTimelineState>.from(
+      _watchedSessionTimelineById,
+    )..remove(sessionId);
+    _watchedSessionTimelineById =
+        Map<String, WorkspaceSessionTimelineState>.unmodifiable(
+          nextTimelineById,
+        );
+    final nextLoadRevisionById = Map<String, int>.from(
+      _watchedSessionLoadRevisionById,
+    )..remove(sessionId);
+    _watchedSessionLoadRevisionById = Map<String, int>.unmodifiable(
+      nextLoadRevisionById,
+    );
+    return current;
   }
 
   WorkspaceSessionTimelineState _buildTimelineState({

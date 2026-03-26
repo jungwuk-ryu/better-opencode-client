@@ -1330,6 +1330,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     if (targetPane == null) {
       return;
     }
+    controller.preserveSelectedSessionTimelineForWatch();
     setState(() {
       _activeDesktopSessionPaneId = paneId;
       _timelineJumpEpoch += 1;
@@ -1889,6 +1890,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     String sessionId, {
     required bool compact,
   }) async {
+    if (!compact && _selectedSessionVisibleOutsideActivePane(controller)) {
+      controller.preserveSelectedSessionTimelineForWatch();
+    }
     if (!compact) {
       setState(() {
         _timelineJumpEpoch += 1;
@@ -1902,6 +1906,25 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       }
     }
     await controller.selectSession(sessionId);
+  }
+
+  bool _selectedSessionVisibleOutsideActivePane(
+    WorkspaceController controller,
+  ) {
+    final selectedSessionId = controller.selectedSessionId?.trim();
+    if (selectedSessionId == null || selectedSessionId.isEmpty) {
+      return false;
+    }
+    final activePaneId = _activeDesktopSessionPaneId;
+    for (final pane in _resolvedDesktopSessionPanes(controller)) {
+      if (pane.id == activePaneId) {
+        continue;
+      }
+      if (pane.sessionId == selectedSessionId) {
+        return true;
+      }
+    }
+    return false;
   }
 
   Future<void> _selectProjectInPlace(

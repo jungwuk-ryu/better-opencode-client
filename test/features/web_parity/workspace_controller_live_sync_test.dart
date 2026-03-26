@@ -229,6 +229,149 @@ void main() {
     ]);
   });
 
+  test(
+    'controller reuses watched session timelines when switching pane focus',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final fetchCounts = <String, int>{};
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_2',
+              title: 'Second session',
+              createdAt: 1710000007000,
+              updatedAt: 1710000007000,
+            ),
+            _session(
+              id: 'ses_1',
+              title: 'Initial session',
+              createdAt: 1710000001000,
+              updatedAt: 1710000005000,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{
+            'ses_1': SessionStatusSummary(type: 'idle'),
+            'ses_2': SessionStatusSummary(type: 'idle'),
+          },
+          messages: const <ChatMessage>[],
+          selectedSessionId: 'ses_1',
+        ),
+        fetchMessagesHandler:
+            ({required profile, required project, required sessionId}) async {
+              fetchCounts[sessionId] = (fetchCounts[sessionId] ?? 0) + 1;
+              final text = sessionId == 'ses_2' ? 'hello two' : 'hello one';
+              return <ChatMessage>[
+                ChatMessage(
+                  info: ChatMessageInfo(
+                    id: 'msg_$sessionId',
+                    role: 'assistant',
+                    sessionId: sessionId,
+                  ),
+                  parts: <ChatPart>[
+                    ChatPart(
+                      id: 'part_$sessionId',
+                      type: 'text',
+                      text: text,
+                      messageId: 'msg_$sessionId',
+                      sessionId: sessionId,
+                    ),
+                  ],
+                ),
+              ];
+            },
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+        initialSessions: <SessionSummary>[
+          _session(
+            id: 'ses_2',
+            title: 'Second session',
+            createdAt: 1710000007000,
+            updatedAt: 1710000007000,
+          ),
+          _session(
+            id: 'ses_1',
+            title: 'Initial session',
+            createdAt: 1710000001000,
+            updatedAt: 1710000005000,
+          ),
+        ],
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+
+      expect(fetchCounts['ses_1'], 1);
+      expect(controller.messages.single.parts.single.text, 'hello one');
+
+      controller.updateWatchedSessionIds(const <String?>['ses_2']);
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(fetchCounts['ses_2'], 1);
+      expect(
+        controller
+            .timelineStateForSession('ses_2')
+            .orderedMessages
+            .single
+            .parts
+            .single
+            .text,
+        'hello two',
+      );
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        EventEnvelope(
+          type: 'message.part.updated',
+          properties: <String, Object?>{
+            'part': <String, Object?>{
+              'id': 'part_ses_2',
+              'messageID': 'msg_ses_2',
+              'sessionID': 'ses_2',
+              'type': 'text',
+              'content': 'hello two live',
+            },
+          },
+        ),
+      );
+
+      expect(
+        controller
+            .timelineStateForSession('ses_2')
+            .orderedMessages
+            .single
+            .parts
+            .single
+            .text,
+        'hello two live',
+      );
+
+      controller.preserveSelectedSessionTimelineForWatch();
+      await controller.selectSession('ses_2');
+
+      expect(controller.selectedSessionId, 'ses_2');
+      expect(controller.sessionLoading, isFalse);
+      expect(controller.messages.single.parts.single.text, 'hello two live');
+      expect(fetchCounts['ses_2'], 1);
+      expect(
+        controller
+            .timelineStateForSession('ses_1')
+            .orderedMessages
+            .single
+            .parts
+            .single
+            .text,
+        'hello one',
+      );
+    },
+  );
+
   test('controller interrupts the selected busy session', () async {
     final eventStreamService = _ControlledEventStreamService();
     final sessionActionService = _RecordingSessionActionService();
