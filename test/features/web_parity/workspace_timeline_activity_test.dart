@@ -240,6 +240,58 @@ void main() {
     );
   });
 
+  testWidgets('assistant code blocks expose a copy button', (tester) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      initialShellToolPartsExpanded: true,
+      initialTimelineProgressDetailsVisible: false,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _CodeBlockWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.text('DART'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('timeline-code-copy-dart')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('timeline-code-copy-dart')),
+    );
+    await tester.pump();
+
+    expect(find.text('Code block copied.'), findsOneWidget);
+  });
+
   testWidgets(
     'messages stay in chronological turn order even when an earlier assistant turn is still active',
     (tester) async {
@@ -1042,6 +1094,80 @@ class _MixedContextWorkspaceController extends WorkspaceController {
               },
             },
           },
+        ),
+      ],
+    ),
+  ];
+
+  bool _loading = true;
+
+  @override
+  bool get loading => _loading;
+
+  @override
+  ProjectTarget? get project => _projectTarget;
+
+  @override
+  List<ProjectTarget> get availableProjects => const <ProjectTarget>[
+    _projectTarget,
+  ];
+
+  @override
+  List<SessionSummary> get sessions => <SessionSummary>[_session];
+
+  @override
+  String? get selectedSessionId => _session.id;
+
+  @override
+  SessionSummary? get selectedSession => _session;
+
+  @override
+  List<ChatMessage> get messages => _messages;
+
+  @override
+  Future<void> load() async {
+    _loading = false;
+    notifyListeners();
+  }
+}
+
+class _CodeBlockWorkspaceController extends WorkspaceController {
+  _CodeBlockWorkspaceController({
+    required super.profile,
+    required super.directory,
+    super.initialSessionId,
+  });
+
+  static const ProjectTarget _projectTarget = ProjectTarget(
+    directory: '/workspace/demo',
+    label: 'Demo',
+    source: 'server',
+    vcs: 'git',
+    branch: 'main',
+  );
+
+  static final SessionSummary _session = SessionSummary(
+    id: 'ses_1',
+    directory: '/workspace/demo',
+    title: 'Code block copy',
+    version: '1',
+    updatedAt: DateTime.fromMillisecondsSinceEpoch(1710000004000),
+  );
+
+  static final List<ChatMessage> _messages = <ChatMessage>[
+    ChatMessage(
+      info: ChatMessageInfo(
+        id: 'msg_assistant_code',
+        role: 'assistant',
+        sessionId: 'ses_1',
+        createdAt: DateTime.fromMillisecondsSinceEpoch(1710000002000),
+      ),
+      parts: const <ChatPart>[
+        ChatPart(
+          id: 'part_assistant_code',
+          type: 'text',
+          text:
+              "Here is the sample:\n\n```dart\nvoid main() {\n  print('hello');\n}\n```",
         ),
       ],
     ),

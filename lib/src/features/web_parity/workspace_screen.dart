@@ -8611,7 +8611,6 @@ class _StructuredTextBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final blocks = <Widget>[];
     final fencePattern = RegExp(r'```([a-zA-Z0-9_-]*)\n([\s\S]*?)```');
     var cursor = 0;
@@ -8622,39 +8621,7 @@ class _StructuredTextBlock extends StatelessWidget {
       }
       final language = match.group(1)?.trim();
       final code = (match.group(2) ?? '').trimRight();
-      blocks.add(
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(AppSpacing.md),
-          decoration: BoxDecoration(
-            color: surfaces.panel,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: surfaces.lineSoft),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              if (language != null && language.isNotEmpty) ...<Widget>[
-                Text(
-                  language.toUpperCase(),
-                  style: Theme.of(
-                    context,
-                  ).textTheme.labelMedium?.copyWith(color: surfaces.muted),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-              ],
-              Text(
-                code,
-                style: GoogleFonts.ibmPlexMono(
-                  color: Theme.of(context).colorScheme.onSurface,
-                  fontSize: 13,
-                  height: 1.6,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
+      blocks.add(_StructuredCodeFenceBlock(language: language, code: code));
       cursor = match.end;
     }
 
@@ -8677,6 +8644,129 @@ class _StructuredTextBlock extends StatelessWidget {
             ),
           )
           .toList(growable: false),
+    );
+  }
+}
+
+class _StructuredCodeFenceBlock extends StatefulWidget {
+  const _StructuredCodeFenceBlock({required this.code, this.language});
+
+  final String code;
+  final String? language;
+
+  @override
+  State<_StructuredCodeFenceBlock> createState() =>
+      _StructuredCodeFenceBlockState();
+}
+
+class _StructuredCodeFenceBlockState extends State<_StructuredCodeFenceBlock> {
+  Timer? _copiedTimer;
+  bool _copied = false;
+
+  @override
+  void dispose() {
+    _copiedTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _copyCode() async {
+    final code = widget.code;
+    if (code.isEmpty) {
+      return;
+    }
+    unawaited(Clipboard.setData(ClipboardData(text: code)));
+    _copiedTimer?.cancel();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _copied = true;
+    });
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Code block copied.')));
+    _copiedTimer = Timer(const Duration(seconds: 2), () {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _copied = false;
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final language = widget.language?.trim();
+    final hasLanguage = language != null && language.isNotEmpty;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: surfaces.panel,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: surfaces.lineSoft),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: hasLanguage
+                    ? Text(
+                        language.toUpperCase(),
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: surfaces.muted,
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
+              Tooltip(
+                message: _copied ? 'Copied' : 'Copy code',
+                waitDuration: const Duration(milliseconds: 100),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: surfaces.panelMuted,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: surfaces.lineSoft),
+                  ),
+                  child: IconButton(
+                    key: ValueKey<String>(
+                      'timeline-code-copy-${language ?? 'plain'}',
+                    ),
+                    onPressed: _copyCode,
+                    icon: Icon(
+                      _copied
+                          ? Icons.check_rounded
+                          : Icons.content_copy_rounded,
+                      size: 16,
+                    ),
+                    visualDensity: VisualDensity.compact,
+                    splashRadius: 18,
+                    tooltip: _copied ? 'Copied' : 'Copy code',
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (hasLanguage) const SizedBox(height: AppSpacing.sm),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SelectableText(
+              widget.code,
+              style: GoogleFonts.ibmPlexMono(
+                color: theme.colorScheme.onSurface,
+                fontSize: 13,
+                height: 1.6,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
