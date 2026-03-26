@@ -7434,30 +7434,8 @@ class _WorkspaceBody extends StatelessWidget {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
     final questionRequest = controller.currentQuestionRequest;
-    final activeChildSessions = controller.activeChildSessions;
-    final activeChildSessionPreviewById =
-        controller.activeChildSessionPreviewById;
-    final todoLive =
-        (controller.selectedStatus?.type ?? 'idle') != 'idle' ||
-        questionRequest != null;
-    void openActiveChildSession(String sessionId) {
-      if (compact && compactPane != _CompactWorkspacePane.session) {
-        onCompactPaneChanged(_CompactWorkspacePane.session);
-      }
-      onOpenSession(sessionId);
-    }
-
-    final activeSubSessionPanel = _ActiveSubSessionPanel(
-      rootSessionId: controller.rootSelectedSession?.id,
-      sessions: activeChildSessions,
-      previewBySessionId: activeChildSessionPreviewById,
-      currentSessionId: controller.selectedSessionId,
-      compact: compact,
-      onOpenSession: openActiveChildSession,
-    );
     final content = Column(
       children: <Widget>[
-        if (!compact) activeSubSessionPanel,
         Expanded(
           child: DecoratedBox(
             decoration: BoxDecoration(
@@ -7488,20 +7466,6 @@ class _WorkspaceBody extends StatelessWidget {
             ),
           ),
         ),
-        if (!activeWorkspaceLoading &&
-            activeWorkspaceError == null &&
-            controller.selectedSessionId != null)
-          _SessionTodoDock(
-            key: ValueKey<String>(
-              'session-todo-dock-${controller.selectedSessionId}',
-            ),
-            sessionId: controller.selectedSessionId!,
-            todos: controller.todos,
-            live: todoLive,
-            blocked: questionRequest != null,
-            compact: compact,
-            onClearStale: controller.clearTodos,
-          ),
         if (activeWorkspaceLoading)
           Container(
             padding: EdgeInsets.fromLTRB(
@@ -7593,7 +7557,6 @@ class _WorkspaceBody extends StatelessWidget {
             sideLabel: _compactSideLabel(controller),
             onChanged: onCompactPaneChanged,
           ),
-          activeSubSessionPanel,
           Expanded(
             child: compactPane == _CompactWorkspacePane.session
                 ? content
@@ -7847,6 +7810,17 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
     final timelinePageStorageKey = searchScoped
         ? 'web-parity-message-timeline::$timelineScopeKey::search-$chatSearchRevision-${chatSearchActiveMessageId ?? 'none'}'
         : 'web-parity-message-timeline::$timelineScopeKey';
+    final rootSession = controller.rootSessionForSession(sessionId);
+    final activeChildSessions = controller.activeChildSessionsForSession(
+      sessionId,
+    );
+    final activeChildSessionPreviewById = controller
+        .activeChildSessionPreviewByIdForSession(sessionId);
+    final paneQuestionRequest = controller.currentQuestionRequestForSession(
+      sessionId,
+    );
+    final paneTodos = controller.todosForSession(sessionId);
+    final paneTodoLive = paneTodos.isNotEmpty || paneQuestionRequest != null;
 
     Future<void> handleFocus() async {
       await onSelectPane(pane.id);
@@ -8028,86 +8002,124 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                 ),
                 Divider(height: 1, color: surfaces.lineSoft),
                 Expanded(
-                  child: sessionId == null && controller.loading
-                      ? KeyedSubtree(
+                  child: Column(
+                    children: <Widget>[
+                      if (activeChildSessions.isNotEmpty)
+                        _ActiveSubSessionPanel(
                           key: ValueKey<String>(
-                            'workspace-session-pane-loading-${pane.id}',
+                            'pane-subsessions-${pane.id}::$normalizedSessionId',
                           ),
-                          child: _TimelineStatusCard(
-                            icon: const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                            title:
-                                'Loading ${projectLabel.isEmpty ? 'project' : projectLabel}...',
-                            message:
-                                'Keeping the rest of the workspace visible while this project connects.',
-                          ),
-                        )
-                      : sessionId == null && controller.error != null
-                      ? KeyedSubtree(
-                          key: ValueKey<String>(
-                            'workspace-session-pane-error-${pane.id}',
-                          ),
-                          child: _TimelineStatusCard(
-                            icon: Icon(
-                              Icons.wifi_tethering_error_rounded,
-                              color: theme.colorScheme.error,
-                              size: 22,
-                            ),
-                            title:
-                                'Couldn\'t load ${projectLabel.isEmpty ? 'this project' : projectLabel}',
-                            message: controller.error!,
-                            action: OutlinedButton(
-                              onPressed: () =>
-                                  unawaited(handleRetryWorkspace()),
-                              child: const Text('Retry'),
-                            ),
-                          ),
-                        )
-                      : sessionId == null
-                      ? _NewSessionView(
-                          project: project,
-                          messages: timelineState.messages,
-                        )
-                      : _MessageTimeline(
-                          key: ValueKey<String>(
-                            'timeline-$timelinePageStorageKey',
-                          ),
-                          storageScopeKey: timelineScopeKey,
-                          pageStorageKeyValue: timelinePageStorageKey,
+                          rootSessionId: rootSession?.id,
+                          sessions: activeChildSessions,
+                          previewBySessionId: activeChildSessionPreviewById,
                           currentSessionId: sessionId,
-                          loading: timelineState.loading,
-                          showingCachedMessages:
-                              timelineState.showingCachedMessages,
-                          error: timelineState.error,
-                          messages: timelineState.orderedMessages,
                           compact: compact,
-                          sessions: controller.sessions,
-                          selectedSession: selected
-                              ? controller.selectedSession
-                              : session,
-                          configSnapshot: controller.configSnapshot,
-                          shellToolDefaultExpanded: shellToolDefaultExpanded,
-                          timelineProgressDetailsVisible:
-                              timelineProgressDetailsVisible,
-                          searchQuery: searchScoped ? chatSearchQuery : '',
-                          matchingMessageIds: searchScoped
-                              ? chatSearchMatchMessageIds.toSet()
-                              : const <String>{},
-                          activeMatchMessageId: searchScoped
-                              ? chatSearchActiveMessageId
-                              : null,
-                          searchRevision: searchScoped ? chatSearchRevision : 0,
-                          onForkMessage: handleForkMessage,
-                          onRevertMessage: handleRevertMessage,
                           onOpenSession: handleOpenSession,
-                          onRetry: handleRetry,
-                          jumpToBottomEpoch: searchScoped
-                              ? timelineJumpEpoch
-                              : 0,
                         ),
+                      Expanded(
+                        child: sessionId == null && controller.loading
+                            ? KeyedSubtree(
+                                key: ValueKey<String>(
+                                  'workspace-session-pane-loading-${pane.id}',
+                                ),
+                                child: _TimelineStatusCard(
+                                  icon: const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  ),
+                                  title:
+                                      'Loading ${projectLabel.isEmpty ? 'project' : projectLabel}...',
+                                  message:
+                                      'Keeping the rest of the workspace visible while this project connects.',
+                                ),
+                              )
+                            : sessionId == null && controller.error != null
+                            ? KeyedSubtree(
+                                key: ValueKey<String>(
+                                  'workspace-session-pane-error-${pane.id}',
+                                ),
+                                child: _TimelineStatusCard(
+                                  icon: Icon(
+                                    Icons.wifi_tethering_error_rounded,
+                                    color: theme.colorScheme.error,
+                                    size: 22,
+                                  ),
+                                  title:
+                                      'Couldn\'t load ${projectLabel.isEmpty ? 'this project' : projectLabel}',
+                                  message: controller.error!,
+                                  action: OutlinedButton(
+                                    onPressed: () =>
+                                        unawaited(handleRetryWorkspace()),
+                                    child: const Text('Retry'),
+                                  ),
+                                ),
+                              )
+                            : sessionId == null
+                            ? _NewSessionView(
+                                project: project,
+                                messages: timelineState.messages,
+                              )
+                            : _MessageTimeline(
+                                key: ValueKey<String>(
+                                  'timeline-$timelinePageStorageKey',
+                                ),
+                                storageScopeKey: timelineScopeKey,
+                                pageStorageKeyValue: timelinePageStorageKey,
+                                currentSessionId: sessionId,
+                                loading: timelineState.loading,
+                                showingCachedMessages:
+                                    timelineState.showingCachedMessages,
+                                error: timelineState.error,
+                                messages: timelineState.orderedMessages,
+                                compact: compact,
+                                sessions: controller.sessions,
+                                selectedSession: selected
+                                    ? controller.selectedSession
+                                    : session,
+                                configSnapshot: controller.configSnapshot,
+                                shellToolDefaultExpanded:
+                                    shellToolDefaultExpanded,
+                                timelineProgressDetailsVisible:
+                                    timelineProgressDetailsVisible,
+                                searchQuery: searchScoped
+                                    ? chatSearchQuery
+                                    : '',
+                                matchingMessageIds: searchScoped
+                                    ? chatSearchMatchMessageIds.toSet()
+                                    : const <String>{},
+                                activeMatchMessageId: searchScoped
+                                    ? chatSearchActiveMessageId
+                                    : null,
+                                searchRevision: searchScoped
+                                    ? chatSearchRevision
+                                    : 0,
+                                onForkMessage: handleForkMessage,
+                                onRevertMessage: handleRevertMessage,
+                                onOpenSession: handleOpenSession,
+                                onRetry: handleRetry,
+                                jumpToBottomEpoch: searchScoped
+                                    ? timelineJumpEpoch
+                                    : 0,
+                              ),
+                      ),
+                      if (sessionId != null)
+                        _SessionTodoDock(
+                          key: ValueKey<String>(
+                            'session-todo-dock-${pane.id}::$normalizedSessionId',
+                          ),
+                          sessionId: sessionId,
+                          todos: paneTodos,
+                          live: paneTodoLive,
+                          blocked: paneQuestionRequest != null,
+                          compact: compact,
+                          onClearStale: () =>
+                              controller.clearTodosForSession(sessionId),
+                        ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -8126,6 +8138,7 @@ class _ActiveSubSessionPanel extends StatefulWidget {
     required this.currentSessionId,
     required this.compact,
     required this.onOpenSession,
+    super.key,
   });
 
   final String? rootSessionId;
@@ -11896,37 +11909,69 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
                             ),
                             child: Row(
                               children: <Widget>[
-                                Text(
-                                  progressLabel,
-                                  style:
-                                      (isCompact
-                                              ? theme.textTheme.titleSmall
-                                              : theme.textTheme.titleMedium)
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w700,
-                                          ),
+                                Expanded(
+                                  child: _collapsed && preview.isNotEmpty
+                                      ? Row(
+                                          children: <Widget>[
+                                            Flexible(
+                                              flex: 3,
+                                              child: Text(
+                                                progressLabel,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style:
+                                                    (isCompact
+                                                            ? theme
+                                                                  .textTheme
+                                                                  .titleSmall
+                                                            : theme
+                                                                  .textTheme
+                                                                  .titleMedium)
+                                                        ?.copyWith(
+                                                          fontWeight:
+                                                              FontWeight.w700,
+                                                        ),
+                                              ),
+                                            ),
+                                            SizedBox(
+                                              width: isCompact
+                                                  ? AppSpacing.xs
+                                                  : AppSpacing.sm,
+                                            ),
+                                            Flexible(
+                                              flex: 4,
+                                              child: Text(
+                                                preview,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: theme
+                                                    .textTheme
+                                                    .bodyMedium
+                                                    ?.copyWith(
+                                                      color: surfaces.muted,
+                                                      height: 1.45,
+                                                    ),
+                                              ),
+                                            ),
+                                          ],
+                                        )
+                                      : Text(
+                                          progressLabel,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style:
+                                              (isCompact
+                                                      ? theme
+                                                            .textTheme
+                                                            .titleSmall
+                                                      : theme
+                                                            .textTheme
+                                                            .titleMedium)
+                                                  ?.copyWith(
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                        ),
                                 ),
-                                if (_collapsed &&
-                                    preview.isNotEmpty) ...<Widget>[
-                                  SizedBox(
-                                    width: isCompact
-                                        ? AppSpacing.xs
-                                        : AppSpacing.sm,
-                                  ),
-                                  Expanded(
-                                    child: Text(
-                                      preview,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: theme.textTheme.bodyMedium
-                                          ?.copyWith(
-                                            color: surfaces.muted,
-                                            height: 1.45,
-                                          ),
-                                    ),
-                                  ),
-                                ] else
-                                  const Spacer(),
                                 IconButton(
                                   key: const ValueKey<String>(
                                     'session-todo-toggle-button',

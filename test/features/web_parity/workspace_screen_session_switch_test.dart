@@ -823,6 +823,72 @@ void main() {
   });
 
   testWidgets(
+    'split panes keep each session todo and sub-agent panels visible without focus',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              return _PaneMetadataWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+            },
+      );
+      addTearDown(appController.dispose);
+
+      final navigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          navigatorKey: navigatorKey,
+          initialRoute: '/',
+        ),
+      );
+      navigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('workspace-split-session-pane-button'),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      await tester.tap(find.text('Session Two'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(
+        find.text('Plan anomaly feature (@plan subagent)'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Find validation hook (@explore subagent)'),
+        findsOneWidget,
+      );
+      expect(find.text('todo for one'), findsOneWidget);
+      expect(find.text('todo for two'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
     'switching projects stays on the same page and reuses cached workspace controllers',
     (tester) async {
       tester.view.physicalSize = const Size(1600, 1000);
@@ -1709,6 +1775,112 @@ class _RecordingWorkspaceController extends WorkspaceController {
         ),
       ],
     };
+  }
+}
+
+class _PaneMetadataWorkspaceController extends _RecordingWorkspaceController {
+  _PaneMetadataWorkspaceController({
+    required super.profile,
+    required super.directory,
+    super.initialSessionId,
+  }) {
+    if (directory == '/workspace/demo') {
+      _sessions = <SessionSummary>[
+        SessionSummary(
+          id: 'ses_1',
+          directory: '/workspace/demo',
+          title: 'Session One',
+          version: '1',
+          updatedAt: DateTime.fromMillisecondsSinceEpoch(1710000001000),
+        ),
+        SessionSummary(
+          id: 'ses_1_child',
+          directory: '/workspace/demo',
+          title: 'Plan anomaly feature (@plan subagent)',
+          version: '1',
+          parentId: 'ses_1',
+          updatedAt: DateTime.fromMillisecondsSinceEpoch(1710000001500),
+        ),
+        SessionSummary(
+          id: 'ses_2',
+          directory: '/workspace/demo',
+          title: 'Session Two',
+          version: '1',
+          updatedAt: DateTime.fromMillisecondsSinceEpoch(1710000002000),
+        ),
+        SessionSummary(
+          id: 'ses_2_child',
+          directory: '/workspace/demo',
+          title: 'Find validation hook (@explore subagent)',
+          version: '1',
+          parentId: 'ses_2',
+          updatedAt: DateTime.fromMillisecondsSinceEpoch(1710000002500),
+        ),
+      ];
+    }
+  }
+
+  static final Map<String, SessionStatusSummary> _paneStatuses =
+      <String, SessionStatusSummary>{
+        ..._RecordingWorkspaceController._sessionStatuses,
+        'ses_1_child': const SessionStatusSummary(type: 'running'),
+        'ses_2_child': const SessionStatusSummary(type: 'running'),
+      };
+  final Map<String, List<TodoItem>> _todosBySession = <String, List<TodoItem>>{
+    'ses_1': const <TodoItem>[
+      TodoItem(
+        id: 'todo_ses_1',
+        content: 'todo for one',
+        status: 'pending',
+        priority: 'medium',
+      ),
+    ],
+    'ses_2': const <TodoItem>[
+      TodoItem(
+        id: 'todo_ses_2',
+        content: 'todo for two',
+        status: 'in_progress',
+        priority: 'high',
+      ),
+    ],
+  };
+
+  @override
+  Map<String, SessionStatusSummary> get statuses => _paneStatuses;
+
+  @override
+  List<TodoItem> get todos => todosForSession(selectedSessionId);
+
+  @override
+  List<TodoItem> todosForSession(String? sessionId) {
+    final normalizedSessionId = sessionId?.trim();
+    if (normalizedSessionId == null || normalizedSessionId.isEmpty) {
+      return const <TodoItem>[];
+    }
+    return _todosBySession[normalizedSessionId] ?? const <TodoItem>[];
+  }
+
+  @override
+  Map<String, String> activeChildSessionPreviewByIdForSession(
+    String? sessionId,
+  ) {
+    return switch (sessionId) {
+      'ses_1' => const <String, String>{'ses_1_child': 'tool-calls'},
+      'ses_2' => const <String, String>{
+        'ses_2_child': 'Thinking through the task',
+      },
+      _ => const <String, String>{},
+    };
+  }
+
+  @override
+  void clearTodosForSession(String? sessionId) {
+    final normalizedSessionId = sessionId?.trim();
+    if (normalizedSessionId == null || normalizedSessionId.isEmpty) {
+      return;
+    }
+    _todosBySession.remove(normalizedSessionId);
+    notifyListeners();
   }
 }
 

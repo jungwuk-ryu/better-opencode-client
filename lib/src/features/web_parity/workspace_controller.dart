@@ -310,6 +310,8 @@ class WorkspaceController extends ChangeNotifier {
   String? _selectedReviewPath;
   FileDiffSummary? _reviewDiff;
   List<TodoItem> _todos = const <TodoItem>[];
+  Map<String, List<TodoItem>> _todosBySessionId =
+      const <String, List<TodoItem>>{};
   PendingRequestBundle _pendingRequests = const PendingRequestBundle(
     questions: <QuestionRequestSummary>[],
     permissions: <PermissionRequestSummary>[],
@@ -431,10 +433,24 @@ class WorkspaceController extends ChangeNotifier {
   String? get selectedReviewPath => _selectedReviewPath;
   FileDiffSummary? get reviewDiff => _reviewDiff;
   List<TodoItem> get todos => _todos;
+  List<TodoItem> todosForSession(String? sessionId) {
+    final normalizedSessionId = sessionId?.trim();
+    if (normalizedSessionId == null || normalizedSessionId.isEmpty) {
+      return const <TodoItem>[];
+    }
+    if (normalizedSessionId == _selectedSessionId) {
+      return todos;
+    }
+    return _todosBySessionId[normalizedSessionId] ?? const <TodoItem>[];
+  }
+
   PendingRequestBundle get pendingRequests => _pendingRequests;
   QuestionRequestSummary? get currentQuestionRequest =>
-      _sessionTreeRequest<QuestionRequestSummary>(
-        _pendingRequests.questions,
+      currentQuestionRequestForSession(selectedSessionId);
+  QuestionRequestSummary? currentQuestionRequestForSession(String? sessionId) =>
+      _sessionTreeRequestForSession<QuestionRequestSummary>(
+        sessionId,
+        pendingRequests.questions,
         (request) => request.sessionId,
       );
   PermissionRequestSummary? get currentPermissionRequest =>
@@ -514,6 +530,8 @@ class WorkspaceController extends ChangeNotifier {
 
   SessionSummary? get rootSelectedSession =>
       _rootSessionForId(selectedSessionId);
+  SessionSummary? rootSessionForSession(String? sessionId) =>
+      _rootSessionForId(sessionId);
 
   List<WorkspaceQueuedPrompt> get selectedSessionQueuedPrompts {
     final sessionId = selectedSessionId;
@@ -541,13 +559,16 @@ class WorkspaceController extends ChangeNotifier {
     return _sendingQueuedPromptBySessionId[sessionId];
   }
 
-  List<SessionSummary> get activeChildSessions {
-    final root = rootSelectedSession;
+  List<SessionSummary> get activeChildSessions =>
+      activeChildSessionsForSession(selectedSessionId);
+
+  List<SessionSummary> activeChildSessionsForSession(String? sessionId) {
+    final root = _rootSessionForId(sessionId);
     if (root == null) {
       return const <SessionSummary>[];
     }
 
-    final selectedSessionId = this.selectedSessionId;
+    final selectedSessionId = sessionId?.trim();
     final sessionTreeIds = _sessionTreeIds(root.id).toSet();
     final children = sessions
         .where((session) => session.id != root.id)
@@ -571,9 +592,14 @@ class WorkspaceController extends ChangeNotifier {
     return children;
   }
 
-  Map<String, String> get activeChildSessionPreviewById {
+  Map<String, String> get activeChildSessionPreviewById =>
+      activeChildSessionPreviewByIdForSession(selectedSessionId);
+
+  Map<String, String> activeChildSessionPreviewByIdForSession(
+    String? sessionId,
+  ) {
     final previews = <String, String>{};
-    for (final session in activeChildSessions) {
+    for (final session in activeChildSessionsForSession(sessionId)) {
       final preview = _resolveActiveChildSessionPreview(session);
       if (preview != null) {
         previews[session.id] = preview;
@@ -801,7 +827,7 @@ class WorkspaceController extends ChangeNotifier {
     _reviewDiffError = null;
     _selectedReviewPath = null;
     _reviewDiff = null;
-    _todos = const <TodoItem>[];
+    _replaceSelectedSessionTodos(const <TodoItem>[]);
     _pendingRequests = const PendingRequestBundle(
       questions: <QuestionRequestSummary>[],
       permissions: <PermissionRequestSummary>[],
@@ -896,7 +922,7 @@ class WorkspaceController extends ChangeNotifier {
       _showingCachedSessionMessages = false;
       _sessionLoadError = null;
     }
-    _todos = const <TodoItem>[];
+    _replaceSelectedSessionTodos(const <TodoItem>[]);
     _loadingReviewDiff = false;
     _reviewDiffError = null;
     _reviewDiff = null;
@@ -1185,7 +1211,7 @@ class WorkspaceController extends ChangeNotifier {
     _sessionLoading = true;
     _sessionLoadError = null;
     _showingCachedSessionMessages = false;
-    _todos = const <TodoItem>[];
+    _replaceSelectedSessionTodos(const <TodoItem>[]);
     final cachedMessages = await _loadCachedSessionMessages(
       project: project,
       sessionId: sessionId,
@@ -2174,7 +2200,7 @@ class WorkspaceController extends ChangeNotifier {
     _sessionLoading = false;
     _showingCachedSessionMessages = false;
     _sessionLoadError = null;
-    _todos = const <TodoItem>[];
+    _replaceSelectedSessionTodos(const <TodoItem>[]);
     _statuses = <String, SessionStatusSummary>{
       ..._statuses,
       created.id:
@@ -2510,11 +2536,65 @@ class WorkspaceController extends ChangeNotifier {
   }
 
   void clearTodos() {
-    if (_todos.isEmpty) {
+    clearTodosForSession(_selectedSessionId);
+  }
+
+  void clearTodosForSession(String? sessionId) {
+    final normalizedSessionId = sessionId?.trim();
+    if (normalizedSessionId == null || normalizedSessionId.isEmpty) {
       return;
     }
-    _todos = const <TodoItem>[];
+    final hadSelectedTodos =
+        normalizedSessionId == _selectedSessionId && _todos.isNotEmpty;
+    final hadCachedTodos =
+        (_todosBySessionId[normalizedSessionId] ?? const <TodoItem>[])
+            .isNotEmpty;
+    if (!hadSelectedTodos && !hadCachedTodos) {
+      return;
+    }
+    final nextTodosBySessionId = Map<String, List<TodoItem>>.from(
+      _todosBySessionId,
+    )..remove(normalizedSessionId);
+    _todosBySessionId = Map<String, List<TodoItem>>.unmodifiable(
+      nextTodosBySessionId,
+    );
+    if (normalizedSessionId == _selectedSessionId) {
+      _replaceSelectedSessionTodos(const <TodoItem>[]);
+    }
     _notify();
+  }
+
+  void _replaceSelectedSessionTodos(List<TodoItem> todos) {
+    final immutableTodos = List<TodoItem>.unmodifiable(todos);
+    _todos = immutableTodos;
+    final selectedSessionId = _selectedSessionId;
+    if (selectedSessionId == null || selectedSessionId.isEmpty) {
+      return;
+    }
+    final nextTodosBySessionId = Map<String, List<TodoItem>>.from(
+      _todosBySessionId,
+    );
+    if (immutableTodos.isEmpty) {
+      nextTodosBySessionId.remove(selectedSessionId);
+    } else {
+      nextTodosBySessionId[selectedSessionId] = immutableTodos;
+    }
+    _todosBySessionId = Map<String, List<TodoItem>>.unmodifiable(
+      nextTodosBySessionId,
+    );
+  }
+
+  void _removeCachedTodosForSession(String? sessionId) {
+    final normalizedSessionId = sessionId?.trim();
+    if (normalizedSessionId == null || normalizedSessionId.isEmpty) {
+      return;
+    }
+    final nextTodosBySessionId = Map<String, List<TodoItem>>.from(
+      _todosBySessionId,
+    )..remove(normalizedSessionId);
+    _todosBySessionId = Map<String, List<TodoItem>>.unmodifiable(
+      nextTodosBySessionId,
+    );
   }
 
   Future<void> _loadComposerState(ProjectTarget project) async {
@@ -2926,7 +3006,7 @@ class WorkspaceController extends ChangeNotifier {
     final project = _project;
     final sessionId = _selectedSessionId;
     if (project == null) {
-      _todos = const <TodoItem>[];
+      _replaceSelectedSessionTodos(const <TodoItem>[]);
       _pendingRequests = const PendingRequestBundle(
         questions: <QuestionRequestSummary>[],
         permissions: <PermissionRequestSummary>[],
@@ -2935,16 +3015,18 @@ class WorkspaceController extends ChangeNotifier {
     }
 
     if (sessionId == null || sessionId.isEmpty) {
-      _todos = const <TodoItem>[];
+      _replaceSelectedSessionTodos(const <TodoItem>[]);
     } else {
       try {
-        _todos = await _todoService.fetchTodos(
-          profile: profile,
-          project: project,
-          sessionId: sessionId,
+        _replaceSelectedSessionTodos(
+          await _todoService.fetchTodos(
+            profile: profile,
+            project: project,
+            sessionId: sessionId,
+          ),
         );
       } catch (_) {
-        _todos = const <TodoItem>[];
+        _replaceSelectedSessionTodos(const <TodoItem>[]);
       }
     }
 
@@ -3013,6 +3095,7 @@ class WorkspaceController extends ChangeNotifier {
       }
       _removeActiveChildPreviewState(removedSessionId);
       _clearQueuedPromptStateForSession(removedSessionId);
+      _removeCachedTodosForSession(removedSessionId);
     } else if (type == 'session.status') {
       _statuses = applySessionStatusEvent(_statuses, event.properties);
       _maybeFlushQueuedPrompts(
@@ -3155,10 +3238,12 @@ class WorkspaceController extends ChangeNotifier {
       }
       _messages = nextMessages;
     } else if (type == 'todo.updated') {
-      _todos = applyTodoUpdatedEvent(
-        _todos,
-        event.properties,
-        selectedSessionId: _selectedSessionId,
+      _replaceSelectedSessionTodos(
+        applyTodoUpdatedEvent(
+          _todos,
+          event.properties,
+          selectedSessionId: _selectedSessionId,
+        ),
       );
     } else if (type == 'question.asked') {
       _pendingRequests = PendingRequestBundle(
@@ -3328,7 +3413,19 @@ class WorkspaceController extends ChangeNotifier {
     List<T> requests,
     String Function(T request) sessionIdOf,
   ) {
-    final rootSessionId = selectedSessionId;
+    return _sessionTreeRequestForSession<T>(
+      selectedSessionId,
+      requests,
+      sessionIdOf,
+    );
+  }
+
+  T? _sessionTreeRequestForSession<T>(
+    String? sessionId,
+    List<T> requests,
+    String Function(T request) sessionIdOf,
+  ) {
+    final rootSessionId = sessionId?.trim();
     if (rootSessionId == null || rootSessionId.isEmpty || requests.isEmpty) {
       return null;
     }
