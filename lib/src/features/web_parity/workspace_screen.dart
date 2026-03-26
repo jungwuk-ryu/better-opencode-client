@@ -262,6 +262,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   WorkspaceController? _controller;
   ServerProfile? _profile;
   final TextEditingController _promptController = TextEditingController();
+  final Map<String, TextEditingController> _inactiveComposerControllersByScope =
+      <String, TextEditingController>{};
+  final Map<String, VoidCallback> _inactiveComposerControllerListenersByScope =
+      <String, VoidCallback>{};
   final TextEditingController _chatSearchController = TextEditingController();
   final FocusNode _chatSearchFocusNode = FocusNode();
   List<PromptAttachment> _composerAttachments = const <PromptAttachment>[];
@@ -296,7 +300,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   Map<String, String?> _pendingComposerDraftByStorageKey =
       const <String, String?>{};
   Map<String, int> _composerDraftRevisionByScope = const <String, int>{};
-  int _promptComposerFocusRequestToken = 0;
+  Map<String, int> _promptComposerFocusTokensByScope = const <String, int>{};
   int _sessionPaneSequence = 0;
   List<_WorkspaceSessionPaneSpec> _desktopSessionPanes =
       const <_WorkspaceSessionPaneSpec>[];
@@ -306,6 +310,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       const <WorkspaceController, Set<String>>{};
   Map<WorkspaceController, Set<String>> _syncedWatchedSessionIdsByController =
       const <WorkspaceController, Set<String>>{};
+  Set<WorkspaceController> _observedPaneControllers =
+      const <WorkspaceController>{};
   bool _watchedSessionSyncScheduled = false;
   int _desktopSessionPaneLayoutRevision = 0;
   late String _activeDirectory;
@@ -338,6 +344,189 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   String _composerScopeKey({required String directory, String? sessionId}) {
     final normalizedSessionId = sessionId?.trim();
     return '$directory::${normalizedSessionId == null || normalizedSessionId.isEmpty ? 'new' : normalizedSessionId}';
+  }
+
+  String _resolvedActiveComposerScopeKey(WorkspaceController? controller) {
+    return _activeComposerScopeKey ??
+        _composerScopeKey(
+          directory: controller?.directory ?? _activeDirectory,
+          sessionId: controller?.selectedSessionId ?? _activeRouteSessionId,
+        );
+  }
+
+  bool _isActiveComposerScope(String scopeKey) {
+    return scopeKey == _resolvedActiveComposerScopeKey(_controller);
+  }
+
+  TextEditingController _composerControllerForScope(String scopeKey) {
+    if (_isActiveComposerScope(scopeKey)) {
+      return _promptController;
+    }
+    final existing = _inactiveComposerControllersByScope[scopeKey];
+    if (existing != null) {
+      return existing;
+    }
+    final controller = TextEditingController(
+      text: _composerScopeState(scopeKey).draft,
+    );
+    late final VoidCallback listener;
+    listener = () {
+      if (!mounted ||
+          !identical(
+            _inactiveComposerControllersByScope[scopeKey],
+            controller,
+          )) {
+        return;
+      }
+      _updateComposerScopeState(scopeKey, draft: controller.text);
+    };
+    controller.addListener(listener);
+    _inactiveComposerControllersByScope[scopeKey] = controller;
+    _inactiveComposerControllerListenersByScope[scopeKey] = listener;
+    return controller;
+  }
+
+  void _disposeInactiveComposerController(String scopeKey) {
+    final controller = _inactiveComposerControllersByScope.remove(scopeKey);
+    final listener = _inactiveComposerControllerListenersByScope.remove(
+      scopeKey,
+    );
+    if (controller == null) {
+      return;
+    }
+    if (listener != null) {
+      controller.removeListener(listener);
+    }
+    controller.dispose();
+  }
+
+  void _syncInactiveComposerController(String scopeKey, String draft) {
+    if (_isActiveComposerScope(scopeKey)) {
+      return;
+    }
+    final controller = _inactiveComposerControllersByScope[scopeKey];
+    if (controller == null || controller.text == draft) {
+      return;
+    }
+    controller.value = TextEditingValue(
+      text: draft,
+      selection: TextSelection.collapsed(offset: draft.length),
+      composing: TextRange.empty,
+    );
+  }
+
+  int _promptComposerFocusTokenForScope(String scopeKey) =>
+      _promptComposerFocusTokensByScope[scopeKey] ?? 0;
+
+  int _submittedDraftEpochForScope(String scopeKey) {
+    if (_isActiveComposerScope(scopeKey)) {
+      return _promptSubmitEpoch;
+    }
+    return _composerScopeState(scopeKey).submittedDraftEpoch;
+  }
+
+  String? _recentSubmittedDraftForScope(String scopeKey) {
+    if (_isActiveComposerScope(scopeKey)) {
+      return _recentSubmittedPromptDraft;
+    }
+    return _composerScopeState(scopeKey).recentSubmittedDraft;
+  }
+
+  String _composerScopeKeyForPane(_WorkspacePaneViewModel paneViewModel) {
+    return _composerScopeKey(
+      directory: paneViewModel.pane.directory,
+      sessionId: paneViewModel.pane.sessionId,
+    );
+  }
+
+  void _requestPromptComposerFocusForScope(String scopeKey) {
+    final next = Map<String, int>.from(_promptComposerFocusTokensByScope);
+    next[scopeKey] = (next[scopeKey] ?? 0) + 1;
+    _promptComposerFocusTokensByScope = Map<String, int>.unmodifiable(next);
+  }
+
+  Future<WorkspaceController?> _activatePaneComposer(
+    _WorkspacePaneViewModel paneViewModel, {
+    bool requestFocus = false,
+  }) async {
+    final pane = paneViewModel.pane;
+    final scopeKey = _composerScopeKeyForPane(paneViewModel);
+    final activeController = _controller;
+    if (_activeDesktopSessionPaneId != pane.id && activeController != null) {
+      await _activateDesktopSessionPane(activeController, pane.id);
+    } else if (_controller?.selectedSessionId != pane.sessionId) {
+      await _controller?.selectSession(pane.sessionId);
+    }
+    if (!mounted) {
+      return null;
+    }
+    final targetController = _controller;
+    if (requestFocus) {
+      setState(() {
+        _requestPromptComposerFocusForScope(scopeKey);
+      });
+    }
+    return targetController;
+  }
+
+  Future<void> _pickComposerAttachmentsForScope(String scopeKey) async {
+    if (_promptSubmitInFlightScopeKeys.contains(scopeKey) ||
+        _pickingComposerAttachments) {
+      return;
+    }
+
+    setState(() {
+      _pickingComposerAttachments = true;
+    });
+
+    try {
+      final attachments = widget.attachmentPicker != null
+          ? await widget.attachmentPicker!()
+          : await _pickSystemAttachments();
+      if (!mounted || attachments.isEmpty) {
+        return;
+      }
+      final nextAttachments = <PromptAttachment>[
+        ..._composerAttachmentsForScope(scopeKey),
+        ...attachments,
+      ];
+      setState(() {
+        _updateComposerScopeState(scopeKey, attachments: nextAttachments);
+        if (_activeComposerScopeKey == scopeKey) {
+          _composerAttachments = List<PromptAttachment>.unmodifiable(
+            nextAttachments,
+          );
+        }
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      _showSnackBar(
+        'Failed to attach files: $error',
+        tone: AppSnackBarTone.danger,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _pickingComposerAttachments = false;
+        });
+      }
+    }
+  }
+
+  void _removeComposerAttachmentForScope(String scopeKey, String attachmentId) {
+    final nextAttachments = _composerAttachmentsForScope(scopeKey)
+        .where((attachment) => attachment.id != attachmentId)
+        .toList(growable: false);
+    setState(() {
+      if (_activeComposerScopeKey == scopeKey) {
+        _composerAttachments = List<PromptAttachment>.unmodifiable(
+          nextAttachments,
+        );
+      }
+      _updateComposerScopeState(scopeKey, attachments: nextAttachments);
+    });
   }
 
   String _composerDraftStorageKey(String profileStorageKey, String scopeKey) =>
@@ -393,7 +582,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   }
 
   List<PromptAttachment> _composerAttachmentsForScope(String scopeKey) {
-    if (_activeComposerScopeKey == scopeKey) {
+    if (_isActiveComposerScope(scopeKey)) {
       return _composerAttachments;
     }
     return _composerScopeState(scopeKey).attachments;
@@ -454,6 +643,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       if (persistDraft) {
         _queueComposerDraftPersist(scopeKey, nextDraft);
       }
+      _syncInactiveComposerController(scopeKey, nextDraft);
     }
   }
 
@@ -477,6 +667,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       return;
     }
     _persistActiveComposerScope();
+    _disposeInactiveComposerController(scopeKey);
     _activeComposerScopeKey = scopeKey;
     final state = _composerScopeState(scopeKey);
     _composerAttachments = List<PromptAttachment>.unmodifiable(
@@ -826,6 +1017,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       unawaited(_flushPendingComposerDraftPersists());
     }
     _disposeController();
+    for (final scopeKey in _inactiveComposerControllersByScope.keys.toList()) {
+      _disposeInactiveComposerController(scopeKey);
+    }
     _promptController.removeListener(_handlePromptControllerChanged);
     _promptController.dispose();
     _chatSearchController.dispose();
@@ -839,6 +1033,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
 
   void _disposeController() {
     _clearWatchedSessionSync();
+    _clearObservedPaneControllers();
     _controller?.removeListener(_handleActiveWorkspaceControllerChanged);
     _controller = null;
     _projectLoadingShellState = null;
@@ -991,8 +1186,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   }
 
   void _requestPromptComposerFocus() {
+    final scopeKey = _resolvedActiveComposerScopeKey(_controller);
     setState(() {
-      _promptComposerFocusRequestToken += 1;
+      _requestPromptComposerFocusForScope(scopeKey);
     });
   }
 
@@ -1973,6 +2169,34 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     _watchedSessionSyncScheduled = false;
   }
 
+  void _handleObservedPaneControllerChanged() {
+    if (!mounted) {
+      return;
+    }
+    setState(() {});
+  }
+
+  void _clearObservedPaneControllers() {
+    for (final controller in _observedPaneControllers) {
+      controller.removeListener(_handleObservedPaneControllerChanged);
+    }
+    _observedPaneControllers = const <WorkspaceController>{};
+  }
+
+  void _syncObservedPaneControllers(Iterable<WorkspaceController> controllers) {
+    final next = Set<WorkspaceController>.unmodifiable(controllers.toSet());
+    if (setEquals(next, _observedPaneControllers)) {
+      return;
+    }
+    for (final controller in _observedPaneControllers.difference(next)) {
+      controller.removeListener(_handleObservedPaneControllerChanged);
+    }
+    for (final controller in next.difference(_observedPaneControllers)) {
+      controller.addListener(_handleObservedPaneControllerChanged);
+    }
+    _observedPaneControllers = next;
+  }
+
   void _scheduleWatchedSessionSync(
     Map<WorkspaceController, Set<String>> sessionIdsByController,
   ) {
@@ -2243,50 +2467,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
 
   Future<void> _pickComposerAttachments() async {
     final scopeKey = _activeComposerScopeKey;
-    if (scopeKey == null ||
-        _activePromptSubmitInFlight ||
-        _pickingComposerAttachments) {
+    if (scopeKey == null || _activePromptSubmitInFlight) {
       return;
     }
-
-    setState(() {
-      _pickingComposerAttachments = true;
-    });
-
-    try {
-      final attachments = widget.attachmentPicker != null
-          ? await widget.attachmentPicker!()
-          : await _pickSystemAttachments();
-      if (!mounted || attachments.isEmpty) {
-        return;
-      }
-      final nextAttachments = <PromptAttachment>[
-        ..._composerAttachmentsForScope(scopeKey),
-        ...attachments,
-      ];
-      setState(() {
-        _updateComposerScopeState(scopeKey, attachments: nextAttachments);
-        if (_activeComposerScopeKey == scopeKey) {
-          _composerAttachments = List<PromptAttachment>.unmodifiable(
-            nextAttachments,
-          );
-        }
-      });
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      _showSnackBar(
-        'Failed to attach files: $error',
-        tone: AppSnackBarTone.danger,
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _pickingComposerAttachments = false;
-        });
-      }
-    }
+    await _pickComposerAttachmentsForScope(scopeKey);
   }
 
   Future<List<PromptAttachment>> _pickSystemAttachments() async {
@@ -2318,13 +2502,188 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     if (scopeKey == null) {
       return;
     }
-    final nextAttachments = _composerAttachments
-        .where((attachment) => attachment.id != attachmentId)
-        .toList(growable: false);
-    setState(() {
-      _composerAttachments = nextAttachments;
-      _updateComposerScopeState(scopeKey, attachments: nextAttachments);
-    });
+    _removeComposerAttachmentForScope(scopeKey, attachmentId);
+  }
+
+  Future<void> _focusComposerForPane(
+    _WorkspacePaneViewModel paneViewModel,
+  ) async {
+    await _activatePaneComposer(paneViewModel, requestFocus: true);
+  }
+
+  Future<void> _pickComposerAttachmentsForPane(
+    _WorkspacePaneViewModel paneViewModel,
+  ) async {
+    final scopeKey = _composerScopeKeyForPane(paneViewModel);
+    if (_activeComposerScopeKey != scopeKey ||
+        _activeDesktopSessionPaneId != paneViewModel.pane.id) {
+      await _activatePaneComposer(paneViewModel);
+    }
+    if (!mounted) {
+      return;
+    }
+    await _pickComposerAttachmentsForScope(scopeKey);
+  }
+
+  Future<void> _submitPromptForPane(
+    _WorkspacePaneViewModel paneViewModel,
+    WorkspacePromptDispatchMode? mode,
+  ) async {
+    final scopeKey = _composerScopeKeyForPane(paneViewModel);
+    if (_activeComposerScopeKey != scopeKey ||
+        _activeDesktopSessionPaneId != paneViewModel.pane.id) {
+      await _activatePaneComposer(paneViewModel);
+    }
+    if (!mounted) {
+      return;
+    }
+    await _submitPrompt(mode);
+  }
+
+  Future<void> _editQueuedPromptForPane(
+    _WorkspacePaneViewModel paneViewModel,
+    String queuedPromptId,
+  ) async {
+    final scopeKey = _composerScopeKeyForPane(paneViewModel);
+    if (_activeComposerScopeKey != scopeKey ||
+        _activeDesktopSessionPaneId != paneViewModel.pane.id) {
+      await _activatePaneComposer(paneViewModel);
+    }
+    if (!mounted) {
+      return;
+    }
+    await _editQueuedPrompt(queuedPromptId);
+  }
+
+  Future<void> _deleteQueuedPromptForPane(
+    _WorkspacePaneViewModel paneViewModel,
+    String queuedPromptId,
+  ) async {
+    final scopeKey = _composerScopeKeyForPane(paneViewModel);
+    if (_activeComposerScopeKey != scopeKey ||
+        _activeDesktopSessionPaneId != paneViewModel.pane.id) {
+      await _activatePaneComposer(paneViewModel);
+    }
+    if (!mounted) {
+      return;
+    }
+    await _deleteQueuedPrompt(queuedPromptId);
+  }
+
+  Future<void> _sendQueuedPromptNowForPane(
+    _WorkspacePaneViewModel paneViewModel,
+    String queuedPromptId,
+  ) async {
+    final scopeKey = _composerScopeKeyForPane(paneViewModel);
+    if (_activeComposerScopeKey != scopeKey ||
+        _activeDesktopSessionPaneId != paneViewModel.pane.id) {
+      await _activatePaneComposer(paneViewModel);
+    }
+    if (!mounted) {
+      return;
+    }
+    await _sendQueuedPromptNow(queuedPromptId);
+  }
+
+  Future<void> _interruptPaneSession(
+    _WorkspacePaneViewModel paneViewModel,
+  ) async {
+    final scopeKey = _composerScopeKeyForPane(paneViewModel);
+    if (_activeComposerScopeKey != scopeKey ||
+        _activeDesktopSessionPaneId != paneViewModel.pane.id) {
+      await _activatePaneComposer(paneViewModel);
+    }
+    if (!mounted) {
+      return;
+    }
+    await _interruptSelectedSession();
+  }
+
+  Future<void> _createSessionFromPane(
+    _WorkspacePaneViewModel paneViewModel,
+  ) async {
+    final scopeKey = _composerScopeKeyForPane(paneViewModel);
+    if (_activeComposerScopeKey != scopeKey ||
+        _activeDesktopSessionPaneId != paneViewModel.pane.id) {
+      await _activatePaneComposer(paneViewModel);
+    }
+    final controller = _controller;
+    if (!mounted || controller == null) {
+      return;
+    }
+    await _createNewSession(controller);
+  }
+
+  Future<void> _selectSideTabForPane(
+    _WorkspacePaneViewModel paneViewModel,
+    WorkspaceSideTab tab,
+  ) async {
+    final scopeKey = _composerScopeKeyForPane(paneViewModel);
+    if (_activeComposerScopeKey != scopeKey ||
+        _activeDesktopSessionPaneId != paneViewModel.pane.id) {
+      await _activatePaneComposer(paneViewModel);
+    }
+    if (!mounted) {
+      return;
+    }
+    _controller?.setSideTab(tab);
+  }
+
+  void _selectAgentForPane(
+    _WorkspacePaneViewModel paneViewModel,
+    String? agentName,
+  ) {
+    final scopeKey = _composerScopeKeyForPane(paneViewModel);
+    if (_activeComposerScopeKey == scopeKey &&
+        _activeDesktopSessionPaneId == paneViewModel.pane.id) {
+      paneViewModel.controller.selectAgent(agentName);
+      return;
+    }
+    unawaited(() async {
+      final controller = await _activatePaneComposer(paneViewModel);
+      if (!mounted || controller == null) {
+        return;
+      }
+      controller.selectAgent(agentName);
+    }());
+  }
+
+  void _selectModelForPane(
+    _WorkspacePaneViewModel paneViewModel,
+    String? modelKey,
+  ) {
+    final scopeKey = _composerScopeKeyForPane(paneViewModel);
+    if (_activeComposerScopeKey == scopeKey &&
+        _activeDesktopSessionPaneId == paneViewModel.pane.id) {
+      paneViewModel.controller.selectModel(modelKey);
+      return;
+    }
+    unawaited(() async {
+      final controller = await _activatePaneComposer(paneViewModel);
+      if (!mounted || controller == null) {
+        return;
+      }
+      controller.selectModel(modelKey);
+    }());
+  }
+
+  void _selectReasoningForPane(
+    _WorkspacePaneViewModel paneViewModel,
+    String? reasoning,
+  ) {
+    final scopeKey = _composerScopeKeyForPane(paneViewModel);
+    if (_activeComposerScopeKey == scopeKey &&
+        _activeDesktopSessionPaneId == paneViewModel.pane.id) {
+      paneViewModel.controller.selectReasoning(reasoning);
+      return;
+    }
+    unawaited(() async {
+      final controller = await _activatePaneComposer(paneViewModel);
+      if (!mounted || controller == null) {
+        return;
+      }
+      controller.selectReasoning(reasoning);
+    }());
   }
 
   Future<void> _submitPrompt(WorkspacePromptDispatchMode? mode) async {
@@ -3032,6 +3391,121 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     );
   }
 
+  Widget _buildPaneComposer(
+    WebParityAppController appController,
+    _WorkspacePaneViewModel paneViewModel, {
+    required bool compact,
+    required bool selected,
+  }) {
+    final density = _workspaceDensity(context);
+    final pane = paneViewModel.pane;
+    final controller = paneViewModel.controller;
+    final sessionId = pane.sessionId?.trim();
+    final scopeKey = _composerScopeKeyForPane(paneViewModel);
+    final questionRequest = controller.currentQuestionRequestForSession(
+      sessionId,
+    );
+
+    if (sessionId == null && controller.loading) {
+      return Container(
+        padding: EdgeInsets.fromLTRB(
+          density.inset(compact ? AppSpacing.sm : AppSpacing.lg),
+          density.inset(compact ? AppSpacing.xs : AppSpacing.md),
+          density.inset(compact ? AppSpacing.sm : AppSpacing.lg),
+          density.inset(compact ? AppSpacing.sm : AppSpacing.lg),
+        ),
+        child: _PromptComposerLoadingPlaceholder(compact: compact),
+      );
+    }
+
+    if (sessionId == null && controller.error != null) {
+      return const SizedBox.shrink();
+    }
+
+    if (questionRequest != null) {
+      return _QuestionPromptDock(
+        key: ValueKey<String>(
+          'pane-question-dock-${pane.id}-${questionRequest.id}',
+        ),
+        request: questionRequest,
+        compact: compact,
+        onReply: controller.replyToQuestion,
+        onReject: controller.rejectQuestion,
+      );
+    }
+
+    return _PromptComposer(
+      key: ValueKey<String>('pane-composer-${pane.id}::$scopeKey'),
+      controller: _composerControllerForScope(scopeKey),
+      compact: compact,
+      scopeKey: scopeKey,
+      textFieldKey: ValueKey<String>('composer-text-field-${pane.id}'),
+      focusRequestToken: _promptComposerFocusTokenForScope(scopeKey),
+      submitting:
+          _promptSubmitInFlightScopeKeys.contains(scopeKey) ||
+          (selected && controller.submittingPrompt),
+      busyFollowupMode: appController.busyFollowupMode,
+      interruptible:
+          _promptSubmitInFlightScopeKeys.contains(scopeKey) ||
+          controller.sessionInterruptibleForSession(sessionId),
+      interrupting: controller.sessionInterruptingForSession(sessionId),
+      pickingAttachments:
+          _pickingComposerAttachments && _activeComposerScopeKey == scopeKey,
+      attachments: _composerAttachmentsForScope(scopeKey),
+      queuedPrompts: controller.queuedPromptsForSession(sessionId),
+      failedQueuedPromptId: controller.failedQueuedPromptIdForSession(
+        sessionId,
+      ),
+      sendingQueuedPromptId: controller.sendingQueuedPromptIdForSession(
+        sessionId,
+      ),
+      agents: controller.composerAgents,
+      models: controller.composerModels,
+      selectedAgentName: controller.selectedAgentName,
+      selectedModel: controller.selectedModel,
+      selectedReasoning: controller.selectedReasoning,
+      reasoningValues: controller.availableReasoningValues,
+      customCommands: controller.composerCommands,
+      onSelectAgent: (value) => _selectAgentForPane(paneViewModel, value),
+      onSelectModel: (value) => _selectModelForPane(paneViewModel, value),
+      onSelectReasoning: (value) =>
+          _selectReasoningForPane(paneViewModel, value),
+      onCreateSession: () => _createSessionFromPane(paneViewModel),
+      onInterrupt: () => _interruptPaneSession(paneViewModel),
+      onPickAttachments: () => _pickComposerAttachmentsForPane(paneViewModel),
+      onRemoveAttachment: (attachmentId) =>
+          _removeComposerAttachmentForScope(scopeKey, attachmentId),
+      onEditQueuedPrompt: (queuedPromptId) =>
+          _editQueuedPromptForPane(paneViewModel, queuedPromptId),
+      onDeleteQueuedPrompt: (queuedPromptId) =>
+          _deleteQueuedPromptForPane(paneViewModel, queuedPromptId),
+      onSendQueuedPromptNow: (queuedPromptId) =>
+          _sendQueuedPromptNowForPane(paneViewModel, queuedPromptId),
+      onShareSession: selected ? () => _shareSelectedSession(controller) : null,
+      onUnshareSession: selected
+          ? () => _unshareSelectedSession(controller)
+          : null,
+      onSummarizeSession: selected
+          ? () => _summarizeSelectedSession(controller)
+          : null,
+      submittedDraftEpoch: _submittedDraftEpochForScope(scopeKey),
+      recentSubmittedDraft: _recentSubmittedDraftForScope(scopeKey),
+      onToggleTerminal: _toggleTerminalPanel,
+      onSelectSideTab: (tab) {
+        unawaited(() async {
+          await _selectSideTabForPane(paneViewModel, tab);
+          if (!compact && !_desktopSidePanelVisible) {
+            _setDesktopSidePanelVisible(true);
+          }
+        }());
+      },
+      onSubmit: (mode) => _submitPromptForPane(paneViewModel, mode),
+      onActivateComposer: () {
+        unawaited(_focusComposerForPane(paneViewModel));
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final appController = AppScope.of(context);
@@ -3145,12 +3619,22 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
               : List<_WorkspaceSessionPaneSpec>.unmodifiable(
                   paneViewModels.map((paneViewModel) => paneViewModel.pane),
                 );
+          _syncObservedPaneControllers(
+            paneViewModels.map((paneViewModel) => paneViewModel.controller),
+          );
           _scheduleWatchedSessionSync(
             compact
                 ? const <WorkspaceController, Set<String>>{}
                 : _watchedSessionIdsByController(paneViewModels),
           );
           final multiPaneDesktop = !compact && paneViewModels.length > 1;
+          final usePerPaneComposer =
+              multiPaneDesktop &&
+              appController.multiPaneComposerMode ==
+                  WorkspaceMultiPaneComposerMode.perPane;
+          final activeComposerScopeKey = _resolvedActiveComposerScopeKey(
+            controller,
+          );
           final showBodyProjectLoadingShell =
               showProjectLoadingShell && !multiPaneDesktop;
           final showBodyInitialLoading =
@@ -3349,13 +3833,24 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                       controller.submittingPrompt,
                                   pickingAttachments:
                                       _pickingComposerAttachments,
-                                  attachments: _composerAttachments,
-                                  promptController: _promptController,
+                                  attachments: _composerAttachmentsForScope(
+                                    activeComposerScopeKey,
+                                  ),
+                                  promptController: _composerControllerForScope(
+                                    activeComposerScopeKey,
+                                  ),
                                   promptFocusRequestToken:
-                                      _promptComposerFocusRequestToken,
-                                  submittedDraftEpoch: _promptSubmitEpoch,
+                                      _promptComposerFocusTokenForScope(
+                                        activeComposerScopeKey,
+                                      ),
+                                  submittedDraftEpoch:
+                                      _submittedDraftEpochForScope(
+                                        activeComposerScopeKey,
+                                      ),
                                   recentSubmittedDraft:
-                                      _recentSubmittedPromptDraft,
+                                      _recentSubmittedDraftForScope(
+                                        activeComposerScopeKey,
+                                      ),
                                   compactPane: _compactPane,
                                   busyFollowupMode:
                                       appController.busyFollowupMode,
@@ -3423,6 +3918,15 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                   },
                                   onPickAttachments: _pickComposerAttachments,
                                   onRemoveAttachment: _removeComposerAttachment,
+                                  inlineComposerBuilder: usePerPaneComposer
+                                      ? (paneViewModel, selected, compact) =>
+                                            _buildPaneComposer(
+                                              appController,
+                                              paneViewModel,
+                                              compact: compact,
+                                              selected: selected,
+                                            )
+                                      : null,
                                   onShowSidePanel: compact
                                       ? null
                                       : () => _setDesktopSidePanelVisible(true),
@@ -4995,18 +5499,40 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                 _WorkspaceSettingsSection(
                                   title: 'Composer',
                                   child: _WorkspaceSettingsCard(
-                                    child: _WorkspaceSettingsFollowupModeRow(
-                                      key: const ValueKey<String>(
-                                        'workspace-settings-followup-mode-row',
-                                      ),
-                                      value:
-                                          widget.appController.busyFollowupMode,
-                                      onChanged: (value) {
-                                        unawaited(
-                                          widget.appController
-                                              .setBusyFollowupMode(value),
-                                        );
-                                      },
+                                    child: Column(
+                                      children: <Widget>[
+                                        _WorkspaceSettingsFollowupModeRow(
+                                          key: const ValueKey<String>(
+                                            'workspace-settings-followup-mode-row',
+                                          ),
+                                          value: widget
+                                              .appController
+                                              .busyFollowupMode,
+                                          onChanged: (value) {
+                                            unawaited(
+                                              widget.appController
+                                                  .setBusyFollowupMode(value),
+                                            );
+                                          },
+                                        ),
+                                        const SizedBox(height: AppSpacing.sm),
+                                        _WorkspaceSettingsMultiPaneComposerModeRow(
+                                          key: const ValueKey<String>(
+                                            'workspace-settings-multi-pane-composer-mode-row',
+                                          ),
+                                          value: widget
+                                              .appController
+                                              .multiPaneComposerMode,
+                                          onChanged: (value) {
+                                            unawaited(
+                                              widget.appController
+                                                  .setMultiPaneComposerMode(
+                                                    value,
+                                                  ),
+                                            );
+                                          },
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ),
@@ -5346,6 +5872,76 @@ class _WorkspaceSettingsLayoutDensityRow extends StatelessWidget {
                 ),
               ],
               selected: <WorkspaceLayoutDensity>{value},
+              onSelectionChanged: (selection) {
+                final next = selection.isEmpty ? value : selection.first;
+                onChanged(next);
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WorkspaceSettingsMultiPaneComposerModeRow extends StatelessWidget {
+  const _WorkspaceSettingsMultiPaneComposerModeRow({
+    required this.value,
+    required this.onChanged,
+    super.key,
+  });
+
+  final WorkspaceMultiPaneComposerMode value;
+  final ValueChanged<WorkspaceMultiPaneComposerMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final density = _workspaceDensity(context);
+    return Container(
+      padding: EdgeInsets.all(density.inset(AppSpacing.md)),
+      decoration: BoxDecoration(
+        color: surfaces.panelMuted.withValues(alpha: 0.52),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            'Split pane composer layout',
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            'Keep one shared composer at the bottom, or place a separate composer under each pane when working with wide split layouts.',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
+          ),
+          SizedBox(height: density.inset(AppSpacing.md)),
+          SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<WorkspaceMultiPaneComposerMode>(
+              key: const ValueKey<String>(
+                'workspace-settings-multi-pane-composer-mode-segments',
+              ),
+              showSelectedIcon: false,
+              segments: const <ButtonSegment<WorkspaceMultiPaneComposerMode>>[
+                ButtonSegment<WorkspaceMultiPaneComposerMode>(
+                  value: WorkspaceMultiPaneComposerMode.shared,
+                  label: Text('Shared'),
+                  icon: Icon(Icons.vertical_align_bottom_rounded),
+                ),
+                ButtonSegment<WorkspaceMultiPaneComposerMode>(
+                  value: WorkspaceMultiPaneComposerMode.perPane,
+                  label: Text('Per Pane'),
+                  icon: Icon(Icons.splitscreen_rounded),
+                ),
+              ],
+              selected: <WorkspaceMultiPaneComposerMode>{value},
               onSelectionChanged: (selection) {
                 final next = selection.isEmpty ? value : selection.first;
                 onChanged(next);
@@ -7782,6 +8378,7 @@ class _WorkspaceBody extends StatelessWidget {
     required this.onPickAttachments,
     required this.onRemoveAttachment,
     this.onShowSidePanel,
+    this.inlineComposerBuilder,
     required this.onToggleTerminal,
     required this.terminalPanelOpen,
     required this.terminalPanel,
@@ -7830,6 +8427,12 @@ class _WorkspaceBody extends StatelessWidget {
   final Future<void> Function() onPickAttachments;
   final ValueChanged<String> onRemoveAttachment;
   final VoidCallback? onShowSidePanel;
+  final Widget Function(
+    _WorkspacePaneViewModel paneViewModel,
+    bool selected,
+    bool compact,
+  )?
+  inlineComposerBuilder;
   final Future<void> Function() onToggleTerminal;
   final bool terminalPanelOpen;
   final Widget? terminalPanel;
@@ -7842,6 +8445,7 @@ class _WorkspaceBody extends StatelessWidget {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
     final questionRequest = controller.currentQuestionRequest;
+    final usesInlinePaneComposer = inlineComposerBuilder != null;
     final content = Column(
       children: <Widget>[
         Expanded(
@@ -7871,10 +8475,11 @@ class _WorkspaceBody extends StatelessWidget {
               onRevertMessage: onRevertMessage,
               onOpenSession: onOpenSession,
               onRetrySelectedSession: controller.retrySelectedSessionMessages,
+              inlineComposerBuilder: inlineComposerBuilder,
             ),
           ),
         ),
-        if (activeWorkspaceLoading)
+        if (!usesInlinePaneComposer && activeWorkspaceLoading)
           Container(
             padding: EdgeInsets.fromLTRB(
               density.inset(compact ? AppSpacing.sm : AppSpacing.lg),
@@ -7888,7 +8493,9 @@ class _WorkspaceBody extends StatelessWidget {
             ),
             child: _PromptComposerLoadingPlaceholder(compact: compact),
           )
-        else if (activeWorkspaceError == null && questionRequest != null)
+        else if (!usesInlinePaneComposer &&
+            activeWorkspaceError == null &&
+            questionRequest != null)
           _QuestionPromptDock(
             key: ValueKey<String>('question-dock-${questionRequest.id}'),
             request: questionRequest,
@@ -7896,7 +8503,7 @@ class _WorkspaceBody extends StatelessWidget {
             onReply: controller.replyToQuestion,
             onReject: controller.rejectQuestion,
           )
-        else if (activeWorkspaceError == null)
+        else if (!usesInlinePaneComposer && activeWorkspaceError == null)
           _PromptComposer(
             controller: promptController,
             compact: compact,
@@ -8067,6 +8674,7 @@ class _WorkspaceSessionPaneDeck extends StatelessWidget {
     required this.onRevertMessage,
     required this.onOpenSession,
     required this.onRetrySelectedSession,
+    this.inlineComposerBuilder,
   });
 
   final bool compact;
@@ -8085,6 +8693,12 @@ class _WorkspaceSessionPaneDeck extends StatelessWidget {
   final Future<void> Function(ChatMessage message) onRevertMessage;
   final ValueChanged<String> onOpenSession;
   final Future<void> Function() onRetrySelectedSession;
+  final Widget Function(
+    _WorkspacePaneViewModel paneViewModel,
+    bool selected,
+    bool compact,
+  )?
+  inlineComposerBuilder;
 
   @override
   Widget build(BuildContext context) {
@@ -8126,6 +8740,7 @@ class _WorkspaceSessionPaneDeck extends StatelessWidget {
                 onRevertMessage: onRevertMessage,
                 onOpenSession: onOpenSession,
                 onRetrySelectedSession: onRetrySelectedSession,
+                inlineComposerBuilder: inlineComposerBuilder,
               ),
             ),
             if (index < paneViewModels.length - 1) SizedBox(width: spacing),
@@ -8155,6 +8770,7 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
     required this.onRevertMessage,
     required this.onOpenSession,
     required this.onRetrySelectedSession,
+    this.inlineComposerBuilder,
   });
 
   final _WorkspacePaneViewModel paneViewModel;
@@ -8174,6 +8790,12 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
   final Future<void> Function(ChatMessage message) onRevertMessage;
   final ValueChanged<String> onOpenSession;
   final Future<void> Function() onRetrySelectedSession;
+  final Widget Function(
+    _WorkspacePaneViewModel paneViewModel,
+    bool selected,
+    bool compact,
+  )?
+  inlineComposerBuilder;
 
   @override
   Widget build(BuildContext context) {
@@ -8525,6 +9147,12 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                           compact: compact,
                           onClearStale: () =>
                               controller.clearTodosForSession(sessionId),
+                        ),
+                      if (inlineComposerBuilder != null)
+                        inlineComposerBuilder!(
+                          paneViewModel,
+                          selected,
+                          compact,
                         ),
                     ],
                   ),
@@ -10309,6 +10937,7 @@ class _TimelineStatusCard extends StatelessWidget {
 
 class _PromptComposer extends StatefulWidget {
   const _PromptComposer({
+    super.key,
     required this.controller,
     required this.compact,
     required this.scopeKey,
@@ -10343,6 +10972,8 @@ class _PromptComposer extends StatefulWidget {
     required this.onSelectSideTab,
     required this.onSubmit,
     required this.submittedDraftEpoch,
+    this.textFieldKey = const ValueKey<String>('composer-text-field'),
+    this.onActivateComposer,
     this.onShareSession,
     this.onUnshareSession,
     this.onSummarizeSession,
@@ -10385,6 +11016,8 @@ class _PromptComposer extends StatefulWidget {
   final ValueChanged<WorkspaceSideTab> onSelectSideTab;
   final Future<void> Function(WorkspacePromptDispatchMode? mode) onSubmit;
   final int submittedDraftEpoch;
+  final Key textFieldKey;
+  final VoidCallback? onActivateComposer;
   final Future<void> Function()? onShareSession;
   final Future<void> Function()? onUnshareSession;
   final Future<void> Function()? onSummarizeSession;
@@ -11002,7 +11635,7 @@ class _PromptComposerState extends State<_PromptComposer> {
                   ),
                 ],
                 TextField(
-                  key: const ValueKey<String>('composer-text-field'),
+                  key: widget.textFieldKey,
                   controller: widget.controller,
                   focusNode: _focusNode,
                   minLines: isCompact ? 2 : 3,
@@ -11018,6 +11651,7 @@ class _PromptComposerState extends State<_PromptComposer> {
                   style: Theme.of(
                     context,
                   ).textTheme.bodyLarge?.copyWith(height: 1.55),
+                  onTap: widget.onActivateComposer,
                   onSubmitted: (_) => _handleSubmit(),
                 ),
                 SizedBox(

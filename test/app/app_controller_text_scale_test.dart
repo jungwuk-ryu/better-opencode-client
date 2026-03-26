@@ -87,6 +87,43 @@ void main() {
 
     expect(restored.layoutDensity, WorkspaceLayoutDensity.compact);
   });
+
+  test('multi pane composer mode persists across controller loads', () async {
+    final controller = WebParityAppController(
+      profileStore: _FakeProfileStore(),
+      projectStore: _FakeProjectStore(),
+    );
+    addTearDown(controller.dispose);
+
+    await controller.load();
+
+    expect(
+      controller.multiPaneComposerMode,
+      WorkspaceMultiPaneComposerMode.shared,
+    );
+
+    await controller.setMultiPaneComposerMode(
+      WorkspaceMultiPaneComposerMode.perPane,
+    );
+
+    expect(
+      controller.multiPaneComposerMode,
+      WorkspaceMultiPaneComposerMode.perPane,
+    );
+
+    final restored = WebParityAppController(
+      profileStore: _FakeProfileStore(),
+      projectStore: _FakeProjectStore(),
+    );
+    addTearDown(restored.dispose);
+
+    await restored.load();
+
+    expect(
+      restored.multiPaneComposerMode,
+      WorkspaceMultiPaneComposerMode.perPane,
+    );
+  });
 }
 
 class _FakeProfileStore extends ServerProfileStore {

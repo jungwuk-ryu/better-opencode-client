@@ -525,7 +525,24 @@ class WorkspaceController extends ChangeNotifier {
     if (selectedSessionId == null || selectedSessionId.isEmpty) {
       return false;
     }
-    return submittingPrompt || _isActiveStatus(selectedStatus);
+    return sessionInterruptibleForSession(selectedSessionId);
+  }
+
+  bool sessionInterruptibleForSession(String? sessionId) {
+    final normalizedSessionId = sessionId?.trim();
+    if (normalizedSessionId == null || normalizedSessionId.isEmpty) {
+      return false;
+    }
+    return (_selectedSessionId == normalizedSessionId && submittingPrompt) ||
+        _isActiveStatus(_statuses[normalizedSessionId]);
+  }
+
+  bool sessionInterruptingForSession(String? sessionId) {
+    final normalizedSessionId = sessionId?.trim();
+    if (normalizedSessionId == null || normalizedSessionId.isEmpty) {
+      return false;
+    }
+    return _interruptingSession && _selectedSessionId == normalizedSessionId;
   }
 
   SessionSummary? get rootSelectedSession =>
@@ -534,29 +551,42 @@ class WorkspaceController extends ChangeNotifier {
       _rootSessionForId(sessionId);
 
   List<WorkspaceQueuedPrompt> get selectedSessionQueuedPrompts {
-    final sessionId = selectedSessionId;
-    if (sessionId == null || sessionId.isEmpty) {
-      return const <WorkspaceQueuedPrompt>[];
-    }
-    return List<WorkspaceQueuedPrompt>.unmodifiable(
-      _queuedPromptsBySessionId[sessionId] ?? const <WorkspaceQueuedPrompt>[],
-    );
+    return queuedPromptsForSession(selectedSessionId);
   }
 
   String? get selectedSessionFailedQueuedPromptId {
-    final sessionId = selectedSessionId;
-    if (sessionId == null || sessionId.isEmpty) {
-      return null;
-    }
-    return _queuedPromptFailureBySessionId[sessionId];
+    return failedQueuedPromptIdForSession(selectedSessionId);
   }
 
   String? get selectedSessionSendingQueuedPromptId {
-    final sessionId = selectedSessionId;
-    if (sessionId == null || sessionId.isEmpty) {
+    return sendingQueuedPromptIdForSession(selectedSessionId);
+  }
+
+  List<WorkspaceQueuedPrompt> queuedPromptsForSession(String? sessionId) {
+    final normalizedSessionId = sessionId?.trim();
+    if (normalizedSessionId == null || normalizedSessionId.isEmpty) {
+      return const <WorkspaceQueuedPrompt>[];
+    }
+    return List<WorkspaceQueuedPrompt>.unmodifiable(
+      _queuedPromptsBySessionId[normalizedSessionId] ??
+          const <WorkspaceQueuedPrompt>[],
+    );
+  }
+
+  String? failedQueuedPromptIdForSession(String? sessionId) {
+    final normalizedSessionId = sessionId?.trim();
+    if (normalizedSessionId == null || normalizedSessionId.isEmpty) {
       return null;
     }
-    return _sendingQueuedPromptBySessionId[sessionId];
+    return _queuedPromptFailureBySessionId[normalizedSessionId];
+  }
+
+  String? sendingQueuedPromptIdForSession(String? sessionId) {
+    final normalizedSessionId = sessionId?.trim();
+    if (normalizedSessionId == null || normalizedSessionId.isEmpty) {
+      return null;
+    }
+    return _sendingQueuedPromptBySessionId[normalizedSessionId];
   }
 
   List<SessionSummary> get activeChildSessions =>

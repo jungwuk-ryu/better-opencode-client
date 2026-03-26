@@ -827,6 +827,98 @@ void main() {
     expect(_composerText(tester), 'draft for lab');
   });
 
+  testWidgets(
+    'per-pane composer mode renders a composer inside each split pane',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final createdControllers = <_RecordingWorkspaceController>[];
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              final controller = _RecordingWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+              createdControllers.add(controller);
+              return controller;
+            },
+      );
+      addTearDown(appController.dispose);
+
+      await appController.setMultiPaneComposerMode(
+        WorkspaceMultiPaneComposerMode.perPane,
+      );
+
+      final navigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          navigatorKey: navigatorKey,
+          initialRoute: '/',
+        ),
+      );
+      navigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('workspace-split-session-pane-button'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Session Two'));
+      await tester.pumpAndSettle();
+
+      final paneComposerFields = find.byWidgetPredicate(
+        (widget) =>
+            widget is TextField &&
+            widget.key is ValueKey<String> &&
+            (widget.key! as ValueKey<String>).value.startsWith(
+              'composer-text-field-pane_',
+            ),
+      );
+
+      expect(
+        find.byKey(const ValueKey<String>('composer-text-field')),
+        findsNothing,
+      );
+      expect(paneComposerFields, findsNWidgets(2));
+
+      await tester.enterText(paneComposerFields.at(0), 'draft one');
+      await tester.pump();
+      await tester.enterText(paneComposerFields.at(1), 'draft two');
+      await tester.pump();
+
+      TextField composerField(int index) =>
+          tester.widget<TextField>(paneComposerFields.at(index));
+
+      expect(composerField(0).controller!.text, 'draft one');
+      expect(composerField(1).controller!.text, 'draft two');
+
+      await tester.tap(find.text('hello from one'));
+      await tester.pumpAndSettle();
+
+      expect(createdControllers.single.selectedSessionId, 'ses_1');
+      expect(composerField(0).controller!.text, 'draft one');
+      expect(composerField(1).controller!.text, 'draft two');
+    },
+  );
+
   testWidgets('composer drafts restore per session across app launches', (
     tester,
   ) async {

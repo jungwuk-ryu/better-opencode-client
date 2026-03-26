@@ -207,6 +207,34 @@ void main() {
 
     await tester.dragUntilVisible(
       find.byKey(
+        const ValueKey<String>(
+          'workspace-settings-multi-pane-composer-mode-row',
+        ),
+      ),
+      settingsListView,
+      const Offset(0, -160),
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey<String>(
+            'workspace-settings-multi-pane-composer-mode-row',
+          ),
+        ),
+        matching: find.text('Per Pane'),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      appController.multiPaneComposerMode,
+      WorkspaceMultiPaneComposerMode.perPane,
+    );
+
+    await tester.dragUntilVisible(
+      find.byKey(
         const ValueKey<String>('workspace-settings-layout-density-row'),
       ),
       settingsListView,

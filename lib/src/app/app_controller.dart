@@ -45,6 +45,22 @@ enum WorkspaceLayoutDensity {
   }
 }
 
+enum WorkspaceMultiPaneComposerMode {
+  shared,
+  perPane;
+
+  String get storageValue => name;
+
+  static WorkspaceMultiPaneComposerMode fromStorage(String? value) {
+    return switch (value?.trim().toLowerCase()) {
+      'perpane' ||
+      'per_pane' ||
+      'per-pane' => WorkspaceMultiPaneComposerMode.perPane,
+      _ => WorkspaceMultiPaneComposerMode.shared,
+    };
+  }
+}
+
 class WebParityAppController extends ChangeNotifier {
   WebParityAppController({
     ServerProfileStore? profileStore,
@@ -71,6 +87,8 @@ class WebParityAppController extends ChangeNotifier {
   static const _busyFollowupModeKey = 'web_parity.busy_followup_mode';
   static const _textScaleFactorKey = 'web_parity.text_scale_factor';
   static const _layoutDensityKey = 'web_parity.layout_density';
+  static const _multiPaneComposerModeKey =
+      'web_parity.multi_pane_composer_mode';
   static const double defaultTextScaleFactor = 1.0;
   static const double minTextScaleFactor = 0.9;
   static const double maxTextScaleFactor = 1.25;
@@ -95,6 +113,8 @@ class WebParityAppController extends ChangeNotifier {
   WorkspaceFollowupMode _busyFollowupMode = WorkspaceFollowupMode.queue;
   double _textScaleFactor = defaultTextScaleFactor;
   WorkspaceLayoutDensity _layoutDensity = WorkspaceLayoutDensity.normal;
+  WorkspaceMultiPaneComposerMode _multiPaneComposerMode =
+      WorkspaceMultiPaneComposerMode.shared;
   Set<String> _refreshingProfileKeys = const <String>{};
   final Map<String, WorkspaceController> _workspaceControllers =
       <String, WorkspaceController>{};
@@ -112,6 +132,8 @@ class WebParityAppController extends ChangeNotifier {
   WorkspaceFollowupMode get busyFollowupMode => _busyFollowupMode;
   double get textScaleFactor => _textScaleFactor;
   WorkspaceLayoutDensity get layoutDensity => _layoutDensity;
+  WorkspaceMultiPaneComposerMode get multiPaneComposerMode =>
+      _multiPaneComposerMode;
   bool isRefreshingProfile(ServerProfile? profile) {
     return profile != null &&
         _refreshingProfileKeys.contains(profile.storageKey);
@@ -151,6 +173,9 @@ class WebParityAppController extends ChangeNotifier {
     final layoutDensity = WorkspaceLayoutDensity.fromStorage(
       prefs.getString(_layoutDensityKey),
     );
+    final multiPaneComposerMode = WorkspaceMultiPaneComposerMode.fromStorage(
+      prefs.getString(_multiPaneComposerModeKey),
+    );
 
     ServerProfile? selectedProfile;
     if (selectedProfileId != null) {
@@ -174,6 +199,7 @@ class WebParityAppController extends ChangeNotifier {
     _busyFollowupMode = busyFollowupMode;
     _textScaleFactor = textScaleFactor;
     _layoutDensity = layoutDensity;
+    _multiPaneComposerMode = multiPaneComposerMode;
     _loading = false;
     notifyListeners();
   }
@@ -258,6 +284,18 @@ class WebParityAppController extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_layoutDensityKey, value.storageValue);
+  }
+
+  Future<void> setMultiPaneComposerMode(
+    WorkspaceMultiPaneComposerMode value,
+  ) async {
+    if (_multiPaneComposerMode == value) {
+      return;
+    }
+    _multiPaneComposerMode = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_multiPaneComposerModeKey, value.storageValue);
   }
 
   Future<void> refreshProbe(ServerProfile profile) async {
