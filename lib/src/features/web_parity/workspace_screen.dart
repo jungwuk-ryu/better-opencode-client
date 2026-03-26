@@ -93,6 +93,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   bool _promptSubmitInFlight = false;
   late String _activeDirectory;
   String? _activeRouteSessionId;
+  _WorkspaceProjectLoadingShellState? _projectLoadingShellState;
   late final ProjectCatalogService _projectCatalogService;
   late final bool _ownsProjectCatalogService;
 
@@ -171,6 +172,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
 
   void _disposeController() {
     _controller = null;
+    _projectLoadingShellState = null;
   }
 
   void _bindWorkspace({
@@ -208,6 +210,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       _queueRouteSessionSync(routeSessionId);
     } else {
       _resetRouteSessionSync();
+    }
+
+    if (!nextController.loading) {
+      _projectLoadingShellState = null;
     }
   }
 
@@ -1068,10 +1074,25 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     }
 
     final appController = AppScope.of(context);
+    final shouldPreserveShell =
+        _controller != null &&
+        !appController.hasWorkspaceController(
+          profile: profile,
+          directory: project.directory,
+        );
     _promptController.clear();
     _composerAttachments = const <PromptAttachment>[];
 
     setState(() {
+      _projectLoadingShellState = shouldPreserveShell
+          ? _WorkspaceProjectLoadingShellState(
+              targetProject: project,
+              projects: _mergedProjectsWithTarget(
+                _controller?.availableProjects ?? const <ProjectTarget>[],
+                project,
+              ),
+            )
+          : null;
       _bindWorkspace(
         appController: appController,
         profile: profile,
@@ -1243,22 +1264,55 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       builder: (context, _) {
         _scheduleTimelineSync(controller);
         _scheduleRouteSessionSync();
+        final projectLoadingShell = controller.loading
+            ? _projectLoadingShellState
+            : null;
+        if (!controller.loading && _projectLoadingShellState != null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted || _controller?.loading == true) {
+              return;
+            }
+            setState(() {
+              _projectLoadingShellState = null;
+            });
+          });
+        }
         final compact =
             MediaQuery.sizeOf(context).width < AppSpacing.wideLayoutBreakpoint;
-        final selectedSession = controller.selectedSession;
+        final displayProject =
+            controller.project ?? projectLoadingShell?.targetProject;
+        final displayProjects = controller.availableProjects.isNotEmpty
+            ? controller.availableProjects
+            : (projectLoadingShell?.projects ?? const <ProjectTarget>[]);
+        final showProjectLoadingShell = projectLoadingShell != null;
+        final displaySessions = showProjectLoadingShell
+            ? const <SessionSummary>[]
+            : controller.visibleSessions;
+        final displayAllSessions = showProjectLoadingShell
+            ? const <SessionSummary>[]
+            : controller.sessions;
+        final displayStatuses = showProjectLoadingShell
+            ? const <String, SessionStatusSummary>{}
+            : controller.statuses;
+        final selectedSession = showProjectLoadingShell
+            ? null
+            : controller.selectedSession;
         final mainSession = _rootSessionFor(
-          controller.sessions,
+          displayAllSessions,
           selectedSession,
         );
         final sidebar = _WorkspaceSidebar(
           currentDirectory: _currentDirectory,
-          currentSessionId: controller.selectedSessionId,
-          project: controller.project,
-          projects: controller.availableProjects,
-          sessions: controller.visibleSessions,
-          allSessions: controller.sessions,
-          statuses: controller.statuses,
+          currentSessionId: showProjectLoadingShell
+              ? null
+              : controller.selectedSessionId,
+          project: displayProject,
+          projects: displayProjects,
+          sessions: displaySessions,
+          allSessions: displayAllSessions,
+          statuses: displayStatuses,
           showSubsessions: appController.sidebarChildSessionsVisible,
+          loadingProjectContents: showProjectLoadingShell,
           onSelectProject: (project) =>
               unawaited(_selectProjectInPlace(project, compact: compact)),
           onEditProject: (project) => unawaited(_editProject(project)),
@@ -1287,12 +1341,18 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                       _WorkspaceTopBar(
                         compact: compact,
                         profile: appController.selectedProfile,
-                        project: controller.project,
+                        project: displayProject,
                         session: selectedSession,
                         mainSession: mainSession,
-                        status: controller.selectedStatus,
-                        messages: controller.messages,
-                        configSnapshot: controller.configSnapshot,
+                        status: showProjectLoadingShell
+                            ? null
+                            : controller.selectedStatus,
+                        messages: showProjectLoadingShell
+                            ? const <ChatMessage>[]
+                            : controller.messages,
+                        configSnapshot: showProjectLoadingShell
+                            ? null
+                            : controller.configSnapshot,
                         shellToolPartsExpanded:
                             appController.shellToolPartsExpanded,
                         onSetShellToolPartsExpanded:
@@ -1335,7 +1395,15 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                             : () => _deleteSelectedSession(controller),
                       ),
                       Expanded(
-                        child: controller.loading
+                        child: showProjectLoadingShell
+                            ? _WorkspaceProjectLoadingView(
+                                key: ValueKey<String>(
+                                  'workspace-project-loading-${displayProject?.directory ?? _currentDirectory}',
+                                ),
+                                project: displayProject,
+                                compact: compact,
+                              )
+                            : controller.loading
                             ? const Center(child: CircularProgressIndicator())
                             : controller.error != null
                             ? _WorkspaceError(
@@ -1438,6 +1506,31 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       },
     );
   }
+}
+
+class _WorkspaceProjectLoadingShellState {
+  const _WorkspaceProjectLoadingShellState({
+    required this.targetProject,
+    required this.projects,
+  });
+
+  final ProjectTarget targetProject;
+  final List<ProjectTarget> projects;
+}
+
+List<ProjectTarget> _mergedProjectsWithTarget(
+  List<ProjectTarget> projects,
+  ProjectTarget target,
+) {
+  final next = <ProjectTarget>[...projects];
+  final existingIndex = next.indexWhere(
+    (candidate) => candidate.directory == target.directory,
+  );
+  if (existingIndex >= 0) {
+    next[existingIndex] = target;
+    return List<ProjectTarget>.unmodifiable(next);
+  }
+  return List<ProjectTarget>.unmodifiable(<ProjectTarget>[target, ...next]);
 }
 
 class _WorkspaceTopBar extends StatelessWidget {
@@ -2811,6 +2904,7 @@ class _WorkspaceSidebar extends StatelessWidget {
     required this.allSessions,
     required this.statuses,
     required this.showSubsessions,
+    this.loadingProjectContents = false,
     required this.onSelectProject,
     required this.onEditProject,
     required this.onRemoveProject,
@@ -2827,6 +2921,7 @@ class _WorkspaceSidebar extends StatelessWidget {
   final List<SessionSummary> allSessions;
   final Map<String, SessionStatusSummary> statuses;
   final bool showSubsessions;
+  final bool loadingProjectContents;
   final ValueChanged<ProjectTarget> onSelectProject;
   final ValueChanged<ProjectTarget> onEditProject;
   final ValueChanged<ProjectTarget> onRemoveProject;
@@ -2979,14 +3074,16 @@ class _WorkspaceSidebar extends StatelessWidget {
                         ),
                         backgroundColor: surfaces.panel,
                       ),
-                      onPressed: onNewSession,
+                      onPressed: loadingProjectContents ? null : onNewSession,
                       icon: const Icon(Icons.edit_note_rounded, size: 18),
                       label: const Text('New session'),
                     ),
                   ),
                   const SizedBox(height: AppSpacing.md),
                   Expanded(
-                    child: sessionEntries.isEmpty
+                    child: loadingProjectContents
+                        ? const _SidebarSessionLoadingState()
+                        : sessionEntries.isEmpty
                         ? Text(
                             'Start a new session to begin.',
                             style: theme.textTheme.bodyMedium?.copyWith(
@@ -3017,6 +3114,61 @@ class _WorkspaceSidebar extends StatelessWidget {
                 ],
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SidebarSessionLoadingState extends StatelessWidget {
+  const _SidebarSessionLoadingState();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.separated(
+      key: const ValueKey<String>('workspace-sidebar-session-loading-state'),
+      itemCount: 4,
+      separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.xs),
+      itemBuilder: (context, index) => const _SidebarSessionLoadingRow(),
+    );
+  }
+}
+
+class _SidebarSessionLoadingRow extends StatelessWidget {
+  const _SidebarSessionLoadingRow();
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return Container(
+      key: const ValueKey<String>('workspace-sidebar-session-loading-row'),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.sm,
+      ),
+      decoration: BoxDecoration(
+        color: surfaces.panel.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: surfaces.lineSoft),
+      ),
+      child: Row(
+        children: <Widget>[
+          Container(
+            width: 22,
+            alignment: Alignment.center,
+            child: Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: surfaces.lineSoft,
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: _ShimmerBox(height: 16, widthFactor: 1, borderRadius: 8),
           ),
         ],
       ),
@@ -4739,6 +4891,178 @@ class _NewSessionView extends StatelessWidget {
             if (messages.isNotEmpty) const SizedBox(height: AppSpacing.lg),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _WorkspaceProjectLoadingView extends StatelessWidget {
+  const _WorkspaceProjectLoadingView({
+    required this.project,
+    required this.compact,
+    super.key,
+  });
+
+  final ProjectTarget? project;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final title =
+        project?.title ?? projectDisplayLabel(project?.directory ?? '');
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: surfaces.background,
+        borderRadius: compact
+            ? null
+            : const BorderRadius.only(
+                topLeft: Radius.circular(AppSpacing.cardRadius),
+              ),
+      ),
+      child: Column(
+        children: <Widget>[
+          Expanded(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 860),
+                child: Padding(
+                  padding: const EdgeInsets.all(AppSpacing.xl),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(AppSpacing.xl),
+                    decoration: BoxDecoration(
+                      color: surfaces.panel,
+                      borderRadius: BorderRadius.circular(
+                        AppSpacing.cardRadius,
+                      ),
+                      border: Border.all(color: surfaces.lineSoft),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Row(
+                          children: <Widget>[
+                            const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                            const SizedBox(width: AppSpacing.sm),
+                            Expanded(
+                              child: Text(
+                                'Loading ${title.isEmpty ? 'project' : title}...',
+                                style: Theme.of(context).textTheme.titleLarge
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        Text(
+                          'Keeping the current workspace shell in place while the new project sessions and timeline load.',
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(color: surfaces.muted),
+                        ),
+                        const SizedBox(height: AppSpacing.lg),
+                        const _WorkspaceProjectLoadingSkeleton(),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.md,
+              AppSpacing.lg,
+              AppSpacing.lg,
+            ),
+            decoration: BoxDecoration(
+              color: surfaces.panel,
+              border: Border(top: BorderSide(color: surfaces.lineSoft)),
+            ),
+            child: const _PromptComposerLoadingPlaceholder(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WorkspaceProjectLoadingSkeleton extends StatelessWidget {
+  const _WorkspaceProjectLoadingSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      key: const ValueKey<String>('workspace-project-loading-state'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: const <Widget>[
+        _ShimmerBox(height: 18, widthFactor: 0.42, borderRadius: 9),
+        SizedBox(height: AppSpacing.md),
+        _ShimmerBox(height: 14, widthFactor: 1, borderRadius: 8),
+        SizedBox(height: AppSpacing.sm),
+        _ShimmerBox(height: 14, widthFactor: 0.86, borderRadius: 8),
+        SizedBox(height: AppSpacing.lg),
+        _ShimmerBox(height: 96, widthFactor: 1, borderRadius: 18),
+      ],
+    );
+  }
+}
+
+class _PromptComposerLoadingPlaceholder extends StatelessWidget {
+  const _PromptComposerLoadingPlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: surfaces.background,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: surfaces.lineSoft),
+      ),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          _ShimmerBox(height: 16, widthFactor: 0.18, borderRadius: 8),
+          SizedBox(height: AppSpacing.md),
+          _ShimmerBox(height: 44, widthFactor: 1, borderRadius: 14),
+          SizedBox(height: AppSpacing.sm),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: _ShimmerBox(
+                  height: 28,
+                  widthFactor: 1,
+                  borderRadius: 999,
+                ),
+              ),
+              SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: _ShimmerBox(
+                  height: 28,
+                  widthFactor: 1,
+                  borderRadius: 999,
+                ),
+              ),
+              SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: _ShimmerBox(
+                  height: 28,
+                  widthFactor: 1,
+                  borderRadius: 999,
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -8003,6 +8327,90 @@ class _ShimmeringRichTextState extends State<_ShimmeringRichText>
             );
           },
           child: child,
+        );
+      },
+    );
+  }
+}
+
+class _ShimmerBox extends StatefulWidget {
+  const _ShimmerBox({
+    required this.height,
+    required this.widthFactor,
+    required this.borderRadius,
+  });
+
+  final double height;
+  final double widthFactor;
+  final double borderRadius;
+
+  @override
+  State<_ShimmerBox> createState() => _ShimmerBoxState();
+}
+
+class _ShimmerBoxState extends State<_ShimmerBox>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 2200),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : 320.0;
+        final width = math.max(24.0, maxWidth * widget.widthFactor).toDouble();
+        return AnimatedBuilder(
+          animation: _controller,
+          builder: (context, child) {
+            return ShaderMask(
+              blendMode: BlendMode.srcATop,
+              shaderCallback: (bounds) {
+                final shimmerWidth = bounds.width <= 0 ? 1.0 : bounds.width;
+                final start =
+                    (shimmerWidth * 2.4 * _controller.value) -
+                    shimmerWidth * 1.2;
+                return LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  colors: <Color>[
+                    Colors.transparent,
+                    Colors.white.withValues(alpha: 0.08),
+                    Colors.white.withValues(alpha: 0.78),
+                    Colors.white.withValues(alpha: 0.12),
+                    Colors.transparent,
+                  ],
+                  stops: const <double>[0, 0.35, 0.5, 0.65, 1],
+                ).createShader(
+                  Rect.fromLTWH(
+                    start,
+                    0,
+                    shimmerWidth * 2.2,
+                    bounds.height <= 0 ? 1 : bounds.height,
+                  ),
+                );
+              },
+              child: child,
+            );
+          },
+          child: Container(
+            width: width,
+            height: widget.height,
+            decoration: BoxDecoration(
+              color: surfaces.panelRaised,
+              borderRadius: BorderRadius.circular(widget.borderRadius),
+            ),
+          ),
         );
       },
     );

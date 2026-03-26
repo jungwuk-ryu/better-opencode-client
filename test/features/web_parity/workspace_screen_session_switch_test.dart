@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -222,6 +224,100 @@ void main() {
       expect(find.byType(WebParityWorkspaceScreen), findsOneWidget);
       expect(observer.lastRouteName, initialRouteName);
       expect(find.text('hello from one'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'switching to an uncached project keeps the shell mounted and loads project data in place',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final createdControllers = <_RecordingWorkspaceController>[];
+      final labLoadCompleter = Completer<void>();
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              final controller = directory == '/workspace/lab'
+                  ? _DelayedRecordingWorkspaceController(
+                      profile: profile,
+                      directory: directory,
+                      initialSessionId: initialSessionId,
+                      loadCompleter: labLoadCompleter,
+                    )
+                  : _RecordingWorkspaceController(
+                      profile: profile,
+                      directory: directory,
+                      initialSessionId: initialSessionId,
+                    );
+              createdControllers.add(controller);
+              return controller;
+            },
+      );
+      addTearDown(appController.dispose);
+
+      final navigatorKey = GlobalKey<NavigatorState>();
+      final observer = _RecordingNavigatorObserver();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          navigatorKey: navigatorKey,
+          navigatorObservers: <NavigatorObserver>[observer],
+          initialRoute: '/',
+        ),
+      );
+      navigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+      );
+      await tester.pumpAndSettle();
+
+      final initialRouteName = observer.lastRouteName;
+      expect(find.text('hello from one'), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('workspace-project-/workspace/lab')),
+      );
+      await tester.pump();
+
+      expect(createdControllers, hasLength(2));
+      expect(observer.lastRouteName, initialRouteName);
+      expect(find.byType(WebParityWorkspaceScreen), findsOneWidget);
+      expect(
+        find.byKey(
+          const ValueKey<String>('workspace-project-loading-/workspace/lab'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>('workspace-sidebar-session-loading-state'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Lab'), findsAtLeastNWidgets(1));
+      expect(find.text('hello from one'), findsNothing);
+
+      labLoadCompleter.complete();
+      await tester.pump();
+      await tester.pumpAndSettle();
+
+      expect(observer.lastRouteName, initialRouteName);
+      expect(find.text('hello from lab'), findsOneWidget);
+      expect(
+        find.byKey(
+          const ValueKey<String>('workspace-project-loading-/workspace/lab'),
+        ),
+        findsNothing,
+      );
     },
   );
 
@@ -602,6 +698,28 @@ class _RecordingWorkspaceController extends WorkspaceController {
         ),
       ],
     };
+  }
+}
+
+class _DelayedRecordingWorkspaceController
+    extends _RecordingWorkspaceController {
+  _DelayedRecordingWorkspaceController({
+    required super.profile,
+    required super.directory,
+    required this.loadCompleter,
+    super.initialSessionId,
+  });
+
+  final Completer<void> loadCompleter;
+
+  @override
+  Future<void> load() async {
+    loadCount += 1;
+    await loadCompleter.future;
+    _loading = false;
+    _selectedSessionId = initialSessionId ?? _sessions.first.id;
+    _messages = _messageListFor(_selectedSessionId);
+    notifyListeners();
   }
 }
 
