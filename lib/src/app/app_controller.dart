@@ -50,6 +50,8 @@ class WebParityAppController extends ChangeNotifier {
       'web_parity.shell_tool_parts_expanded';
   static const _timelineProgressDetailsVisibleKey =
       'web_parity.timeline_progress_details_visible';
+  static const _sidebarChildSessionsVisibleKey =
+      'web_parity.sidebar_child_sessions_visible';
 
   final ServerProfileStore _profileStore;
   final ProjectStore _projectStore;
@@ -64,6 +66,7 @@ class WebParityAppController extends ChangeNotifier {
   ServerProfile? _selectedProfile;
   bool _shellToolPartsExpanded = true;
   bool _timelineProgressDetailsVisible = false;
+  bool _sidebarChildSessionsVisible = false;
   final Map<String, WorkspaceController> _workspaceControllers =
       <String, WorkspaceController>{};
 
@@ -74,6 +77,7 @@ class WebParityAppController extends ChangeNotifier {
   ServerProfile? get selectedProfile => _selectedProfile;
   bool get shellToolPartsExpanded => _shellToolPartsExpanded;
   bool get timelineProgressDetailsVisible => _timelineProgressDetailsVisible;
+  bool get sidebarChildSessionsVisible => _sidebarChildSessionsVisible;
   ServerProbeReport? get selectedReport {
     final selectedProfile = _selectedProfile;
     if (selectedProfile == null) {
@@ -95,6 +99,8 @@ class WebParityAppController extends ChangeNotifier {
         prefs.getBool(_shellToolPartsExpandedKey) ?? true;
     final timelineProgressDetailsVisible =
         prefs.getBool(_timelineProgressDetailsVisibleKey) ?? false;
+    final sidebarChildSessionsVisible =
+        prefs.getBool(_sidebarChildSessionsVisibleKey) ?? false;
 
     ServerProfile? selectedProfile;
     if (selectedProfileId != null) {
@@ -113,6 +119,7 @@ class WebParityAppController extends ChangeNotifier {
     _selectedProfile = selectedProfile;
     _shellToolPartsExpanded = shellToolPartsExpanded;
     _timelineProgressDetailsVisible = timelineProgressDetailsVisible;
+    _sidebarChildSessionsVisible = sidebarChildSessionsVisible;
     _loading = false;
     notifyListeners();
   }
@@ -147,6 +154,16 @@ class WebParityAppController extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_timelineProgressDetailsVisibleKey, value);
+  }
+
+  Future<void> setSidebarChildSessionsVisible(bool value) async {
+    if (_sidebarChildSessionsVisible == value) {
+      return;
+    }
+    _sidebarChildSessionsVisible = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_sidebarChildSessionsVisibleKey, value);
   }
 
   Future<void> refreshProbe(ServerProfile profile) async {

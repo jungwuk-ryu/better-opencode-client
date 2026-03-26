@@ -1152,6 +1152,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
           sessions: controller.visibleSessions,
           allSessions: controller.sessions,
           statuses: controller.statuses,
+          showSubsessions: appController.sidebarChildSessionsVisible,
           onSelectProject: (project) =>
               unawaited(_selectProjectInPlace(project, compact: compact)),
           onEditProject: (project) => unawaited(_editProject(project)),
@@ -2248,6 +2249,29 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                               ),
                             ),
                           ),
+                          const SizedBox(height: AppSpacing.lg),
+                          _WorkspaceSettingsSection(
+                            title: 'Sidebar',
+                            child: _WorkspaceSettingsCard(
+                              child: _WorkspaceSettingsToggleRow(
+                                key: const ValueKey<String>(
+                                  'workspace-settings-sidebar-child-sessions-toggle',
+                                ),
+                                title: 'Show sub-sessions in sidebar',
+                                subtitle:
+                                    'Display nested agent sessions under their root session in the session list.',
+                                value: widget
+                                    .appController
+                                    .sidebarChildSessionsVisible,
+                                onChanged: (value) {
+                                  unawaited(
+                                    widget.appController
+                                        .setSidebarChildSessionsVisible(value),
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -2680,6 +2704,7 @@ class _WorkspaceSidebar extends StatelessWidget {
     required this.sessions,
     required this.allSessions,
     required this.statuses,
+    required this.showSubsessions,
     required this.onSelectProject,
     required this.onEditProject,
     required this.onRemoveProject,
@@ -2695,6 +2720,7 @@ class _WorkspaceSidebar extends StatelessWidget {
   final List<SessionSummary> sessions;
   final List<SessionSummary> allSessions;
   final Map<String, SessionStatusSummary> statuses;
+  final bool showSubsessions;
   final ValueChanged<ProjectTarget> onSelectProject;
   final ValueChanged<ProjectTarget> onEditProject;
   final ValueChanged<ProjectTarget> onRemoveProject;
@@ -2708,11 +2734,16 @@ class _WorkspaceSidebar extends StatelessWidget {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final currentProject =
         project ?? _projectForDirectory(projects, currentDirectory);
+    final rootSelectedSessionId = _rootSessionFor(
+      allSessions,
+      _sessionById(allSessions, currentSessionId),
+    )?.id;
     final sessionEntries = _buildSidebarSessionEntries(
       roots: sessions,
       allSessions: allSessions,
       statuses: statuses,
       selectedSessionId: currentSessionId,
+      includeNested: showSubsessions,
     );
 
     return SizedBox(
@@ -2869,7 +2900,9 @@ class _WorkspaceSidebar extends StatelessWidget {
                                 entry: entry,
                                 project: currentProject,
                                 status: statuses[entry.session.id],
-                                selected: entry.session.id == currentSessionId,
+                                selected: showSubsessions
+                                    ? entry.session.id == currentSessionId
+                                    : entry.rootId == rootSelectedSessionId,
                                 onTap: () => onSelectSession(entry.session.id),
                               );
                             },
@@ -3877,6 +3910,7 @@ List<_SidebarSessionEntry> _buildSidebarSessionEntries({
   required List<SessionSummary> allSessions,
   required Map<String, SessionStatusSummary> statuses,
   required String? selectedSessionId,
+  required bool includeNested,
 }) {
   final childrenByParent = <String, List<SessionSummary>>{};
   for (final session in allSessions) {
@@ -3921,6 +3955,9 @@ List<_SidebarSessionEntry> _buildSidebarSessionEntries({
     entries.add(
       _SidebarSessionEntry(session: session, depth: depth, rootId: rootId),
     );
+    if (!includeNested) {
+      return;
+    }
     for (final child
         in childrenByParent[session.id] ?? const <SessionSummary>[]) {
       visit(child, depth + 1, rootId);

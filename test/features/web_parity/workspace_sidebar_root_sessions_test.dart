@@ -28,9 +28,7 @@ void main() {
     SharedPreferences.setMockInitialValues(<String, Object>{});
   });
 
-  testWidgets('sidebar shows project header and nested session tree', (
-    tester,
-  ) async {
+  testWidgets('sidebar hides nested sessions by default', (tester) async {
     tester.view.physicalSize = const Size(1600, 1000);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -77,10 +75,10 @@ void main() {
     );
     expect(find.text('Root session'), findsAtLeastNWidgets(1));
     expect(find.text('Another root session'), findsAtLeastNWidgets(1));
-    expect(find.text('Nested subagent session'), findsAtLeastNWidgets(1));
+    expect(find.text('Nested subagent session'), findsNothing);
     expect(
       find.byKey(const ValueKey<String>('workspace-session-entry-ses_child-1')),
-      findsOneWidget,
+      findsNothing,
     );
     expect(find.text('Sessions'), findsNothing);
     expect(find.text('idle'), findsNothing);
@@ -108,6 +106,7 @@ void main() {
       profile: profile,
       shellToolPartsExpandedValue: true,
       timelineProgressDetailsVisibleValue: false,
+      sidebarChildSessionsVisibleValue: false,
       report: _readyReport,
       workspaceControllerFactory:
           ({required profile, required directory, initialSessionId}) {
@@ -147,6 +146,7 @@ void main() {
     expect(find.text('Workspace Settings'), findsOneWidget);
     expect(find.text('Manage Servers'), findsOneWidget);
     expect(find.text('Ready'), findsOneWidget);
+    expect(find.text('Nested subagent session'), findsNothing);
 
     final shellSwitch = find.descendant(
       of: find.byKey(const ValueKey<String>('workspace-settings-shell-toggle')),
@@ -156,6 +156,32 @@ void main() {
     await tester.pump();
 
     expect(appController.shellToolPartsExpanded, isFalse);
+
+    await tester.dragUntilVisible(
+      find.byKey(
+        const ValueKey<String>(
+          'workspace-settings-sidebar-child-sessions-toggle',
+        ),
+      ),
+      find.byType(ListView),
+      const Offset(0, -200),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 180));
+
+    final sidebarToggle = find.descendant(
+      of: find.byKey(
+        const ValueKey<String>(
+          'workspace-settings-sidebar-child-sessions-toggle',
+        ),
+      ),
+      matching: find.byType(Switch),
+    );
+    await tester.tap(sidebarToggle);
+    await tester.pump();
+
+    expect(appController.sidebarChildSessionsVisible, isTrue);
+    expect(find.text('Nested subagent session'), findsAtLeastNWidgets(1));
   });
 
   testWidgets('project tile context menu edits and removes projects', (
@@ -298,6 +324,7 @@ class _StaticAppController extends WebParityAppController {
     this.report,
     this.shellToolPartsExpandedValue = true,
     this.timelineProgressDetailsVisibleValue = false,
+    this.sidebarChildSessionsVisibleValue = false,
     required WorkspaceControllerFactory workspaceControllerFactory,
   }) : super(workspaceControllerFactory: workspaceControllerFactory);
 
@@ -305,6 +332,7 @@ class _StaticAppController extends WebParityAppController {
   final ServerProbeReport? report;
   bool shellToolPartsExpandedValue;
   bool timelineProgressDetailsVisibleValue;
+  bool sidebarChildSessionsVisibleValue;
 
   @override
   ServerProfile? get selectedProfile => profile;
@@ -320,6 +348,9 @@ class _StaticAppController extends WebParityAppController {
       timelineProgressDetailsVisibleValue;
 
   @override
+  bool get sidebarChildSessionsVisible => sidebarChildSessionsVisibleValue;
+
+  @override
   Future<void> setShellToolPartsExpanded(bool value) async {
     shellToolPartsExpandedValue = value;
     notifyListeners();
@@ -328,6 +359,12 @@ class _StaticAppController extends WebParityAppController {
   @override
   Future<void> setTimelineProgressDetailsVisible(bool value) async {
     timelineProgressDetailsVisibleValue = value;
+    notifyListeners();
+  }
+
+  @override
+  Future<void> setSidebarChildSessionsVisible(bool value) async {
+    sidebarChildSessionsVisibleValue = value;
     notifyListeners();
   }
 }
