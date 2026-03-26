@@ -906,6 +906,167 @@ void main() {
   );
 
   testWidgets(
+    'desktop layout keeps existing pane state when switching the active pane to another project',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final createdControllers = <_RecordingWorkspaceController>[];
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              final controller = _RecordingWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+              createdControllers.add(controller);
+              return controller;
+            },
+      );
+      addTearDown(appController.dispose);
+
+      final navigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          navigatorKey: navigatorKey,
+          initialRoute: '/',
+        ),
+      );
+      navigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('workspace-split-session-pane-button'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Session Two'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('hello from one'), findsOneWidget);
+      expect(find.text('hello from two'), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('workspace-project-/workspace/lab')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(createdControllers, hasLength(2));
+      expect(find.text('hello from one'), findsOneWidget);
+      expect(find.text('hello from lab'), findsOneWidget);
+      expect(find.text('hello from two'), findsNothing);
+
+      await tester.tap(find.text('hello from one'));
+      await tester.pumpAndSettle();
+
+      expect(createdControllers.first.selectedSessionId, 'ses_1');
+      expect(find.text('hello from one'), findsOneWidget);
+      expect(find.text('hello from lab'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'switching to an uncached project with split panes keeps other panes visible while the new project loads',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final createdControllers = <_RecordingWorkspaceController>[];
+      final labLoadCompleter = Completer<void>();
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              final controller = directory == '/workspace/lab'
+                  ? _DelayedRecordingWorkspaceController(
+                      profile: profile,
+                      directory: directory,
+                      initialSessionId: initialSessionId,
+                      loadCompleter: labLoadCompleter,
+                    )
+                  : _RecordingWorkspaceController(
+                      profile: profile,
+                      directory: directory,
+                      initialSessionId: initialSessionId,
+                    );
+              createdControllers.add(controller);
+              return controller;
+            },
+      );
+      addTearDown(appController.dispose);
+
+      final navigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          navigatorKey: navigatorKey,
+          initialRoute: '/',
+        ),
+      );
+      navigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('workspace-split-session-pane-button'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Session Two'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('workspace-project-/workspace/lab')),
+      );
+      await tester.pump();
+
+      expect(createdControllers, hasLength(2));
+      expect(find.text('hello from one'), findsOneWidget);
+      expect(
+        find.byKey(
+          const ValueKey<String>('workspace-project-loading-/workspace/lab'),
+        ),
+        findsNothing,
+      );
+      expect(_paneLoadingFinder(), findsOneWidget);
+
+      labLoadCompleter.complete();
+      await tester.pump();
+      await tester.pumpAndSettle();
+
+      expect(find.text('hello from one'), findsOneWidget);
+      expect(find.text('hello from lab'), findsOneWidget);
+      expect(_paneLoadingFinder(), findsNothing);
+    },
+  );
+
+  testWidgets(
     'timeline stays pinned to bottom when streamed content extends the last message',
     (tester) async {
       tester.view.physicalSize = const Size(1600, 1000);
@@ -949,9 +1110,7 @@ void main() {
       await tester.pumpAndSettle();
 
       final controller = createdControllers.single;
-      final listFinder = find.byKey(
-        const PageStorageKey<String>('web-parity-message-timeline'),
-      );
+      final listFinder = _messageTimelineListFinder();
       final initialPosition = tester
           .widget<ListView>(listFinder)
           .controller!
@@ -1031,9 +1190,7 @@ void main() {
       final controller = createdControllers.single;
       expect(controller.selectedSessionId, 'ses_long');
 
-      final listFinder = find.byKey(
-        const PageStorageKey<String>('web-parity-message-timeline'),
-      );
+      final listFinder = _messageTimelineListFinder();
       final position = tester.widget<ListView>(listFinder).controller!.position;
 
       expect(position.maxScrollExtent, greaterThan(0));
@@ -1093,9 +1250,7 @@ void main() {
         findsOneWidget,
       );
 
-      final listFinder = find.byKey(
-        const PageStorageKey<String>('web-parity-message-timeline'),
-      );
+      final listFinder = _messageTimelineListFinder();
       final scrollView = tester.widget<ListView>(listFinder);
       final initialPosition = scrollView.controller!.position;
       final initialMaxExtent = initialPosition.maxScrollExtent;
@@ -1123,6 +1278,27 @@ Future<void> _sendShortcut(
   for (final key in keys.reversed) {
     await tester.sendKeyUpEvent(key);
   }
+}
+
+Finder _messageTimelineListFinder() {
+  return find.byWidgetPredicate(
+    (widget) =>
+        widget is ListView &&
+        widget.key is PageStorageKey<String> &&
+        (widget.key! as PageStorageKey<String>).value.startsWith(
+          'web-parity-message-timeline',
+        ),
+  );
+}
+
+Finder _paneLoadingFinder() {
+  return find.byWidgetPredicate(
+    (widget) =>
+        widget.key is ValueKey<String> &&
+        (widget.key! as ValueKey<String>).value.startsWith(
+          'workspace-session-pane-loading-',
+        ),
+  );
 }
 
 class _WorkspaceRouteHarness extends StatelessWidget {

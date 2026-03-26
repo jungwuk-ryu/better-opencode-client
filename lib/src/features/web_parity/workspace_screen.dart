@@ -62,14 +62,24 @@ class _WorkspaceDensity {
 }
 
 class _WorkspaceSessionPaneSpec {
-  const _WorkspaceSessionPaneSpec({required this.id, this.sessionId});
+  const _WorkspaceSessionPaneSpec({
+    required this.id,
+    required this.directory,
+    this.sessionId,
+  });
 
   final String id;
+  final String directory;
   final String? sessionId;
 
-  _WorkspaceSessionPaneSpec copyWith({String? id, String? sessionId}) {
+  _WorkspaceSessionPaneSpec copyWith({
+    String? id,
+    String? directory,
+    String? sessionId,
+  }) {
     return _WorkspaceSessionPaneSpec(
       id: id ?? this.id,
+      directory: directory ?? this.directory,
       sessionId: sessionId ?? this.sessionId,
     );
   }
@@ -142,7 +152,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   bool _chatSearchVisible = false;
   int _chatSearchActiveMatchIndex = 0;
   int _chatSearchRevision = 0;
-  String? _chatSearchSessionId;
+  String? _chatSearchScopeKey;
   _CompactWorkspacePane _compactPane = _CompactWorkspacePane.session;
   PtyService? _ptyService;
   List<PtySessionInfo> _ptySessions = const <PtySessionInfo>[];
@@ -168,7 +178,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       const <_WorkspaceSessionPaneSpec>[];
   String? _activeDesktopSessionPaneId;
   int _timelineJumpEpoch = 0;
-  Set<String> _pendingWatchedSessionIds = const <String>{};
+  Map<WorkspaceController, Set<String>> _pendingWatchedSessionIdsByController =
+      const <WorkspaceController, Set<String>>{};
+  Map<WorkspaceController, Set<String>> _syncedWatchedSessionIdsByController =
+      const <WorkspaceController, Set<String>>{};
   bool _watchedSessionSyncScheduled = false;
   late String _activeDirectory;
   String? _activeRouteSessionId;
@@ -181,7 +194,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     super.initState();
     _activeDirectory = widget.directory;
     _activeRouteSessionId = widget.sessionId;
-    _resetDesktopSessionPanes(initialSessionId: widget.sessionId);
+    _resetDesktopSessionPanes(
+      initialDirectory: widget.directory,
+      initialSessionId: widget.sessionId,
+    );
     _projectCatalogService =
         widget.projectCatalogService ?? ProjectCatalogService();
     _ownsProjectCatalogService = widget.projectCatalogService == null;
@@ -206,14 +222,45 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     );
   }
 
-  void _resetDesktopSessionPanes({String? initialSessionId}) {
+  void _resetDesktopSessionPanes({
+    required String initialDirectory,
+    String? initialSessionId,
+  }) {
     final pane = _WorkspaceSessionPaneSpec(
       id: 'pane_${_sessionPaneSequence++}',
+      directory: initialDirectory,
       sessionId: initialSessionId,
     );
     _desktopSessionPanes = <_WorkspaceSessionPaneSpec>[pane];
     _activeDesktopSessionPaneId = pane.id;
     _timelineJumpEpoch += 1;
+  }
+
+  void _retargetActivePane({required String directory, String? sessionId}) {
+    final activePaneId = _activeDesktopSessionPaneId;
+    if (activePaneId == null || _desktopSessionPanes.isEmpty) {
+      _resetDesktopSessionPanes(
+        initialDirectory: directory,
+        initialSessionId: sessionId,
+      );
+      return;
+    }
+    var foundActivePane = false;
+    _desktopSessionPanes = _desktopSessionPanes
+        .map((pane) {
+          if (pane.id != activePaneId) {
+            return pane;
+          }
+          foundActivePane = true;
+          return pane.copyWith(directory: directory, sessionId: sessionId);
+        })
+        .toList(growable: false);
+    if (!foundActivePane) {
+      _resetDesktopSessionPanes(
+        initialDirectory: directory,
+        initialSessionId: sessionId,
+      );
+    }
   }
 
   @override
@@ -277,6 +324,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   }
 
   void _disposeController() {
+    _clearWatchedSessionSync();
     _controller = null;
     _projectLoadingShellState = null;
   }
@@ -286,6 +334,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     required ServerProfile profile,
     required String directory,
     String? routeSessionId,
+    bool resetPaneDeck = false,
   }) {
     final hadCachedController = appController.hasWorkspaceController(
       profile: profile,
@@ -296,20 +345,34 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       directory: directory,
       initialSessionId: routeSessionId,
     );
+    final profileChanged = _profile?.storageKey != profile.storageKey;
+    final directoryChanged = _activeDirectory != directory;
     final bindingChanged =
         !identical(_controller, nextController) ||
-        _profile?.storageKey != profile.storageKey ||
-        _activeDirectory != directory;
+        profileChanged ||
+        directoryChanged;
 
     _controller = nextController;
     _profile = profile;
     _activeDirectory = directory;
     _activeRouteSessionId = routeSessionId;
 
-    if (bindingChanged) {
+    if (profileChanged || resetPaneDeck) {
       _compactPane = _CompactWorkspacePane.session;
-      _resetDesktopSessionPanes(initialSessionId: routeSessionId);
+      _resetDesktopSessionPanes(
+        initialDirectory: directory,
+        initialSessionId: routeSessionId,
+      );
       _resetTerminalState(profile);
+    } else if (bindingChanged) {
+      _compactPane = _CompactWorkspacePane.session;
+      _retargetActivePane(
+        directory: directory,
+        sessionId: routeSessionId ?? nextController.selectedSessionId,
+      );
+      if (directoryChanged) {
+        _resetTerminalState(profile);
+      }
     }
 
     if (routeSessionId != null && hadCachedController) {
@@ -853,7 +916,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     setState(() {
       _chatSearchVisible = false;
       _chatSearchActiveMatchIndex = 0;
-      _chatSearchSessionId = null;
+      _chatSearchScopeKey = null;
       _chatSearchRevision += 1;
     });
   }
@@ -862,7 +925,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     final controller = _controller;
     setState(() {
       _chatSearchActiveMatchIndex = 0;
-      _chatSearchSessionId = controller?.selectedSessionId;
+      _chatSearchScopeKey = controller == null
+          ? null
+          : _chatSearchWorkspaceScopeKey(controller);
       _chatSearchRevision += 1;
     });
   }
@@ -880,10 +945,15 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     final nextIndex = (searchState.activeMatchIndex + delta + count) % count;
     setState(() {
       _chatSearchActiveMatchIndex = nextIndex;
-      _chatSearchSessionId = controller.selectedSessionId;
+      _chatSearchScopeKey = _chatSearchWorkspaceScopeKey(controller);
       _chatSearchRevision += 1;
     });
     _focusChatSearchField();
+  }
+
+  String _chatSearchWorkspaceScopeKey(WorkspaceController controller) {
+    final sessionId = controller.selectedSessionId?.trim() ?? '';
+    return '${controller.directory}::$sessionId';
   }
 
   _ResolvedChatSearchState _resolveChatSearchState(
@@ -892,6 +962,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     final rawQuery = _chatSearchController.text;
     final query = rawQuery.trim();
     final sessionId = controller.selectedSessionId;
+    final scopeKey = _chatSearchWorkspaceScopeKey(controller);
     if (query.isEmpty) {
       return _ResolvedChatSearchState(
         query: rawQuery,
@@ -913,7 +984,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       }
     }
 
-    final baseIndex = _chatSearchSessionId == sessionId
+    final baseIndex = _chatSearchScopeKey == scopeKey
         ? _chatSearchActiveMatchIndex
         : 0;
     final activeIndex = matches.isEmpty
@@ -1222,13 +1293,30 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     return 'Terminal $number';
   }
 
+  WorkspaceController _workspaceControllerForDirectory(
+    WebParityAppController appController,
+    ServerProfile profile,
+    String directory, {
+    String? initialSessionId,
+  }) {
+    final currentController = _controller;
+    if (currentController != null &&
+        _profile?.storageKey == profile.storageKey &&
+        currentController.directory == directory) {
+      return currentController;
+    }
+    return appController.obtainWorkspaceController(
+      profile: profile,
+      directory: directory,
+      initialSessionId: initialSessionId,
+    );
+  }
+
   List<_WorkspaceSessionPaneSpec> _resolvedDesktopSessionPanes(
+    WebParityAppController appController,
+    ServerProfile profile,
     WorkspaceController controller,
   ) {
-    final sessionsById = <String, SessionSummary>{
-      for (final session in controller.sessions) session.id: session,
-    };
-    final selectedSessionId = controller.selectedSessionId;
     final activePaneId =
         _activeDesktopSessionPaneId ??
         (_desktopSessionPanes.isNotEmpty
@@ -1237,24 +1325,43 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
 
     final resolved = <_WorkspaceSessionPaneSpec>[];
     for (final pane in _desktopSessionPanes) {
+      final effectiveDirectory = pane.id == activePaneId
+          ? _activeDirectory
+          : pane.directory;
+      final paneController = _workspaceControllerForDirectory(
+        appController,
+        profile,
+        effectiveDirectory,
+        initialSessionId: pane.sessionId,
+      );
+      final sessionsById = <String, SessionSummary>{
+        for (final session in paneController.sessions) session.id: session,
+      };
       final effectiveSessionId = pane.id == activePaneId
-          ? selectedSessionId
+          ? paneController.selectedSessionId
           : pane.sessionId;
       final normalized = effectiveSessionId?.trim();
       if (normalized != null &&
           normalized.isNotEmpty &&
+          !paneController.loading &&
+          paneController.error == null &&
           !sessionsById.containsKey(normalized)) {
         continue;
       }
       resolved.add(
-        _WorkspaceSessionPaneSpec(id: pane.id, sessionId: effectiveSessionId),
+        _WorkspaceSessionPaneSpec(
+          id: pane.id,
+          directory: effectiveDirectory,
+          sessionId: effectiveSessionId,
+        ),
       );
     }
 
     if (resolved.isEmpty) {
       final fallback = _WorkspaceSessionPaneSpec(
         id: 'pane_${_sessionPaneSequence++}',
-        sessionId: selectedSessionId,
+        directory: _activeDirectory,
+        sessionId: controller.selectedSessionId,
       );
       _desktopSessionPanes = <_WorkspaceSessionPaneSpec>[fallback];
       _activeDesktopSessionPaneId = fallback.id;
@@ -1277,11 +1384,18 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     var changed = false;
     final next = _desktopSessionPanes
         .map((pane) {
-          if (pane.id != activePaneId || pane.sessionId == selectedSessionId) {
+          if (pane.id != activePaneId) {
+            return pane;
+          }
+          if (pane.sessionId == selectedSessionId &&
+              pane.directory == controller.directory) {
             return pane;
           }
           changed = true;
-          return pane.copyWith(sessionId: selectedSessionId);
+          return pane.copyWith(
+            directory: controller.directory,
+            sessionId: selectedSessionId,
+          );
         })
         .toList(growable: false);
     if (!changed) {
@@ -1290,29 +1404,80 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     _desktopSessionPanes = next;
   }
 
-  void _scheduleWatchedSessionSync(
-    WorkspaceController controller,
-    Iterable<String?> sessionIds,
+  bool _sameWatchedSessionMap(
+    Map<WorkspaceController, Set<String>> left,
+    Map<WorkspaceController, Set<String>> right,
   ) {
-    final normalized = sessionIds
-        .map((sessionId) => sessionId?.trim() ?? '')
-        .where((sessionId) => sessionId.isNotEmpty)
-        .toSet();
-    if (setEquals(normalized, _pendingWatchedSessionIds) &&
+    if (identical(left, right)) {
+      return true;
+    }
+    if (left.length != right.length) {
+      return false;
+    }
+    for (final entry in left.entries) {
+      final other = right[entry.key];
+      if (other == null || !setEquals(entry.value, other)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  void _clearWatchedSessionSync() {
+    final controllers = <WorkspaceController>{
+      ..._pendingWatchedSessionIdsByController.keys,
+      ..._syncedWatchedSessionIdsByController.keys,
+    };
+    for (final controller in controllers) {
+      controller.updateWatchedSessionIds(const <String?>[]);
+    }
+    _pendingWatchedSessionIdsByController =
+        const <WorkspaceController, Set<String>>{};
+    _syncedWatchedSessionIdsByController =
+        const <WorkspaceController, Set<String>>{};
+    _watchedSessionSyncScheduled = false;
+  }
+
+  void _scheduleWatchedSessionSync(
+    Map<WorkspaceController, Set<String>> sessionIdsByController,
+  ) {
+    final normalized = <WorkspaceController, Set<String>>{
+      for (final entry in sessionIdsByController.entries)
+        entry.key: Set<String>.unmodifiable(
+          entry.value
+              .map((sessionId) => sessionId.trim())
+              .where((sessionId) => sessionId.isNotEmpty)
+              .toSet(),
+        ),
+    };
+    if (_sameWatchedSessionMap(
+          normalized,
+          _pendingWatchedSessionIdsByController,
+        ) &&
         _watchedSessionSyncScheduled) {
       return;
     }
-    _pendingWatchedSessionIds = Set<String>.unmodifiable(normalized);
+    _pendingWatchedSessionIdsByController = normalized;
     if (_watchedSessionSyncScheduled) {
       return;
     }
     _watchedSessionSyncScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _watchedSessionSyncScheduled = false;
-      if (!mounted || !identical(_controller, controller)) {
+      if (!mounted) {
         return;
       }
-      controller.updateWatchedSessionIds(_pendingWatchedSessionIds);
+      final nextMap = _pendingWatchedSessionIdsByController;
+      final controllers = <WorkspaceController>{
+        ..._syncedWatchedSessionIdsByController.keys,
+        ...nextMap.keys,
+      };
+      for (final controller in controllers) {
+        controller.updateWatchedSessionIds(
+          nextMap[controller] ?? const <String>{},
+        );
+      }
+      _syncedWatchedSessionIdsByController = nextMap;
     });
   }
 
@@ -1323,6 +1488,11 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     if (_activeDesktopSessionPaneId == paneId) {
       return;
     }
+    final profile = _profile;
+    if (profile == null) {
+      return;
+    }
+    final appController = AppScope.of(context);
     _commitSelectedSessionToActivePane(controller);
     final targetPane = _desktopSessionPanes
         .cast<_WorkspaceSessionPaneSpec?>()
@@ -1335,10 +1505,18 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       _activeDesktopSessionPaneId = paneId;
       _timelineJumpEpoch += 1;
     });
-    if (controller.selectedSessionId == targetPane.sessionId) {
+    _bindWorkspace(
+      appController: appController,
+      profile: profile,
+      directory: targetPane.directory,
+      routeSessionId: targetPane.sessionId,
+    );
+    final targetController = _controller;
+    if (targetController == null ||
+        targetController.selectedSessionId == targetPane.sessionId) {
       return;
     }
-    await controller.selectSession(targetPane.sessionId);
+    await targetController.selectSession(targetPane.sessionId);
   }
 
   void _splitDesktopSessionPane(WorkspaceController controller) {
@@ -1359,6 +1537,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         : _desktopSessionPanes.length;
     final newPane = _WorkspaceSessionPaneSpec(
       id: 'pane_${_sessionPaneSequence++}',
+      directory: controller.directory,
       sessionId: controller.selectedSessionId,
     );
     final next = List<_WorkspaceSessionPaneSpec>.from(_desktopSessionPanes)
@@ -1377,7 +1556,15 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     if (_desktopSessionPanes.length <= 1) {
       return;
     }
+    final profile = _profile;
     _commitSelectedSessionToActivePane(controller);
+    if (_paneSessionVisibleElsewhere(
+      directory: controller.directory,
+      sessionId: controller.selectedSessionId,
+      excludingPaneId: paneId,
+    )) {
+      controller.preserveSelectedSessionTimelineForWatch();
+    }
     final current = List<_WorkspaceSessionPaneSpec>.from(_desktopSessionPanes);
     final removedIndex = current.indexWhere((pane) => pane.id == paneId);
     if (removedIndex < 0) {
@@ -1397,11 +1584,119 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         _timelineJumpEpoch += 1;
       }
     });
-    if (wasActive &&
-        nextActivePane != null &&
-        controller.selectedSessionId != nextActivePane.sessionId) {
-      await controller.selectSession(nextActivePane.sessionId);
+    if (wasActive && nextActivePane != null && profile != null) {
+      final appController = AppScope.of(context);
+      _bindWorkspace(
+        appController: appController,
+        profile: profile,
+        directory: nextActivePane.directory,
+        routeSessionId: nextActivePane.sessionId,
+      );
+      final nextController = _controller;
+      if (nextController != null &&
+          nextController.selectedSessionId != nextActivePane.sessionId) {
+        await nextController.selectSession(nextActivePane.sessionId);
+      }
     }
+  }
+
+  bool _paneSessionVisibleElsewhere({
+    required String directory,
+    required String? sessionId,
+    required String excludingPaneId,
+  }) {
+    final normalizedSessionId = sessionId?.trim();
+    if (normalizedSessionId == null || normalizedSessionId.isEmpty) {
+      return false;
+    }
+    for (final pane in _desktopSessionPanes) {
+      if (pane.id == excludingPaneId) {
+        continue;
+      }
+      if (pane.directory == directory &&
+          pane.sessionId == normalizedSessionId) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  ProjectTarget _projectTargetForDirectory(
+    WorkspaceController controller,
+    String directory, {
+    ProjectTarget? fallbackProject,
+  }) {
+    final currentProject = controller.project;
+    if (currentProject != null && currentProject.directory == directory) {
+      return currentProject;
+    }
+    for (final project in controller.availableProjects) {
+      if (project.directory == directory) {
+        return project;
+      }
+    }
+    return fallbackProject ??
+        ProjectTarget(
+          directory: directory,
+          label: projectDisplayLabel(directory),
+          source: 'session-pane',
+        );
+  }
+
+  List<_WorkspacePaneViewModel> _resolvedDesktopPaneViewModels({
+    required WebParityAppController appController,
+    required ServerProfile profile,
+    required WorkspaceController activeController,
+    required _WorkspaceProjectLoadingShellState? projectLoadingShell,
+  }) {
+    final panes = _resolvedDesktopSessionPanes(
+      appController,
+      profile,
+      activeController,
+    );
+    return List<_WorkspacePaneViewModel>.unmodifiable(
+      panes.map((pane) {
+        final paneController = _workspaceControllerForDirectory(
+          appController,
+          profile,
+          pane.directory,
+          initialSessionId: pane.sessionId,
+        );
+        final fallbackProject =
+            pane.id == _activeDesktopSessionPaneId &&
+                projectLoadingShell?.targetProject.directory == pane.directory
+            ? projectLoadingShell?.targetProject
+            : null;
+        return _WorkspacePaneViewModel(
+          pane: pane,
+          controller: paneController,
+          project: _projectTargetForDirectory(
+            paneController,
+            pane.directory,
+            fallbackProject: fallbackProject,
+          ),
+        );
+      }),
+    );
+  }
+
+  Map<WorkspaceController, Set<String>> _watchedSessionIdsByController(
+    Iterable<_WorkspacePaneViewModel> paneViewModels,
+  ) {
+    final watched = <WorkspaceController, Set<String>>{};
+    for (final paneViewModel in paneViewModels) {
+      if (paneViewModel.pane.id == _activeDesktopSessionPaneId) {
+        continue;
+      }
+      final sessionId = paneViewModel.pane.sessionId?.trim();
+      if (sessionId == null || sessionId.isEmpty) {
+        continue;
+      }
+      watched
+          .putIfAbsent(paneViewModel.controller, () => <String>{})
+          .add(sessionId);
+    }
+    return watched;
   }
 
   Future<void> _pickComposerAttachments() async {
@@ -1648,6 +1943,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   }
 
   Future<void> _forkSelectedSession(WorkspaceController controller) async {
+    _preserveSelectedSessionIfVisibleElsewhere(controller);
     try {
       final forked = await controller.forkSelectedSession();
       if (!mounted || forked == null) {
@@ -1676,6 +1972,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     if (messageId.isEmpty) {
       return;
     }
+    _preserveSelectedSessionIfVisibleElsewhere(controller);
     try {
       final forked = await controller.forkSelectedSession(messageId: messageId);
       if (!mounted || forked == null) {
@@ -1707,6 +2004,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     if (messageId.isEmpty) {
       return;
     }
+    _preserveSelectedSessionIfVisibleElsewhere(controller);
     try {
       final updated = await controller.revertSelectedSession(
         messageId: messageId,
@@ -1732,7 +2030,16 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     }
   }
 
+  void _preserveSelectedSessionIfVisibleElsewhere(
+    WorkspaceController controller,
+  ) {
+    if (_selectedSessionVisibleOutsideActivePane(controller)) {
+      controller.preserveSelectedSessionTimelineForWatch();
+    }
+  }
+
   Future<void> _createNewSession(WorkspaceController controller) async {
+    _preserveSelectedSessionIfVisibleElsewhere(controller);
     try {
       await controller.createEmptySession();
     } catch (error) {
@@ -1836,6 +2143,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       return;
     }
 
+    _preserveSelectedSessionIfVisibleElsewhere(controller);
     try {
       final nextSession = await controller.deleteSelectedSession();
       if (!mounted) {
@@ -1915,12 +2223,22 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     if (selectedSessionId == null || selectedSessionId.isEmpty) {
       return false;
     }
+    final profile = _profile;
+    if (profile == null) {
+      return false;
+    }
+    final appController = AppScope.of(context);
     final activePaneId = _activeDesktopSessionPaneId;
-    for (final pane in _resolvedDesktopSessionPanes(controller)) {
+    for (final pane in _resolvedDesktopSessionPanes(
+      appController,
+      profile,
+      controller,
+    )) {
       if (pane.id == activePaneId) {
         continue;
       }
-      if (pane.sessionId == selectedSessionId) {
+      if (pane.directory == controller.directory &&
+          pane.sessionId == selectedSessionId) {
         return true;
       }
     }
@@ -1950,12 +2268,17 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     }
 
     final appController = AppScope.of(context);
+    final currentController = _controller;
     final shouldPreserveShell =
-        _controller != null &&
+        currentController != null &&
         !appController.hasWorkspaceController(
           profile: profile,
           directory: project.directory,
         );
+    if (currentController != null &&
+        _selectedSessionVisibleOutsideActivePane(currentController)) {
+      currentController.preserveSelectedSessionTimelineForWatch();
+    }
     _promptController.clear();
     _composerAttachments = const <PromptAttachment>[];
 
@@ -1964,7 +2287,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
           ? _WorkspaceProjectLoadingShellState(
               targetProject: project,
               projects: _mergedProjectsWithTarget(
-                _controller?.availableProjects ?? const <ProjectTarget>[],
+                currentController.availableProjects,
                 project,
               ),
             )
@@ -1973,6 +2296,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         appController: appController,
         profile: profile,
         directory: project.directory,
+        routeSessionId: null,
       );
     });
   }
@@ -2191,17 +2515,51 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
           final selectedSession = showProjectLoadingShell
               ? null
               : controller.selectedSession;
+          final profile = _profile!;
+          final paneViewModels = compact
+              ? <_WorkspacePaneViewModel>[
+                  _WorkspacePaneViewModel(
+                    pane: _WorkspaceSessionPaneSpec(
+                      id: 'compact-pane',
+                      directory: controller.directory,
+                      sessionId: controller.selectedSessionId,
+                    ),
+                    controller: controller,
+                    project: displayProject,
+                  ),
+                ]
+              : _resolvedDesktopPaneViewModels(
+                  appController: appController,
+                  profile: profile,
+                  activeController: controller,
+                  projectLoadingShell: projectLoadingShell,
+                );
+          final activePaneId = compact
+              ? paneViewModels.first.pane.id
+              : (_activeDesktopSessionPaneId ??
+                    (paneViewModels.isNotEmpty
+                        ? paneViewModels.first.pane.id
+                        : null));
           final desktopSidebarVisible = !compact && _desktopSidebarVisible;
           final desktopSidePanelVisible = !compact && _desktopSidePanelVisible;
-          final desktopSessionPanes = _resolvedDesktopSessionPanes(controller);
+          final desktopSessionPanes = compact
+              ? const <_WorkspaceSessionPaneSpec>[]
+              : List<_WorkspaceSessionPaneSpec>.unmodifiable(
+                  paneViewModels.map((paneViewModel) => paneViewModel.pane),
+                );
           _scheduleWatchedSessionSync(
-            controller,
             compact
-                ? const <String?>[]
-                : desktopSessionPanes
-                      .where((pane) => pane.id != _activeDesktopSessionPaneId)
-                      .map((pane) => pane.sessionId),
+                ? const <WorkspaceController, Set<String>>{}
+                : _watchedSessionIdsByController(paneViewModels),
           );
+          final multiPaneDesktop = !compact && paneViewModels.length > 1;
+          final showBodyProjectLoadingShell =
+              showProjectLoadingShell && !multiPaneDesktop;
+          final showBodyInitialLoading =
+              controller.loading &&
+              projectLoadingShell == null &&
+              !multiPaneDesktop;
+          final showBodyError = controller.error != null && !multiPaneDesktop;
           final mainSession = _rootSessionFor(
             displayAllSessions,
             selectedSession,
@@ -2321,10 +2679,14 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                               : desktopSessionPanes.length,
                           canSplitSessionPane:
                               !compact &&
-                              !showProjectLoadingShell &&
+                              !controller.loading &&
+                              controller.error == null &&
                               desktopSessionPanes.length <
                                   _maxDesktopSessionPanes,
-                          onSplitSessionPane: compact || showProjectLoadingShell
+                          onSplitSessionPane:
+                              compact ||
+                                  controller.loading ||
+                                  controller.error != null
                               ? null
                               : () => _splitDesktopSessionPane(controller),
                           onOpenDrawer: compact
@@ -2357,7 +2719,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                               : () => _deleteSelectedSession(controller),
                         ),
                         Expanded(
-                          child: showProjectLoadingShell
+                          child: showBodyProjectLoadingShell
                               ? _WorkspaceProjectLoadingView(
                                   key: ValueKey<String>(
                                     'workspace-project-loading-${displayProject?.directory ?? _currentDirectory}',
@@ -2365,9 +2727,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                   project: displayProject,
                                   compact: compact,
                                 )
-                              : controller.loading
+                              : showBodyInitialLoading
                               ? const Center(child: CircularProgressIndicator())
-                              : controller.error != null
+                              : showBodyError
                               ? _WorkspaceError(
                                   error: controller.error!,
                                   onBackHome: () => Navigator.of(context)
@@ -2379,10 +2741,11 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                               : _WorkspaceBody(
                                   compact: compact,
                                   controller: controller,
-                                  allSessions: controller.sessions,
-                                  selectedSession: controller.selectedSession,
+                                  paneViewModels: paneViewModels,
+                                  activePaneId: activePaneId,
+                                  activeWorkspaceLoading: controller.loading,
+                                  activeWorkspaceError: controller.error,
                                   sidePanelVisible: desktopSidePanelVisible,
-                                  configSnapshot: controller.configSnapshot,
                                   submittingPrompt:
                                       _promptSubmitInFlight ||
                                       controller.submittingPrompt,
@@ -2396,9 +2759,6 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                   recentSubmittedDraft:
                                       _recentSubmittedPromptDraft,
                                   compactPane: _compactPane,
-                                  desktopSessionPanes: desktopSessionPanes,
-                                  activeDesktopSessionPaneId:
-                                      _activeDesktopSessionPaneId,
                                   busyFollowupMode:
                                       appController.busyFollowupMode,
                                   shellToolDefaultExpanded:
@@ -2536,6 +2896,18 @@ class _WorkspaceProjectLoadingShellState {
 
   final ProjectTarget targetProject;
   final List<ProjectTarget> projects;
+}
+
+class _WorkspacePaneViewModel {
+  const _WorkspacePaneViewModel({
+    required this.pane,
+    required this.controller,
+    required this.project,
+  });
+
+  final _WorkspaceSessionPaneSpec pane;
+  final WorkspaceController controller;
+  final ProjectTarget? project;
 }
 
 List<ProjectTarget> _mergedProjectsWithTarget(
@@ -6740,10 +7112,11 @@ class _WorkspaceBody extends StatelessWidget {
   const _WorkspaceBody({
     required this.compact,
     required this.controller,
-    required this.allSessions,
-    required this.selectedSession,
+    required this.paneViewModels,
+    required this.activePaneId,
+    required this.activeWorkspaceLoading,
+    required this.activeWorkspaceError,
     required this.sidePanelVisible,
-    required this.configSnapshot,
     required this.submittingPrompt,
     required this.interruptiblePrompt,
     required this.interruptingPrompt,
@@ -6754,8 +7127,6 @@ class _WorkspaceBody extends StatelessWidget {
     required this.submittedDraftEpoch,
     required this.recentSubmittedDraft,
     required this.compactPane,
-    required this.desktopSessionPanes,
-    required this.activeDesktopSessionPaneId,
     required this.busyFollowupMode,
     required this.shellToolDefaultExpanded,
     required this.timelineProgressDetailsVisible,
@@ -6789,10 +7160,11 @@ class _WorkspaceBody extends StatelessWidget {
 
   final bool compact;
   final WorkspaceController controller;
-  final List<SessionSummary> allSessions;
-  final SessionSummary? selectedSession;
+  final List<_WorkspacePaneViewModel> paneViewModels;
+  final String? activePaneId;
+  final bool activeWorkspaceLoading;
+  final String? activeWorkspaceError;
   final bool sidePanelVisible;
-  final ConfigSnapshot? configSnapshot;
   final bool submittingPrompt;
   final bool interruptiblePrompt;
   final bool interruptingPrompt;
@@ -6803,8 +7175,6 @@ class _WorkspaceBody extends StatelessWidget {
   final int submittedDraftEpoch;
   final String? recentSubmittedDraft;
   final _CompactWorkspacePane compactPane;
-  final List<_WorkspaceSessionPaneSpec> desktopSessionPanes;
-  final String? activeDesktopSessionPaneId;
   final WorkspaceFollowupMode busyFollowupMode;
   final bool shellToolDefaultExpanded;
   final bool timelineProgressDetailsVisible;
@@ -6861,14 +7231,6 @@ class _WorkspaceBody extends StatelessWidget {
       compact: compact,
       onOpenSession: openActiveChildSession,
     );
-    final paneSpecs = compact
-        ? <_WorkspaceSessionPaneSpec>[
-            _WorkspaceSessionPaneSpec(
-              id: 'compact-pane',
-              sessionId: controller.selectedSessionId,
-            ),
-          ]
-        : desktopSessionPanes;
     final content = Column(
       children: <Widget>[
         if (!compact) activeSubSessionPanel,
@@ -6884,15 +7246,8 @@ class _WorkspaceBody extends StatelessWidget {
             ),
             child: _WorkspaceSessionPaneDeck(
               compact: compact,
-              project: controller.project,
-              controller: controller,
-              panes: paneSpecs,
-              activePaneId: compact
-                  ? 'compact-pane'
-                  : activeDesktopSessionPaneId,
-              allSessions: allSessions,
-              selectedSession: selectedSession,
-              configSnapshot: configSnapshot,
+              paneViewModels: paneViewModels,
+              activePaneId: activePaneId,
               shellToolDefaultExpanded: shellToolDefaultExpanded,
               timelineProgressDetailsVisible: timelineProgressDetailsVisible,
               chatSearchQuery: chatSearchQuery,
@@ -6909,7 +7264,9 @@ class _WorkspaceBody extends StatelessWidget {
             ),
           ),
         ),
-        if (controller.selectedSessionId != null)
+        if (!activeWorkspaceLoading &&
+            activeWorkspaceError == null &&
+            controller.selectedSessionId != null)
           _SessionTodoDock(
             key: ValueKey<String>(
               'session-todo-dock-${controller.selectedSessionId}',
@@ -6921,7 +7278,21 @@ class _WorkspaceBody extends StatelessWidget {
             compact: compact,
             onClearStale: controller.clearTodos,
           ),
-        if (questionRequest != null)
+        if (activeWorkspaceLoading)
+          Container(
+            padding: EdgeInsets.fromLTRB(
+              density.inset(compact ? AppSpacing.sm : AppSpacing.lg),
+              density.inset(compact ? AppSpacing.xs : AppSpacing.md),
+              density.inset(compact ? AppSpacing.sm : AppSpacing.lg),
+              density.inset(compact ? AppSpacing.sm : AppSpacing.lg),
+            ),
+            decoration: BoxDecoration(
+              color: surfaces.panel,
+              border: Border(top: BorderSide(color: surfaces.lineSoft)),
+            ),
+            child: _PromptComposerLoadingPlaceholder(compact: compact),
+          )
+        else if (activeWorkspaceError == null && questionRequest != null)
           _QuestionPromptDock(
             key: ValueKey<String>('question-dock-${questionRequest.id}'),
             request: questionRequest,
@@ -6929,7 +7300,7 @@ class _WorkspaceBody extends StatelessWidget {
             onReply: controller.replyToQuestion,
             onReject: controller.rejectQuestion,
           )
-        else
+        else if (activeWorkspaceError == null)
           _PromptComposer(
             controller: promptController,
             compact: compact,
@@ -7086,13 +7457,8 @@ class _HorizontalReveal extends StatelessWidget {
 class _WorkspaceSessionPaneDeck extends StatelessWidget {
   const _WorkspaceSessionPaneDeck({
     required this.compact,
-    required this.project,
-    required this.controller,
-    required this.panes,
+    required this.paneViewModels,
     required this.activePaneId,
-    required this.allSessions,
-    required this.selectedSession,
-    required this.configSnapshot,
     required this.shellToolDefaultExpanded,
     required this.timelineProgressDetailsVisible,
     required this.chatSearchQuery,
@@ -7109,13 +7475,8 @@ class _WorkspaceSessionPaneDeck extends StatelessWidget {
   });
 
   final bool compact;
-  final ProjectTarget? project;
-  final WorkspaceController controller;
-  final List<_WorkspaceSessionPaneSpec> panes;
+  final List<_WorkspacePaneViewModel> paneViewModels;
   final String? activePaneId;
-  final List<SessionSummary> allSessions;
-  final SessionSummary? selectedSession;
-  final ConfigSnapshot? configSnapshot;
   final bool shellToolDefaultExpanded;
   final bool timelineProgressDetailsVisible;
   final String chatSearchQuery;
@@ -7139,14 +7500,10 @@ class _WorkspaceSessionPaneDeck extends StatelessWidget {
     final outerPadding = compact
         ? EdgeInsets.zero
         : EdgeInsets.all(density.inset(AppSpacing.sm, min: AppSpacing.xs));
-    final resolvedPanes = panes.isEmpty
-        ? <_WorkspaceSessionPaneSpec>[
-            _WorkspaceSessionPaneSpec(
-              id: 'fallback-pane',
-              sessionId: controller.selectedSessionId,
-            ),
-          ]
-        : panes;
+    if (paneViewModels.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final resolvedActivePaneId = activePaneId ?? paneViewModels.first.pane.id;
 
     return Padding(
       key: const ValueKey<String>('workspace-session-pane-deck'),
@@ -7154,21 +7511,13 @@ class _WorkspaceSessionPaneDeck extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          for (var index = 0; index < resolvedPanes.length; index += 1) ...[
+          for (var index = 0; index < paneViewModels.length; index += 1) ...[
             Expanded(
               child: _WorkspaceSessionPaneCard(
-                pane: resolvedPanes[index],
-                project: project,
+                paneViewModel: paneViewModels[index],
                 compact: compact,
-                selected: resolvedPanes[index].id == activePaneId,
-                canClose: !compact && resolvedPanes.length > 1,
-                controller: controller,
-                session: _sessionById(
-                  allSessions,
-                  resolvedPanes[index].sessionId,
-                ),
-                selectedSession: selectedSession,
-                configSnapshot: configSnapshot,
+                selected: paneViewModels[index].pane.id == resolvedActivePaneId,
+                canClose: !compact && paneViewModels.length > 1,
                 shellToolDefaultExpanded: shellToolDefaultExpanded,
                 timelineProgressDetailsVisible: timelineProgressDetailsVisible,
                 chatSearchQuery: chatSearchQuery,
@@ -7176,7 +7525,6 @@ class _WorkspaceSessionPaneDeck extends StatelessWidget {
                 chatSearchActiveMessageId: chatSearchActiveMessageId,
                 chatSearchRevision: chatSearchRevision,
                 timelineJumpEpoch: timelineJumpEpoch,
-                allSessions: allSessions,
                 onSelectPane: onSelectPane,
                 onClosePane: onClosePane,
                 onForkMessage: onForkMessage,
@@ -7185,7 +7533,7 @@ class _WorkspaceSessionPaneDeck extends StatelessWidget {
                 onRetrySelectedSession: onRetrySelectedSession,
               ),
             ),
-            if (index < resolvedPanes.length - 1) SizedBox(width: spacing),
+            if (index < paneViewModels.length - 1) SizedBox(width: spacing),
           ],
         ],
       ),
@@ -7195,15 +7543,10 @@ class _WorkspaceSessionPaneDeck extends StatelessWidget {
 
 class _WorkspaceSessionPaneCard extends StatelessWidget {
   const _WorkspaceSessionPaneCard({
-    required this.pane,
-    required this.project,
+    required this.paneViewModel,
     required this.compact,
     required this.selected,
     required this.canClose,
-    required this.controller,
-    required this.session,
-    required this.selectedSession,
-    required this.configSnapshot,
     required this.shellToolDefaultExpanded,
     required this.timelineProgressDetailsVisible,
     required this.chatSearchQuery,
@@ -7211,7 +7554,6 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
     required this.chatSearchActiveMessageId,
     required this.chatSearchRevision,
     required this.timelineJumpEpoch,
-    required this.allSessions,
     required this.onSelectPane,
     required this.onClosePane,
     required this.onForkMessage,
@@ -7220,15 +7562,10 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
     required this.onRetrySelectedSession,
   });
 
-  final _WorkspaceSessionPaneSpec pane;
-  final ProjectTarget? project;
+  final _WorkspacePaneViewModel paneViewModel;
   final bool compact;
   final bool selected;
   final bool canClose;
-  final WorkspaceController controller;
-  final SessionSummary? session;
-  final SessionSummary? selectedSession;
-  final ConfigSnapshot? configSnapshot;
   final bool shellToolDefaultExpanded;
   final bool timelineProgressDetailsVisible;
   final String chatSearchQuery;
@@ -7236,7 +7573,6 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
   final String? chatSearchActiveMessageId;
   final int chatSearchRevision;
   final int timelineJumpEpoch;
-  final List<SessionSummary> allSessions;
   final Future<void> Function(String paneId) onSelectPane;
   final ValueChanged<String> onClosePane;
   final Future<void> Function(ChatMessage message) onForkMessage;
@@ -7249,18 +7585,44 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
-    final sessionId = pane.sessionId;
-    final searchScoped =
-        sessionId != null && sessionId == controller.selectedSessionId;
+    final pane = paneViewModel.pane;
+    final controller = paneViewModel.controller;
+    final project = paneViewModel.project;
+    final sessionId = pane.sessionId?.trim();
+    final session = _sessionById(controller.sessions, sessionId);
     final timelineState = controller.timelineStateForSession(sessionId);
     final status = sessionId == null ? null : controller.statuses[sessionId];
-    final busy = _isActiveSessionStatus(status);
+    final busy =
+        _isActiveSessionStatus(status) || (selected && controller.loading);
     final title = _sessionHeaderTitle(session, project);
-    final subtitle = sessionId == null
-        ? 'New session draft'
+    final projectLabel = (() {
+      final label = project?.label.trim();
+      if (label != null && label.isNotEmpty) {
+        return label;
+      }
+      return projectDisplayLabel(pane.directory);
+    })();
+    final searchScoped =
+        selected &&
+        sessionId != null &&
+        sessionId.isNotEmpty &&
+        sessionId == controller.selectedSessionId &&
+        chatSearchQuery.trim().isNotEmpty;
+    final subtitle = controller.loading && sessionId == null
+        ? '$projectLabel · Connecting to this project'
+        : sessionId == null
+        ? '$projectLabel · New session draft'
         : selected
-        ? 'Sidebar, side panel, and composer follow this pane'
-        : 'Click to focus this session';
+        ? '$projectLabel · Sidebar, side panel, and composer follow this pane'
+        : '$projectLabel · Click to focus this session';
+    final normalizedSessionId = sessionId == null || sessionId.isEmpty
+        ? 'new'
+        : sessionId;
+    final timelineScopeKey =
+        '${pane.id}::${pane.directory}::$normalizedSessionId';
+    final timelinePageStorageKey = searchScoped
+        ? 'web-parity-message-timeline::$timelineScopeKey::search-$chatSearchRevision-${chatSearchActiveMessageId ?? 'none'}'
+        : 'web-parity-message-timeline::$timelineScopeKey';
 
     Future<void> handleFocus() async {
       await onSelectPane(pane.id);
@@ -7286,6 +7648,10 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
         await handleFocus();
       }
       await onRevertMessage(message);
+    }
+
+    Future<void> handleRetryWorkspace() async {
+      await controller.load();
     }
 
     void handleOpenSession(String sessionId) {
@@ -7438,23 +7804,55 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                 ),
                 Divider(height: 1, color: surfaces.lineSoft),
                 Expanded(
-                  child: sessionId == null
+                  child: sessionId == null && controller.loading
+                      ? KeyedSubtree(
+                          key: ValueKey<String>(
+                            'workspace-session-pane-loading-${pane.id}',
+                          ),
+                          child: _TimelineStatusCard(
+                            icon: const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                            title:
+                                'Loading ${projectLabel.isEmpty ? 'project' : projectLabel}...',
+                            message:
+                                'Keeping the rest of the workspace visible while this project connects.',
+                          ),
+                        )
+                      : sessionId == null && controller.error != null
+                      ? KeyedSubtree(
+                          key: ValueKey<String>(
+                            'workspace-session-pane-error-${pane.id}',
+                          ),
+                          child: _TimelineStatusCard(
+                            icon: Icon(
+                              Icons.wifi_tethering_error_rounded,
+                              color: theme.colorScheme.error,
+                              size: 22,
+                            ),
+                            title:
+                                'Couldn\'t load ${projectLabel.isEmpty ? 'this project' : projectLabel}',
+                            message: controller.error!,
+                            action: OutlinedButton(
+                              onPressed: () =>
+                                  unawaited(handleRetryWorkspace()),
+                              child: const Text('Retry'),
+                            ),
+                          ),
+                        )
+                      : sessionId == null
                       ? _NewSessionView(
                           project: project,
                           messages: timelineState.messages,
                         )
                       : _MessageTimeline(
                           key: ValueKey<String>(
-                            'timeline-${pane.id}-${sessionId.isEmpty ? 'new' : sessionId}'
-                            '${searchScoped && chatSearchQuery.trim().isNotEmpty ? '::search-$chatSearchRevision-${chatSearchActiveMessageId ?? 'none'}' : ''}',
+                            'timeline-$timelinePageStorageKey',
                           ),
-                          storageScopeKey:
-                              '${pane.id}::${sessionId.isEmpty ? 'new' : sessionId}',
-                          pageStorageKeyValue: searchScoped
-                              ? (chatSearchQuery.trim().isEmpty
-                                    ? 'web-parity-message-timeline'
-                                    : 'web-parity-message-timeline-search-$chatSearchRevision')
-                              : 'web-parity-message-timeline-${pane.id}::${sessionId.isEmpty ? 'new' : sessionId}',
+                          storageScopeKey: timelineScopeKey,
+                          pageStorageKeyValue: timelinePageStorageKey,
                           currentSessionId: sessionId,
                           loading: timelineState.loading,
                           showingCachedMessages:
@@ -7462,9 +7860,11 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                           error: timelineState.error,
                           messages: timelineState.orderedMessages,
                           compact: compact,
-                          sessions: allSessions,
-                          selectedSession: selected ? selectedSession : session,
-                          configSnapshot: configSnapshot,
+                          sessions: controller.sessions,
+                          selectedSession: selected
+                              ? controller.selectedSession
+                              : session,
+                          configSnapshot: controller.configSnapshot,
                           shellToolDefaultExpanded: shellToolDefaultExpanded,
                           timelineProgressDetailsVisible:
                               timelineProgressDetailsVisible,
