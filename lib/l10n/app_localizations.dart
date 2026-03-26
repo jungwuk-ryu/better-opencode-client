@@ -944,6 +944,24 @@ abstract class AppLocalizations {
   /// **'Local favorites kept at the top for quick mobile access.'**
   String get pinnedProjectsSubtitle;
 
+  /// No description provided for @projectFilterLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Filter projects'**
+  String get projectFilterLabel;
+
+  /// No description provided for @projectFilterHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Name, folder, branch, or session'**
+  String get projectFilterHint;
+
+  /// No description provided for @projectFilterEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No projects match this filter.'**
+  String get projectFilterEmpty;
+
   /// No description provided for @recentProjectsEmpty.
   ///
   /// In en, this message translates to:

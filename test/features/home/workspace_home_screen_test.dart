@@ -141,10 +141,13 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Continue'), findsOneWidget);
+    final continueButton = find.byKey(
+      const ValueKey<String>('home-workspace-continue-button'),
+    );
+    expect(continueButton, findsOneWidget);
 
-    await tester.ensureVisible(find.text('Continue'));
-    await tester.tap(find.text('Continue'));
+    await tester.ensureVisible(continueButton);
+    await tester.tap(continueButton);
     await tester.pumpAndSettle();
 
     expect(find.byType(ServerWorkspaceShellScreen), findsOneWidget);
@@ -395,9 +398,7 @@ class _FakeProjectCatalogService extends ProjectCatalogService {
 }
 
 class _FakeProfileStore extends ServerProfileStore {
-  _FakeProfileStore({
-    required this.savedProfiles,
-  });
+  _FakeProfileStore({required this.savedProfiles});
 
   final List<ServerProfile> savedProfiles;
 

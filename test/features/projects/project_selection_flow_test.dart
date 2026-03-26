@@ -122,6 +122,77 @@ void main() {
     expect(find.text('500 exploded while loading catalog'), findsNothing);
   });
 
+  testWidgets('project chooser can filter server and recent projects', (
+    tester,
+  ) async {
+    _setLargeSurface(tester);
+
+    await tester.pumpWidget(
+      _TestApp(
+        child: ProjectWorkspaceSection(
+          profile: const ServerProfile(
+            id: 'studio',
+            label: 'Studio',
+            baseUrl: 'https://studio.example.com',
+          ),
+          onOpenProject: (_) {},
+          projectCatalogService: _FakeProjectCatalogService(
+            catalog: ProjectCatalog(
+              currentProject: null,
+              projects: const <ProjectSummary>[
+                ProjectSummary(
+                  id: 'design',
+                  directory: '/workspace/design-system',
+                  worktree: '/workspace/design-system',
+                  name: 'Design system',
+                  vcs: 'git',
+                  updatedAt: null,
+                ),
+                ProjectSummary(
+                  id: 'api',
+                  directory: '/workspace/api',
+                  worktree: '/workspace/api',
+                  name: 'API',
+                  vcs: 'git',
+                  updatedAt: null,
+                ),
+              ],
+              pathInfo: const PathInfo(
+                home: '/home/tester',
+                state: '/state',
+                config: '/config',
+                worktree: '/workspace/design-system',
+                directory: '/workspace/design-system',
+              ),
+              vcsInfo: const VcsInfo(branch: 'main'),
+            ),
+          ),
+          projectStore: _FakeProjectStore(
+            recentProjects: const <ProjectTarget>[
+              ProjectTarget(
+                directory: '/workspace/archive',
+                label: 'Archive workspace',
+                source: 'recent',
+              ),
+            ],
+          ),
+          cacheStore: StaleCacheStore(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('project-filter-field')),
+      'design',
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Design system'), findsOneWidget);
+    expect(find.text('API'), findsNothing);
+    expect(find.text('Archive workspace'), findsNothing);
+  });
+
   testWidgets('connection screen no longer acts as a project chooser', (
     tester,
   ) async {

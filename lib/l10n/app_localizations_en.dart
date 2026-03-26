@@ -462,6 +462,15 @@ class AppLocalizationsEn extends AppLocalizations {
       'Local favorites kept at the top for quick mobile access.';
 
   @override
+  String get projectFilterLabel => 'Filter projects';
+
+  @override
+  String get projectFilterHint => 'Name, folder, branch, or session';
+
+  @override
+  String get projectFilterEmpty => 'No projects match this filter.';
+
+  @override
   String get recentProjectsEmpty => 'No recent projects yet.';
 
   @override

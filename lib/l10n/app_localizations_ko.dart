@@ -449,6 +449,15 @@ class AppLocalizationsKo extends AppLocalizations {
       '모바일에서 빠르게 다시 열 수 있도록 위쪽에 유지하는 로컬 즐겨찾기입니다.';
 
   @override
+  String get projectFilterLabel => '프로젝트 필터';
+
+  @override
+  String get projectFilterHint => '이름, 폴더, 브랜치, 세션';
+
+  @override
+  String get projectFilterEmpty => '필터에 맞는 프로젝트가 없습니다.';
+
+  @override
   String get recentProjectsEmpty => '최근 프로젝트가 아직 없습니다.';
 
   @override

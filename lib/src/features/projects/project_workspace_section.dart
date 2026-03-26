@@ -39,6 +39,8 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
   late final ProjectStore _projectStore;
   late final StaleCacheStore _cacheStore;
   final TextEditingController _manualPathController = TextEditingController();
+  final TextEditingController _projectFilterController =
+      TextEditingController();
 
   ProjectCatalog? _catalog;
   List<ProjectTarget> _recentProjects = const <ProjectTarget>[];
@@ -49,6 +51,7 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
   bool _loading = true;
   bool _inspecting = false;
   String _catalogSignature = 'catalog-empty';
+  String _projectQuery = '';
 
   @override
   void initState() {
@@ -74,6 +77,7 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
       _catalogService.dispose();
     }
     _manualPathController.dispose();
+    _projectFilterController.dispose();
     super.dispose();
   }
 
@@ -329,6 +333,68 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
     await _inspectManualPath();
   }
 
+  bool _matchesProject(ProjectTarget target) {
+    final query = _projectQuery.trim().toLowerCase();
+    if (query.isEmpty) {
+      return true;
+    }
+    return <String?>[
+      target.label,
+      target.name,
+      target.directory,
+      target.source,
+      target.vcs,
+      target.branch,
+      target.lastSession?.title,
+      target.lastSession?.status,
+    ].any((value) => value?.toLowerCase().contains(query) ?? false);
+  }
+
+  List<ProjectTarget> _filterTargets(Iterable<ProjectTarget> targets) {
+    return targets.where(_matchesProject).toList(growable: false);
+  }
+
+  String _sectionTitle(String title, int count) {
+    return title;
+  }
+
+  Widget _buildChooserOverview(BuildContext context, AppLocalizations l10n) {
+    final catalog = _catalog;
+    final pinnedCount = _pinnedProjects(catalog).length;
+    final serverCount = catalog?.projects.length ?? 0;
+    final recentCount = _recentProjects.length;
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+
+    return Wrap(
+      spacing: AppSpacing.sm,
+      runSpacing: AppSpacing.sm,
+      children: <Widget>[
+        _ProjectOverviewChip(
+          icon: Icons.push_pin_rounded,
+          label: l10n.pinnedProjectsTitle,
+          value: '$pinnedCount',
+        ),
+        _ProjectOverviewChip(
+          icon: Icons.dns_rounded,
+          label: l10n.serverProjectsTitle,
+          value: '$serverCount',
+        ),
+        _ProjectOverviewChip(
+          icon: Icons.history_rounded,
+          label: l10n.recentProjectsTitle,
+          value: '$recentCount',
+        ),
+        if (_selectedTarget != null)
+          _ProjectOverviewChip(
+            icon: Icons.adjust_rounded,
+            label: l10n.projectPreviewTitle,
+            value: _selectedTarget!.label,
+            accentColor: surfaces.accentSoft,
+          ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
@@ -351,6 +417,10 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
                 context,
               ).textTheme.bodyLarge?.copyWith(color: surfaces.muted),
             ),
+            if (!_loading) ...<Widget>[
+              const SizedBox(height: AppSpacing.md),
+              _buildChooserOverview(context, l10n),
+            ],
             const SizedBox(height: AppSpacing.lg),
             if (_loading)
               const Padding(
@@ -410,13 +480,80 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
 
   Widget _buildChooser(BuildContext context, AppLocalizations l10n) {
     final catalog = _catalog;
-    final pinnedProjects = _pinnedProjects(catalog);
+    final pinnedProjects = _filterTargets(_pinnedProjects(catalog));
+    final currentProjectTarget = catalog?.currentProject == null
+        ? null
+        : _toTarget(
+            catalog!.currentProject!,
+            source: 'current',
+            branch: catalog.vcsInfo?.branch,
+          );
+    final showCurrentProject =
+        currentProjectTarget != null && _matchesProject(currentProjectTarget);
+    final serverProjects = _filterTargets(
+      catalog?.projects.map(
+            (project) => _toTarget(
+              project,
+              source: 'server',
+              branch: catalog.vcsInfo?.branch,
+            ),
+          ) ??
+          const Iterable<ProjectTarget>.empty(),
+    );
+    final recentProjects = _filterTargets(_recentProjects);
+    final hasFilter = _projectQuery.trim().isNotEmpty;
+    final hasMatches =
+        pinnedProjects.isNotEmpty ||
+        showCurrentProject ||
+        serverProjects.isNotEmpty ||
+        recentProjects.isNotEmpty;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
+        TextField(
+          key: const ValueKey<String>('project-filter-field'),
+          controller: _projectFilterController,
+          onChanged: (value) {
+            setState(() {
+              _projectQuery = value;
+            });
+          },
+          decoration: InputDecoration(
+            labelText: l10n.projectFilterLabel,
+            hintText: l10n.projectFilterHint,
+            prefixIcon: const Icon(Icons.search_rounded),
+            suffixIcon: _projectQuery.trim().isEmpty
+                ? null
+                : IconButton(
+                    tooltip: MaterialLocalizations.of(
+                      context,
+                    ).deleteButtonTooltip,
+                    onPressed: () {
+                      _projectFilterController.clear();
+                      setState(() {
+                        _projectQuery = '';
+                      });
+                    },
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        if (hasFilter && !hasMatches) ...<Widget>[
+          _Section(
+            title: l10n.projectFilterLabel,
+            subtitle: l10n.projectFilterHint,
+            child: Text(l10n.projectFilterEmpty),
+          ),
+          const SizedBox(height: AppSpacing.md),
+        ],
         if (pinnedProjects.isNotEmpty) ...<Widget>[
           _Section(
-            title: l10n.pinnedProjectsTitle,
+            title: _sectionTitle(
+              l10n.pinnedProjectsTitle,
+              pinnedProjects.length,
+            ),
             subtitle: l10n.pinnedProjectsSubtitle,
             child: Column(
               children: pinnedProjects
@@ -439,87 +576,58 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
           ),
           const SizedBox(height: AppSpacing.md),
         ],
-        if (catalog?.currentProject != null) ...<Widget>[
+        if (showCurrentProject) ...<Widget>[
           _Section(
             title: l10n.currentProjectTitle,
             subtitle: l10n.currentProjectSubtitle,
             child: _ProjectChoiceTile(
-              target: _toTarget(
-                catalog!.currentProject!,
-                source: 'current',
-                branch: catalog.vcsInfo?.branch,
-              ),
+              target: currentProjectTarget,
               selected:
-                  _selectedTarget?.directory ==
-                  catalog.currentProject!.directory,
+                  _selectedTarget?.directory == currentProjectTarget.directory,
               pinned: _pinnedProjectDirectories.contains(
-                catalog.currentProject!.directory,
+                currentProjectTarget.directory,
               ),
               pinTooltip:
                   _pinnedProjectDirectories.contains(
-                    catalog.currentProject!.directory,
+                    currentProjectTarget.directory,
                   )
                   ? l10n.projectUnpinAction
                   : l10n.projectPinAction,
-              onPinToggle: () => _togglePinnedProject(
-                _toTarget(
-                  catalog.currentProject!,
-                  source: 'current',
-                  branch: catalog.vcsInfo?.branch,
-                ),
-              ),
-              onTap: () => _selectTarget(
-                _toTarget(
-                  catalog.currentProject!,
-                  source: 'current',
-                  branch: catalog.vcsInfo?.branch,
-                ),
-              ),
+              onPinToggle: () => _togglePinnedProject(currentProjectTarget),
+              onTap: () => _selectTarget(currentProjectTarget),
             ),
           ),
           const SizedBox(height: AppSpacing.md),
         ],
         _Section(
-          title: l10n.serverProjectsTitle,
+          title: _sectionTitle(l10n.serverProjectsTitle, serverProjects.length),
           subtitle: l10n.serverProjectsSubtitle,
-          child: (catalog?.projects.isEmpty ?? true)
-              ? Text(l10n.serverProjectsEmpty)
+          child: serverProjects.isEmpty
+              ? Text(
+                  hasFilter
+                      ? l10n.projectFilterEmpty
+                      : l10n.serverProjectsEmpty,
+                )
               : Column(
-                  children: catalog!.projects
+                  children: serverProjects
                       .map(
-                        (project) => Padding(
+                        (target) => Padding(
                           padding: const EdgeInsets.only(bottom: AppSpacing.xs),
                           child: _ProjectChoiceTile(
-                            target: _toTarget(
-                              project,
-                              source: 'server',
-                              branch: catalog.vcsInfo?.branch,
-                            ),
+                            target: target,
                             selected:
-                                _selectedTarget?.directory == project.directory,
+                                _selectedTarget?.directory == target.directory,
                             pinned: _pinnedProjectDirectories.contains(
-                              project.directory,
+                              target.directory,
                             ),
                             pinTooltip:
                                 _pinnedProjectDirectories.contains(
-                                  project.directory,
+                                  target.directory,
                                 )
                                 ? l10n.projectUnpinAction
                                 : l10n.projectPinAction,
-                            onPinToggle: () => _togglePinnedProject(
-                              _toTarget(
-                                project,
-                                source: 'server',
-                                branch: catalog.vcsInfo?.branch,
-                              ),
-                            ),
-                            onTap: () => _selectTarget(
-                              _toTarget(
-                                project,
-                                source: 'server',
-                                branch: catalog.vcsInfo?.branch,
-                              ),
-                            ),
+                            onPinToggle: () => _togglePinnedProject(target),
+                            onTap: () => _selectTarget(target),
                           ),
                         ),
                       )
@@ -564,12 +672,16 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
         ),
         const SizedBox(height: AppSpacing.md),
         _Section(
-          title: l10n.recentProjectsTitle,
+          title: _sectionTitle(l10n.recentProjectsTitle, recentProjects.length),
           subtitle: l10n.recentProjectsSubtitle,
-          child: _recentProjects.isEmpty
-              ? Text(l10n.recentProjectsEmpty)
+          child: recentProjects.isEmpty
+              ? Text(
+                  hasFilter
+                      ? l10n.projectFilterEmpty
+                      : l10n.recentProjectsEmpty,
+                )
               : Column(
-                  children: _recentProjects
+                  children: recentProjects
                       .map(
                         (project) => Padding(
                           padding: const EdgeInsets.only(bottom: AppSpacing.xs),
@@ -609,9 +721,60 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Text(
-                  target.label,
-                  style: Theme.of(context).textTheme.titleLarge,
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: surfaces.panelMuted.withValues(alpha: 0.68),
+                    borderRadius: BorderRadius.circular(AppSpacing.lg),
+                    border: Border.all(color: surfaces.line),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppSpacing.md),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        _ProjectAvatar(target: target, large: true),
+                        const SizedBox(width: AppSpacing.md),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Text(
+                                target.label,
+                                style: Theme.of(context).textTheme.titleLarge,
+                              ),
+                              const SizedBox(height: AppSpacing.xs),
+                              Text(
+                                target.directory,
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(color: surfaces.muted),
+                              ),
+                              const SizedBox(height: AppSpacing.sm),
+                              Wrap(
+                                spacing: AppSpacing.xs,
+                                runSpacing: AppSpacing.xs,
+                                children: <Widget>[
+                                  _ProjectMetaChip(
+                                    icon: Icons.hub_rounded,
+                                    label: target.source ?? '-',
+                                  ),
+                                  if ((target.vcs ?? '').isNotEmpty)
+                                    _ProjectMetaChip(
+                                      icon: Icons.account_tree_outlined,
+                                      label: target.vcs!,
+                                    ),
+                                  if ((target.branch ?? '').isNotEmpty)
+                                    _ProjectMetaChip(
+                                      icon: Icons.commit_rounded,
+                                      label: target.branch!,
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 _PreviewRow(
@@ -766,25 +929,277 @@ class _ProjectChoiceTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
-    return ListTile(
-      tileColor: selected ? surfaces.accentSoft.withValues(alpha: 0.12) : null,
-      title: Text(target.label),
-      subtitle: Text(target.directory),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Text(target.source ?? '-'),
-          IconButton(
-            tooltip: pinTooltip,
-            onPressed: onPinToggle,
-            icon: Icon(
-              pinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final hasBranch = (target.branch ?? '').trim().isNotEmpty;
+    final hasVcs = (target.vcs ?? '').trim().isNotEmpty;
+    final lastSessionTitle = target.lastSession?.title?.trim();
+    final lastSessionStatus = target.lastSession?.status?.trim();
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        key: ValueKey<String>('project-choice-${target.directory}'),
+        borderRadius: BorderRadius.circular(AppSpacing.lg),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: <Color>[
+                selected
+                    ? theme.colorScheme.primary.withValues(alpha: 0.16)
+                    : surfaces.panelRaised.withValues(alpha: 0.88),
+                selected
+                    ? surfaces.panelRaised.withValues(alpha: 0.96)
+                    : surfaces.panel.withValues(alpha: 0.9),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(AppSpacing.lg),
+            border: Border.all(
+              color: selected
+                  ? theme.colorScheme.primary.withValues(alpha: 0.34)
+                  : surfaces.line,
+            ),
+            boxShadow: <BoxShadow>[
+              BoxShadow(
+                color: Colors.black.withValues(alpha: selected ? 0.14 : 0.08),
+                blurRadius: selected ? 20 : 12,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    _ProjectAvatar(target: target),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            target.label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.xxs),
+                          Text(
+                            target.directory,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: surfaces.muted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: pinTooltip,
+                      onPressed: onPinToggle,
+                      icon: Icon(
+                        pinned
+                            ? Icons.push_pin_rounded
+                            : Icons.push_pin_outlined,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Wrap(
+                  spacing: AppSpacing.xs,
+                  runSpacing: AppSpacing.xs,
+                  children: <Widget>[
+                    _ProjectMetaChip(
+                      icon: Icons.hub_rounded,
+                      label: target.source ?? '-',
+                      emphasis: selected,
+                    ),
+                    if (hasVcs)
+                      _ProjectMetaChip(
+                        icon: Icons.account_tree_outlined,
+                        label: target.vcs!,
+                      ),
+                    if (hasBranch)
+                      _ProjectMetaChip(
+                        icon: Icons.commit_rounded,
+                        label: target.branch!,
+                      ),
+                    if (lastSessionStatus != null &&
+                        lastSessionStatus.isNotEmpty)
+                      _ProjectMetaChip(
+                        icon: Icons.bolt_rounded,
+                        label: lastSessionStatus,
+                      ),
+                  ],
+                ),
+                if (lastSessionTitle != null &&
+                    lastSessionTitle.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    lastSessionTitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: selected
+                          ? theme.colorScheme.onSurface
+                          : surfaces.accentSoft,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
-        ],
+        ),
       ),
-      onTap: onTap,
+    );
+  }
+}
+
+class _ProjectAvatar extends StatelessWidget {
+  const _ProjectAvatar({required this.target, this.large = false});
+
+  final ProjectTarget target;
+  final bool large;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final size = large ? 52.0 : 42.0;
+
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: surfaces.panelEmphasis.withValues(alpha: 0.88),
+        borderRadius: BorderRadius.circular(large ? 16 : 14),
+        border: Border.all(color: surfaces.line),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        _projectMonogram(target.label),
+        style: theme.textTheme.titleMedium?.copyWith(
+          color: surfaces.accentSoft,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+}
+
+class _ProjectMetaChip extends StatelessWidget {
+  const _ProjectMetaChip({
+    required this.icon,
+    required this.label,
+    this.emphasis = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool emphasis;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: emphasis
+            ? theme.colorScheme.primary.withValues(alpha: 0.14)
+            : surfaces.panelMuted.withValues(alpha: 0.82),
+        borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
+        border: Border.all(
+          color: emphasis
+              ? theme.colorScheme.primary.withValues(alpha: 0.24)
+              : surfaces.lineSoft,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm,
+          vertical: AppSpacing.xs,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(
+              icon,
+              size: AppSpacing.md,
+              color: emphasis ? theme.colorScheme.primary : surfaces.accentSoft,
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            Text(
+              label,
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: emphasis
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.onSurface,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ProjectOverviewChip extends StatelessWidget {
+  const _ProjectOverviewChip({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.accentColor,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color? accentColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final accent = accentColor ?? surfaces.accentSoft;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: surfaces.panelRaised.withValues(alpha: 0.82),
+        borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
+        border: Border.all(color: surfaces.line),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm,
+          vertical: AppSpacing.xs,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(icon, size: AppSpacing.md, color: accent),
+            const SizedBox(width: AppSpacing.xs),
+            Text(
+              '$label: $value',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -808,4 +1223,20 @@ class _PreviewRow extends StatelessWidget {
       ),
     );
   }
+}
+
+String _projectMonogram(String value) {
+  final cleaned = value.replaceAll(RegExp(r'[^A-Za-z0-9]+'), ' ').trim();
+  if (cleaned.isEmpty) {
+    return 'PR';
+  }
+  final parts = cleaned.split(RegExp(r'\s+'));
+  if (parts.length > 1) {
+    return '${parts.first.substring(0, 1)}${parts[1].substring(0, 1)}'
+        .toUpperCase();
+  }
+  if (parts.first.length == 1) {
+    return parts.first.toUpperCase();
+  }
+  return parts.first.substring(0, 2).toUpperCase();
 }

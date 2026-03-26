@@ -826,7 +826,11 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
   }
 
   Widget _buildSimpleHomeContent(BuildContext context, {required bool isWide}) {
-    final serverManager = _buildServerManagerCard(context);
+    final heroCard = _buildHeroCard(context);
+    final serverBrowser = _savedProfiles.isEmpty
+        ? _buildServerManagerCard(context)
+        : _buildSavedServersCard(context);
+    final recentActivity = _buildRecentActivityCard(context);
     final workspacePane = _buildSimpleWorkspacePane(context);
 
     return Column(
@@ -834,22 +838,26 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
       children: <Widget>[
         _buildHeader(context),
         const SizedBox(height: AppSpacing.lg),
+        heroCard,
+        const SizedBox(height: AppSpacing.lg),
+        serverBrowser,
+        const SizedBox(height: AppSpacing.lg),
         if (isWide)
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              SizedBox(width: 440, child: serverManager),
+              Expanded(flex: 9, child: workspacePane),
               const SizedBox(width: AppSpacing.lg),
-              Expanded(child: workspacePane),
+              SizedBox(width: 360, child: recentActivity),
             ],
           )
         else
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              serverManager,
-              const SizedBox(height: AppSpacing.lg),
               workspacePane,
+              const SizedBox(height: AppSpacing.lg),
+              recentActivity,
             ],
           ),
       ],
@@ -863,7 +871,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
       title: l10n.homeSavedServersTitle,
       subtitle: l10n.homeServerPanelSubtitle,
       action: TextButton.icon(
-        onPressed: _returnToServerSelection,
+        onPressed: _openAddServerEditor,
         icon: const Icon(Icons.add_rounded),
         label: Text(l10n.homeAddServerAction),
       ),
@@ -1082,6 +1090,9 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
                         button: true,
                         label: l10n.homeActionContinue,
                         child: ElevatedButton.icon(
+                          key: const ValueKey<String>(
+                            'home-workspace-continue-button',
+                          ),
                           onPressed: _openWorkspaceShell,
                           icon: const Icon(Icons.chat_bubble_outline_rounded),
                           label: Text(l10n.homeActionContinue),
@@ -1144,6 +1155,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
                 label: l10n.homeA11yWorkspacePrimaryAction,
                 button: true,
                 child: ElevatedButton.icon(
+                  key: const ValueKey<String>('home-workspace-connect-button'),
                   onPressed: () => _connectProfile(selectedProfile),
                   icon: const Icon(Icons.arrow_forward_rounded),
                   label: Text(l10n.homeConnectServerAction),
@@ -1838,6 +1850,15 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
     final l10n = AppLocalizations.of(context)!;
     final sortedProfiles = _savedProfiles.toList()
       ..sort((a, b) {
+        final aSelected =
+            _selectedProfile?.id == a.id ||
+            _selectedProfile?.storageKey == a.storageKey;
+        final bSelected =
+            _selectedProfile?.id == b.id ||
+            _selectedProfile?.storageKey == b.storageKey;
+        if (aSelected != bSelected) {
+          return aSelected ? -1 : 1;
+        }
         final aPinned = _pinnedProfileKeys.contains(a.storageKey);
         final bPinned = _pinnedProfileKeys.contains(b.storageKey);
         if (aPinned != bPinned) {
@@ -1868,52 +1889,75 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
                 title: l10n.homeSavedServersEmptyTitle,
                 subtitle: l10n.homeSavedServersEmptySubtitle,
               )
-            : Column(
-                children: sortedProfiles
-                    .map((profile) {
-                      final status = _statusFor(profile);
-                      final isSelected =
-                          _selectedProfile?.id == profile.id ||
-                          _selectedProfile?.storageKey == profile.storageKey;
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                        child: _ServerCard(
-                          label: profile.effectiveLabel,
-                          address: profile.normalizedBaseUrl,
-                          selected: isSelected,
-                          pinned: _pinnedProfileKeys.contains(
-                            profile.storageKey,
-                          ),
-                          statusLabel: _serverStatusLabel(status, l10n),
-                          statusSummary: _serverCardSummary(
-                            profile,
-                            status,
-                            l10n,
-                            report: _cachedReports[profile.storageKey],
-                          ),
-                          statusIcon: _statusIcon(status),
-                          statusColor: _statusColor(context, status),
-                          activityLabel: _recentActivityLabel(
-                            context,
-                            _recentConnectionFor(profile),
-                          ),
-                          credentialsLabel: _credentialsLabel(profile, l10n),
-                          primaryActionLabel: _primaryActionLabel(
-                            status,
-                            l10n,
-                            profile: profile,
-                          ),
-                          primaryActionBusy: _isConnectingProfile(profile),
-                          onTap: () => _selectProfile(profile),
-                          onPrimaryAction:
-                              _canProceedToProjectSelection(profile)
-                              ? () => _selectProfile(profile)
-                              : () => _connectProfile(profile),
-                          onEdit: () => _openServerEditor(profile: profile),
-                        ),
-                      );
-                    })
-                    .toList(growable: false),
+            : LayoutBuilder(
+                builder: (context, constraints) {
+                  final columns = constraints.maxWidth >= 1120
+                      ? 3
+                      : constraints.maxWidth >= 760
+                      ? 2
+                      : 1;
+                  final spacing = AppSpacing.md;
+                  final tileWidth =
+                      (constraints.maxWidth - (spacing * (columns - 1))) /
+                      columns;
+                  return Wrap(
+                    spacing: spacing,
+                    runSpacing: spacing,
+                    children: sortedProfiles
+                        .map((profile) {
+                          final status = _statusFor(profile);
+                          final isSelected =
+                              _selectedProfile?.id == profile.id ||
+                              _selectedProfile?.storageKey ==
+                                  profile.storageKey;
+                          return SizedBox(
+                            width: tileWidth,
+                            child: _ServerCard(
+                              key: ValueKey<String>(
+                                'home-server-card-${profile.id}',
+                              ),
+                              label: profile.effectiveLabel,
+                              address: profile.normalizedBaseUrl,
+                              selected: isSelected,
+                              pinned: _pinnedProfileKeys.contains(
+                                profile.storageKey,
+                              ),
+                              statusLabel: _serverStatusLabel(status, l10n),
+                              statusSummary: _serverCardSummary(
+                                profile,
+                                status,
+                                l10n,
+                                report: _cachedReports[profile.storageKey],
+                              ),
+                              statusIcon: _statusIcon(status),
+                              statusColor: _statusColor(context, status),
+                              activityLabel: _recentActivityLabel(
+                                context,
+                                _recentConnectionFor(profile),
+                              ),
+                              credentialsLabel: _credentialsLabel(
+                                profile,
+                                l10n,
+                              ),
+                              primaryActionLabel: _primaryActionLabel(
+                                status,
+                                l10n,
+                                profile: profile,
+                              ),
+                              primaryActionBusy: _isConnectingProfile(profile),
+                              onTap: () => _selectProfile(profile),
+                              onPrimaryAction:
+                                  _canProceedToProjectSelection(profile)
+                                  ? () => _selectProfile(profile)
+                                  : () => _connectProfile(profile),
+                              onEdit: () => _openServerEditor(profile: profile),
+                              onDelete: () => _deleteProfile(profile),
+                            ),
+                          );
+                        })
+                        .toList(growable: false),
+                  );
+                },
               ),
       ),
     );
@@ -2812,6 +2856,8 @@ class _ServerCard extends StatelessWidget {
     required this.onTap,
     required this.onPrimaryAction,
     required this.onEdit,
+    required this.onDelete,
+    super.key,
   });
 
   final String label;
@@ -2829,6 +2875,7 @@ class _ServerCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onPrimaryAction;
   final VoidCallback onEdit;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -2989,6 +3036,11 @@ class _ServerCard extends StatelessWidget {
                     onPressed: onEdit,
                     icon: const Icon(Icons.edit_outlined),
                     label: Text(l10n.homeEditServerAction),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: onDelete,
+                    icon: const Icon(Icons.delete_outline),
+                    label: Text(l10n.deleteProfile),
                   ),
                 ],
               ),

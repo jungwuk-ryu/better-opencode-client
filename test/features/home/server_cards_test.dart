@@ -69,7 +69,7 @@ void main() {
     expect(find.text('Studio North'), findsWidgets);
     expect(find.text('https://studio.example.com'), findsWidgets);
     expect(find.text('Credentials saved'), findsOneWidget);
-    expect(find.text('Connect'), findsOneWidget);
+    expect(find.text('Continue'), findsWidgets);
     expect(find.widgetWithText(OutlinedButton, 'Edit server'), findsOneWidget);
     expect(find.widgetWithText(OutlinedButton, 'Delete profile'), findsWidgets);
   });
@@ -165,8 +165,78 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Connect'), findsOneWidget);
-      expect(find.text('Needs attention'), findsNothing);
+      expect(find.text('Continue'), findsWidgets);
+    },
+  );
+
+  testWidgets(
+    'multiple saved servers stay visible alongside the workspace chooser',
+    (tester) async {
+      _setLargeSurface(tester);
+      final localeController = LocaleController();
+      addTearDown(localeController.dispose);
+
+      const alpha = ServerProfile(
+        id: 'alpha',
+        label: 'Studio North',
+        baseUrl: 'https://north.example.com',
+      );
+      const beta = ServerProfile(
+        id: 'beta',
+        label: 'Studio South',
+        baseUrl: 'https://south.example.com',
+      );
+      const gamma = ServerProfile(
+        id: 'gamma',
+        label: 'Studio West',
+        baseUrl: 'https://west.example.com',
+      );
+
+      await tester.pumpWidget(
+        _TestApp(
+          child: WorkspaceHomeScreen(
+            flavor: AppFlavor.release,
+            localeController: localeController,
+            snapshot: WorkspaceHomeSnapshot(
+              savedProfiles: const <ServerProfile>[alpha, beta, gamma],
+              cachedReports: <String, ServerProbeReport>{
+                alpha.storageKey: _report(
+                  classification: ConnectionProbeClassification.ready,
+                  summary: 'Ready',
+                ),
+                beta.storageKey: _report(
+                  classification: ConnectionProbeClassification.ready,
+                  summary: 'Ready',
+                ),
+                gamma.storageKey: _report(
+                  classification: ConnectionProbeClassification.ready,
+                  summary: 'Ready',
+                ),
+              },
+              selectedProfile: beta,
+            ),
+            workspaceSectionBuilder: (context, selectedProfile, onOpenProject) {
+              return const Placeholder(key: Key('workspace-section-seam'));
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('workspace-section-seam')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('home-server-card-alpha')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('home-server-card-beta')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('home-server-card-gamma')),
+        findsOneWidget,
+      );
+      expect(find.text('Recent activity'), findsOneWidget);
     },
   );
 }
