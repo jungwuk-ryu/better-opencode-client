@@ -295,6 +295,57 @@ void main() {
     },
   );
 
+  testWidgets(
+    'assistant text stays left-aligned regardless of message length',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        initialShellToolPartsExpanded: true,
+        initialTimelineProgressDetailsVisible: false,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              return _ConversationOrderingWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+            },
+      );
+      addTearDown(appController.dispose);
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          initialRoute: buildWorkspaceRoute(
+            '/workspace/demo',
+            sessionId: 'ses_1',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      final firstAssistantLeft = tester
+          .getTopLeft(find.text('테스트 메시지 확인했습니다. 필요한 작업을 보내주시면 바로 도와드릴게요.'))
+          .dx;
+      final secondAssistantLeft = tester
+          .getTopLeft(find.text('확인했습니다. 이어서 원하는 작업 말씀해 주세요.'))
+          .dx;
+
+      expect((firstAssistantLeft - secondAssistantLeft).abs(), lessThan(8));
+    },
+  );
+
   testWidgets('shell output can be collapsed from the workspace setting', (
     tester,
   ) async {

@@ -4716,14 +4716,17 @@ class _MessageTimeline extends StatelessWidget {
                   return Center(
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 860),
-                      child: _TimelineMessage(
-                        currentSessionId: currentSessionId,
-                        message: message,
-                        sessions: sessions,
-                        shellToolDefaultExpanded: shellToolDefaultExpanded,
-                        timelineProgressDetailsVisible:
-                            timelineProgressDetailsVisible,
-                        onOpenSession: onOpenSession,
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: _TimelineMessage(
+                          currentSessionId: currentSessionId,
+                          message: message,
+                          sessions: sessions,
+                          shellToolDefaultExpanded: shellToolDefaultExpanded,
+                          timelineProgressDetailsVisible:
+                              timelineProgressDetailsVisible,
+                          onOpenSession: onOpenSession,
+                        ),
                       ),
                     ),
                   );
