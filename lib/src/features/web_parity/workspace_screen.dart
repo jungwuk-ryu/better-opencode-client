@@ -1753,10 +1753,10 @@ class _WorkspaceTopBar extends StatelessWidget {
       return Material(
         color: surfaces.panel,
         child: Container(
-          constraints: const BoxConstraints(minHeight: 60),
+          constraints: const BoxConstraints(minHeight: 54),
           padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.xs,
-            vertical: AppSpacing.xxs,
+            horizontal: AppSpacing.xxs,
+            vertical: 2,
           ),
           decoration: BoxDecoration(
             border: Border(bottom: BorderSide(color: surfaces.lineSoft)),
@@ -4628,6 +4628,7 @@ class _WorkspaceBody extends StatelessWidget {
                         controller.showingCachedSessionMessages,
                     error: controller.sessionLoadError,
                     messages: controller.orderedMessages,
+                    compact: compact,
                     sessions: allSessions,
                     selectedSession: selectedSession,
                     configSnapshot: configSnapshot,
@@ -4650,18 +4651,21 @@ class _WorkspaceBody extends StatelessWidget {
             todos: controller.todos,
             live: todoLive,
             blocked: questionRequest != null,
+            compact: compact,
             onClearStale: controller.clearTodos,
           ),
         if (questionRequest != null)
           _QuestionPromptDock(
             key: ValueKey<String>('question-dock-${questionRequest.id}'),
             request: questionRequest,
+            compact: compact,
             onReply: controller.replyToQuestion,
             onReject: controller.rejectQuestion,
           )
         else
           _PromptComposer(
             controller: promptController,
+            compact: compact,
             submitting: submittingPrompt,
             interruptible: interruptiblePrompt,
             interrupting: interruptingPrompt,
@@ -4844,9 +4848,9 @@ class _ActiveSubSessionPanelBody extends StatelessWidget {
     return Padding(
       padding: compact
           ? const EdgeInsets.fromLTRB(
-              AppSpacing.sm,
-              AppSpacing.sm,
-              AppSpacing.sm,
+              AppSpacing.xs,
+              AppSpacing.xs,
+              AppSpacing.xs,
               0,
             )
           : const EdgeInsets.fromLTRB(
@@ -4861,20 +4865,20 @@ class _ActiveSubSessionPanelBody extends StatelessWidget {
           child: Container(
             decoration: BoxDecoration(
               color: surfaces.panel,
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(compact ? 16 : 18),
               border: Border.all(color: surfaces.lineSoft),
             ),
             child: Column(
               children: <Widget>[
                 InkWell(
                   onTap: onToggleCollapsed,
-                  borderRadius: BorderRadius.circular(18),
+                  borderRadius: BorderRadius.circular(compact ? 16 : 18),
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.md,
-                      AppSpacing.sm,
+                    padding: EdgeInsets.fromLTRB(
+                      compact ? AppSpacing.sm : AppSpacing.md,
+                      compact ? AppSpacing.xs : AppSpacing.sm,
                       AppSpacing.xs,
-                      AppSpacing.sm,
+                      compact ? AppSpacing.xs : AppSpacing.sm,
                     ),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -4909,9 +4913,11 @@ class _ActiveSubSessionPanelBody extends StatelessWidget {
                                   ),
                                   const SizedBox(width: AppSpacing.xs),
                                   Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: AppSpacing.xs,
-                                      vertical: 2,
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: compact
+                                          ? AppSpacing.xxs
+                                          : AppSpacing.xs,
+                                      vertical: compact ? 1 : 2,
                                     ),
                                     decoration: BoxDecoration(
                                       color: theme.colorScheme.primary
@@ -4969,11 +4975,11 @@ class _ActiveSubSessionPanelBody extends StatelessWidget {
                             ),
                           ),
                           padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints.tightFor(
-                            width: 36,
-                            height: 36,
+                          constraints: BoxConstraints.tightFor(
+                            width: compact ? 32 : 36,
+                            height: compact ? 32 : 36,
                           ),
-                          splashRadius: 18,
+                          splashRadius: compact ? 16 : 18,
                           tooltip: collapsed ? 'Expand' : 'Collapse',
                         ),
                       ],
@@ -4987,11 +4993,11 @@ class _ActiveSubSessionPanelBody extends StatelessWidget {
                     child: collapsed
                         ? const SizedBox.shrink()
                         : Padding(
-                            padding: const EdgeInsets.fromLTRB(
-                              AppSpacing.md,
+                            padding: EdgeInsets.fromLTRB(
+                              compact ? AppSpacing.sm : AppSpacing.md,
                               0,
-                              AppSpacing.md,
-                              AppSpacing.md,
+                              compact ? AppSpacing.sm : AppSpacing.md,
+                              compact ? AppSpacing.sm : AppSpacing.md,
                             ),
                             child: AnimatedSwitcher(
                               duration: const Duration(milliseconds: 220),
@@ -5015,8 +5021,12 @@ class _ActiveSubSessionPanelBody extends StatelessWidget {
                                 key: ValueKey<String>(
                                   'active-subsessions-list-$idsSignature',
                                 ),
-                                spacing: AppSpacing.sm,
-                                runSpacing: AppSpacing.sm,
+                                spacing: compact
+                                    ? AppSpacing.xs
+                                    : AppSpacing.sm,
+                                runSpacing: compact
+                                    ? AppSpacing.xs
+                                    : AppSpacing.sm,
                                 children: sessions
                                     .map(
                                       (session) => _ActiveSubSessionChip(
@@ -5066,20 +5076,20 @@ class _ActiveSubSessionChip extends StatelessWidget {
       child: InkWell(
         key: ValueKey<String>('active-subsession-chip-${session.id}'),
         onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(compact ? 12 : 14),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           curve: Curves.easeOutCubic,
-          constraints: BoxConstraints(maxWidth: compact ? 320 : 280),
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.sm,
-            vertical: AppSpacing.sm,
+          constraints: BoxConstraints(maxWidth: compact ? 280 : 280),
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? AppSpacing.xs : AppSpacing.sm,
+            vertical: compact ? AppSpacing.xs : AppSpacing.sm,
           ),
           decoration: BoxDecoration(
             color: selected
                 ? selectedColor.withValues(alpha: 0.14)
                 : surfaces.panelRaised.withValues(alpha: 0.9),
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(compact ? 12 : 14),
             border: Border.all(
               color: selected
                   ? selectedColor.withValues(alpha: 0.52)
@@ -5090,23 +5100,27 @@ class _ActiveSubSessionChip extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               Container(
-                width: 8,
-                height: 8,
+                width: compact ? 7 : 8,
+                height: compact ? 7 : 8,
                 decoration: BoxDecoration(
                   color: selected ? selectedColor : const Color(0xFF64D7C4),
                   shape: BoxShape.circle,
                 ),
               ),
-              const SizedBox(width: AppSpacing.sm),
+              SizedBox(width: compact ? AppSpacing.xs : AppSpacing.sm),
               Expanded(
                 child: Text(
                   _sessionDisplayTitle(session),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: selected ? selectedColor : null,
-                  ),
+                  style:
+                      (compact
+                              ? theme.textTheme.bodySmall
+                              : theme.textTheme.bodyMedium)
+                          ?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: selected ? selectedColor : null,
+                          ),
                 ),
               ),
             ],
@@ -5175,6 +5189,11 @@ class _WorkspaceProjectLoadingView extends StatelessWidget {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final title =
         project?.title ?? projectDisplayLabel(project?.directory ?? '');
+    final outerPadding = compact ? AppSpacing.md : AppSpacing.xl;
+    final panelPadding = compact ? AppSpacing.md : AppSpacing.xl;
+    final composerHorizontal = compact ? AppSpacing.sm : AppSpacing.lg;
+    final composerTop = compact ? AppSpacing.xs : AppSpacing.md;
+    final composerBottom = compact ? AppSpacing.sm : AppSpacing.lg;
     return DecoratedBox(
       decoration: BoxDecoration(
         color: surfaces.background,
@@ -5191,10 +5210,10 @@ class _WorkspaceProjectLoadingView extends StatelessWidget {
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 860),
                 child: Padding(
-                  padding: const EdgeInsets.all(AppSpacing.xl),
+                  padding: EdgeInsets.all(outerPadding),
                   child: Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.all(AppSpacing.xl),
+                    padding: EdgeInsets.all(panelPadding),
                     decoration: BoxDecoration(
                       color: surfaces.panel,
                       borderRadius: BorderRadius.circular(
@@ -5239,17 +5258,17 @@ class _WorkspaceProjectLoadingView extends StatelessWidget {
             ),
           ),
           Container(
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.lg,
-              AppSpacing.md,
-              AppSpacing.lg,
-              AppSpacing.lg,
+            padding: EdgeInsets.fromLTRB(
+              composerHorizontal,
+              composerTop,
+              composerHorizontal,
+              composerBottom,
             ),
             decoration: BoxDecoration(
               color: surfaces.panel,
               border: Border(top: BorderSide(color: surfaces.lineSoft)),
             ),
-            child: const _PromptComposerLoadingPlaceholder(),
+            child: _PromptComposerLoadingPlaceholder(compact: compact),
           ),
         ],
       ),
@@ -5279,17 +5298,21 @@ class _WorkspaceProjectLoadingSkeleton extends StatelessWidget {
 }
 
 class _PromptComposerLoadingPlaceholder extends StatelessWidget {
-  const _PromptComposerLoadingPlaceholder();
+  const _PromptComposerLoadingPlaceholder({this.compact = false});
+
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final padding = compact ? AppSpacing.xs : AppSpacing.md;
+    final radius = compact ? 14.0 : 18.0;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(AppSpacing.md),
+      padding: EdgeInsets.all(padding),
       decoration: BoxDecoration(
         color: surfaces.background,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(radius),
         border: Border.all(color: surfaces.lineSoft),
       ),
       child: const Column(
@@ -5340,6 +5363,7 @@ class _MessageTimeline extends StatelessWidget {
     required this.showingCachedMessages,
     required this.error,
     required this.messages,
+    required this.compact,
     required this.sessions,
     required this.selectedSession,
     required this.configSnapshot,
@@ -5358,6 +5382,7 @@ class _MessageTimeline extends StatelessWidget {
   final bool showingCachedMessages;
   final String? error;
   final List<ChatMessage> messages;
+  final bool compact;
   final List<SessionSummary> sessions;
   final SessionSummary? selectedSession;
   final ConfigSnapshot? configSnapshot;
@@ -5412,6 +5437,7 @@ class _MessageTimeline extends StatelessWidget {
         if (showingCachedMessages && loading)
           _TimelineCachedRefreshBanner(
             key: const ValueKey<String>('timeline-cached-refresh-banner'),
+            compact: compact,
             shimmering: true,
             title: 'Refreshing cached messages...',
             message:
@@ -5420,6 +5446,7 @@ class _MessageTimeline extends StatelessWidget {
         else if (showingCachedMessages && error != null)
           _TimelineCachedRefreshBanner(
             key: const ValueKey<String>('timeline-cached-refresh-banner'),
+            compact: compact,
             shimmering: false,
             title: 'Showing cached messages',
             message: error!,
@@ -5440,15 +5467,15 @@ class _MessageTimeline extends StatelessWidget {
                   'web-parity-message-timeline',
                 ),
                 restorationId: null,
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.xl,
-                  AppSpacing.xl,
-                  AppSpacing.xl,
-                  AppSpacing.lg,
+                padding: EdgeInsets.fromLTRB(
+                  compact ? AppSpacing.sm : AppSpacing.xl,
+                  compact ? AppSpacing.sm : AppSpacing.xl,
+                  compact ? AppSpacing.sm : AppSpacing.xl,
+                  compact ? AppSpacing.xs : AppSpacing.lg,
                 ),
                 itemCount: messages.length,
                 separatorBuilder: (_, _) =>
-                    const SizedBox(height: AppSpacing.xl),
+                    SizedBox(height: compact ? AppSpacing.md : AppSpacing.xl),
                 itemBuilder: (context, index) {
                   final message = messages[index];
                   return Center(
@@ -5459,6 +5486,7 @@ class _MessageTimeline extends StatelessWidget {
                         child: _TimelineMessage(
                           currentSessionId: currentSessionId,
                           message: message,
+                          compact: compact,
                           sessions: sessions,
                           selectedSession: selectedSession,
                           configSnapshot: configSnapshot,
@@ -5487,6 +5515,7 @@ class _TimelineCachedRefreshBanner extends StatelessWidget {
     required this.title,
     required this.message,
     required this.shimmering,
+    this.compact = false,
     this.action,
     super.key,
   });
@@ -5494,6 +5523,7 @@ class _TimelineCachedRefreshBanner extends StatelessWidget {
   final String title;
   final String message;
   final bool shimmering;
+  final bool compact;
   final Widget? action;
 
   @override
@@ -5501,20 +5531,20 @@ class _TimelineCachedRefreshBanner extends StatelessWidget {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.xl,
-        AppSpacing.lg,
-        AppSpacing.xl,
+      padding: EdgeInsets.fromLTRB(
+        compact ? AppSpacing.sm : AppSpacing.xl,
+        compact ? AppSpacing.xs : AppSpacing.lg,
+        compact ? AppSpacing.sm : AppSpacing.xl,
         0,
       ),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 860),
           child: Container(
-            padding: const EdgeInsets.all(AppSpacing.md),
+            padding: EdgeInsets.all(compact ? AppSpacing.xs : AppSpacing.md),
             decoration: BoxDecoration(
               color: surfaces.panelRaised.withValues(alpha: 0.92),
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(compact ? 12 : 16),
               border: Border.all(
                 color: shimmering
                     ? theme.colorScheme.primary.withValues(alpha: 0.34)
@@ -5536,7 +5566,7 @@ class _TimelineCachedRefreshBanner extends StatelessWidget {
                         : surfaces.warning,
                   ),
                 ),
-                const SizedBox(width: AppSpacing.sm),
+                SizedBox(width: compact ? AppSpacing.xs : AppSpacing.sm),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -5553,18 +5583,22 @@ class _TimelineCachedRefreshBanner extends StatelessWidget {
                           ),
                         ),
                       ),
-                      const SizedBox(height: AppSpacing.xs),
+                      SizedBox(
+                        height: compact ? AppSpacing.xxs : AppSpacing.xs,
+                      ),
                       Text(
                         message,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: surfaces.muted,
-                        ),
+                        style:
+                            (compact
+                                    ? theme.textTheme.labelMedium
+                                    : theme.textTheme.bodySmall)
+                                ?.copyWith(color: surfaces.muted),
                       ),
                     ],
                   ),
                 ),
                 if (action != null) ...<Widget>[
-                  const SizedBox(width: AppSpacing.md),
+                  SizedBox(width: compact ? AppSpacing.sm : AppSpacing.md),
                   action!,
                 ],
               ],
@@ -5642,6 +5676,7 @@ class _TimelineStatusCard extends StatelessWidget {
 class _PromptComposer extends StatefulWidget {
   const _PromptComposer({
     required this.controller,
+    required this.compact,
     required this.submitting,
     required this.interruptible,
     required this.interrupting,
@@ -5672,6 +5707,7 @@ class _PromptComposer extends StatefulWidget {
   static const String _defaultReasoningSentinel = '__default_reasoning__';
 
   final TextEditingController controller;
+  final bool compact;
   final bool submitting;
   final bool interruptible;
   final bool interrupting;
@@ -6020,6 +6056,7 @@ class _PromptComposerState extends State<_PromptComposer> {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final reasoningLabel = _reasoningLabel(widget.selectedReasoning);
     final slashCommands = _filteredSlashCommands;
+    final isCompact = widget.compact;
     final submitIcon = widget.interruptible
         ? Icons.stop_rounded
         : Icons.arrow_upward_rounded;
@@ -6028,26 +6065,26 @@ class _PromptComposerState extends State<_PromptComposer> {
         : !(widget.submitting || !_canSubmit);
     final submitBusy = !widget.interruptible && widget.submitting;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.md,
-        AppSpacing.sm,
-        AppSpacing.md,
-        AppSpacing.md,
+      padding: EdgeInsets.fromLTRB(
+        isCompact ? AppSpacing.sm : AppSpacing.md,
+        isCompact ? AppSpacing.xs : AppSpacing.sm,
+        isCompact ? AppSpacing.sm : AppSpacing.md,
+        isCompact ? AppSpacing.sm : AppSpacing.md,
       ),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 920),
           child: Container(
-            padding: const EdgeInsets.all(AppSpacing.md),
+            padding: EdgeInsets.all(isCompact ? AppSpacing.sm : AppSpacing.md),
             decoration: BoxDecoration(
               color: surfaces.panel,
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(isCompact ? 16 : 20),
               border: Border.all(color: surfaces.lineSoft),
               boxShadow: <BoxShadow>[
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.22),
-                  blurRadius: 24,
-                  offset: const Offset(0, 10),
+                  blurRadius: isCompact ? 16 : 24,
+                  offset: Offset(0, isCompact ? 6 : 10),
                 ),
               ],
             ),
@@ -6055,17 +6092,23 @@ class _PromptComposerState extends State<_PromptComposer> {
               children: <Widget>[
                 if (slashCommands.isNotEmpty) ...<Widget>[
                   ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 320),
+                    constraints: BoxConstraints(
+                      maxHeight: isCompact ? 240 : 320,
+                    ),
                     child: DecoratedBox(
                       key: const ValueKey<String>('composer-slash-popover'),
                       decoration: BoxDecoration(
                         color: surfaces.panelMuted,
-                        borderRadius: BorderRadius.circular(18),
+                        borderRadius: BorderRadius.circular(
+                          isCompact ? 14 : 18,
+                        ),
                         border: Border.all(color: surfaces.lineSoft),
                       ),
                       child: ListView.separated(
                         shrinkWrap: true,
-                        padding: const EdgeInsets.all(AppSpacing.sm),
+                        padding: EdgeInsets.all(
+                          isCompact ? AppSpacing.xs : AppSpacing.sm,
+                        ),
                         itemCount: slashCommands.length,
                         separatorBuilder: (_, _) =>
                             const SizedBox(height: AppSpacing.xs),
@@ -6084,11 +6127,17 @@ class _PromptComposerState extends State<_PromptComposer> {
                                   color: index == 0
                                       ? surfaces.panel
                                       : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(12),
+                                  borderRadius: BorderRadius.circular(
+                                    isCompact ? 10 : 12,
+                                  ),
                                 ),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: AppSpacing.md,
-                                  vertical: AppSpacing.sm,
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: isCompact
+                                      ? AppSpacing.sm
+                                      : AppSpacing.md,
+                                  vertical: isCompact
+                                      ? AppSpacing.xs
+                                      : AppSpacing.sm,
                                 ),
                                 child: Row(
                                   children: <Widget>[
@@ -6161,21 +6210,21 @@ class _PromptComposerState extends State<_PromptComposer> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: AppSpacing.md),
+                  SizedBox(height: isCompact ? AppSpacing.sm : AppSpacing.md),
                 ],
                 if (widget.attachments.isNotEmpty) ...<Widget>[
                   _ComposerAttachmentStrip(
                     attachments: widget.attachments,
                     onRemove: widget.onRemoveAttachment,
                   ),
-                  const SizedBox(height: AppSpacing.md),
+                  SizedBox(height: isCompact ? AppSpacing.sm : AppSpacing.md),
                 ],
                 TextField(
                   key: const ValueKey<String>('composer-text-field'),
                   controller: widget.controller,
                   focusNode: _focusNode,
-                  minLines: 3,
-                  maxLines: 8,
+                  minLines: isCompact ? 2 : 3,
+                  maxLines: isCompact ? 6 : 8,
                   decoration: const InputDecoration(
                     border: InputBorder.none,
                     enabledBorder: InputBorder.none,
@@ -6189,11 +6238,12 @@ class _PromptComposerState extends State<_PromptComposer> {
                   ).textTheme.bodyLarge?.copyWith(height: 1.55),
                   onSubmitted: (_) => _handleSubmit(),
                 ),
-                const SizedBox(height: AppSpacing.sm),
+                SizedBox(height: isCompact ? AppSpacing.xs : AppSpacing.sm),
                 Row(
                   children: <Widget>[
                     _ComposerIconButton(
                       key: const ValueKey<String>('composer-attach-button'),
+                      compact: isCompact,
                       icon: Icons.add_rounded,
                       onTap: widget.submitting || widget.pickingAttachments
                           ? null
@@ -6202,13 +6252,14 @@ class _PromptComposerState extends State<_PromptComposer> {
                             },
                       busy: widget.pickingAttachments,
                     ),
-                    const SizedBox(width: AppSpacing.sm),
+                    SizedBox(width: isCompact ? AppSpacing.xs : AppSpacing.sm),
                     Expanded(
                       child: SingleChildScrollView(
                         scrollDirection: Axis.horizontal,
                         child: Row(
                           children: <Widget>[
                             _ComposerSelectionPill(
+                              compact: isCompact,
                               label: widget.selectedAgentName ?? 'Agent',
                               onTap: widget.agents.isEmpty
                                   ? null
@@ -6221,8 +6272,11 @@ class _PromptComposerState extends State<_PromptComposer> {
                                       }
                                     },
                             ),
-                            const SizedBox(width: AppSpacing.xs),
+                            SizedBox(
+                              width: isCompact ? AppSpacing.xxs : AppSpacing.xs,
+                            ),
                             _ComposerSelectionPill(
+                              compact: isCompact,
                               label: widget.selectedModel?.name ?? 'Model',
                               onTap: widget.models.isEmpty
                                   ? null
@@ -6235,8 +6289,11 @@ class _PromptComposerState extends State<_PromptComposer> {
                                       }
                                     },
                             ),
-                            const SizedBox(width: AppSpacing.xs),
+                            SizedBox(
+                              width: isCompact ? AppSpacing.xxs : AppSpacing.xs,
+                            ),
                             _ComposerSelectionPill(
+                              compact: isCompact,
                               label: reasoningLabel,
                               onTap: widget.selectedModel == null
                                   ? null
@@ -6259,9 +6316,10 @@ class _PromptComposerState extends State<_PromptComposer> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: AppSpacing.sm),
+                    SizedBox(width: isCompact ? AppSpacing.xs : AppSpacing.sm),
                     _ComposerIconButton(
                       key: const ValueKey<String>('composer-submit-button'),
+                      compact: isCompact,
                       icon: submitIcon,
                       onTap: submitEnabled ? _handleSubmit : null,
                       filled: true,
@@ -6556,12 +6614,14 @@ class _ComposerSlashCommand {
 class _QuestionPromptDock extends StatefulWidget {
   const _QuestionPromptDock({
     required this.request,
+    required this.compact,
     required this.onReply,
     required this.onReject,
     super.key,
   });
 
   final QuestionRequestSummary request;
+  final bool compact;
   final Future<void> Function(String requestId, List<List<String>> answers)
   onReply;
   final Future<void> Function(String requestId) onReject;
@@ -6833,28 +6893,29 @@ class _QuestionPromptDockState extends State<_QuestionPromptDock> {
     final summary = '${_tab + 1} of $total questions';
     final customValue = _customControllers[_tab].text.trim();
     final customSelected = _customEnabled[_tab];
+    final isCompact = widget.compact;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.md,
-        AppSpacing.sm,
-        AppSpacing.md,
-        AppSpacing.md,
+      padding: EdgeInsets.fromLTRB(
+        isCompact ? AppSpacing.sm : AppSpacing.md,
+        isCompact ? AppSpacing.xs : AppSpacing.sm,
+        isCompact ? AppSpacing.sm : AppSpacing.md,
+        isCompact ? AppSpacing.sm : AppSpacing.md,
       ),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 920),
           child: Container(
-            padding: const EdgeInsets.all(AppSpacing.md),
+            padding: EdgeInsets.all(isCompact ? AppSpacing.sm : AppSpacing.md),
             decoration: BoxDecoration(
               color: surfaces.panel,
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(isCompact ? 16 : 20),
               border: Border.all(color: surfaces.lineSoft),
               boxShadow: <BoxShadow>[
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.22),
-                  blurRadius: 24,
-                  offset: const Offset(0, 10),
+                  blurRadius: isCompact ? 16 : 24,
+                  offset: Offset(0, isCompact ? 6 : 10),
                 ),
               ],
             ),
@@ -6885,7 +6946,7 @@ class _QuestionPromptDockState extends State<_QuestionPromptDock> {
                           borderRadius: BorderRadius.circular(999),
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 160),
-                            width: 22,
+                            width: isCompact ? 18 : 22,
                             height: 4,
                             decoration: BoxDecoration(
                               color: active
@@ -6901,9 +6962,9 @@ class _QuestionPromptDockState extends State<_QuestionPromptDock> {
                     }),
                   ],
                 ),
-                const SizedBox(height: AppSpacing.md),
+                SizedBox(height: isCompact ? AppSpacing.sm : AppSpacing.md),
                 ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 360),
+                  constraints: BoxConstraints(maxHeight: isCompact ? 300 : 360),
                   child: SingleChildScrollView(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -6916,16 +6977,24 @@ class _QuestionPromptDockState extends State<_QuestionPromptDock> {
                               fontWeight: FontWeight.w700,
                             ),
                           ),
-                          const SizedBox(height: AppSpacing.xs),
+                          SizedBox(
+                            height: isCompact ? AppSpacing.xxs : AppSpacing.xs,
+                          ),
                         ],
                         Text(
                           question.question,
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            height: 1.35,
-                          ),
+                          style:
+                              (isCompact
+                                      ? theme.textTheme.titleMedium
+                                      : theme.textTheme.titleLarge)
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    height: 1.35,
+                                  ),
                         ),
-                        const SizedBox(height: AppSpacing.xs),
+                        SizedBox(
+                          height: isCompact ? AppSpacing.xxs : AppSpacing.xs,
+                        ),
                         Text(
                           question.multiple
                               ? 'Select one or more answers.'
@@ -6934,16 +7003,21 @@ class _QuestionPromptDockState extends State<_QuestionPromptDock> {
                             color: surfaces.muted,
                           ),
                         ),
-                        const SizedBox(height: AppSpacing.md),
+                        SizedBox(
+                          height: isCompact ? AppSpacing.sm : AppSpacing.md,
+                        ),
                         for (final option in question.options) ...<Widget>[
                           _QuestionChoiceTile(
                             title: option.label,
                             subtitle: option.description,
                             selected: _answers[_tab].contains(option.label),
                             multiple: question.multiple,
+                            compact: isCompact,
                             onTap: () => _selectOption(option.label),
                           ),
-                          const SizedBox(height: AppSpacing.sm),
+                          SizedBox(
+                            height: isCompact ? AppSpacing.xs : AppSpacing.sm,
+                          ),
                         ],
                         _QuestionChoiceTile(
                           title: 'Type your own answer',
@@ -6952,11 +7026,14 @@ class _QuestionPromptDockState extends State<_QuestionPromptDock> {
                               : customValue,
                           selected: customSelected,
                           multiple: question.multiple,
+                          compact: isCompact,
                           onTap: _toggleCustom,
                         ),
                         if (customSelected ||
                             customValue.isNotEmpty) ...<Widget>[
-                          const SizedBox(height: AppSpacing.sm),
+                          SizedBox(
+                            height: isCompact ? AppSpacing.xs : AppSpacing.sm,
+                          ),
                           TextField(
                             controller: _customControllers[_tab],
                             onChanged: _updateCustomValue,
@@ -6968,19 +7045,25 @@ class _QuestionPromptDockState extends State<_QuestionPromptDock> {
                               filled: true,
                               fillColor: surfaces.panelMuted,
                               border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(16),
+                                borderRadius: BorderRadius.circular(
+                                  isCompact ? 14 : 16,
+                                ),
                                 borderSide: BorderSide(
                                   color: surfaces.lineSoft,
                                 ),
                               ),
                               enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(16),
+                                borderRadius: BorderRadius.circular(
+                                  isCompact ? 14 : 16,
+                                ),
                                 borderSide: BorderSide(
                                   color: surfaces.lineSoft,
                                 ),
                               ),
                               focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(16),
+                                borderRadius: BorderRadius.circular(
+                                  isCompact ? 14 : 16,
+                                ),
                                 borderSide: BorderSide(
                                   color: theme.colorScheme.primary,
                                 ),
@@ -6992,7 +7075,7 @@ class _QuestionPromptDockState extends State<_QuestionPromptDock> {
                     ),
                   ),
                 ),
-                const SizedBox(height: AppSpacing.md),
+                SizedBox(height: isCompact ? AppSpacing.sm : AppSpacing.md),
                 Row(
                   children: <Widget>[
                     TextButton(
@@ -7040,6 +7123,7 @@ class _QuestionChoiceTile extends StatelessWidget {
     required this.title,
     required this.selected,
     required this.multiple,
+    required this.compact,
     required this.onTap,
     this.subtitle,
   });
@@ -7048,6 +7132,7 @@ class _QuestionChoiceTile extends StatelessWidget {
   final String? subtitle;
   final bool selected;
   final bool multiple;
+  final bool compact;
   final VoidCallback onTap;
 
   @override
@@ -7068,39 +7153,42 @@ class _QuestionChoiceTile extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(compact ? 14 : 16),
         child: Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(AppSpacing.md),
+          padding: EdgeInsets.all(compact ? AppSpacing.sm : AppSpacing.md),
           decoration: BoxDecoration(
             color: selected ? surfaces.panelRaised : surfaces.panelMuted,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(compact ? 14 : 16),
             border: Border.all(color: borderColor),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Icon(icon, size: 20, color: borderColor),
-              const SizedBox(width: AppSpacing.sm),
+              Icon(icon, size: compact ? 18 : 20, color: borderColor),
+              SizedBox(width: compact ? AppSpacing.xs : AppSpacing.sm),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Text(
                       title,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
+                      style:
+                          (compact
+                                  ? theme.textTheme.bodyMedium
+                                  : theme.textTheme.titleSmall)
+                              ?.copyWith(fontWeight: FontWeight.w700),
                     ),
                     if (subtitle != null &&
                         subtitle!.trim().isNotEmpty) ...<Widget>[
                       const SizedBox(height: AppSpacing.xxs),
                       Text(
                         subtitle!,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: surfaces.muted,
-                          height: 1.45,
-                        ),
+                        style:
+                            (compact
+                                    ? theme.textTheme.bodySmall
+                                    : theme.textTheme.bodyMedium)
+                                ?.copyWith(color: surfaces.muted, height: 1.45),
                       ),
                     ],
                   ],
@@ -7139,6 +7227,7 @@ class _SessionTodoDock extends StatefulWidget {
     required this.todos,
     required this.live,
     required this.blocked,
+    required this.compact,
     required this.onClearStale,
     super.key,
   });
@@ -7147,6 +7236,7 @@ class _SessionTodoDock extends StatefulWidget {
   final List<TodoItem> todos;
   final bool live;
   final bool blocked;
+  final bool compact;
   final VoidCallback onClearStale;
 
   @override
@@ -7378,6 +7468,7 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
         '$_doneCount of ${widget.todos.length} todos completed';
     final preview = _activeTodo?.content.trim() ?? '';
     final shouldRender = _visible && widget.todos.isNotEmpty && !widget.blocked;
+    final isCompact = widget.compact;
 
     return AnimatedSize(
       duration: const Duration(milliseconds: 220),
@@ -7385,10 +7476,10 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
       child: !shouldRender
           ? const SizedBox.shrink()
           : Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.md,
-                AppSpacing.sm,
-                AppSpacing.md,
+              padding: EdgeInsets.fromLTRB(
+                isCompact ? AppSpacing.sm : AppSpacing.md,
+                isCompact ? AppSpacing.xs : AppSpacing.sm,
+                isCompact ? AppSpacing.sm : AppSpacing.md,
                 0,
               ),
               child: Center(
@@ -7397,35 +7488,43 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
                   child: Container(
                     decoration: BoxDecoration(
                       color: surfaces.panel,
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(isCompact ? 16 : 20),
                       border: Border.all(color: surfaces.lineSoft),
                     ),
                     child: Column(
                       children: <Widget>[
                         InkWell(
                           onTap: _toggleCollapsed,
-                          borderRadius: const BorderRadius.vertical(
-                            top: Radius.circular(20),
-                            bottom: Radius.circular(20),
+                          borderRadius: BorderRadius.vertical(
+                            top: Radius.circular(isCompact ? 16 : 20),
+                            bottom: Radius.circular(isCompact ? 16 : 20),
                           ),
                           child: Padding(
-                            padding: const EdgeInsets.fromLTRB(
-                              AppSpacing.md,
-                              AppSpacing.md,
-                              AppSpacing.sm,
-                              AppSpacing.md,
+                            padding: EdgeInsets.fromLTRB(
+                              isCompact ? AppSpacing.sm : AppSpacing.md,
+                              isCompact ? AppSpacing.sm : AppSpacing.md,
+                              isCompact ? AppSpacing.xs : AppSpacing.sm,
+                              isCompact ? AppSpacing.sm : AppSpacing.md,
                             ),
                             child: Row(
                               children: <Widget>[
                                 Text(
                                   progressLabel,
-                                  style: theme.textTheme.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                  ),
+                                  style:
+                                      (isCompact
+                                              ? theme.textTheme.titleSmall
+                                              : theme.textTheme.titleMedium)
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w700,
+                                          ),
                                 ),
                                 if (_collapsed &&
                                     preview.isNotEmpty) ...<Widget>[
-                                  const SizedBox(width: AppSpacing.sm),
+                                  SizedBox(
+                                    width: isCompact
+                                        ? AppSpacing.xs
+                                        : AppSpacing.sm,
+                                  ),
                                   Expanded(
                                     child: Text(
                                       preview,
@@ -7453,6 +7552,7 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
                                       color: surfaces.muted,
                                     ),
                                   ),
+                                  splashRadius: isCompact ? 16 : 18,
                                   tooltip: _collapsed ? 'Expand' : 'Collapse',
                                 ),
                               ],
@@ -7468,16 +7568,22 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
                                 : Stack(
                                     children: <Widget>[
                                       ConstrainedBox(
-                                        constraints: const BoxConstraints(
-                                          maxHeight: 260,
+                                        constraints: BoxConstraints(
+                                          maxHeight: isCompact ? 220 : 260,
                                         ),
                                         child: SingleChildScrollView(
                                           controller: _scrollController,
-                                          padding: const EdgeInsets.fromLTRB(
-                                            AppSpacing.md,
+                                          padding: EdgeInsets.fromLTRB(
+                                            isCompact
+                                                ? AppSpacing.sm
+                                                : AppSpacing.md,
                                             0,
-                                            AppSpacing.md,
-                                            AppSpacing.xl,
+                                            isCompact
+                                                ? AppSpacing.sm
+                                                : AppSpacing.md,
+                                            isCompact
+                                                ? AppSpacing.lg
+                                                : AppSpacing.xl,
                                           ),
                                           child: Column(
                                             key: const ValueKey<String>(
@@ -7487,12 +7593,14 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
                                                 .map(
                                                   (todo) => Padding(
                                                     key: _keyForTodo(todo),
-                                                    padding:
-                                                        const EdgeInsets.only(
-                                                          bottom: AppSpacing.sm,
-                                                        ),
+                                                    padding: EdgeInsets.only(
+                                                      bottom: isCompact
+                                                          ? AppSpacing.xs
+                                                          : AppSpacing.sm,
+                                                    ),
                                                     child: _TodoDockRow(
                                                       todo: todo,
+                                                      compact: isCompact,
                                                     ),
                                                   ),
                                                 )
@@ -7510,8 +7618,10 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
                                             height: 16,
                                             decoration: BoxDecoration(
                                               borderRadius:
-                                                  const BorderRadius.vertical(
-                                                    top: Radius.circular(20),
+                                                  BorderRadius.vertical(
+                                                    top: Radius.circular(
+                                                      isCompact ? 16 : 20,
+                                                    ),
                                                   ),
                                               gradient: LinearGradient(
                                                 begin: Alignment.topCenter,
@@ -7542,9 +7652,10 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
 }
 
 class _TodoDockRow extends StatelessWidget {
-  const _TodoDockRow({required this.todo});
+  const _TodoDockRow({required this.todo, required this.compact});
 
   final TodoItem todo;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -7559,22 +7670,26 @@ class _TodoDockRow extends StatelessWidget {
       children: <Widget>[
         Padding(
           padding: const EdgeInsets.only(top: 2),
-          child: _TodoStatusIcon(status: todo.status),
+          child: _TodoStatusIcon(status: todo.status, compact: compact),
         ),
-        const SizedBox(width: AppSpacing.sm),
+        SizedBox(width: compact ? AppSpacing.xs : AppSpacing.sm),
         Expanded(
           child: Text(
             todo.content,
-            style: theme.textTheme.bodyLarge?.copyWith(
-              color: color,
-              height: 1.45,
-              decoration: completed
-                  ? TextDecoration.lineThrough
-                  : TextDecoration.none,
-              decorationColor: surfaces.muted,
-              decorationThickness: 1.6,
-              fontWeight: pending ? FontWeight.w500 : FontWeight.w400,
-            ),
+            style:
+                (compact
+                        ? theme.textTheme.bodyMedium
+                        : theme.textTheme.bodyLarge)
+                    ?.copyWith(
+                      color: color,
+                      height: 1.45,
+                      decoration: completed
+                          ? TextDecoration.lineThrough
+                          : TextDecoration.none,
+                      decorationColor: surfaces.muted,
+                      decorationThickness: 1.6,
+                      fontWeight: pending ? FontWeight.w500 : FontWeight.w400,
+                    ),
           ),
         ),
       ],
@@ -7583,9 +7698,10 @@ class _TodoDockRow extends StatelessWidget {
 }
 
 class _TodoStatusIcon extends StatelessWidget {
-  const _TodoStatusIcon({required this.status});
+  const _TodoStatusIcon({required this.status, required this.compact});
 
   final String status;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -7611,7 +7727,7 @@ class _TodoStatusIcon extends StatelessWidget {
       ),
     };
 
-    return Icon(icon, size: 18, color: color);
+    return Icon(icon, size: compact ? 16 : 18, color: color);
   }
 }
 
@@ -7630,7 +7746,7 @@ class _CompactPaneSwitcher extends StatelessWidget {
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     return Container(
-      height: 52,
+      height: 46,
       decoration: BoxDecoration(
         color: surfaces.panel,
         border: Border(bottom: BorderSide(color: surfaces.lineSoft)),
@@ -7702,6 +7818,7 @@ class _TimelineMessage extends StatelessWidget {
   const _TimelineMessage({
     required this.currentSessionId,
     required this.message,
+    required this.compact,
     required this.sessions,
     required this.selectedSession,
     required this.configSnapshot,
@@ -7714,6 +7831,7 @@ class _TimelineMessage extends StatelessWidget {
 
   final String? currentSessionId;
   final ChatMessage message;
+  final bool compact;
   final List<SessionSummary> sessions;
   final SessionSummary? selectedSession;
   final ConfigSnapshot? configSnapshot;
@@ -7734,6 +7852,7 @@ class _TimelineMessage extends StatelessWidget {
       return _UserTimelineMessage(
         message: message,
         text: text,
+        compact: compact,
         attachments: attachments,
         configSnapshot: configSnapshot,
         selectedSession: selectedSession,
@@ -7758,7 +7877,9 @@ class _TimelineMessage extends StatelessWidget {
         }
         timelineItems.add(
           Padding(
-            padding: const EdgeInsets.only(bottom: AppSpacing.md),
+            padding: EdgeInsets.only(
+              bottom: compact ? AppSpacing.sm : AppSpacing.md,
+            ),
             child: _TimelineExploredContextPart(parts: contextParts),
           ),
         );
@@ -7766,7 +7887,9 @@ class _TimelineMessage extends StatelessWidget {
       }
       timelineItems.add(
         Padding(
-          padding: const EdgeInsets.only(bottom: AppSpacing.md),
+          padding: EdgeInsets.only(
+            bottom: compact ? AppSpacing.sm : AppSpacing.md,
+          ),
           child: _TimelinePart(
             currentSessionId: currentSessionId,
             part: part,
@@ -7793,6 +7916,7 @@ class _UserTimelineMessage extends StatefulWidget {
   const _UserTimelineMessage({
     required this.message,
     required this.text,
+    required this.compact,
     required this.attachments,
     required this.configSnapshot,
     required this.selectedSession,
@@ -7802,6 +7926,7 @@ class _UserTimelineMessage extends StatefulWidget {
 
   final ChatMessage message;
   final String text;
+  final bool compact;
   final List<ChatPart> attachments;
   final ConfigSnapshot? configSnapshot;
   final SessionSummary? selectedSession;
@@ -8006,10 +8131,14 @@ class _UserTimelineMessageState extends State<_UserTimelineMessage> {
                 ),
                 onLongPress: hasActions ? _openTouchActionSheet : null,
                 child: Container(
-                  padding: const EdgeInsets.all(AppSpacing.md),
+                  padding: EdgeInsets.all(
+                    widget.compact ? AppSpacing.sm : AppSpacing.md,
+                  ),
                   decoration: BoxDecoration(
                     color: surfaces.panelRaised,
-                    borderRadius: BorderRadius.circular(18),
+                    borderRadius: BorderRadius.circular(
+                      widget.compact ? 16 : 18,
+                    ),
                     border: Border.all(color: surfaces.lineSoft),
                   ),
                   child: Column(
@@ -8018,10 +8147,15 @@ class _UserTimelineMessageState extends State<_UserTimelineMessage> {
                     children: <Widget>[
                       if (widget.attachments.isNotEmpty)
                         _UserMessageAttachmentGrid(
+                          compact: widget.compact,
                           attachments: widget.attachments,
                         ),
                       if (widget.attachments.isNotEmpty && hasText)
-                        const SizedBox(height: AppSpacing.md),
+                        SizedBox(
+                          height: widget.compact
+                              ? AppSpacing.sm
+                              : AppSpacing.md,
+                        ),
                       if (hasText) _InlineCodeText(text: widget.text),
                     ],
                   ),
@@ -8339,26 +8473,33 @@ class _TimelineCompactionDivider extends StatelessWidget {
 }
 
 class _UserMessageAttachmentGrid extends StatelessWidget {
-  const _UserMessageAttachmentGrid({required this.attachments});
+  const _UserMessageAttachmentGrid({
+    required this.attachments,
+    required this.compact,
+  });
 
   final List<ChatPart> attachments;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     return Wrap(
-      spacing: AppSpacing.sm,
-      runSpacing: AppSpacing.sm,
+      spacing: compact ? AppSpacing.xs : AppSpacing.sm,
+      runSpacing: compact ? AppSpacing.xs : AppSpacing.sm,
       children: attachments
-          .map((part) => _UserMessageAttachmentTile(part: part))
+          .map(
+            (part) => _UserMessageAttachmentTile(part: part, compact: compact),
+          )
           .toList(growable: false),
     );
   }
 }
 
 class _UserMessageAttachmentTile extends StatelessWidget {
-  const _UserMessageAttachmentTile({required this.part});
+  const _UserMessageAttachmentTile({required this.part, this.compact = false});
 
   final ChatPart part;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -8368,11 +8509,13 @@ class _UserMessageAttachmentTile extends StatelessWidget {
     final filename = _attachmentPartFilename(part);
     final previewBytes = url == null ? null : _attachmentDataBytes(url);
     return Container(
-      width: mime.startsWith('image/') ? 164 : 220,
-      padding: const EdgeInsets.all(AppSpacing.sm),
+      width: compact
+          ? (mime.startsWith('image/') ? 148 : 204)
+          : (mime.startsWith('image/') ? 164 : 220),
+      padding: EdgeInsets.all(compact ? AppSpacing.xs : AppSpacing.sm),
       decoration: BoxDecoration(
         color: surfaces.panel,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(compact ? 12 : 14),
         border: Border.all(color: surfaces.lineSoft),
       ),
       child: Column(
@@ -8385,7 +8528,7 @@ class _UserMessageAttachmentTile extends StatelessWidget {
               child: Image.memory(
                 previewBytes,
                 width: double.infinity,
-                height: 100,
+                height: compact ? 88 : 100,
                 fit: BoxFit.cover,
                 errorBuilder: (_, _, _) => SizedBox(
                   width: double.infinity,
@@ -8396,7 +8539,7 @@ class _UserMessageAttachmentTile extends StatelessWidget {
             )
           else
             _AttachmentIcon(mime: mime),
-          const SizedBox(height: AppSpacing.sm),
+          SizedBox(height: compact ? AppSpacing.xs : AppSpacing.sm),
           Text(
             filename,
             maxLines: 2,
@@ -9634,12 +9777,14 @@ class _ComposerIconButton extends StatelessWidget {
     required this.icon,
     required this.onTap,
     super.key,
+    this.compact = false,
     this.filled = false,
     this.busy = false,
   });
 
   final IconData icon;
   final VoidCallback? onTap;
+  final bool compact;
   final bool filled;
   final bool busy;
 
@@ -9661,26 +9806,26 @@ class _ComposerIconButton extends StatelessWidget {
         : surfaces.muted;
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(compact ? 10 : 12),
       child: Container(
-        width: 40,
-        height: 40,
+        width: compact ? 36 : 40,
+        height: compact ? 36 : 40,
         decoration: BoxDecoration(
           color: color,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(compact ? 10 : 12),
           border: Border.all(color: filled ? color : surfaces.lineSoft),
         ),
         child: Center(
           child: busy
               ? SizedBox(
-                  width: 16,
-                  height: 16,
+                  width: compact ? 14 : 16,
+                  height: compact ? 14 : 16,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
                     valueColor: AlwaysStoppedAnimation<Color>(foreground),
                   ),
                 )
-              : Icon(icon, size: 18, color: foreground),
+              : Icon(icon, size: compact ? 16 : 18, color: foreground),
         ),
       ),
     );
@@ -9688,10 +9833,15 @@ class _ComposerIconButton extends StatelessWidget {
 }
 
 class _ComposerSelectionPill extends StatelessWidget {
-  const _ComposerSelectionPill({required this.label, required this.onTap});
+  const _ComposerSelectionPill({
+    required this.label,
+    required this.onTap,
+    this.compact = false,
+  });
 
   final String label;
   final VoidCallback? onTap;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -9701,10 +9851,10 @@ class _ComposerSelectionPill extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
       child: Container(
-        constraints: const BoxConstraints(maxWidth: 220),
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.sm,
-          vertical: AppSpacing.xs,
+        constraints: BoxConstraints(maxWidth: compact ? 180 : 220),
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? AppSpacing.xs : AppSpacing.sm,
+          vertical: compact ? 6 : AppSpacing.xs,
         ),
         decoration: BoxDecoration(
           color: surfaces.panelRaised,
@@ -9718,10 +9868,14 @@ class _ComposerSelectionPill extends StatelessWidget {
               child: Text(
                 label,
                 overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: enabled ? null : surfaces.muted,
-                  fontWeight: FontWeight.w600,
-                ),
+                style:
+                    (compact
+                            ? Theme.of(context).textTheme.labelMedium
+                            : Theme.of(context).textTheme.bodySmall)
+                        ?.copyWith(
+                          color: enabled ? null : surfaces.muted,
+                          fontWeight: FontWeight.w600,
+                        ),
               ),
             ),
             const SizedBox(width: 6),
