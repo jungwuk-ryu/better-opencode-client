@@ -248,7 +248,7 @@ class WebParityWorkspaceScreen extends StatefulWidget {
 }
 
 class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
-  static const int _maxDesktopSessionPanes = 4;
+  static const int _maxDesktopSessionPanes = 8;
   static const String _desktopSessionPaneLayoutKeyPrefix =
       'workspace.desktopSessionPanes';
   static const String _composerDraftKeyPrefix = 'workspace.composerDraft';
@@ -2284,7 +2284,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   void _splitDesktopSessionPane(WorkspaceController controller) {
     if (_desktopSessionPanes.length >= _maxDesktopSessionPanes) {
       _showSnackBar(
-        'You can open up to 4 session panes.',
+        'You can open up to 8 session panes.',
         tone: AppSnackBarTone.warning,
       );
       return;
@@ -8934,100 +8934,142 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                     density.inset(compact ? AppSpacing.sm : AppSpacing.md),
                     density.inset(compact ? AppSpacing.xs : AppSpacing.sm),
                   ),
-                  child: Row(
-                    children: <Widget>[
-                      Container(
-                        width: compact ? 9 : 10,
-                        height: compact ? 9 : 10,
-                        decoration: BoxDecoration(
-                          color: busy
-                              ? theme.colorScheme.primary
-                              : const Color(0xFF64D7C4),
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      SizedBox(width: density.inset(AppSpacing.xs, min: 4)),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: <Widget>[
-                            Tooltip(
-                              message: title,
-                              child: Text(
-                                title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style:
-                                    (compact
-                                            ? theme.textTheme.titleSmall
-                                            : theme.textTheme.titleMedium)
-                                        ?.copyWith(fontWeight: FontWeight.w700),
-                              ),
-                            ),
-                            SizedBox(
-                              height: density.inset(
-                                compact ? AppSpacing.xxs : AppSpacing.xs,
-                                min: 2,
-                              ),
-                            ),
-                            Text(
-                              subtitle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: selected
-                                    ? theme.colorScheme.primary.withValues(
-                                        alpha: 0.92,
-                                      )
-                                    : surfaces.muted,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      if (selected)
-                        Container(
-                          key: ValueKey<String>(
-                            'workspace-session-pane-selected-badge-${pane.id}',
-                          ),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.xs,
-                            vertical: 5,
-                          ),
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.primary.withValues(
-                              alpha: 0.16,
-                            ),
-                            borderRadius: BorderRadius.circular(
-                              AppSpacing.pillRadius,
-                            ),
-                            border: Border.all(
-                              color: theme.colorScheme.primary.withValues(
-                                alpha: 0.24,
-                              ),
-                            ),
-                          ),
-                          child: Text(
-                            'Active',
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: theme.colorScheme.primary,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                      if (canClose) ...<Widget>[
-                        SizedBox(width: density.inset(AppSpacing.xs, min: 4)),
-                        IconButton(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final headerWidth = constraints.maxWidth;
+                      final hideTitle = headerWidth < 72;
+                      final showSubtitle = headerWidth >= 180;
+                      final showSelectedBadge = selected && headerWidth >= 140;
+                      final useCompactCloseButton = headerWidth < 120;
+
+                      Widget closeButton() {
+                        return IconButton(
                           key: ValueKey<String>(
                             'workspace-session-pane-close-${pane.id}',
                           ),
                           onPressed: () => onClosePane(pane.id),
                           tooltip: 'Close pane',
-                          icon: const Icon(Icons.close_rounded, size: 18),
-                          splashRadius: 18,
-                        ),
-                      ],
-                    ],
+                          icon: Icon(
+                            Icons.close_rounded,
+                            size: useCompactCloseButton ? 14 : 18,
+                          ),
+                          splashRadius: useCompactCloseButton ? 14 : 18,
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: BoxConstraints.tightFor(
+                            width: useCompactCloseButton ? 20 : 28,
+                            height: useCompactCloseButton ? 20 : 28,
+                          ),
+                        );
+                      }
+
+                      return Row(
+                        children: <Widget>[
+                          Container(
+                            width: compact ? 9 : 10,
+                            height: compact ? 9 : 10,
+                            decoration: BoxDecoration(
+                              color: busy
+                                  ? theme.colorScheme.primary
+                                  : const Color(0xFF64D7C4),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          SizedBox(width: density.inset(AppSpacing.xs, min: 4)),
+                          Expanded(
+                            child: hideTitle
+                                ? const SizedBox.shrink()
+                                : Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: <Widget>[
+                                      Tooltip(
+                                        message: title,
+                                        child: Text(
+                                          title,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style:
+                                              (compact || !showSubtitle
+                                                      ? theme
+                                                            .textTheme
+                                                            .titleSmall
+                                                      : theme
+                                                            .textTheme
+                                                            .titleMedium)
+                                                  ?.copyWith(
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                        ),
+                                      ),
+                                      if (showSubtitle) ...<Widget>[
+                                        SizedBox(
+                                          height: density.inset(
+                                            compact
+                                                ? AppSpacing.xxs
+                                                : AppSpacing.xs,
+                                            min: 2,
+                                          ),
+                                        ),
+                                        Text(
+                                          subtitle,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(
+                                                color: selected
+                                                    ? theme.colorScheme.primary
+                                                          .withValues(
+                                                            alpha: 0.92,
+                                                          )
+                                                    : surfaces.muted,
+                                              ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                          ),
+                          if (showSelectedBadge)
+                            Container(
+                              key: ValueKey<String>(
+                                'workspace-session-pane-selected-badge-${pane.id}',
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: AppSpacing.xs,
+                                vertical: 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.primary.withValues(
+                                  alpha: 0.16,
+                                ),
+                                borderRadius: BorderRadius.circular(
+                                  AppSpacing.pillRadius,
+                                ),
+                                border: Border.all(
+                                  color: theme.colorScheme.primary.withValues(
+                                    alpha: 0.24,
+                                  ),
+                                ),
+                              ),
+                              child: Text(
+                                'Active',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: theme.colorScheme.primary,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          if (canClose) ...<Widget>[
+                            SizedBox(
+                              width: hideTitle
+                                  ? 2
+                                  : density.inset(AppSpacing.xs, min: 4),
+                            ),
+                            closeButton(),
+                          ],
+                        ],
+                      );
+                    },
                   ),
                 ),
                 Divider(height: 1, color: surfaces.lineSoft),

@@ -739,6 +739,72 @@ void main() {
     },
   );
 
+  testWidgets('desktop layout allows up to eight split session panes', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _RecordingWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    final navigatorKey = GlobalKey<NavigatorState>();
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        navigatorKey: navigatorKey,
+        initialRoute: '/',
+      ),
+    );
+    navigatorKey.currentState!.pushNamed(
+      buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+    );
+    await tester.pumpAndSettle();
+
+    final splitButton = find.byKey(
+      const ValueKey<String>('workspace-split-session-pane-button'),
+    );
+    final paneCards = find.byWidgetPredicate(
+      (widget) =>
+          widget is InkWell &&
+          widget.key is ValueKey<String> &&
+          (widget.key! as ValueKey<String>).value.startsWith(
+            'workspace-session-pane-',
+          ),
+    );
+
+    for (var index = 0; index < 7; index += 1) {
+      await tester.tap(splitButton);
+      await tester.pumpAndSettle();
+    }
+
+    expect(paneCards, findsNWidgets(8));
+    expect(find.text('Split (8)'), findsOneWidget);
+
+    await tester.tap(splitButton);
+    await tester.pumpAndSettle();
+
+    expect(paneCards, findsNWidgets(8));
+  });
+
   testWidgets('composer draft follows the active pane session and project', (
     tester,
   ) async {
