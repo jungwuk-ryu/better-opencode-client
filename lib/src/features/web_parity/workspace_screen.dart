@@ -13054,28 +13054,43 @@ class _SidePanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tab = controller.sideTab;
+    final bundle = controller.fileBundle;
+    final reviewCount = bundle?.statuses.length ?? 0;
+    final fileCount = bundle?.nodes.length ?? 0;
+    final contextUsage = controller.sessionContextMetrics.context?.usagePercent;
+    final messageCount = controller.messages.length;
     return Column(
       children: <Widget>[
         Padding(
           padding: const EdgeInsets.all(AppSpacing.md),
-          child: SegmentedButton<WorkspaceSideTab>(
-            segments: const <ButtonSegment<WorkspaceSideTab>>[
-              ButtonSegment<WorkspaceSideTab>(
-                value: WorkspaceSideTab.review,
-                label: Text('Review'),
+          child: _WorkspaceSideTabSwitcher(
+            selectedTab: tab,
+            items: <_WorkspaceSideTabItem>[
+              _WorkspaceSideTabItem(
+                tab: WorkspaceSideTab.review,
+                icon: Icons.rate_review_rounded,
+                title: 'Review',
+                subtitle: reviewCount > 0 ? 'Diffs' : 'No changes',
+                badge: reviewCount > 0 ? '$reviewCount' : null,
               ),
-              ButtonSegment<WorkspaceSideTab>(
-                value: WorkspaceSideTab.files,
-                label: Text('Files'),
+              _WorkspaceSideTabItem(
+                tab: WorkspaceSideTab.files,
+                icon: Icons.folder_copy_rounded,
+                title: 'Files',
+                subtitle: 'Browse',
+                badge: fileCount > 0 ? '$fileCount' : null,
               ),
-              ButtonSegment<WorkspaceSideTab>(
-                value: WorkspaceSideTab.context,
-                label: Text('Context'),
+              _WorkspaceSideTabItem(
+                tab: WorkspaceSideTab.context,
+                icon: Icons.tune_rounded,
+                title: 'Context',
+                subtitle: contextUsage != null ? 'Tokens' : 'Session',
+                badge: contextUsage != null
+                    ? '${contextUsage.clamp(0, 999)}%'
+                    : (messageCount > 0 ? '$messageCount' : null),
               ),
             ],
-            selected: <WorkspaceSideTab>{tab},
-            onSelectionChanged: (selection) =>
-                controller.setSideTab(selection.first),
+            onChanged: controller.setSideTab,
           ),
         ),
         Expanded(
@@ -13118,6 +13133,235 @@ class _SidePanel extends StatelessWidget {
       ],
     );
   }
+}
+
+class _WorkspaceSideTabItem {
+  const _WorkspaceSideTabItem({
+    required this.tab,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.badge,
+  });
+
+  final WorkspaceSideTab tab;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final String? badge;
+}
+
+class _WorkspaceSideTabSwitcher extends StatelessWidget {
+  const _WorkspaceSideTabSwitcher({
+    required this.selectedTab,
+    required this.items,
+    required this.onChanged,
+  });
+
+  final WorkspaceSideTab selectedTab;
+  final List<_WorkspaceSideTabItem> items;
+  final ValueChanged<WorkspaceSideTab> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return Container(
+      key: const ValueKey<String>('workspace-side-tab-switcher'),
+      padding: const EdgeInsets.all(6),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[
+            surfaces.panelMuted.withValues(alpha: 0.88),
+            surfaces.panelRaised.withValues(alpha: 0.97),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: surfaces.lineSoft),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.16),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Row(
+        children: <Widget>[
+          for (var index = 0; index < items.length; index += 1) ...<Widget>[
+            if (index > 0) const SizedBox(width: AppSpacing.xs),
+            Expanded(
+              child: _WorkspaceSideTabButton(
+                item: items[index],
+                selected: items[index].tab == selectedTab,
+                onTap: () => onChanged(items[index].tab),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _WorkspaceSideTabButton extends StatelessWidget {
+  const _WorkspaceSideTabButton({
+    required this.item,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final _WorkspaceSideTabItem item;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final accent = _workspaceSideTabAccent(item.tab, theme, surfaces);
+    final titleColor = selected
+        ? theme.colorScheme.onSurface
+        : theme.colorScheme.onSurface.withValues(alpha: 0.92);
+    final subtitleColor = selected
+        ? Color.lerp(surfaces.muted, accent, 0.32) ?? surfaces.muted
+        : surfaces.muted;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        key: ValueKey<String>('workspace-side-tab-${item.tab.name}-button'),
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          constraints: const BoxConstraints(minHeight: 78),
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.sm,
+            AppSpacing.sm,
+            AppSpacing.sm,
+            AppSpacing.sm,
+          ),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: selected
+                  ? <Color>[
+                      accent.withValues(alpha: 0.18),
+                      accent.withValues(alpha: 0.07),
+                    ]
+                  : <Color>[
+                      surfaces.panelRaised.withValues(alpha: 0.94),
+                      surfaces.panel.withValues(alpha: 0.72),
+                    ],
+            ),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: selected
+                  ? accent.withValues(alpha: 0.34)
+                  : Colors.white.withValues(alpha: 0.04),
+            ),
+            boxShadow: selected
+                ? <BoxShadow>[
+                    BoxShadow(
+                      color: accent.withValues(alpha: 0.14),
+                      blurRadius: 18,
+                      offset: const Offset(0, 10),
+                    ),
+                  ]
+                : const <BoxShadow>[],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: selected ? 0.18 : 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: accent.withValues(alpha: selected ? 0.3 : 0.18),
+                      ),
+                    ),
+                    child: Icon(item.icon, size: 16, color: accent),
+                  ),
+                  const Spacer(),
+                  if (item.badge != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.xs,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? accent.withValues(alpha: 0.16)
+                            : surfaces.panelEmphasis.withValues(alpha: 0.58),
+                        borderRadius: BorderRadius.circular(
+                          AppSpacing.pillRadius,
+                        ),
+                        border: Border.all(
+                          color: selected
+                              ? accent.withValues(alpha: 0.28)
+                              : surfaces.lineSoft,
+                        ),
+                      ),
+                      child: Text(
+                        item.badge!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: selected ? accent : surfaces.muted,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                item.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: titleColor,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.15,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                item.subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: subtitleColor,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+Color _workspaceSideTabAccent(
+  WorkspaceSideTab tab,
+  ThemeData theme,
+  AppSurfaces surfaces,
+) {
+  return switch (tab) {
+    WorkspaceSideTab.review => surfaces.warning,
+    WorkspaceSideTab.files => theme.colorScheme.primary,
+    WorkspaceSideTab.context => surfaces.success,
+  };
 }
 
 class _ReviewPanel extends StatefulWidget {

@@ -263,6 +263,61 @@ void main() {
     );
   });
 
+  testWidgets('side panel renders the redesigned tab switcher controls', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _FilesWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('workspace-side-tab-switcher')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('workspace-side-tab-review-button')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('workspace-side-tab-files-button')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('workspace-side-tab-context-button')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('review panel loads diff preview for the selected file', (
     tester,
   ) async {
