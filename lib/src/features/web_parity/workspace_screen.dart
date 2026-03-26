@@ -2570,6 +2570,26 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                             );
                                           },
                                         ),
+                                        const SizedBox(height: AppSpacing.sm),
+                                        _WorkspaceSettingsToggleRow(
+                                          key: const ValueKey<String>(
+                                            'workspace-settings-code-highlight-toggle',
+                                          ),
+                                          title: 'Highlight chat code blocks',
+                                          subtitle:
+                                              'Apply language-aware syntax colors to fenced code blocks in the timeline.',
+                                          value: widget
+                                              .appController
+                                              .chatCodeBlockHighlightingEnabled,
+                                          onChanged: (value) {
+                                            unawaited(
+                                              widget.appController
+                                                  .setChatCodeBlockHighlightingEnabled(
+                                                    value,
+                                                  ),
+                                            );
+                                          },
+                                        ),
                                       ],
                                     ),
                                   ),
@@ -8701,6 +8721,30 @@ class _StructuredCodeFenceBlockState extends State<_StructuredCodeFenceBlock> {
     final surfaces = theme.extension<AppSurfaces>()!;
     final language = widget.language?.trim();
     final hasLanguage = language != null && language.isNotEmpty;
+    final languageKey = hasLanguage ? language.toLowerCase() : 'plain';
+    final highlightEnabled = AppScope.of(
+      context,
+    ).chatCodeBlockHighlightingEnabled;
+    final syntaxTheme = _FilePreviewSyntaxTheme.from(
+      theme: theme,
+      surfaces: surfaces,
+      baseStyle: GoogleFonts.ibmPlexMono(
+        color: theme.colorScheme.onSurface,
+        fontSize: 13,
+        height: 1.6,
+      ),
+    );
+    final syntaxLanguage = _previewSyntaxLanguageForFence(language);
+    final canHighlight =
+        highlightEnabled &&
+        syntaxLanguage != _FilePreviewSyntaxLanguage.plainText;
+    final highlightedSpans = canHighlight
+        ? _buildHighlightedCodeBlockSpans(
+            code: widget.code,
+            language: language,
+            syntaxTheme: syntaxTheme,
+          )
+        : null;
 
     return Container(
       width: double.infinity,
@@ -8756,14 +8800,23 @@ class _StructuredCodeFenceBlockState extends State<_StructuredCodeFenceBlock> {
           if (hasLanguage) const SizedBox(height: AppSpacing.sm),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
-            child: SelectableText(
-              widget.code,
-              style: GoogleFonts.ibmPlexMono(
-                color: theme.colorScheme.onSurface,
-                fontSize: 13,
-                height: 1.6,
-              ),
-            ),
+            child: canHighlight
+                ? SelectableText.rich(
+                    key: ValueKey<String>(
+                      'timeline-code-content-highlighted-$languageKey',
+                    ),
+                    TextSpan(
+                      style: syntaxTheme.base,
+                      children: highlightedSpans,
+                    ),
+                  )
+                : SelectableText(
+                    key: ValueKey<String>(
+                      'timeline-code-content-plain-$languageKey',
+                    ),
+                    widget.code,
+                    style: syntaxTheme.base,
+                  ),
           ),
         ],
       ),
@@ -11464,6 +11517,36 @@ _FilePreviewSyntaxLanguage _previewSyntaxLanguageForPath(String? path) {
   return _FilePreviewSyntaxLanguage.plainText;
 }
 
+_FilePreviewSyntaxLanguage _previewSyntaxLanguageForFence(String? language) {
+  final normalized = (language ?? '').trim().toLowerCase();
+  return switch (normalized) {
+    'md' || 'markdown' => _FilePreviewSyntaxLanguage.markdown,
+    'yaml' || 'yml' => _FilePreviewSyntaxLanguage.yaml,
+    'json' || 'jsonc' => _FilePreviewSyntaxLanguage.json,
+    'dart' => _FilePreviewSyntaxLanguage.dart,
+    'ts' ||
+    'tsx' ||
+    'js' ||
+    'jsx' ||
+    'mjs' ||
+    'cjs' ||
+    'javascript' ||
+    'typescript' => _FilePreviewSyntaxLanguage.javascript,
+    'sh' ||
+    'bash' ||
+    'zsh' ||
+    'shell' ||
+    'shellscript' ||
+    'console' ||
+    'dotenv' ||
+    'env' => _FilePreviewSyntaxLanguage.shell,
+    'py' || 'python' => _FilePreviewSyntaxLanguage.python,
+    'rs' || 'rust' => _FilePreviewSyntaxLanguage.rust,
+    'go' => _FilePreviewSyntaxLanguage.go,
+    _ => _FilePreviewSyntaxLanguage.plainText,
+  };
+}
+
 List<_FilePreviewHighlightPattern> _filePreviewHighlightPatterns(
   _FilePreviewSyntaxLanguage language,
   _FilePreviewSyntaxTheme theme,
@@ -11650,6 +11733,34 @@ List<_FilePreviewHighlightPattern> _filePreviewHighlightPatterns(
     case _FilePreviewSyntaxLanguage.plainText:
       return const <_FilePreviewHighlightPattern>[];
   }
+}
+
+List<InlineSpan> _buildHighlightedCodeBlockSpans({
+  required String code,
+  required String? language,
+  required _FilePreviewSyntaxTheme syntaxTheme,
+}) {
+  if (code.isEmpty) {
+    return const <InlineSpan>[TextSpan(text: '')];
+  }
+
+  const highlightLimit = 60000;
+  if (code.length > highlightLimit) {
+    return <InlineSpan>[
+      TextSpan(text: code.substring(0, highlightLimit)),
+      const TextSpan(
+        text:
+            '\n\n[Syntax highlighting paused for the rest of this code block because it is very large.]',
+      ),
+    ];
+  }
+
+  final syntaxLanguage = _previewSyntaxLanguageForFence(language);
+  final patterns = _filePreviewHighlightPatterns(syntaxLanguage, syntaxTheme);
+  if (patterns.isEmpty) {
+    return <InlineSpan>[TextSpan(text: code)];
+  }
+  return _highlightPreviewText(code, patterns);
 }
 
 List<_FilePreviewHighlightPattern> _cStyleLanguagePatterns({

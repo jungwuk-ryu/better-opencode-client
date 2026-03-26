@@ -52,6 +52,8 @@ class WebParityAppController extends ChangeNotifier {
       'web_parity.timeline_progress_details_visible';
   static const _sidebarChildSessionsVisibleKey =
       'web_parity.sidebar_child_sessions_visible';
+  static const _chatCodeBlockHighlightingEnabledKey =
+      'web_parity.chat_code_block_highlighting_enabled';
 
   final ServerProfileStore _profileStore;
   final ProjectStore _projectStore;
@@ -67,6 +69,7 @@ class WebParityAppController extends ChangeNotifier {
   bool _shellToolPartsExpanded = true;
   bool _timelineProgressDetailsVisible = false;
   bool _sidebarChildSessionsVisible = false;
+  bool _chatCodeBlockHighlightingEnabled = true;
   final Map<String, WorkspaceController> _workspaceControllers =
       <String, WorkspaceController>{};
 
@@ -78,6 +81,8 @@ class WebParityAppController extends ChangeNotifier {
   bool get shellToolPartsExpanded => _shellToolPartsExpanded;
   bool get timelineProgressDetailsVisible => _timelineProgressDetailsVisible;
   bool get sidebarChildSessionsVisible => _sidebarChildSessionsVisible;
+  bool get chatCodeBlockHighlightingEnabled =>
+      _chatCodeBlockHighlightingEnabled;
   ServerProbeReport? get selectedReport {
     final selectedProfile = _selectedProfile;
     if (selectedProfile == null) {
@@ -101,6 +106,8 @@ class WebParityAppController extends ChangeNotifier {
         prefs.getBool(_timelineProgressDetailsVisibleKey) ?? false;
     final sidebarChildSessionsVisible =
         prefs.getBool(_sidebarChildSessionsVisibleKey) ?? false;
+    final chatCodeBlockHighlightingEnabled =
+        prefs.getBool(_chatCodeBlockHighlightingEnabledKey) ?? true;
 
     ServerProfile? selectedProfile;
     if (selectedProfileId != null) {
@@ -120,6 +127,7 @@ class WebParityAppController extends ChangeNotifier {
     _shellToolPartsExpanded = shellToolPartsExpanded;
     _timelineProgressDetailsVisible = timelineProgressDetailsVisible;
     _sidebarChildSessionsVisible = sidebarChildSessionsVisible;
+    _chatCodeBlockHighlightingEnabled = chatCodeBlockHighlightingEnabled;
     _loading = false;
     notifyListeners();
   }
@@ -164,6 +172,16 @@ class WebParityAppController extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_sidebarChildSessionsVisibleKey, value);
+  }
+
+  Future<void> setChatCodeBlockHighlightingEnabled(bool value) async {
+    if (_chatCodeBlockHighlightingEnabled == value) {
+      return;
+    }
+    _chatCodeBlockHighlightingEnabled = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_chatCodeBlockHighlightingEnabledKey, value);
   }
 
   Future<void> refreshProbe(ServerProfile profile) async {

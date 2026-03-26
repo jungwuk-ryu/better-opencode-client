@@ -107,6 +107,7 @@ void main() {
       shellToolPartsExpandedValue: true,
       timelineProgressDetailsVisibleValue: false,
       sidebarChildSessionsVisibleValue: false,
+      chatCodeBlockHighlightingEnabledValue: true,
       report: _readyReport,
       workspaceControllerFactory:
           ({required profile, required directory, initialSessionId}) {
@@ -161,13 +162,28 @@ void main() {
 
     expect(appController.shellToolPartsExpanded, isFalse);
 
+    final highlightToggle = find.descendant(
+      of: find.byKey(
+        const ValueKey<String>('workspace-settings-code-highlight-toggle'),
+      ),
+      matching: find.byType(Switch),
+    );
+    await tester.tap(highlightToggle);
+    await tester.pump();
+
+    expect(appController.chatCodeBlockHighlightingEnabled, isFalse);
+
+    final settingsListView = find.descendant(
+      of: find.byKey(const ValueKey<String>('workspace-settings-sheet')),
+      matching: find.byType(ListView),
+    );
     await tester.dragUntilVisible(
       find.byKey(
         const ValueKey<String>(
           'workspace-settings-sidebar-child-sessions-toggle',
         ),
       ),
-      find.byType(ListView),
+      settingsListView,
       const Offset(0, -200),
     );
     await tester.pump();
@@ -329,6 +345,7 @@ class _StaticAppController extends WebParityAppController {
     this.shellToolPartsExpandedValue = true,
     this.timelineProgressDetailsVisibleValue = false,
     this.sidebarChildSessionsVisibleValue = false,
+    this.chatCodeBlockHighlightingEnabledValue = true,
     required WorkspaceControllerFactory workspaceControllerFactory,
   }) : super(workspaceControllerFactory: workspaceControllerFactory);
 
@@ -337,6 +354,7 @@ class _StaticAppController extends WebParityAppController {
   bool shellToolPartsExpandedValue;
   bool timelineProgressDetailsVisibleValue;
   bool sidebarChildSessionsVisibleValue;
+  bool chatCodeBlockHighlightingEnabledValue;
 
   @override
   ServerProfile? get selectedProfile => profile;
@@ -355,6 +373,10 @@ class _StaticAppController extends WebParityAppController {
   bool get sidebarChildSessionsVisible => sidebarChildSessionsVisibleValue;
 
   @override
+  bool get chatCodeBlockHighlightingEnabled =>
+      chatCodeBlockHighlightingEnabledValue;
+
+  @override
   Future<void> setShellToolPartsExpanded(bool value) async {
     shellToolPartsExpandedValue = value;
     notifyListeners();
@@ -369,6 +391,12 @@ class _StaticAppController extends WebParityAppController {
   @override
   Future<void> setSidebarChildSessionsVisible(bool value) async {
     sidebarChildSessionsVisibleValue = value;
+    notifyListeners();
+  }
+
+  @override
+  Future<void> setChatCodeBlockHighlightingEnabled(bool value) async {
+    chatCodeBlockHighlightingEnabledValue = value;
     notifyListeners();
   }
 }

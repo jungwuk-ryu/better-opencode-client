@@ -283,6 +283,12 @@ void main() {
       find.byKey(const ValueKey<String>('timeline-code-copy-dart')),
       findsOneWidget,
     );
+    expect(
+      find.byKey(
+        const ValueKey<String>('timeline-code-content-highlighted-dart'),
+      ),
+      findsOneWidget,
+    );
 
     await tester.tap(
       find.byKey(const ValueKey<String>('timeline-code-copy-dart')),
@@ -290,6 +296,57 @@ void main() {
     await tester.pump();
 
     expect(find.text('Code block copied.'), findsOneWidget);
+  });
+
+  testWidgets('chat code block highlighting can be disabled', (tester) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      initialShellToolPartsExpanded: true,
+      initialTimelineProgressDetailsVisible: false,
+      initialChatCodeBlockHighlightingEnabled: false,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _CodeBlockWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(
+      find.byKey(
+        const ValueKey<String>('timeline-code-content-highlighted-dart'),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('timeline-code-content-plain-dart')),
+      findsOneWidget,
+    );
   });
 
   testWidgets(
@@ -627,14 +684,19 @@ class _StaticAppController extends WebParityAppController {
     required this.profile,
     required bool initialShellToolPartsExpanded,
     required bool initialTimelineProgressDetailsVisible,
+    this.initialChatCodeBlockHighlightingEnabled = true,
     required WorkspaceControllerFactory workspaceControllerFactory,
   }) : _shellToolPartsExpanded = initialShellToolPartsExpanded,
        _timelineProgressDetailsVisible = initialTimelineProgressDetailsVisible,
+       _chatCodeBlockHighlightingEnabled =
+           initialChatCodeBlockHighlightingEnabled,
        super(workspaceControllerFactory: workspaceControllerFactory);
 
   final ServerProfile profile;
+  final bool initialChatCodeBlockHighlightingEnabled;
   bool _shellToolPartsExpanded;
   bool _timelineProgressDetailsVisible;
+  bool _chatCodeBlockHighlightingEnabled;
 
   @override
   ServerProfile? get selectedProfile => profile;
@@ -646,6 +708,10 @@ class _StaticAppController extends WebParityAppController {
   bool get timelineProgressDetailsVisible => _timelineProgressDetailsVisible;
 
   @override
+  bool get chatCodeBlockHighlightingEnabled =>
+      _chatCodeBlockHighlightingEnabled;
+
+  @override
   Future<void> setShellToolPartsExpanded(bool value) async {
     _shellToolPartsExpanded = value;
     notifyListeners();
@@ -654,6 +720,12 @@ class _StaticAppController extends WebParityAppController {
   @override
   Future<void> setTimelineProgressDetailsVisible(bool value) async {
     _timelineProgressDetailsVisible = value;
+    notifyListeners();
+  }
+
+  @override
+  Future<void> setChatCodeBlockHighlightingEnabled(bool value) async {
+    _chatCodeBlockHighlightingEnabled = value;
     notifyListeners();
   }
 }
