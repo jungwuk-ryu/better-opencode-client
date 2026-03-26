@@ -6994,17 +6994,17 @@ class _TimelineMessage extends StatelessWidget {
     final timelineItems = <Widget>[];
     for (var index = 0; index < orderedParts.length; index += 1) {
       final part = orderedParts[index];
-      if (_isReadToolPart(part)) {
-        final readParts = <ChatPart>[part];
+      if (_isContextGroupToolPart(part)) {
+        final contextParts = <ChatPart>[part];
         while (index + 1 < orderedParts.length &&
-            _isReadToolPart(orderedParts[index + 1])) {
+            _isContextGroupToolPart(orderedParts[index + 1])) {
           index += 1;
-          readParts.add(orderedParts[index]);
+          contextParts.add(orderedParts[index]);
         }
         timelineItems.add(
           Padding(
             padding: const EdgeInsets.only(bottom: AppSpacing.md),
-            child: _TimelineExploredReadsPart(parts: readParts),
+            child: _TimelineExploredContextPart(parts: contextParts),
           ),
         );
         continue;
@@ -7658,25 +7658,28 @@ class _TimelineActivityPartState extends State<_TimelineActivityPart> {
   }
 }
 
-class _TimelineExploredReadsPart extends StatefulWidget {
-  const _TimelineExploredReadsPart({required this.parts});
+class _TimelineExploredContextPart extends StatefulWidget {
+  const _TimelineExploredContextPart({required this.parts});
 
   final List<ChatPart> parts;
 
   @override
-  State<_TimelineExploredReadsPart> createState() =>
-      _TimelineExploredReadsPartState();
+  State<_TimelineExploredContextPart> createState() =>
+      _TimelineExploredContextPartState();
 }
 
-class _TimelineExploredReadsPartState
-    extends State<_TimelineExploredReadsPart> {
+class _TimelineExploredContextPartState
+    extends State<_TimelineExploredContextPart> {
   bool _expanded = false;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
-    final count = widget.parts.length;
+    final summary = _contextToolSummary(widget.parts);
+    final pending = widget.parts.any(_isPendingContextToolPart);
+    final label = pending ? 'Exploring' : 'Explored';
+    final summaryText = _contextToolSummaryLabel(summary);
     final titleStyle = theme.textTheme.titleSmall?.copyWith(
       fontWeight: FontWeight.w600,
       color: theme.colorScheme.onSurface.withValues(alpha: 0.92),
@@ -7692,7 +7695,7 @@ class _TimelineExploredReadsPartState
           color: Colors.transparent,
           child: InkWell(
             key: ValueKey<String>(
-              'timeline-explored-reads-header-${widget.parts.first.id}',
+              'timeline-explored-context-header-${widget.parts.first.id}',
             ),
             onTap: () => setState(() => _expanded = !_expanded),
             borderRadius: BorderRadius.circular(10),
@@ -7704,9 +7707,17 @@ class _TimelineExploredReadsPartState
               child: Row(
                 children: <Widget>[
                   Expanded(
-                    child: Text(
-                      'Explored $count read${count == 1 ? '' : 's'}',
-                      style: titleStyle,
+                    child: _ShimmeringRichText(
+                      key: ValueKey<String>(
+                        'timeline-explored-context-shimmer-${widget.parts.first.id}',
+                      ),
+                      active: pending,
+                      text: TextSpan(
+                        text: summaryText.isEmpty
+                            ? label
+                            : '$label $summaryText',
+                        style: titleStyle,
+                      ),
                     ),
                   ),
                   Icon(
@@ -7741,9 +7752,9 @@ class _TimelineExploredReadsPartState
                                 bottom: AppSpacing.sm,
                               ),
                               child: Text(
-                                _readToolDetailLine(part),
+                                _contextToolDetailLine(part),
                                 key: ValueKey<String>(
-                                  'timeline-explored-read-detail-${part.id}',
+                                  'timeline-explored-context-detail-${part.id}',
                                 ),
                                 style: detailStyle,
                               ),
@@ -9095,8 +9106,18 @@ bool _isShellToolPart(ChatPart part) {
   return part.type == 'tool' && part.tool?.trim().toLowerCase() == 'bash';
 }
 
-bool _isReadToolPart(ChatPart part) {
-  return part.type == 'tool' && part.tool?.trim().toLowerCase() == 'read';
+bool _isContextGroupToolPart(ChatPart part) {
+  final tool = part.tool?.trim().toLowerCase();
+  return part.type == 'tool' &&
+      (tool == 'read' || tool == 'glob' || tool == 'grep' || tool == 'list');
+}
+
+bool _isPendingContextToolPart(ChatPart part) {
+  if (!_isContextGroupToolPart(part)) {
+    return false;
+  }
+  final status = _toolStateStatus(part);
+  return status == 'pending' || status == 'running';
 }
 
 String? _toolStateStatus(ChatPart part) {
@@ -9106,38 +9127,154 @@ String? _toolStateStatus(ChatPart part) {
   ])?.toString().trim().toLowerCase();
 }
 
-String _readToolDetailLine(ChatPart part) {
-  final path = _firstNonEmpty(<String?>[
-    _nestedString(part.metadata, const <String>['state', 'input', 'filePath']),
-    _nestedString(part.metadata, const <String>['input', 'filePath']),
-    _nestedString(part.metadata, const <String>['filePath']),
-    _toolInputSummary(part),
-  ]);
-  final filename = _basename(path ?? '').trim();
-  final offset = _firstNonEmpty(<String?>[
-    _nestedValue(part.metadata, const <String>[
-      'state',
-      'input',
-      'offset',
-    ])?.toString(),
-    _nestedValue(part.metadata, const <String>['input', 'offset'])?.toString(),
-    _nestedValue(part.metadata, const <String>['offset'])?.toString(),
-  ]);
-  final limit = _firstNonEmpty(<String?>[
-    _nestedValue(part.metadata, const <String>[
-      'state',
-      'input',
-      'limit',
-    ])?.toString(),
-    _nestedValue(part.metadata, const <String>['input', 'limit'])?.toString(),
-    _nestedValue(part.metadata, const <String>['limit'])?.toString(),
-  ]);
-  final suffix = <String>[
-    if (offset != null) 'offset=$offset',
-    if (limit != null) 'limit=$limit',
-  ].join('  ');
-  final label = filename.isEmpty ? 'file' : filename;
-  return suffix.isEmpty ? 'Read  $label' : 'Read  $label  $suffix';
+_ContextToolSummary _contextToolSummary(List<ChatPart> parts) {
+  var read = 0;
+  var search = 0;
+  var list = 0;
+  for (final part in parts) {
+    switch (part.tool?.trim().toLowerCase()) {
+      case 'read':
+        read += 1;
+      case 'glob':
+      case 'grep':
+        search += 1;
+      case 'list':
+        list += 1;
+    }
+  }
+  return _ContextToolSummary(read: read, search: search, list: list);
+}
+
+String _contextToolSummaryLabel(_ContextToolSummary summary) {
+  final segments = <String>[
+    if (summary.read > 0) '${summary.read} read${summary.read == 1 ? '' : 's'}',
+    if (summary.search > 0)
+      '${summary.search} search${summary.search == 1 ? '' : 'es'}',
+    if (summary.list > 0) '${summary.list} list${summary.list == 1 ? '' : 's'}',
+  ];
+  return segments.join(', ');
+}
+
+String _contextToolDetailLine(ChatPart part) {
+  final tool = part.tool?.trim().toLowerCase();
+  switch (tool) {
+    case 'read':
+      final filePath = _firstNonEmpty(<String?>[
+        _nestedString(part.metadata, const <String>[
+          'state',
+          'input',
+          'filePath',
+        ]),
+        _nestedString(part.metadata, const <String>['input', 'filePath']),
+        _nestedString(part.metadata, const <String>['filePath']),
+      ]);
+      final offset = _firstNonEmpty(<String?>[
+        _nestedValue(part.metadata, const <String>[
+          'state',
+          'input',
+          'offset',
+        ])?.toString(),
+        _nestedValue(part.metadata, const <String>[
+          'input',
+          'offset',
+        ])?.toString(),
+        _nestedValue(part.metadata, const <String>['offset'])?.toString(),
+      ]);
+      final limit = _firstNonEmpty(<String?>[
+        _nestedValue(part.metadata, const <String>[
+          'state',
+          'input',
+          'limit',
+        ])?.toString(),
+        _nestedValue(part.metadata, const <String>[
+          'input',
+          'limit',
+        ])?.toString(),
+        _nestedValue(part.metadata, const <String>['limit'])?.toString(),
+      ]);
+      return _joinContextToolDetail(
+        'Read',
+        _basename(filePath ?? '').trim().isEmpty
+            ? 'file'
+            : _basename(filePath ?? '').trim(),
+        <String>[
+          if (offset != null) 'offset=$offset',
+          if (limit != null) 'limit=$limit',
+        ],
+      );
+    case 'list':
+      final path = _firstNonEmpty(<String?>[
+        _nestedString(part.metadata, const <String>['state', 'input', 'path']),
+        _nestedString(part.metadata, const <String>['input', 'path']),
+        _nestedString(part.metadata, const <String>['path']),
+      ]);
+      return _joinContextToolDetail(
+        'List',
+        _dirname(path ?? '/'),
+        const <String>[],
+      );
+    case 'glob':
+      final path = _firstNonEmpty(<String?>[
+        _nestedString(part.metadata, const <String>['state', 'input', 'path']),
+        _nestedString(part.metadata, const <String>['input', 'path']),
+        _nestedString(part.metadata, const <String>['path']),
+      ]);
+      final pattern = _firstNonEmpty(<String?>[
+        _nestedString(part.metadata, const <String>[
+          'state',
+          'input',
+          'pattern',
+        ]),
+        _nestedString(part.metadata, const <String>['input', 'pattern']),
+        _nestedString(part.metadata, const <String>['pattern']),
+      ]);
+      return _joinContextToolDetail('Search', _dirname(path ?? '/'), <String>[
+        if (pattern != null && pattern.isNotEmpty) 'pattern=$pattern',
+      ]);
+    case 'grep':
+      final path = _firstNonEmpty(<String?>[
+        _nestedString(part.metadata, const <String>['state', 'input', 'path']),
+        _nestedString(part.metadata, const <String>['input', 'path']),
+        _nestedString(part.metadata, const <String>['path']),
+      ]);
+      final pattern = _firstNonEmpty(<String?>[
+        _nestedString(part.metadata, const <String>[
+          'state',
+          'input',
+          'pattern',
+        ]),
+        _nestedString(part.metadata, const <String>['input', 'pattern']),
+        _nestedString(part.metadata, const <String>['pattern']),
+      ]);
+      final include = _firstNonEmpty(<String?>[
+        _nestedString(part.metadata, const <String>[
+          'state',
+          'input',
+          'include',
+        ]),
+        _nestedString(part.metadata, const <String>['input', 'include']),
+        _nestedString(part.metadata, const <String>['include']),
+      ]);
+      return _joinContextToolDetail('Search', _dirname(path ?? '/'), <String>[
+        if (pattern != null && pattern.isNotEmpty) 'pattern=$pattern',
+        if (include != null && include.isNotEmpty) 'include=$include',
+      ]);
+    default:
+      return _partSummary(part, _partText(part));
+  }
+}
+
+String _joinContextToolDetail(
+  String title,
+  String subtitle,
+  List<String> args,
+) {
+  final segments = <String>[
+    title,
+    if (subtitle.trim().isNotEmpty) subtitle.trim(),
+    ...args,
+  ];
+  return segments.join('  ');
 }
 
 String _basename(String value) {
@@ -9147,6 +9284,36 @@ String _basename(String value) {
   final normalized = value.replaceAll('\\', '/');
   final segments = normalized.split('/');
   return segments.isEmpty ? value : segments.last;
+}
+
+String _dirname(String value) {
+  if (value.isEmpty) {
+    return '/';
+  }
+  var normalized = value.replaceAll('\\', '/').trim();
+  while (normalized.length > 1 && normalized.endsWith('/')) {
+    normalized = normalized.substring(0, normalized.length - 1);
+  }
+  final index = normalized.lastIndexOf('/');
+  if (index < 0) {
+    return normalized;
+  }
+  if (index == 0) {
+    return '/';
+  }
+  return normalized.substring(0, index);
+}
+
+class _ContextToolSummary {
+  const _ContextToolSummary({
+    required this.read,
+    required this.search,
+    required this.list,
+  });
+
+  final int read;
+  final int search;
+  final int list;
 }
 
 List<QuestionPromptSummary> _questionToolQuestions(ChatPart part) {

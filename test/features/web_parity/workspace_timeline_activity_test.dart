@@ -158,7 +158,7 @@ void main() {
 
     await tester.tap(
       find.byKey(
-        const ValueKey<String>('timeline-explored-reads-header-part_read_1'),
+        const ValueKey<String>('timeline-explored-context-header-part_read_1'),
       ),
     );
     await tester.pump();
@@ -174,6 +174,68 @@ void main() {
     );
     expect(
       find.textContaining('bot-once.ts  offset=261  limit=80'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('grep tool calls are counted as searches in explored summaries', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      initialShellToolPartsExpanded: true,
+      initialTimelineProgressDetailsVisible: false,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _MixedContextWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.text('Explored 1 read, 1 search'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('timeline-explored-context-header-part_read_1'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(
+      find.textContaining('Read  daily-job.spec.ts  offset=261  limit=260'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining(
+        'Search  /workspace/demo  pattern=DISCORD_MESSAGE_ID  include=*.ts',
+      ),
       findsOneWidget,
     );
   });
@@ -831,6 +893,104 @@ class _ConversationOrderingWorkspaceController extends WorkspaceController {
           id: 'part_assistant_2',
           type: 'text',
           text: '확인했습니다. 이어서 원하는 작업 말씀해 주세요.',
+        ),
+      ],
+    ),
+  ];
+
+  bool _loading = true;
+
+  @override
+  bool get loading => _loading;
+
+  @override
+  ProjectTarget? get project => _projectTarget;
+
+  @override
+  List<ProjectTarget> get availableProjects => const <ProjectTarget>[
+    _projectTarget,
+  ];
+
+  @override
+  List<SessionSummary> get sessions => <SessionSummary>[_session];
+
+  @override
+  String? get selectedSessionId => _session.id;
+
+  @override
+  SessionSummary? get selectedSession => _session;
+
+  @override
+  List<ChatMessage> get messages => _messages;
+
+  @override
+  Future<void> load() async {
+    _loading = false;
+    notifyListeners();
+  }
+}
+
+class _MixedContextWorkspaceController extends WorkspaceController {
+  _MixedContextWorkspaceController({
+    required super.profile,
+    required super.directory,
+    super.initialSessionId,
+  });
+
+  static const ProjectTarget _projectTarget = ProjectTarget(
+    directory: '/workspace/demo',
+    label: 'Demo',
+    source: 'server',
+    vcs: 'git',
+    branch: 'main',
+  );
+
+  static final SessionSummary _session = SessionSummary(
+    id: 'ses_1',
+    directory: '/workspace/demo',
+    title: 'Mixed context tools',
+    version: '1',
+    updatedAt: DateTime.fromMillisecondsSinceEpoch(1710000004000),
+  );
+
+  static final List<ChatMessage> _messages = <ChatMessage>[
+    ChatMessage(
+      info: ChatMessageInfo(
+        id: 'msg_assistant_1',
+        role: 'assistant',
+        sessionId: 'ses_1',
+        createdAt: DateTime.fromMillisecondsSinceEpoch(1710000002000),
+      ),
+      parts: const <ChatPart>[
+        ChatPart(
+          id: 'part_read_1',
+          type: 'tool',
+          tool: 'read',
+          metadata: <String, Object?>{
+            'state': <String, Object?>{
+              'status': 'completed',
+              'input': <String, Object?>{
+                'filePath': 'test/unit/job/daily-job.spec.ts',
+                'offset': 261,
+                'limit': 260,
+              },
+            },
+          },
+        ),
+        ChatPart(
+          id: 'part_grep_1',
+          type: 'tool',
+          tool: 'grep',
+          metadata: <String, Object?>{
+            'state': <String, Object?>{
+              'status': 'completed',
+              'input': <String, Object?>{
+                'path': '/workspace/demo/src',
+                'pattern': 'DISCORD_MESSAGE_ID',
+                'include': '*.ts',
+              },
+            },
+          },
         ),
       ],
     ),
