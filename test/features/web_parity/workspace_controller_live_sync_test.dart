@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:opencode_mobile_remote/src/core/connection/connection_models.dart';
 import 'package:opencode_mobile_remote/src/core/network/event_stream_service.dart';
@@ -680,6 +682,65 @@ void main() {
       expect(controller.messages.single.parts.single.text, 'Ship the fix');
     },
   );
+
+  test(
+    'controller coalesces streaming cache writes until updates settle',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final cacheStore = _RecordingCacheStore();
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        cacheStore: cacheStore,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+      cacheStore.saveCalls = 0;
+      cacheStore.entries.clear();
+
+      void emitStreamingUpdate(String content) {
+        eventStreamService.emitToScope(
+          profile,
+          project,
+          EventEnvelope(
+            type: 'message.part.updated',
+            properties: <String, Object?>{
+              'part': <String, Object?>{
+                'id': 'part_stream',
+                'messageID': 'msg_stream',
+                'sessionID': 'ses_1',
+                'type': 'text',
+                'content': content,
+              },
+            },
+          ),
+        );
+      }
+
+      emitStreamingUpdate('hello');
+      emitStreamingUpdate('hello brave');
+      emitStreamingUpdate('hello brave new world');
+
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(cacheStore.saveCalls, 0);
+
+      await Future<void>.delayed(const Duration(milliseconds: 220));
+      expect(cacheStore.saveCalls, 1);
+
+      final entry = cacheStore
+          .entries['workspace.messages::${profile.storageKey}::${project.directory}::ses_1'];
+      expect(entry, isNotNull);
+      final savedMessages =
+          ((jsonDecode(entry!.payloadJson) as List)
+                  .cast<Map<String, Object?>>())
+              .map(ChatMessage.fromJson)
+              .toList(growable: false);
+      expect(savedMessages, hasLength(1));
+      expect(savedMessages.single.parts.single.text, 'hello brave new world');
+    },
+  );
 }
 
 WorkspaceController _buildController({
@@ -780,6 +841,35 @@ class _ControlledEventStreamService extends EventStreamService {
 
   @override
   void dispose() {}
+}
+
+class _RecordingCacheStore extends StaleCacheStore {
+  final Map<String, StaleCacheEntry> entries = <String, StaleCacheEntry>{};
+  int saveCalls = 0;
+
+  @override
+  Future<StaleCacheEntry?> load(String key) async => entries[key];
+
+  @override
+  Future<void> save(String key, Object? payload) async {
+    saveCalls += 1;
+    final payloadJson = jsonEncode(payload);
+    entries[key] = StaleCacheEntry(
+      payloadJson: payloadJson,
+      signature: payloadJson,
+      fetchedAt: DateTime.now(),
+    );
+  }
+
+  @override
+  Future<void> remove(String key) async {
+    entries.remove(key);
+  }
+
+  @override
+  Future<void> clearAll() async {
+    entries.clear();
+  }
 }
 
 class _RecordingSessionActionService extends SessionActionService {

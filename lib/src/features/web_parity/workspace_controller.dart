@@ -190,6 +190,11 @@ class WorkspaceController extends ChangeNotifier {
       const <SessionContextBreakdownSegment>[];
   int _userMessageCountCache = 0;
   int _assistantMessageCountCache = 0;
+  Timer? _sessionMessagesCachePersistTimer;
+  ProjectTarget? _queuedSessionMessagesCacheProject;
+  String? _queuedSessionMessagesCacheSessionId;
+  List<ChatMessage>? _queuedSessionMessagesCacheMessages;
+  int _queuedSessionMessagesCacheToken = 0;
 
   bool get loading => _loading;
   bool get sessionLoading => _sessionLoading;
@@ -880,10 +885,11 @@ class WorkspaceController extends ChangeNotifier {
         _restoreComposerSelectionFromMessages();
       }
       unawaited(
-        _saveSessionMessagesCache(
+        _persistSessionMessagesCache(
           project: project,
           sessionId: sessionId,
           messages: messages,
+          immediate: true,
         ),
       );
 
@@ -1054,10 +1060,11 @@ class WorkspaceController extends ChangeNotifier {
       _sessionLoadError = null;
       _restoreComposerSelectionFromMessages();
       unawaited(
-        _saveSessionMessagesCache(
+        _persistSessionMessagesCache(
           project: project,
           sessionId: sessionId,
           messages: messages,
+          immediate: true,
         ),
       );
     }
@@ -1953,7 +1960,12 @@ class WorkspaceController extends ChangeNotifier {
         _sessionLoading = false;
         _showingCachedSessionMessages = false;
         _sessionLoadError = null;
-        unawaited(_persistSelectedSessionMessagesCache(nextServerMessages));
+        unawaited(
+          _persistSelectedSessionMessagesCache(
+            nextServerMessages,
+            immediate: true,
+          ),
+        );
       }
       _messages = nextMessages;
     } else if (type == 'message.part.updated') {
@@ -2015,7 +2027,12 @@ class WorkspaceController extends ChangeNotifier {
         _sessionLoading = false;
         _showingCachedSessionMessages = false;
         _sessionLoadError = null;
-        unawaited(_persistSelectedSessionMessagesCache(nextServerMessages));
+        unawaited(
+          _persistSelectedSessionMessagesCache(
+            nextServerMessages,
+            immediate: true,
+          ),
+        );
       }
       _messages = nextMessages;
     } else if (type == 'todo.updated') {
@@ -2697,11 +2714,63 @@ class WorkspaceController extends ChangeNotifier {
   }
 
   Future<void> _persistSelectedSessionMessagesCache(
-    List<ChatMessage> messages,
-  ) async {
+    List<ChatMessage> messages, {
+    bool immediate = false,
+  }) async {
     final project = _project;
     final sessionId = _selectedSessionId;
     if (project == null || sessionId == null || sessionId.isEmpty) {
+      return;
+    }
+    await _persistSessionMessagesCache(
+      project: project,
+      sessionId: sessionId,
+      messages: messages,
+      immediate: immediate,
+    );
+  }
+
+  Future<void> _persistSessionMessagesCache({
+    required ProjectTarget project,
+    required String sessionId,
+    required List<ChatMessage> messages,
+    bool immediate = true,
+  }) async {
+    if (_disposed || sessionId.isEmpty) {
+      return;
+    }
+    _queuedSessionMessagesCacheProject = project;
+    _queuedSessionMessagesCacheSessionId = sessionId;
+    _queuedSessionMessagesCacheMessages = messages;
+    final token = ++_queuedSessionMessagesCacheToken;
+    _sessionMessagesCachePersistTimer?.cancel();
+    _sessionMessagesCachePersistTimer = null;
+
+    if (immediate) {
+      await _flushQueuedSessionMessagesCache(token);
+      return;
+    }
+
+    _sessionMessagesCachePersistTimer = Timer(
+      const Duration(milliseconds: 350),
+      () {
+        _sessionMessagesCachePersistTimer = null;
+        unawaited(_flushQueuedSessionMessagesCache(token));
+      },
+    );
+  }
+
+  Future<void> _flushQueuedSessionMessagesCache(int token) async {
+    if (_disposed || token != _queuedSessionMessagesCacheToken) {
+      return;
+    }
+    final project = _queuedSessionMessagesCacheProject;
+    final sessionId = _queuedSessionMessagesCacheSessionId;
+    final messages = _queuedSessionMessagesCacheMessages;
+    if (project == null ||
+        sessionId == null ||
+        sessionId.isEmpty ||
+        messages == null) {
       return;
     }
     await _saveSessionMessagesCache(
@@ -2709,6 +2778,12 @@ class WorkspaceController extends ChangeNotifier {
       sessionId: sessionId,
       messages: messages,
     );
+    if (_disposed || token != _queuedSessionMessagesCacheToken) {
+      return;
+    }
+    _queuedSessionMessagesCacheProject = null;
+    _queuedSessionMessagesCacheSessionId = null;
+    _queuedSessionMessagesCacheMessages = null;
   }
 
   ProjectTarget? _projectTargetFromEvent(Map<String, Object?> properties) {
@@ -2801,6 +2876,8 @@ class WorkspaceController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _sessionMessagesCachePersistTimer?.cancel();
+    _sessionMessagesCachePersistTimer = null;
     unawaited(_eventStreamService.disconnect());
     if (_ownsChatService) {
       _chatService.dispose();
