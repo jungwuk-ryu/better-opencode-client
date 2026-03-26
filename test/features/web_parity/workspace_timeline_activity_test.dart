@@ -100,24 +100,6 @@ void main() {
     expect(find.textContaining('release-checklist'), findsOneWidget);
     expect(find.text('Explored 4 reads'), findsOneWidget);
     expect(find.textContaining('daily-job.spec.ts'), findsNothing);
-    expect(
-      tester
-          .getTopLeft(
-            find.byKey(
-              const ValueKey<String>('timeline-activity-part_reasoning'),
-            ),
-          )
-          .dy,
-      greaterThan(
-        tester
-            .getTopLeft(
-              find.byKey(
-                const ValueKey<String>('timeline-compaction-part_compaction'),
-              ),
-            )
-            .dy,
-      ),
-    );
 
     await tester.tap(
       find.byKey(const ValueKey<String>('timeline-activity-part_reasoning')),
@@ -182,13 +164,74 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
-    expect(find.textContaining('daily-job.spec.ts  offset=261'), findsOneWidget);
+    expect(
+      find.textContaining('daily-job.spec.ts  offset=261'),
+      findsOneWidget,
+    );
     expect(
       find.textContaining('runtime-state.spec.ts  offset=1  limit=220'),
       findsOneWidget,
     );
-    expect(find.textContaining('bot-once.ts  offset=261  limit=80'), findsOneWidget);
+    expect(
+      find.textContaining('bot-once.ts  offset=261  limit=80'),
+      findsOneWidget,
+    );
   });
+
+  testWidgets(
+    'messages stay in chronological turn order even when an earlier assistant turn is still active',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        initialShellToolPartsExpanded: true,
+        initialTimelineProgressDetailsVisible: false,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              return _ConversationOrderingWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+            },
+      );
+      addTearDown(appController.dispose);
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          initialRoute: buildWorkspaceRoute(
+            '/workspace/demo',
+            sessionId: 'ses_1',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      final firstUserTop = tester.getTopLeft(find.text('테스트 메시지입니다.')).dy;
+      final firstAssistantTop = tester
+          .getTopLeft(find.text('테스트 메시지 확인했습니다. 필요한 작업을 보내주시면 바로 도와드릴게요.'))
+          .dy;
+      final secondUserTop = tester.getTopLeft(find.text('테스트2 입니다.')).dy;
+      final secondAssistantTop = tester
+          .getTopLeft(find.text('확인했습니다. 이어서 원하는 작업 말씀해 주세요.'))
+          .dy;
+
+      expect(firstUserTop, lessThan(firstAssistantTop));
+      expect(firstAssistantTop, lessThan(secondUserTop));
+      expect(secondUserTop, lessThan(secondAssistantTop));
+    },
+  );
 
   testWidgets('shell output can be collapsed from the workspace setting', (
     tester,
@@ -671,6 +714,123 @@ class _TimelineWorkspaceController extends WorkspaceController {
           type: 'text',
           text:
               'Goal\n\nCreate and implement the planned architecture for the repo workflow.',
+        ),
+      ],
+    ),
+  ];
+
+  bool _loading = true;
+
+  @override
+  bool get loading => _loading;
+
+  @override
+  ProjectTarget? get project => _projectTarget;
+
+  @override
+  List<ProjectTarget> get availableProjects => const <ProjectTarget>[
+    _projectTarget,
+  ];
+
+  @override
+  List<SessionSummary> get sessions => <SessionSummary>[_session];
+
+  @override
+  String? get selectedSessionId => _session.id;
+
+  @override
+  SessionSummary? get selectedSession => _session;
+
+  @override
+  List<ChatMessage> get messages => _messages;
+
+  @override
+  Future<void> load() async {
+    _loading = false;
+    notifyListeners();
+  }
+}
+
+class _ConversationOrderingWorkspaceController extends WorkspaceController {
+  _ConversationOrderingWorkspaceController({
+    required super.profile,
+    required super.directory,
+    super.initialSessionId,
+  });
+
+  static const ProjectTarget _projectTarget = ProjectTarget(
+    directory: '/workspace/demo',
+    label: 'Demo',
+    source: 'server',
+    vcs: 'git',
+    branch: 'main',
+  );
+
+  static final SessionSummary _session = SessionSummary(
+    id: 'ses_1',
+    directory: '/workspace/demo',
+    title: 'Conversation ordering',
+    version: '1',
+    updatedAt: DateTime.fromMillisecondsSinceEpoch(1710000004000),
+  );
+
+  static final List<ChatMessage> _messages = <ChatMessage>[
+    ChatMessage(
+      info: ChatMessageInfo(
+        id: 'msg_user_1',
+        role: 'user',
+        sessionId: 'ses_1',
+        createdAt: DateTime.fromMillisecondsSinceEpoch(1710000001000),
+        completedAt: DateTime.fromMillisecondsSinceEpoch(1710000001000),
+      ),
+      parts: const <ChatPart>[
+        ChatPart(id: 'part_user_1', type: 'text', text: '테스트 메시지입니다.'),
+      ],
+    ),
+    ChatMessage(
+      info: ChatMessageInfo(
+        id: 'msg_assistant_1',
+        role: 'assistant',
+        sessionId: 'ses_1',
+        createdAt: DateTime.fromMillisecondsSinceEpoch(1710000002000),
+      ),
+      parts: const <ChatPart>[
+        ChatPart(
+          id: 'part_reasoning_1',
+          type: 'reasoning',
+          text: 'Acknowledging needs',
+        ),
+        ChatPart(
+          id: 'part_assistant_1',
+          type: 'text',
+          text: '테스트 메시지 확인했습니다. 필요한 작업을 보내주시면 바로 도와드릴게요.',
+        ),
+      ],
+    ),
+    ChatMessage(
+      info: ChatMessageInfo(
+        id: 'msg_user_2',
+        role: 'user',
+        sessionId: 'ses_1',
+        createdAt: DateTime.fromMillisecondsSinceEpoch(1710000003000),
+        completedAt: DateTime.fromMillisecondsSinceEpoch(1710000003000),
+      ),
+      parts: const <ChatPart>[
+        ChatPart(id: 'part_user_2', type: 'text', text: '테스트2 입니다.'),
+      ],
+    ),
+    ChatMessage(
+      info: ChatMessageInfo(
+        id: 'msg_assistant_2',
+        role: 'assistant',
+        sessionId: 'ses_1',
+        createdAt: DateTime.fromMillisecondsSinceEpoch(1710000004000),
+      ),
+      parts: const <ChatPart>[
+        ChatPart(
+          id: 'part_assistant_2',
+          type: 'text',
+          text: '확인했습니다. 이어서 원하는 작업 말씀해 주세요.',
         ),
       ],
     ),

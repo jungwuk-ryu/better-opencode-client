@@ -7668,7 +7668,8 @@ class _TimelineExploredReadsPart extends StatefulWidget {
       _TimelineExploredReadsPartState();
 }
 
-class _TimelineExploredReadsPartState extends State<_TimelineExploredReadsPart> {
+class _TimelineExploredReadsPartState
+    extends State<_TimelineExploredReadsPart> {
   bool _expanded = false;
 
   @override
@@ -8700,36 +8701,26 @@ List<ChatMessage> _orderedTimelineMessages(List<ChatMessage> messages) {
   if (messages.length <= 1) {
     return messages;
   }
-  final leading = <ChatMessage>[];
-  final trailingActive = <ChatMessage>[];
-  for (final message in messages) {
-    if (_messageHasPinnedLiveParts(message)) {
-      trailingActive.add(message);
-    } else {
-      leading.add(message);
+  final indexed = <_IndexedTimelineMessage>[
+    for (var index = 0; index < messages.length; index += 1)
+      _IndexedTimelineMessage(index: index, message: messages[index]),
+  ];
+  indexed.sort(_compareTimelineMessages);
+  var changed = false;
+  for (var index = 0; index < indexed.length; index += 1) {
+    if (indexed[index].index != index) {
+      changed = true;
+      break;
     }
   }
-  if (trailingActive.isEmpty || leading.isEmpty) {
+  if (!changed) {
     return messages;
   }
-  return <ChatMessage>[...leading, ...trailingActive];
+  return indexed.map((entry) => entry.message).toList(growable: false);
 }
 
 bool _messageIsActive(ChatMessage message) {
   return message.info.role == 'assistant' && message.info.completedAt == null;
-}
-
-bool _messageHasPinnedLiveParts(ChatMessage message) {
-  if (message.info.role != 'assistant') {
-    return false;
-  }
-  for (final part in message.parts) {
-    if (_activityPartShimmerActive(part, messageIsActive: true) ||
-        _shouldAnimateStreamingText(part, true)) {
-      return true;
-    }
-  }
-  return false;
 }
 
 List<ChatPart> _orderedTimelineParts(
@@ -8776,6 +8767,45 @@ bool _activityPartShimmerActive(
     'reasoning' || 'agent' || 'subtask' || 'step-start' => messageIsActive,
     _ => false,
   };
+}
+
+int _compareTimelineMessages(
+  _IndexedTimelineMessage left,
+  _IndexedTimelineMessage right,
+) {
+  final timestamp = _compareMessageTimestamp(left.message, right.message);
+  if (timestamp != 0) {
+    return timestamp;
+  }
+  final completed = _compareNullableDateTimes(
+    left.message.info.completedAt,
+    right.message.info.completedAt,
+  );
+  if (completed != 0) {
+    return completed;
+  }
+  return left.index.compareTo(right.index);
+}
+
+int _compareMessageTimestamp(ChatMessage left, ChatMessage right) {
+  return _compareNullableDateTimes(
+    left.info.createdAt ?? left.info.completedAt,
+    right.info.createdAt ?? right.info.completedAt,
+  );
+}
+
+int _compareNullableDateTimes(DateTime? left, DateTime? right) {
+  if (left == null || right == null) {
+    return 0;
+  }
+  return left.compareTo(right);
+}
+
+class _IndexedTimelineMessage {
+  const _IndexedTimelineMessage({required this.index, required this.message});
+
+  final int index;
+  final ChatMessage message;
 }
 
 String _partText(ChatPart part) {
@@ -9085,14 +9115,20 @@ String _readToolDetailLine(ChatPart part) {
   ]);
   final filename = _basename(path ?? '').trim();
   final offset = _firstNonEmpty(<String?>[
-    _nestedValue(part.metadata, const <String>['state', 'input', 'offset'])
-        ?.toString(),
+    _nestedValue(part.metadata, const <String>[
+      'state',
+      'input',
+      'offset',
+    ])?.toString(),
     _nestedValue(part.metadata, const <String>['input', 'offset'])?.toString(),
     _nestedValue(part.metadata, const <String>['offset'])?.toString(),
   ]);
   final limit = _firstNonEmpty(<String?>[
-    _nestedValue(part.metadata, const <String>['state', 'input', 'limit'])
-        ?.toString(),
+    _nestedValue(part.metadata, const <String>[
+      'state',
+      'input',
+      'limit',
+    ])?.toString(),
     _nestedValue(part.metadata, const <String>['input', 'limit'])?.toString(),
     _nestedValue(part.metadata, const <String>['limit'])?.toString(),
   ]);
