@@ -24,6 +24,7 @@ void main() {
               {
                 'question': 'Proceed with tool execution?',
                 'header': 'Proceed',
+                'custom': false,
                 'options': [
                   {'label': 'Yes', 'description': 'Allow it'},
                   {'label': 'No', 'description': 'Reject it'},
@@ -86,6 +87,7 @@ void main() {
     expect(result.questions.length, 1);
     expect(result.permissions.length, 1);
     expect(result.questions.first.questions.first.options.first.label, 'Yes');
+    expect(result.questions.first.questions.first.custom, isFalse);
     service.dispose();
   });
 

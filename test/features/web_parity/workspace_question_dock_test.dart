@@ -73,6 +73,104 @@ void main() {
     expect(find.text('Ask anything...'), findsOneWidget);
     expect(find.text('Which execution path should I use?'), findsNothing);
   });
+
+  testWidgets('question dock accepts a custom answer from Other', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final workspaceController = _QuestionDockWorkspaceController(
+      profile: profile,
+      directory: '/workspace/demo',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceController: workspaceController,
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_root',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    await tester.tap(find.text('Other'));
+    await tester.pump();
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('question-dock-custom-input-0')),
+      'Run it as a one-off worker',
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('question-dock-submit')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(workspaceController.submittedAnswers, <List<String>>[
+      <String>['Run it as a one-off worker'],
+    ]);
+  });
+
+  testWidgets('question dock hides Other when custom answers are disabled', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final workspaceController = _QuestionDockWorkspaceController(
+      profile: profile,
+      directory: '/workspace/demo',
+      customAllowed: false,
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceController: workspaceController,
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_root',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.text('Other'), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('question-dock-custom-input-0')),
+      findsNothing,
+    );
+  });
 }
 
 class _WorkspaceRouteHarness extends StatelessWidget {
@@ -136,7 +234,27 @@ class _QuestionDockWorkspaceController extends WorkspaceController {
   _QuestionDockWorkspaceController({
     required super.profile,
     required super.directory,
-  });
+    this.customAllowed = true,
+  }) : _request = QuestionRequestSummary(
+         id: 'req_1',
+         sessionId: 'ses_child',
+         questions: <QuestionPromptSummary>[
+           QuestionPromptSummary(
+             question: 'Which execution path should I use?',
+             header: 'Execution',
+             multiple: false,
+             custom: customAllowed,
+             options: <QuestionOptionSummary>[
+               const QuestionOptionSummary(
+                 label: 'Cron/Container',
+                 description: 'Simple once-per-day deployment.',
+               ),
+             ],
+           ),
+         ],
+       );
+
+  final bool customAllowed;
 
   static const ProjectTarget _projectTarget = ProjectTarget(
     directory: '/workspace/demo',
@@ -206,23 +324,7 @@ class _QuestionDockWorkspaceController extends WorkspaceController {
   ];
 
   bool _loading = true;
-  QuestionRequestSummary? _request = const QuestionRequestSummary(
-    id: 'req_1',
-    sessionId: 'ses_child',
-    questions: <QuestionPromptSummary>[
-      QuestionPromptSummary(
-        question: 'Which execution path should I use?',
-        header: 'Execution',
-        multiple: false,
-        options: <QuestionOptionSummary>[
-          QuestionOptionSummary(
-            label: 'Cron/Container',
-            description: 'Simple once-per-day deployment.',
-          ),
-        ],
-      ),
-    ],
-  );
+  QuestionRequestSummary? _request;
   List<List<String>>? submittedAnswers;
 
   @override
@@ -255,7 +357,12 @@ class _QuestionDockWorkspaceController extends WorkspaceController {
   List<ChatMessage> get messages => _messages;
 
   @override
-  QuestionRequestSummary? get currentQuestionRequest => _request;
+  PendingRequestBundle get pendingRequests => PendingRequestBundle(
+    questions: _request == null
+        ? const <QuestionRequestSummary>[]
+        : <QuestionRequestSummary>[_request!],
+    permissions: const <PermissionRequestSummary>[],
+  );
 
   @override
   Future<void> load() async {

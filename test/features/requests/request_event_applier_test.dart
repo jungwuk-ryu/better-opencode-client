@@ -13,6 +13,7 @@ void main() {
           <String, Object?>{
             'question': 'Proceed?',
             'header': 'Confirm',
+            'custom': false,
             'options': <Map<String, Object?>>[
               <String, Object?>{'label': 'Yes', 'description': 'Allow'},
             ],
@@ -37,6 +38,8 @@ void main() {
 
     expect(updated, hasLength(1));
     expect(updated.single.questions.single.header, 'Updated');
+    expect(created.single.questions.single.custom, isFalse);
+    expect(updated.single.questions.single.custom, isTrue);
   });
 
   test('question resolved removes only matching session request', () {

@@ -3423,15 +3423,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     }
 
     if (questionRequest != null) {
-      return _QuestionPromptDock(
-        key: ValueKey<String>(
-          'pane-question-dock-${pane.id}-${questionRequest.id}',
-        ),
-        request: questionRequest,
-        compact: compact,
-        onReply: controller.replyToQuestion,
-        onReject: controller.rejectQuestion,
-      );
+      return const SizedBox.shrink();
     }
 
     return _PromptComposer(
@@ -8496,12 +8488,9 @@ class _WorkspaceBody extends StatelessWidget {
         else if (!usesInlinePaneComposer &&
             activeWorkspaceError == null &&
             questionRequest != null)
-          _QuestionPromptDock(
-            key: ValueKey<String>('question-dock-${questionRequest.id}'),
+          _PendingQuestionComposerNotice(
             request: questionRequest,
             compact: compact,
-            onReply: controller.replyToQuestion,
-            onReject: controller.rejectQuestion,
           )
         else if (!usesInlinePaneComposer && activeWorkspaceError == null)
           _PromptComposer(
@@ -9177,6 +9166,16 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                                     : 0,
                               ),
                       ),
+                      if (sessionId != null && paneQuestionRequest != null)
+                        _QuestionPromptDock(
+                          key: ValueKey<String>(
+                            'session-question-dock-${pane.id}::$normalizedSessionId-${paneQuestionRequest.id}',
+                          ),
+                          request: paneQuestionRequest,
+                          compact: compact,
+                          onReply: controller.replyToQuestion,
+                          onReject: controller.rejectQuestion,
+                        ),
                       if (sessionId != null)
                         _SessionTodoDock(
                           key: ValueKey<String>(
@@ -12096,6 +12095,98 @@ class _ComposerSlashCommand {
   final _ComposerBuiltinSlashAction? action;
 }
 
+class _PendingQuestionComposerNotice extends StatelessWidget {
+  const _PendingQuestionComposerNotice({
+    required this.request,
+    required this.compact,
+  });
+
+  final QuestionRequestSummary request;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final density = _workspaceDensity(context);
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        density.inset(compact ? AppSpacing.sm : AppSpacing.md),
+        density.inset(compact ? AppSpacing.xs : AppSpacing.sm),
+        density.inset(compact ? AppSpacing.sm : AppSpacing.md),
+        density.inset(compact ? AppSpacing.sm : AppSpacing.md),
+      ),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: density.maxContentWidth(920)),
+          child: Container(
+            padding: EdgeInsets.all(
+              density.inset(compact ? AppSpacing.sm : AppSpacing.md),
+            ),
+            decoration: BoxDecoration(
+              color: surfaces.panel,
+              borderRadius: BorderRadius.circular(compact ? 16 : 20),
+              border: Border.all(color: surfaces.lineSoft),
+            ),
+            child: Row(
+              children: <Widget>[
+                Container(
+                  width: compact ? 34 : 40,
+                  height: compact ? 34 : 40,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(compact ? 12 : 14),
+                  ),
+                  child: Icon(
+                    Icons.help_outline_rounded,
+                    size: compact ? 18 : 20,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+                SizedBox(
+                  width: density.inset(compact ? AppSpacing.sm : AppSpacing.md),
+                ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text(
+                        'Question pending in the active session',
+                        style:
+                            (compact
+                                    ? theme.textTheme.titleSmall
+                                    : theme.textTheme.titleMedium)
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                      SizedBox(
+                        height: density.inset(
+                          compact ? AppSpacing.xxs : AppSpacing.xs,
+                          min: 2,
+                        ),
+                      ),
+                      Text(
+                        'Answer it in the session panel to continue.',
+                        maxLines: compact ? 2 : 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: surfaces.muted,
+                          height: 1.45,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _QuestionPromptDock extends StatefulWidget {
   const _QuestionPromptDock({
     required this.request,
@@ -12123,6 +12214,7 @@ class _QuestionPromptDockState extends State<_QuestionPromptDock> {
   List<bool> _customEnabled = const <bool>[];
   List<TextEditingController> _customControllers =
       const <TextEditingController>[];
+  List<FocusNode> _customFocusNodes = const <FocusNode>[];
 
   @override
   void initState() {
@@ -12133,8 +12225,7 @@ class _QuestionPromptDockState extends State<_QuestionPromptDock> {
   @override
   void didUpdateWidget(covariant _QuestionPromptDock oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.request.id != widget.request.id ||
-        oldWidget.request.questions.length != widget.request.questions.length) {
+    if (oldWidget.request != widget.request) {
       _resetState();
     }
   }
@@ -12149,7 +12240,11 @@ class _QuestionPromptDockState extends State<_QuestionPromptDock> {
     for (final controller in _customControllers) {
       controller.dispose();
     }
+    for (final focusNode in _customFocusNodes) {
+      focusNode.dispose();
+    }
     _customControllers = const <TextEditingController>[];
+    _customFocusNodes = const <FocusNode>[];
   }
 
   void _resetState() {
@@ -12169,6 +12264,11 @@ class _QuestionPromptDockState extends State<_QuestionPromptDock> {
       (_) => TextEditingController(),
       growable: false,
     );
+    _customFocusNodes = List<FocusNode>.generate(
+      count,
+      (_) => FocusNode(),
+      growable: false,
+    );
   }
 
   QuestionPromptSummary? get _question {
@@ -12180,6 +12280,22 @@ class _QuestionPromptDockState extends State<_QuestionPromptDock> {
   }
 
   bool get _isLastQuestion => _tab >= widget.request.questions.length - 1;
+
+  bool _questionAllowsCustom(QuestionPromptSummary? question) {
+    return question?.custom ?? true;
+  }
+
+  void _focusCustomInput() {
+    if (_tab >= _customFocusNodes.length) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _tab >= _customFocusNodes.length) {
+        return;
+      }
+      _customFocusNodes[_tab].requestFocus();
+    });
+  }
 
   void _replaceAnswersForTab(List<String> values) {
     final next = _answers
@@ -12210,6 +12326,7 @@ class _QuestionPromptDockState extends State<_QuestionPromptDock> {
 
     final nextEnabled = List<bool>.from(_customEnabled);
     nextEnabled[_tab] = false;
+    _customFocusNodes[_tab].unfocus();
     setState(() {
       _customEnabled = nextEnabled;
       _answers = _answers
@@ -12226,7 +12343,7 @@ class _QuestionPromptDockState extends State<_QuestionPromptDock> {
 
   void _toggleCustom() {
     final question = _question;
-    if (question == null || _submitting) {
+    if (question == null || _submitting || !_questionAllowsCustom(question)) {
       return;
     }
 
@@ -12246,6 +12363,7 @@ class _QuestionPromptDockState extends State<_QuestionPromptDock> {
             )
             .toList(growable: false);
       });
+      _focusCustomInput();
       return;
     }
 
@@ -12269,11 +12387,16 @@ class _QuestionPromptDockState extends State<_QuestionPromptDock> {
           )
           .toList(growable: false);
     });
+    if (nextSelected) {
+      _focusCustomInput();
+    } else {
+      _customFocusNodes[_tab].unfocus();
+    }
   }
 
   void _updateCustomValue(String value) {
     final question = _question;
-    if (question == null) {
+    if (question == null || !_questionAllowsCustom(question)) {
       return;
     }
 
@@ -12376,6 +12499,7 @@ class _QuestionPromptDockState extends State<_QuestionPromptDock> {
 
     final total = widget.request.questions.length;
     final summary = '${_tab + 1} of $total questions';
+    final customAllowed = _questionAllowsCustom(question);
     final customValue = _customControllers[_tab].text.trim();
     final customSelected = _customEnabled[_tab];
     final isCompact = widget.compact;
@@ -12504,23 +12628,32 @@ class _QuestionPromptDockState extends State<_QuestionPromptDock> {
                             height: isCompact ? AppSpacing.xs : AppSpacing.sm,
                           ),
                         ],
-                        _QuestionChoiceTile(
-                          title: 'Type your own answer',
-                          subtitle: customValue.isEmpty
-                              ? 'Type your answer...'
-                              : customValue,
-                          selected: customSelected,
-                          multiple: question.multiple,
-                          compact: isCompact,
-                          onTap: _toggleCustom,
-                        ),
-                        if (customSelected ||
-                            customValue.isNotEmpty) ...<Widget>[
+                        if (customAllowed)
+                          _QuestionChoiceTile(
+                            key: ValueKey<String>(
+                              'question-dock-custom-option-$_tab',
+                            ),
+                            title: 'Other',
+                            subtitle: customValue.isEmpty
+                                ? 'Type your own answer'
+                                : customValue,
+                            selected: customSelected,
+                            multiple: question.multiple,
+                            compact: isCompact,
+                            onTap: _toggleCustom,
+                          ),
+                        if (customAllowed &&
+                            (customSelected ||
+                                customValue.isNotEmpty)) ...<Widget>[
                           SizedBox(
                             height: isCompact ? AppSpacing.xs : AppSpacing.sm,
                           ),
                           TextField(
+                            key: ValueKey<String>(
+                              'question-dock-custom-input-$_tab',
+                            ),
                             controller: _customControllers[_tab],
+                            focusNode: _customFocusNodes[_tab],
                             onChanged: _updateCustomValue,
                             enabled: !_submitting,
                             minLines: 1,
@@ -12611,6 +12744,7 @@ class _QuestionChoiceTile extends StatelessWidget {
     required this.compact,
     required this.onTap,
     this.subtitle,
+    super.key,
   });
 
   final String title;

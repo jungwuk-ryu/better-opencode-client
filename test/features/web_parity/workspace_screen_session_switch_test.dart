@@ -1147,6 +1147,78 @@ void main() {
     },
   );
 
+  testWidgets(
+    'split panes keep each session question panel visible without focus',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              return _PaneQuestionWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+            },
+      );
+      addTearDown(appController.dispose);
+
+      final navigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          navigatorKey: navigatorKey,
+          initialRoute: '/',
+        ),
+      );
+      navigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('workspace-split-session-pane-button'),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      await tester.tap(find.text('Session Two'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(
+        find.text('Which deployment target should I use?'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('What should I do with this flaky test?'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Question pending in the active session'),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('composer-text-field')),
+        findsNothing,
+      );
+    },
+  );
+
   testWidgets('desktop split panes restore across app launches', (
     tester,
   ) async {
@@ -2291,6 +2363,68 @@ class _PaneMetadataWorkspaceController extends _RecordingWorkspaceController {
     _todosBySession.remove(normalizedSessionId);
     notifyListeners();
   }
+}
+
+class _PaneQuestionWorkspaceController extends _RecordingWorkspaceController {
+  _PaneQuestionWorkspaceController({
+    required super.profile,
+    required super.directory,
+    super.initialSessionId,
+  });
+
+  final Map<String, QuestionRequestSummary> _questionsBySession =
+      <String, QuestionRequestSummary>{
+        'ses_1': const QuestionRequestSummary(
+          id: 'que_ses_1',
+          sessionId: 'ses_1',
+          questions: <QuestionPromptSummary>[
+            QuestionPromptSummary(
+              question: 'Which deployment target should I use?',
+              header: 'Deployment',
+              multiple: false,
+              options: <QuestionOptionSummary>[
+                QuestionOptionSummary(
+                  label: 'Production',
+                  description: 'Use the stable production stack.',
+                ),
+                QuestionOptionSummary(
+                  label: 'Staging',
+                  description: 'Verify the rollout before production.',
+                ),
+              ],
+            ),
+          ],
+        ),
+        'ses_2': const QuestionRequestSummary(
+          id: 'que_ses_2',
+          sessionId: 'ses_2',
+          questions: <QuestionPromptSummary>[
+            QuestionPromptSummary(
+              question: 'What should I do with this flaky test?',
+              header: 'Flaky test',
+              multiple: false,
+              custom: false,
+              options: <QuestionOptionSummary>[
+                QuestionOptionSummary(
+                  label: 'Fix it now',
+                  description: 'Pause and patch the failure immediately.',
+                ),
+                QuestionOptionSummary(
+                  label: 'Quarantine it',
+                  description:
+                      'Keep moving and isolate the test for follow-up.',
+                ),
+              ],
+            ),
+          ],
+        ),
+      };
+
+  @override
+  PendingRequestBundle get pendingRequests => PendingRequestBundle(
+    questions: _questionsBySession.values.toList(growable: false),
+    permissions: const <PermissionRequestSummary>[],
+  );
 }
 
 class _CompletedTodoWorkspaceController extends _RecordingWorkspaceController {

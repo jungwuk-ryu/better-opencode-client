@@ -23,12 +23,14 @@ class QuestionPromptSummary {
     required this.header,
     required this.options,
     required this.multiple,
+    this.custom = true,
   });
 
   final String question;
   final String header;
   final List<QuestionOptionSummary> options;
   final bool multiple;
+  final bool custom;
 
   factory QuestionPromptSummary.fromJson(Map<String, Object?> json) {
     return QuestionPromptSummary(
@@ -42,6 +44,7 @@ class QuestionPromptSummary {
           )
           .toList(growable: false),
       multiple: (json['multiple'] as bool?) ?? false,
+      custom: (json['custom'] as bool?) ?? true,
     );
   }
 
@@ -50,6 +53,7 @@ class QuestionPromptSummary {
     'header': header,
     'options': options.map((item) => item.toJson()).toList(growable: false),
     'multiple': multiple,
+    'custom': custom,
   };
 }
 
