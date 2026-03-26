@@ -4,6 +4,7 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/connection/connection_models.dart';
+import '../../design_system/app_snack_bar.dart';
 import '../../design_system/app_spacing.dart';
 import '../../design_system/app_theme.dart';
 import '../projects/project_catalog_service.dart';
@@ -148,8 +149,10 @@ class _ProjectPickerSheetState extends State<ProjectPickerSheet> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to inspect "$path": $error')),
+      showAppSnackBar(
+        context,
+        message: 'Failed to inspect "$path": $error',
+        tone: AppSnackBarTone.danger,
       );
     } finally {
       if (mounted) {
@@ -180,10 +183,7 @@ class _ProjectPickerSheetState extends State<ProjectPickerSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text(
-              'Open Project',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
+            Text('Open Project', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: AppSpacing.xs),
             Text(
               'Choose a worktree from your server or inspect a manual path.',

@@ -201,6 +201,23 @@ final class AppTheme {
         iconColor: accentSoft,
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        insetPadding: const EdgeInsets.fromLTRB(
+          AppSpacing.lg,
+          0,
+          AppSpacing.lg,
+          AppSpacing.lg,
+        ),
+        contentTextStyle: textTheme.bodyMedium?.copyWith(
+          color: text,
+          fontWeight: FontWeight.w600,
+        ),
+        actionTextColor: accentSoft,
+        disabledActionTextColor: muted,
+      ),
       textSelectionTheme: const TextSelectionThemeData(
         cursorColor: accent,
         selectionColor: Color(0x553A78A9),

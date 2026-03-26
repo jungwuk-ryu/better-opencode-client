@@ -14,6 +14,7 @@ import '../../app/app_controller.dart';
 import '../../app/app_scope.dart';
 import '../../core/connection/connection_models.dart';
 import '../../core/network/opencode_server_probe.dart';
+import '../../design_system/app_snack_bar.dart';
 import '../../design_system/app_spacing.dart';
 import '../../design_system/app_theme.dart';
 import '../chat/chat_models.dart';
@@ -148,6 +149,23 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   }
 
   String get _currentDirectory => _activeDirectory;
+
+  void _showSnackBar(
+    String message, {
+    AppSnackBarTone tone = AppSnackBarTone.info,
+    Duration duration = const Duration(seconds: 4),
+    AppSnackBarAction? action,
+    bool replaceCurrent = false,
+  }) {
+    showAppSnackBar(
+      context,
+      message: message,
+      tone: tone,
+      duration: duration,
+      action: action,
+      replaceCurrent: replaceCurrent,
+    );
+  }
 
   void _resetDesktopSessionPanes({String? initialSessionId}) {
     final pane = _WorkspaceSessionPaneSpec(
@@ -711,8 +729,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
 
   void _splitDesktopSessionPane(WorkspaceController controller) {
     if (_desktopSessionPanes.length >= _maxDesktopSessionPanes) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('You can open up to 4 session panes.')),
+      _showSnackBar(
+        'You can open up to 4 session panes.',
+        tone: AppSnackBarTone.warning,
       );
       return;
     }
@@ -797,9 +816,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Failed to attach files: $error')));
+      _showSnackBar(
+        'Failed to attach files: $error',
+        tone: AppSnackBarTone.danger,
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -825,12 +845,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       final overflow = result.rejectedNames.length > 3
           ? ' and ${result.rejectedNames.length - 3} more'
           : '';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Only images, PDFs, and text files are supported. Skipped: $names$overflow',
-          ),
-        ),
+      _showSnackBar(
+        'Only images, PDFs, and text files are supported. Skipped: $names$overflow',
+        tone: AppSnackBarTone.warning,
       );
     }
     return result.attachments;
@@ -898,9 +915,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         text: draft,
         selection: TextSelection.collapsed(offset: draft.length),
       );
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Failed to send message: $error')));
+      _showSnackBar(
+        'Failed to send message: $error',
+        tone: AppSnackBarTone.danger,
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -958,8 +976,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to send queued message: $error')),
+      _showSnackBar(
+        'Failed to send queued message: $error',
+        tone: AppSnackBarTone.danger,
       );
     }
   }
@@ -975,8 +994,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to interrupt the session: $error')),
+      _showSnackBar(
+        'Failed to interrupt the session: $error',
+        tone: AppSnackBarTone.danger,
       );
     }
   }
@@ -998,15 +1018,17 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       if (!mounted || updated == null) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Renamed session to "${updated.title}".')),
+      _showSnackBar(
+        'Renamed session to "${updated.title}".',
+        tone: AppSnackBarTone.success,
       );
     } catch (error) {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to rename session: $error')),
+      _showSnackBar(
+        'Failed to rename session: $error',
+        tone: AppSnackBarTone.danger,
       );
     }
   }
@@ -1017,16 +1039,18 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       if (!mounted || forked == null) {
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Forked into "${forked.title}".')));
+      _showSnackBar(
+        'Forked into "${forked.title}".',
+        tone: AppSnackBarTone.success,
+      );
     } catch (error) {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Failed to fork session: $error')));
+      _showSnackBar(
+        'Failed to fork session: $error',
+        tone: AppSnackBarTone.danger,
+      );
     }
   }
 
@@ -1046,17 +1070,17 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       setState(() {
         _timelineJumpEpoch += 1;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Forked from this message into "${forked.title}".'),
-        ),
+      _showSnackBar(
+        'Forked from this message into "${forked.title}".',
+        tone: AppSnackBarTone.success,
       );
     } catch (error) {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to fork from this message: $error')),
+      _showSnackBar(
+        'Failed to fork from this message: $error',
+        tone: AppSnackBarTone.danger,
       );
     }
   }
@@ -1079,15 +1103,17 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       setState(() {
         _timelineJumpEpoch += 1;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Reverted the session to this message.')),
+      _showSnackBar(
+        'Reverted the session to this message.',
+        tone: AppSnackBarTone.success,
       );
     } catch (error) {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to revert to this message: $error')),
+      _showSnackBar(
+        'Failed to revert to this message: $error',
+        tone: AppSnackBarTone.danger,
       );
     }
   }
@@ -1099,8 +1125,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to create session: $error')),
+      _showSnackBar(
+        'Failed to create session: $error',
+        tone: AppSnackBarTone.danger,
       );
     }
   }
@@ -1117,20 +1144,20 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         if (!mounted) {
           return;
         }
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Share link copied to clipboard.')),
+        _showSnackBar(
+          'Share link copied to clipboard.',
+          tone: AppSnackBarTone.success,
         );
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Session shared.')));
+      _showSnackBar('Session shared.', tone: AppSnackBarTone.success);
     } catch (error) {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to share session: $error')),
+      _showSnackBar(
+        'Failed to share session: $error',
+        tone: AppSnackBarTone.danger,
       );
     }
   }
@@ -1141,15 +1168,14 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       if (!mounted || updated == null) {
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Share link removed.')));
+      _showSnackBar('Share link removed.', tone: AppSnackBarTone.info);
     } catch (error) {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to unshare session: $error')),
+      _showSnackBar(
+        'Failed to unshare session: $error',
+        tone: AppSnackBarTone.danger,
       );
     }
   }
@@ -1161,8 +1187,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to compact session: $error')),
+      _showSnackBar(
+        'Failed to compact session: $error',
+        tone: AppSnackBarTone.danger,
       );
     }
   }
@@ -1203,15 +1230,14 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       final message = nextSession == null
           ? 'Session deleted.'
           : 'Session deleted. Opened "${nextSession.title}".';
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
+      _showSnackBar(message, tone: AppSnackBarTone.warning);
     } catch (error) {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to delete session: $error')),
+      _showSnackBar(
+        'Failed to delete session: $error',
+        tone: AppSnackBarTone.danger,
       );
     }
   }
@@ -1383,8 +1409,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         if (!mounted) {
           return null;
         }
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to update project: $error')),
+        _showSnackBar(
+          'Failed to update project: $error',
+          tone: AppSnackBarTone.danger,
         );
         return null;
       }
@@ -2745,8 +2772,10 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to refresh server status: $error')),
+      showAppSnackBar(
+        context,
+        message: 'Failed to refresh server status: $error',
+        tone: AppSnackBarTone.danger,
       );
     } finally {
       if (mounted) {
@@ -10251,9 +10280,11 @@ class _UserTimelineMessageState extends State<_UserTimelineMessage> {
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(
+    showAppSnackBar(
       context,
-    ).showSnackBar(const SnackBar(content: Text('Message copied.')));
+      message: 'Message copied.',
+      tone: AppSnackBarTone.success,
+    );
   }
 
   Future<void> _runAction(
@@ -11782,9 +11813,11 @@ class _StructuredCodeFenceBlockState extends State<_StructuredCodeFenceBlock> {
     setState(() {
       _copied = true;
     });
-    ScaffoldMessenger.of(
+    showAppSnackBar(
       context,
-    ).showSnackBar(const SnackBar(content: Text('Code block copied.')));
+      message: 'Code block copied.',
+      tone: AppSnackBarTone.success,
+    );
     _copiedTimer = Timer(const Duration(seconds: 2), () {
       if (!mounted) {
         return;

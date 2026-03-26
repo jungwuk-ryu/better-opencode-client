@@ -12,6 +12,7 @@ import '../../core/network/sse_connection_monitor.dart';
 import '../../core/persistence/stale_cache_store.dart';
 import '../../core/spec/capability_registry.dart';
 import '../../core/spec/raw_json_document.dart';
+import '../../design_system/app_snack_bar.dart';
 import '../../design_system/app_spacing.dart';
 import '../../design_system/app_theme.dart';
 import '../chat/chat_models.dart';
@@ -675,15 +676,14 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       if (!mounted) {
         return;
       }
-      final messenger = ScaffoldMessenger.maybeOf(context);
-      if (messenger == null) {
+      if (ScaffoldMessenger.maybeOf(context) == null) {
         return;
       }
-      messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(message, maxLines: 3, overflow: TextOverflow.ellipsis),
-        ),
+      showAppSnackBar(
+        context,
+        message: message,
+        tone: AppSnackBarTone.info,
+        replaceCurrent: true,
       );
     });
   }
@@ -2028,30 +2028,29 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     if (!mounted) {
       return;
     }
-    final messenger = ScaffoldMessenger.maybeOf(context);
     final l10n = AppLocalizations.of(context);
-    if (messenger == null || l10n == null) {
+    if (ScaffoldMessenger.maybeOf(context) == null || l10n == null) {
       return;
     }
     final compact = MediaQuery.sizeOf(context).width < 960;
     final message = _pendingRequestAlertMessage(l10n, alert);
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(message, maxLines: 3, overflow: TextOverflow.ellipsis),
-        duration: const Duration(seconds: 6),
-        action: compact
-            ? SnackBarAction(
-                label: l10n.shellNotificationOpenAction,
-                onPressed: () {
-                  if (!mounted) {
-                    return;
-                  }
-                  _selectPrimaryDestination(_ShellPrimaryDestination.context);
-                },
-              )
-            : null,
-      ),
+    showAppSnackBar(
+      context,
+      message: message,
+      tone: AppSnackBarTone.warning,
+      duration: const Duration(seconds: 6),
+      replaceCurrent: true,
+      action: compact
+          ? AppSnackBarAction(
+              label: l10n.shellNotificationOpenAction,
+              onPressed: () {
+                if (!mounted) {
+                  return;
+                }
+                _selectPrimaryDestination(_ShellPrimaryDestination.context);
+              },
+            )
+          : null,
     );
   }
 
