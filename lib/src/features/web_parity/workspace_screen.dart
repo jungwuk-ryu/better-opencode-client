@@ -504,6 +504,44 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     }
   }
 
+  bool _appendComposerAttachmentsForScope(
+    String scopeKey,
+    List<PromptAttachment> attachments, {
+    bool requestFocus = false,
+  }) {
+    if (attachments.isEmpty) {
+      return false;
+    }
+    final nextAttachments = List<PromptAttachment>.from(
+      _composerAttachmentsForScope(scopeKey),
+    );
+    final existingIds = nextAttachments
+        .map((attachment) => attachment.id)
+        .toSet();
+    var added = false;
+    for (final attachment in attachments) {
+      if (!existingIds.add(attachment.id)) {
+        continue;
+      }
+      nextAttachments.add(attachment);
+      added = true;
+    }
+    if (!added) {
+      return false;
+    }
+    final frozen = List<PromptAttachment>.unmodifiable(nextAttachments);
+    setState(() {
+      _updateComposerScopeState(scopeKey, attachments: frozen);
+      if (_activeComposerScopeKey == scopeKey) {
+        _composerAttachments = frozen;
+      }
+      if (requestFocus) {
+        _requestPromptComposerFocusForScope(scopeKey);
+      }
+    });
+    return true;
+  }
+
   void _removeComposerAttachmentForScope(String scopeKey, String attachmentId) {
     final nextAttachments = _composerAttachmentsForScope(scopeKey)
         .where((attachment) => attachment.id != attachmentId)
@@ -3684,6 +3722,70 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     _removeComposerAttachmentForScope(scopeKey, attachmentId);
   }
 
+  void _addReviewCommentToComposerContext(
+    _ReviewLineCommentSubmission submission,
+  ) {
+    final scopeKey = _activeComposerScopeKey;
+    if (scopeKey == null) {
+      _showSnackBar(
+        'Open a session composer before adding review context.',
+        tone: AppSnackBarTone.warning,
+      );
+      return;
+    }
+    final attachment = _buildReviewCommentAttachment(submission);
+    final added = _appendComposerAttachmentsForScope(
+      scopeKey,
+      <PromptAttachment>[attachment],
+      requestFocus: true,
+    );
+    if (!added) {
+      _showSnackBar(
+        'This review comment is already in the composer context.',
+        tone: AppSnackBarTone.warning,
+      );
+      return;
+    }
+    if (_compactPane != _CompactWorkspacePane.session) {
+      setState(() {
+        _compactPane = _CompactWorkspacePane.session;
+      });
+    }
+    _showSnackBar('Added review comment to composer context.');
+  }
+
+  PromptAttachment _buildReviewCommentAttachment(
+    _ReviewLineCommentSubmission submission,
+  ) {
+    final comment = submission.comment.trim();
+    final target = submission.target;
+    final payload = StringBuffer()
+      ..writeln('Review comment context')
+      ..writeln()
+      ..writeln('File: ${target.path}')
+      ..writeln('Location: ${target.locationLabel}')
+      ..writeln()
+      ..writeln('Comment:')
+      ..writeln(comment)
+      ..writeln()
+      ..writeln('Diff excerpt:')
+      ..writeln(target.preview.trimRight());
+    final digest = base64Url
+        .encode(
+          utf8.encode(
+            '${target.path}|${target.oldLineNumber ?? ''}|${target.newLineNumber ?? ''}|$comment',
+          ),
+        )
+        .replaceAll('=', '');
+    return PromptAttachment(
+      id: 'review-comment-$digest',
+      filename: 'Review · ${target.path} · ${target.locationLabel}.txt',
+      mime: 'text/plain',
+      url:
+          'data:text/plain;base64,${base64Encode(utf8.encode(payload.toString().trimRight()))}',
+    );
+  }
+
   Future<void> _focusComposerForPane(
     _WorkspacePaneViewModel paneViewModel,
   ) async {
@@ -5273,6 +5375,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                           _pickComposerAttachments,
                                       onRemoveAttachment:
                                           _removeComposerAttachment,
+                                      onAddReviewCommentToComposerContext:
+                                          _addReviewCommentToComposerContext,
                                       onTogglePermissionAutoAccept:
                                           _toggleSelectedPermissionAutoAccept,
                                       onOpenMcpPicker: () =>
@@ -11693,6 +11797,7 @@ class _WorkspaceBody extends StatelessWidget {
     required this.onCloseSessionPane,
     required this.onPickAttachments,
     required this.onRemoveAttachment,
+    required this.onAddReviewCommentToComposerContext,
     required this.onTogglePermissionAutoAccept,
     required this.onOpenMcpPicker,
     this.onShowSidePanel,
@@ -11748,6 +11853,8 @@ class _WorkspaceBody extends StatelessWidget {
   final ValueChanged<String> onCloseSessionPane;
   final Future<void> Function() onPickAttachments;
   final ValueChanged<String> onRemoveAttachment;
+  final ValueChanged<_ReviewLineCommentSubmission>
+  onAddReviewCommentToComposerContext;
   final Future<void> Function() onTogglePermissionAutoAccept;
   final Future<void> Function() onOpenMcpPicker;
   final VoidCallback? onShowSidePanel;
@@ -11900,7 +12007,10 @@ class _WorkspaceBody extends StatelessWidget {
       ],
     );
 
-    final sidePanel = _SidePanel(controller: controller);
+    final sidePanel = _SidePanel(
+      controller: controller,
+      onLineComment: onAddReviewCommentToComposerContext,
+    );
     if (compact) {
       return Column(
         children: <Widget>[
@@ -22351,9 +22461,10 @@ String _cleanInlineSummary(String value) {
 }
 
 class _SidePanel extends StatelessWidget {
-  const _SidePanel({required this.controller});
+  const _SidePanel({required this.controller, required this.onLineComment});
 
   final WorkspaceController controller;
+  final ValueChanged<_ReviewLineCommentSubmission> onLineComment;
 
   @override
   Widget build(BuildContext context) {
@@ -22407,6 +22518,7 @@ class _SidePanel extends StatelessWidget {
               diff: controller.reviewDiff,
               loadingDiff: controller.loadingReviewDiff,
               diffError: controller.reviewDiffError,
+              onLineComment: onLineComment,
               onSelectFile: (path) {
                 unawaited(controller.selectReviewFile(path));
               },
@@ -22690,6 +22802,7 @@ class _ReviewPanel extends StatefulWidget {
     required this.diff,
     required this.loadingDiff,
     required this.diffError,
+    required this.onLineComment,
     required this.onSelectFile,
   });
 
@@ -22698,6 +22811,7 @@ class _ReviewPanel extends StatefulWidget {
   final FileDiffSummary? diff;
   final bool loadingDiff;
   final String? diffError;
+  final ValueChanged<_ReviewLineCommentSubmission> onLineComment;
   final ValueChanged<String> onSelectFile;
 
   @override
@@ -22711,6 +22825,13 @@ class _ReviewPanelState extends State<_ReviewPanel> {
 
   double _previewHeight = _defaultPreviewHeight;
   _ReviewDiffMode _diffMode = _ReviewDiffMode.unified;
+  final TextEditingController _lineCommentController = TextEditingController();
+
+  @override
+  void dispose() {
+    _lineCommentController.dispose();
+    super.dispose();
+  }
 
   void _resizePreview(double deltaDy, double availableHeight) {
     final maxPreviewHeight = (availableHeight - _minListHeight).clamp(
@@ -22727,6 +22848,40 @@ class _ReviewPanelState extends State<_ReviewPanel> {
     setState(() {
       _previewHeight = next;
     });
+  }
+
+  Future<void> _startLineComment(_ReviewCommentTarget target) async {
+    _lineCommentController.value = const TextEditingValue(
+      text: '',
+      selection: TextSelection.collapsed(offset: 0),
+    );
+    final comment = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.all(AppSpacing.lg),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 460),
+            child: _ReviewLineCommentEditor(
+              target: target,
+              controller: _lineCommentController,
+              onCancel: () => Navigator.of(dialogContext).pop(),
+              onSubmit: () => Navigator.of(
+                dialogContext,
+              ).pop(_lineCommentController.text.trim()),
+            ),
+          ),
+        );
+      },
+    );
+    if (!mounted || comment == null || comment.trim().isEmpty) {
+      return;
+    }
+    widget.onLineComment(
+      _ReviewLineCommentSubmission(target: target, comment: comment),
+    );
+    _lineCommentController.clear();
   }
 
   @override
@@ -22973,6 +23128,9 @@ class _ReviewPanelState extends State<_ReviewPanel> {
                                   : _ReviewDiffView(
                                       diff: widget.diff!,
                                       mode: _diffMode,
+                                      onLineComment: (target) {
+                                        unawaited(_startLineComment(target));
+                                      },
                                     ),
                             ),
                           ],
@@ -22992,10 +23150,15 @@ class _ReviewPanelState extends State<_ReviewPanel> {
 enum _ReviewDiffMode { unified, split }
 
 class _ReviewDiffView extends StatelessWidget {
-  const _ReviewDiffView({required this.diff, required this.mode});
+  const _ReviewDiffView({
+    required this.diff,
+    required this.mode,
+    required this.onLineComment,
+  });
 
   final FileDiffSummary diff;
   final _ReviewDiffMode mode;
+  final ValueChanged<_ReviewCommentTarget> onLineComment;
 
   @override
   Widget build(BuildContext context) {
@@ -23036,23 +23199,14 @@ class _ReviewDiffView extends StatelessWidget {
                   child: ConstrainedBox(
                     constraints: BoxConstraints(minWidth: minWidth),
                     child: SingleChildScrollView(
-                      child: SelectionArea(
-                        child: SelectableText.rich(
-                          key: const ValueKey<String>(
-                            'review-diff-unified-view',
-                          ),
-                          TextSpan(
-                            children: _buildReviewDiffSpans(
-                              diff.content,
-                              theme: theme,
-                              surfaces: surfaces,
-                            ),
-                          ),
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            fontFamily: 'monospace',
-                            height: 1.45,
-                          ),
-                        ),
+                      child: _ReviewUnifiedDiffBody(
+                        key: const ValueKey<String>('review-diff-unified-view'),
+                        diff: parsedDiff,
+                        filePath: diff.path,
+                        contentWidth: minWidth,
+                        theme: theme,
+                        surfaces: surfaces,
+                        onLineComment: onLineComment,
                       ),
                     ),
                   ),
@@ -23066,8 +23220,10 @@ class _ReviewDiffView extends StatelessWidget {
                     child: _ReviewSplitDiffBody(
                       key: const ValueKey<String>('review-diff-split-view'),
                       diff: parsedDiff,
+                      filePath: diff.path,
                       theme: theme,
                       surfaces: surfaces,
+                      onLineComment: onLineComment,
                     ),
                   ),
                 ),
@@ -23120,80 +23276,21 @@ IconData _reviewStatusIcon(String status) {
   }
 }
 
-List<InlineSpan> _buildReviewDiffSpans(
-  String content, {
-  required ThemeData theme,
-  required AppSurfaces surfaces,
-}) {
-  if (content.isEmpty) {
-    return const <InlineSpan>[];
-  }
-
-  final lines = content.split('\n');
-  final spans = <InlineSpan>[];
-  for (var index = 0; index < lines.length; index += 1) {
-    final line = lines[index];
-    final style = _reviewDiffLineStyle(line, theme: theme, surfaces: surfaces);
-    spans.add(TextSpan(text: line, style: style));
-    if (index != lines.length - 1) {
-      spans.add(const TextSpan(text: '\n'));
-    }
-  }
-  return spans;
-}
-
-TextStyle? _reviewDiffLineStyle(
-  String line, {
-  required ThemeData theme,
-  required AppSurfaces surfaces,
-}) {
-  final base = theme.textTheme.bodySmall?.copyWith(
-    fontFamily: 'monospace',
-    height: 1.45,
-    color: theme.colorScheme.onSurface,
-  );
-  if (line.startsWith('+++') || line.startsWith('---')) {
-    return base?.copyWith(color: surfaces.warning, fontWeight: FontWeight.w700);
-  }
-  if (line.startsWith('@@')) {
-    return base?.copyWith(
-      color: theme.colorScheme.primary,
-      fontWeight: FontWeight.w700,
-    );
-  }
-  if (line.startsWith('diff --git') ||
-      line.startsWith('index ') ||
-      line.startsWith('new file') ||
-      line.startsWith('deleted file') ||
-      line.startsWith('rename ')) {
-    return base?.copyWith(color: surfaces.warning);
-  }
-  if (line.startsWith('+') && !line.startsWith('+++')) {
-    return base?.copyWith(
-      color: surfaces.success,
-      backgroundColor: surfaces.success.withValues(alpha: 0.08),
-    );
-  }
-  if (line.startsWith('-') && !line.startsWith('---')) {
-    return base?.copyWith(
-      color: surfaces.danger,
-      backgroundColor: surfaces.danger.withValues(alpha: 0.08),
-    );
-  }
-  return base;
-}
-
 class _ReviewSplitDiffBody extends StatelessWidget {
   const _ReviewSplitDiffBody({
     required this.diff,
+    required this.filePath,
     required this.theme,
     required this.surfaces,
+    required this.onLineComment,
     super.key,
   });
 
   final _ParsedReviewDiff diff;
+  final String filePath;
   final ThemeData theme;
   final AppSurfaces surfaces;
+  final ValueChanged<_ReviewCommentTarget> onLineComment;
 
   @override
   Widget build(BuildContext context) {
@@ -23228,9 +23325,11 @@ class _ReviewSplitDiffBody extends StatelessWidget {
             const SizedBox(height: AppSpacing.xxs),
             _ReviewSplitSideHeader(theme: theme, surfaces: surfaces),
             ..._buildReviewSplitRows(
+              filePath,
               diff.hunks[hunkIndex],
               theme: theme,
               surfaces: surfaces,
+              onLineComment: onLineComment,
             ),
           ],
         ],
@@ -23358,10 +23457,181 @@ class _ReviewSplitSideHeader extends StatelessWidget {
   }
 }
 
+class _ReviewUnifiedDiffBody extends StatelessWidget {
+  const _ReviewUnifiedDiffBody({
+    required this.diff,
+    required this.filePath,
+    required this.contentWidth,
+    required this.theme,
+    required this.surfaces,
+    required this.onLineComment,
+    super.key,
+  });
+
+  final _ParsedReviewDiff diff;
+  final String filePath;
+  final double contentWidth;
+  final ThemeData theme;
+  final AppSurfaces surfaces;
+  final ValueChanged<_ReviewCommentTarget> onLineComment;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: contentWidth,
+      child: SelectionArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            for (
+              var index = 0;
+              index < diff.headers.length;
+              index += 1
+            ) ...<Widget>[
+              _ReviewDiffMetaRow(
+                text: diff.headers[index],
+                theme: theme,
+                surfaces: surfaces,
+              ),
+              const SizedBox(height: AppSpacing.xxs),
+            ],
+            for (
+              var hunkIndex = 0;
+              hunkIndex < diff.hunks.length;
+              hunkIndex += 1
+            ) ...<Widget>[
+              if (diff.headers.isNotEmpty || hunkIndex > 0)
+                const SizedBox(height: AppSpacing.sm),
+              _ReviewDiffHunkHeaderRow(
+                text: diff.hunks[hunkIndex].header,
+                theme: theme,
+                surfaces: surfaces,
+              ),
+              const SizedBox(height: AppSpacing.xxs),
+              for (
+                var lineIndex = 0;
+                lineIndex < diff.hunks[hunkIndex].lines.length;
+                lineIndex += 1
+              ) ...<Widget>[
+                _ReviewUnifiedLineRow(
+                  filePath: filePath,
+                  hunkHeader: diff.hunks[hunkIndex].header,
+                  line: diff.hunks[hunkIndex].lines[lineIndex],
+                  theme: theme,
+                  surfaces: surfaces,
+                  onLineComment: onLineComment,
+                ),
+                if (lineIndex != diff.hunks[hunkIndex].lines.length - 1)
+                  const SizedBox(height: 1),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ReviewUnifiedLineRow extends StatelessWidget {
+  const _ReviewUnifiedLineRow({
+    required this.filePath,
+    required this.hunkHeader,
+    required this.line,
+    required this.theme,
+    required this.surfaces,
+    required this.onLineComment,
+  });
+
+  final String filePath;
+  final String hunkHeader;
+  final _ParsedReviewLine line;
+  final ThemeData theme;
+  final AppSurfaces surfaces;
+  final ValueChanged<_ReviewCommentTarget> onLineComment;
+
+  @override
+  Widget build(BuildContext context) {
+    final backgroundColor = switch (line.kind) {
+      _ParsedReviewLineKind.insert => surfaces.success.withValues(alpha: 0.08),
+      _ParsedReviewLineKind.delete => surfaces.danger.withValues(alpha: 0.08),
+      _ParsedReviewLineKind.context => Colors.transparent,
+    };
+    final textColor = switch (line.kind) {
+      _ParsedReviewLineKind.insert => surfaces.success,
+      _ParsedReviewLineKind.delete => surfaces.danger,
+      _ParsedReviewLineKind.context => theme.colorScheme.onSurface,
+    };
+    final prefix = switch (line.kind) {
+      _ParsedReviewLineKind.insert => '+',
+      _ParsedReviewLineKind.delete => '-',
+      _ParsedReviewLineKind.context => ' ',
+    };
+    final target = _reviewCommentTargetForLine(
+      path: filePath,
+      hunkHeader: hunkHeader,
+      line: line,
+    );
+    return Container(
+      color: backgroundColor,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: 4,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          SizedBox(
+            width: 40,
+            child: Text(
+              line.oldNumber?.toString() ?? '',
+              textAlign: TextAlign.right,
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontFamily: 'monospace',
+                color: surfaces.muted,
+              ),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          SizedBox(
+            width: 40,
+            child: Text(
+              line.newNumber?.toString() ?? '',
+              textAlign: TextAlign.right,
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontFamily: 'monospace',
+                color: surfaces.muted,
+              ),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          _ReviewLineCommentButton(
+            target: target,
+            onPressed: () => onLineComment(target),
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          Expanded(
+            child: Text(
+              '$prefix${line.text}',
+              softWrap: false,
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontFamily: 'monospace',
+                height: 1.45,
+                color: textColor,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 List<Widget> _buildReviewSplitRows(
+  String filePath,
   _ParsedReviewHunk hunk, {
   required ThemeData theme,
   required AppSurfaces surfaces,
+  required ValueChanged<_ReviewCommentTarget> onLineComment,
 }) {
   final rows = <Widget>[];
   final pairs = _pairReviewSplitLines(hunk.lines);
@@ -23373,18 +23643,24 @@ List<Widget> _buildReviewSplitRows(
           Expanded(
             child: _ReviewSplitLineCell(
               line: pair.left,
+              filePath: filePath,
+              hunkHeader: hunk.header,
               theme: theme,
               surfaces: surfaces,
               side: _ReviewSplitSide.before,
+              onLineComment: onLineComment,
             ),
           ),
           const SizedBox(width: 1),
           Expanded(
             child: _ReviewSplitLineCell(
               line: pair.right,
+              filePath: filePath,
+              hunkHeader: hunk.header,
               theme: theme,
               surfaces: surfaces,
               side: _ReviewSplitSide.after,
+              onLineComment: onLineComment,
             ),
           ),
         ],
@@ -23400,15 +23676,21 @@ enum _ReviewSplitSide { before, after }
 class _ReviewSplitLineCell extends StatelessWidget {
   const _ReviewSplitLineCell({
     required this.line,
+    required this.filePath,
+    required this.hunkHeader,
     required this.theme,
     required this.surfaces,
     required this.side,
+    required this.onLineComment,
   });
 
   final _ParsedReviewLine? line;
+  final String filePath;
+  final String hunkHeader;
   final ThemeData theme;
   final AppSurfaces surfaces;
   final _ReviewSplitSide side;
+  final ValueChanged<_ReviewCommentTarget> onLineComment;
 
   @override
   Widget build(BuildContext context) {
@@ -23433,6 +23715,15 @@ class _ReviewSplitLineCell extends StatelessWidget {
       _ParsedReviewLineKind.delete => '-',
       _ParsedReviewLineKind.context || null => ' ',
     };
+    final commentTarget = line == null
+        ? null
+        : _reviewCommentTargetForLine(
+            path: filePath,
+            hunkHeader: hunkHeader,
+            line: line!,
+          );
+    final showCommentButton =
+        commentTarget != null && _canCommentOnSplitLine(line: line, side: side);
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.sm,
@@ -23465,6 +23756,16 @@ class _ReviewSplitLineCell extends StatelessWidget {
             ),
           ),
           const SizedBox(width: AppSpacing.xs),
+          SizedBox(
+            width: 26,
+            child: !showCommentButton
+                ? const SizedBox.shrink()
+                : _ReviewLineCommentButton(
+                    target: commentTarget,
+                    onPressed: () => onLineComment(commentTarget),
+                  ),
+          ),
+          const SizedBox(width: AppSpacing.xs),
           Expanded(
             child: Text(
               line?.text ?? '',
@@ -23480,6 +23781,202 @@ class _ReviewSplitLineCell extends StatelessWidget {
       ),
     );
   }
+}
+
+class _ReviewLineCommentButton extends StatelessWidget {
+  const _ReviewLineCommentButton({
+    required this.target,
+    required this.onPressed,
+  });
+
+  final _ReviewCommentTarget target;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Add review comment for ${target.locationLabel}',
+      child: IconButton(
+        key: ValueKey<String>(_reviewCommentTargetButtonKey(target)),
+        onPressed: onPressed,
+        icon: const Icon(Icons.add_comment_rounded, size: 16),
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints.tightFor(width: 24, height: 24),
+        visualDensity: VisualDensity.compact,
+        splashRadius: 18,
+      ),
+    );
+  }
+}
+
+class _ReviewLineCommentEditor extends StatelessWidget {
+  const _ReviewLineCommentEditor({
+    required this.target,
+    required this.controller,
+    required this.onCancel,
+    required this.onSubmit,
+  });
+
+  final _ReviewCommentTarget target;
+  final TextEditingController controller;
+  final VoidCallback onCancel;
+  final VoidCallback onSubmit;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    return Container(
+      key: const ValueKey<String>('review-line-comment-editor'),
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: surfaces.panelMuted,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: surfaces.lineSoft),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            'Add to composer context',
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            '${target.path} · ${target.locationLabel}',
+            style: theme.textTheme.bodySmall?.copyWith(color: surfaces.muted),
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            target.preview,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: surfaces.muted,
+              fontFamily: 'monospace',
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          TextField(
+            key: const ValueKey<String>('review-line-comment-field'),
+            controller: controller,
+            autofocus: true,
+            minLines: 1,
+            maxLines: 2,
+            decoration: const InputDecoration(
+              hintText: 'Explain what you want the model to focus on.',
+            ),
+            onSubmitted: (_) {
+              if (controller.text.trim().isEmpty) {
+                return;
+              }
+              onSubmit();
+            },
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: controller,
+            builder: (context, value, child) {
+              final canSubmit = value.text.trim().isNotEmpty;
+              return OverflowBar(
+                alignment: MainAxisAlignment.end,
+                overflowAlignment: OverflowBarAlignment.end,
+                spacing: AppSpacing.xs,
+                children: <Widget>[
+                  TextButton(onPressed: onCancel, child: const Text('Cancel')),
+                  FilledButton(
+                    key: const ValueKey<String>('review-line-comment-submit'),
+                    onPressed: canSubmit ? onSubmit : null,
+                    child: const Text('Add to composer'),
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReviewCommentTarget {
+  const _ReviewCommentTarget({
+    required this.path,
+    required this.preview,
+    this.oldLineNumber,
+    this.newLineNumber,
+  });
+
+  final String path;
+  final String preview;
+  final int? oldLineNumber;
+  final int? newLineNumber;
+
+  String get locationLabel {
+    if (oldLineNumber != null && newLineNumber != null) {
+      if (oldLineNumber == newLineNumber) {
+        return 'line $newLineNumber';
+      }
+      return 'old $oldLineNumber / new $newLineNumber';
+    }
+    if (newLineNumber != null) {
+      return 'new line $newLineNumber';
+    }
+    if (oldLineNumber != null) {
+      return 'old line $oldLineNumber';
+    }
+    return 'selected lines';
+  }
+}
+
+class _ReviewLineCommentSubmission {
+  const _ReviewLineCommentSubmission({
+    required this.target,
+    required this.comment,
+  });
+
+  final _ReviewCommentTarget target;
+  final String comment;
+}
+
+_ReviewCommentTarget _reviewCommentTargetForLine({
+  required String path,
+  required String hunkHeader,
+  required _ParsedReviewLine line,
+}) {
+  final prefix = switch (line.kind) {
+    _ParsedReviewLineKind.insert => '+',
+    _ParsedReviewLineKind.delete => '-',
+    _ParsedReviewLineKind.context => ' ',
+  };
+  return _ReviewCommentTarget(
+    path: path,
+    oldLineNumber: line.oldNumber,
+    newLineNumber: line.newNumber,
+    preview: '$hunkHeader\n$prefix${line.text}',
+  );
+}
+
+bool _canCommentOnSplitLine({
+  required _ParsedReviewLine? line,
+  required _ReviewSplitSide side,
+}) {
+  if (line == null) {
+    return false;
+  }
+  return switch (line.kind) {
+    _ParsedReviewLineKind.insert => side == _ReviewSplitSide.after,
+    _ParsedReviewLineKind.delete => side == _ReviewSplitSide.before,
+    _ParsedReviewLineKind.context => side == _ReviewSplitSide.after,
+  };
+}
+
+String _reviewCommentTargetButtonKey(_ReviewCommentTarget target) {
+  return 'review-line-comment-button-${target.path}-old-${target.oldLineNumber ?? 'none'}-new-${target.newLineNumber ?? 'none'}';
 }
 
 class _ParsedReviewDiff {

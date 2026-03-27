@@ -463,6 +463,78 @@ void main() {
     expect(decoration.color!.a, lessThan(1));
   });
 
+  testWidgets('review diff line comments can be added to composer context', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _FilesWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Review'));
+    await tester.pumpAndSettle();
+
+    final lineCommentButton = find.byKey(
+      const ValueKey<String>(
+        'review-line-comment-button-README.md-old-none-new-1',
+      ),
+    );
+    await tester.ensureVisible(lineCommentButton);
+    await tester.tap(lineCommentButton);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('review-line-comment-editor')),
+      findsOneWidget,
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('review-line-comment-field')),
+      'Focus on whether the new heading and extra docs belong together.',
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('review-line-comment-submit')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('review-line-comment-editor')),
+      findsNothing,
+    );
+    expect(find.text('Review · README.md · new line 1.txt'), findsOneWidget);
+  });
+
   testWidgets('review panel preview can be resized by dragging the handle', (
     tester,
   ) async {
