@@ -462,6 +462,47 @@ void main() {
 
     await tester.dragUntilVisible(
       find.byKey(
+        const ValueKey<String>('workspace-settings-release-notes-toggle'),
+      ),
+      settingsListView,
+      const Offset(0, -160),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 180));
+
+    final releaseNotesToggle = find.descendant(
+      of: find.byKey(
+        const ValueKey<String>('workspace-settings-release-notes-toggle'),
+      ),
+      matching: find.byType(Switch),
+    );
+    await tester.tap(releaseNotesToggle);
+    await tester.pump();
+
+    expect(appController.releaseNotesEnabled, isFalse);
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('workspace-settings-open-whats-new-button'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 180));
+
+    expect(
+      find.byKey(const ValueKey<String>('release-notes-dialog')),
+      findsOneWidget,
+    );
+    expect(find.text('Workspace parity got a major upgrade.'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('release-notes-close-button')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    await tester.dragUntilVisible(
+      find.byKey(
         const ValueKey<String>(
           'workspace-settings-sidebar-child-sessions-toggle',
         ),

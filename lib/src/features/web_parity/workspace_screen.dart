@@ -13,6 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../l10n/app_localizations.dart';
 import '../../app/app_controller.dart';
+import '../../app/app_release_notes_dialog.dart';
 import '../../app/app_scope.dart';
 import '../../core/connection/connection_models.dart';
 import '../../core/network/opencode_server_probe.dart';
@@ -6973,6 +6974,24 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
   bool _refreshingProbe = false;
   String? _savingPermissionToolId;
 
+  Future<void> _openReleaseNotes() async {
+    final releaseNotes = widget.appController.currentReleaseNotes;
+    if (releaseNotes == null) {
+      return;
+    }
+    await widget.appController.markReleaseNotesSeen(
+      releaseNotes.currentVersion,
+    );
+    if (!mounted) {
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      useRootNavigator: true,
+      builder: (dialogContext) => AppReleaseNotesDialog(notes: releaseNotes),
+    );
+  }
+
   Future<void> _refreshProbe() async {
     final profile = widget.profile;
     if (profile == null || _refreshingProbe) {
@@ -7536,6 +7555,119 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                                   .setTextScaleFactor(value),
                                             );
                                           },
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(height: sectionGap),
+                                _WorkspaceSettingsSection(
+                                  title: "What's New",
+                                  child: _WorkspaceSettingsCard(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: <Widget>[
+                                        _WorkspaceSettingsToggleRow(
+                                          key: const ValueKey<String>(
+                                            'workspace-settings-release-notes-toggle',
+                                          ),
+                                          title:
+                                              "Show What's New after updates",
+                                          subtitle:
+                                              'Automatically open release highlights when the bundled app version changes.',
+                                          value: widget
+                                              .appController
+                                              .releaseNotesEnabled,
+                                          onChanged: (value) {
+                                            unawaited(
+                                              widget.appController
+                                                  .setReleaseNotesEnabled(
+                                                    value,
+                                                  ),
+                                            );
+                                          },
+                                        ),
+                                        const SizedBox(height: AppSpacing.md),
+                                        Container(
+                                          width: double.infinity,
+                                          padding: const EdgeInsets.all(
+                                            AppSpacing.md,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: surfaces.panelMuted
+                                                .withValues(alpha: 0.52),
+                                            borderRadius: BorderRadius.circular(
+                                              18,
+                                            ),
+                                            border: Border.all(
+                                              color: Colors.white.withValues(
+                                                alpha: 0.075,
+                                              ),
+                                            ),
+                                          ),
+                                          child: Row(
+                                            children: <Widget>[
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: <Widget>[
+                                                    Text(
+                                                      widget.appController
+                                                                  .currentReleaseNotes ==
+                                                              null
+                                                          ? 'No release notes are bundled yet.'
+                                                          : 'Latest bundled highlights: ${widget.appController.currentReleaseNotes!.versionLabel}',
+                                                      style: theme
+                                                          .textTheme
+                                                          .bodyMedium
+                                                          ?.copyWith(
+                                                            fontWeight:
+                                                                FontWeight.w700,
+                                                          ),
+                                                    ),
+                                                    const SizedBox(
+                                                      height: AppSpacing.xxs,
+                                                    ),
+                                                    Text(
+                                                      'Open the current release notes again at any time from here.',
+                                                      style: theme
+                                                          .textTheme
+                                                          .bodySmall
+                                                          ?.copyWith(
+                                                            color:
+                                                                surfaces.muted,
+                                                          ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              const SizedBox(
+                                                width: AppSpacing.md,
+                                              ),
+                                              OutlinedButton.icon(
+                                                key: const ValueKey<String>(
+                                                  'workspace-settings-open-whats-new-button',
+                                                ),
+                                                onPressed: widget.appController
+                                                            .currentReleaseNotes ==
+                                                        null
+                                                    ? null
+                                                    : () {
+                                                        unawaited(
+                                                          _openReleaseNotes(),
+                                                        );
+                                                      },
+                                                icon: const Icon(
+                                                  Icons.auto_awesome_rounded,
+                                                ),
+                                                label: const Text(
+                                                  "Open What's New",
+                                                ),
+                                              ),
+                                            ],
+                                          ),
                                         ),
                                       ],
                                     ),

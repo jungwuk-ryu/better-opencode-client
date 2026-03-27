@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
@@ -6,28 +8,83 @@ import '../features/web_parity/web_home_screen.dart';
 import '../features/web_parity/workspace_screen.dart';
 import '../i18n/locale_controller.dart';
 import 'app_controller.dart';
+import 'app_release_notes_dialog.dart';
 import 'app_routes.dart';
 import 'app_scope.dart';
 import 'flavor.dart';
 
 class OpenCodeRemoteApp extends StatefulWidget {
-  const OpenCodeRemoteApp({super.key});
+  const OpenCodeRemoteApp({
+    this.appController,
+    this.localeController,
+    this.autoLoadAppController = true,
+    super.key,
+  });
+
+  final WebParityAppController? appController;
+  final LocaleController? localeController;
+  final bool autoLoadAppController;
 
   @override
   State<OpenCodeRemoteApp> createState() => _OpenCodeRemoteAppState();
 }
 
 class _OpenCodeRemoteAppState extends State<OpenCodeRemoteApp> {
-  final LocaleController _localeController = LocaleController();
+  late final bool _ownsLocaleController = widget.localeController == null;
+  late final LocaleController _localeController =
+      widget.localeController ?? LocaleController();
   late final AppFlavor _flavor = currentFlavor();
-  late final WebParityAppController _appController = WebParityAppController()
-    ..load();
+  late final bool _ownsAppController = widget.appController == null;
+  late final WebParityAppController _appController =
+      widget.appController ?? WebParityAppController();
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+  String? _scheduledReleaseNotesVersion;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.autoLoadAppController) {
+      unawaited(_appController.load());
+    }
+  }
 
   @override
   void dispose() {
-    _appController.dispose();
-    _localeController.dispose();
+    if (_ownsAppController) {
+      _appController.dispose();
+    }
+    if (_ownsLocaleController) {
+      _localeController.dispose();
+    }
     super.dispose();
+  }
+
+  void _scheduleReleaseNotesDialog(BuildContext context) {
+    final notes = _appController.pendingReleaseNotes;
+    if (_appController.loading || notes == null) {
+      return;
+    }
+    if (_scheduledReleaseNotesVersion == notes.currentVersion) {
+      return;
+    }
+    _scheduledReleaseNotesVersion = notes.currentVersion;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final navigator = _navigatorKey.currentState;
+      if (!mounted || navigator == null) {
+        _scheduledReleaseNotesVersion = null;
+        return;
+      }
+      await _appController.markReleaseNotesSeen(notes.currentVersion);
+      if (!mounted || !navigator.mounted) {
+        return;
+      }
+      await navigator.push<void>(
+        DialogRoute<void>(
+          context: navigator.context,
+          builder: (dialogContext) => AppReleaseNotesDialog(notes: notes),
+        ),
+      );
+    });
   }
 
   @override
@@ -41,6 +98,7 @@ class _OpenCodeRemoteAppState extends State<OpenCodeRemoteApp> {
         return AppScope(
           controller: _appController,
           child: MaterialApp(
+            navigatorKey: _navigatorKey,
             onGenerateTitle: (context) =>
                 AppLocalizations.of(context)!.appTitle,
             debugShowCheckedModeBanner: false,
@@ -48,6 +106,7 @@ class _OpenCodeRemoteAppState extends State<OpenCodeRemoteApp> {
             darkTheme: _appController.darkThemeData,
             themeMode: _appController.themeMode,
             builder: (context, child) {
+              _scheduleReleaseNotesDialog(context);
               final mediaQuery = MediaQuery.maybeOf(context);
               if (mediaQuery == null) {
                 return child ?? const SizedBox.shrink();

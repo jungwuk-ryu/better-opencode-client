@@ -14,6 +14,7 @@ import '../features/projects/project_models.dart';
 import '../features/projects/project_store.dart';
 import '../features/web_parity/workspace_controller.dart';
 import '../features/web_parity/workspace_layout_store.dart';
+import 'app_release_notes.dart';
 
 typedef WorkspaceControllerFactory =
     WorkspaceController Function({
@@ -113,6 +114,9 @@ class WebParityAppController extends ChangeNotifier {
       'web_parity.multi_pane_composer_mode';
   static const _themePresetKey = 'web_parity.theme_preset';
   static const _themeSchemeKey = 'web_parity.theme_scheme';
+  static const _releaseNotesEnabledKey = 'web_parity.release_notes_enabled';
+  static const _releaseNotesSeenVersionKey =
+      'web_parity.release_notes_seen_version';
   static const double defaultTextScaleFactor = 1.0;
   static const double textScaleBaselineMultiplier = 0.9;
   static const double minTextScaleFactor = 0.9;
@@ -145,6 +149,9 @@ class WebParityAppController extends ChangeNotifier {
       WorkspaceMultiPaneComposerMode.shared;
   AppThemePreset _themePreset = AppThemePreset.remote;
   AppColorSchemeMode _colorSchemeMode = AppColorSchemeMode.system;
+  bool _releaseNotesEnabled = true;
+  String? _seenReleaseNotesVersion;
+  AppReleaseNotesPresentation? _pendingReleaseNotes;
   Set<String> _refreshingProfileKeys = const <String>{};
   final Map<String, WorkspaceController> _workspaceControllers =
       <String, WorkspaceController>{};
@@ -170,6 +177,12 @@ class WebParityAppController extends ChangeNotifier {
       _multiPaneComposerMode;
   AppThemePreset get themePreset => _themePreset;
   AppColorSchemeMode get colorSchemeMode => _colorSchemeMode;
+  bool get releaseNotesEnabled => _releaseNotesEnabled;
+  String? get seenReleaseNotesVersion => _seenReleaseNotesVersion;
+  AppReleaseNotesPresentation? get pendingReleaseNotes => _pendingReleaseNotes;
+  AppReleaseNotesPresentation? get currentReleaseNotes =>
+      latestAppReleaseNotesPresentation();
+  bool get hasReleaseNotes => currentReleaseNotes != null;
   ThemeMode get themeMode => switch (_colorSchemeMode) {
     AppColorSchemeMode.light => ThemeMode.light,
     AppColorSchemeMode.dark => ThemeMode.dark,
@@ -227,6 +240,32 @@ class WebParityAppController extends ChangeNotifier {
     final colorSchemeMode = AppColorSchemeMode.fromStorage(
       prefs.getString(_themeSchemeKey),
     );
+    final releaseNotesEnabled =
+        prefs.getBool(_releaseNotesEnabledKey) ?? true;
+    var seenReleaseNotesVersion = normalizeReleaseNotesVersion(
+      prefs.getString(_releaseNotesSeenVersionKey),
+    );
+    AppReleaseNotesPresentation? pendingReleaseNotes;
+    final currentReleaseNotes = this.currentReleaseNotes;
+    if (currentReleaseNotes != null) {
+      if (seenReleaseNotesVersion == null) {
+        seenReleaseNotesVersion = currentReleaseNotes.currentVersion;
+        await prefs.setString(
+          _releaseNotesSeenVersionKey,
+          currentReleaseNotes.currentVersion,
+        );
+      } else if (!releaseNotesEnabled) {
+        if (seenReleaseNotesVersion != currentReleaseNotes.currentVersion) {
+          seenReleaseNotesVersion = currentReleaseNotes.currentVersion;
+          await prefs.setString(
+            _releaseNotesSeenVersionKey,
+            currentReleaseNotes.currentVersion,
+          );
+        }
+      } else if (seenReleaseNotesVersion != currentReleaseNotes.currentVersion) {
+        pendingReleaseNotes = releaseNotesSinceVersion(seenReleaseNotesVersion);
+      }
+    }
 
     ServerProfile? selectedProfile;
     if (selectedProfileId != null) {
@@ -254,6 +293,9 @@ class WebParityAppController extends ChangeNotifier {
     _multiPaneComposerMode = multiPaneComposerMode;
     _themePreset = themePreset;
     _colorSchemeMode = colorSchemeMode;
+    _releaseNotesEnabled = releaseNotesEnabled;
+    _seenReleaseNotesVersion = seenReleaseNotesVersion;
+    _pendingReleaseNotes = pendingReleaseNotes;
     _loading = false;
     notifyListeners();
   }
@@ -394,6 +436,53 @@ class WebParityAppController extends ChangeNotifier {
         ? 0
         : (currentIndex + direction + modes.length) % modes.length;
     await setColorSchemeMode(modes[nextIndex]);
+  }
+
+  Future<void> setReleaseNotesEnabled(bool value) async {
+    if (_releaseNotesEnabled == value) {
+      return;
+    }
+    _releaseNotesEnabled = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_releaseNotesEnabledKey, value);
+    if (!value) {
+      final currentReleaseNotes = this.currentReleaseNotes;
+      if (currentReleaseNotes != null) {
+        _seenReleaseNotesVersion = currentReleaseNotes.currentVersion;
+        _pendingReleaseNotes = null;
+        await prefs.setString(
+          _releaseNotesSeenVersionKey,
+          currentReleaseNotes.currentVersion,
+        );
+      }
+    } else if (_pendingReleaseNotes == null) {
+      final currentReleaseNotes = this.currentReleaseNotes;
+      if (currentReleaseNotes != null &&
+          _seenReleaseNotesVersion != currentReleaseNotes.currentVersion) {
+        _pendingReleaseNotes = releaseNotesSinceVersion(_seenReleaseNotesVersion);
+      }
+    }
+    notifyListeners();
+  }
+
+  Future<void> markReleaseNotesSeen([String? version]) async {
+    final normalizedVersion = normalizeReleaseNotesVersion(
+      version ?? currentReleaseNotes?.currentVersion,
+    );
+    if (normalizedVersion == null || normalizedVersion.isEmpty) {
+      return;
+    }
+    if (_seenReleaseNotesVersion == normalizedVersion &&
+        _pendingReleaseNotes?.currentVersion != normalizedVersion) {
+      return;
+    }
+    _seenReleaseNotesVersion = normalizedVersion;
+    if (_pendingReleaseNotes?.currentVersion == normalizedVersion) {
+      _pendingReleaseNotes = null;
+    }
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_releaseNotesSeenVersionKey, normalizedVersion);
   }
 
   Future<void> refreshProbe(ServerProfile profile) async {

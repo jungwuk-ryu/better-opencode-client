@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart' show Brightness, ThemeMode;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:opencode_mobile_remote/src/app/app_controller.dart';
+import 'package:opencode_mobile_remote/src/app/app_release_notes.dart';
 import 'package:opencode_mobile_remote/src/core/connection/connection_models.dart';
 import 'package:opencode_mobile_remote/src/core/persistence/server_profile_store.dart';
 import 'package:opencode_mobile_remote/src/design_system/app_theme.dart';
@@ -251,6 +252,90 @@ void main() {
 
     await controller.cycleColorSchemeMode(-1);
     expect(controller.colorSchemeMode, AppColorSchemeMode.light);
+  });
+
+  test('first launch marks the current release notes as seen', () async {
+    final controller = WebParityAppController(
+      profileStore: _FakeProfileStore(),
+      projectStore: _FakeProjectStore(),
+    );
+    addTearDown(controller.dispose);
+
+    await controller.load();
+
+    expect(controller.currentReleaseNotes, isNotNull);
+    expect(
+      controller.seenReleaseNotesVersion,
+      controller.currentReleaseNotes?.currentVersion,
+    );
+    expect(controller.pendingReleaseNotes, isNull);
+  });
+
+  test('older seen versions queue a What\'s New dialog', () async {
+    final currentReleaseNotes = latestAppReleaseNotesPresentation();
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'web_parity.release_notes_seen_version':
+          currentReleaseNotes == null ? '0.0.0' : '0.9.0',
+    });
+
+    final controller = WebParityAppController(
+      profileStore: _FakeProfileStore(),
+      projectStore: _FakeProjectStore(),
+    );
+    addTearDown(controller.dispose);
+
+    await controller.load();
+
+    expect(controller.pendingReleaseNotes, isNotNull);
+    expect(
+      controller.pendingReleaseNotes?.currentVersion,
+      currentReleaseNotes?.currentVersion,
+    );
+
+    await controller.markReleaseNotesSeen();
+
+    expect(controller.pendingReleaseNotes, isNull);
+    expect(
+      controller.seenReleaseNotesVersion,
+      currentReleaseNotes?.currentVersion,
+    );
+  });
+
+  test('disabling release notes clears pending updates and persists the choice', () async {
+    final currentReleaseNotes = latestAppReleaseNotesPresentation();
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'web_parity.release_notes_seen_version':
+          currentReleaseNotes == null ? '0.0.0' : '0.9.0',
+    });
+
+    final controller = WebParityAppController(
+      profileStore: _FakeProfileStore(),
+      projectStore: _FakeProjectStore(),
+    );
+    addTearDown(controller.dispose);
+
+    await controller.load();
+    expect(controller.pendingReleaseNotes, isNotNull);
+
+    await controller.setReleaseNotesEnabled(false);
+
+    expect(controller.releaseNotesEnabled, isFalse);
+    expect(controller.pendingReleaseNotes, isNull);
+    expect(
+      controller.seenReleaseNotesVersion,
+      currentReleaseNotes?.currentVersion,
+    );
+
+    final restored = WebParityAppController(
+      profileStore: _FakeProfileStore(),
+      projectStore: _FakeProjectStore(),
+    );
+    addTearDown(restored.dispose);
+
+    await restored.load();
+
+    expect(restored.releaseNotesEnabled, isFalse);
+    expect(restored.pendingReleaseNotes, isNull);
   });
 }
 
