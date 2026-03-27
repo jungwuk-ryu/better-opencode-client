@@ -10,11 +10,13 @@ void main() {
   late HttpServer server;
   late Uri baseUri;
   Uri? lastPatchUri;
+  Uri? lastInitGitUri;
   Map<String, Object?>? lastPatchPayload;
   Map<String, int> fileDirectoryRequestCounts = <String, int>{};
 
   setUp(() async {
     lastPatchUri = null;
+    lastInitGitUri = null;
     lastPatchPayload = null;
     fileDirectoryRequestCounts = <String, int>{};
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
@@ -50,6 +52,28 @@ void main() {
           'time': {'updated': 1710000000000},
         };
         final encoded = utf8.encode(jsonEncode(body));
+        request.response.headers.contentType = ContentType.json;
+        request.response.add(encoded);
+        await request.response.close();
+        return;
+      }
+      if (request.method == 'POST' && request.uri.path == '/project/git/init') {
+        lastInitGitUri = request.uri;
+        if (request.uri.queryParameters['directory'] != '/workspace/demo') {
+          request.response.statusCode = 400;
+          await request.response.close();
+          return;
+        }
+        final encoded = utf8.encode(
+          jsonEncode(<String, Object?>{
+            'id': 'project-1',
+            'directory': '/workspace/demo',
+            'worktree': '/workspace/demo',
+            'name': 'Demo',
+            'vcs': 'git',
+            'time': {'updated': 1710000000000},
+          }),
+        );
         request.response.headers.contentType = ContentType.json;
         request.response.add(encoded);
         await request.response.close();
@@ -226,6 +250,27 @@ void main() {
     );
 
     expect(target.directory, '/workspace/manual');
+    expect(target.branch, 'main');
+    service.dispose();
+  });
+
+  test('initializes git for a project through the project route', () async {
+    final service = ProjectCatalogService();
+    final profile = ServerProfile(
+      id: '1',
+      label: 'demo',
+      baseUrl: baseUri.toString(),
+    );
+
+    final target = await service.initGit(
+      profile: profile,
+      directory: '/workspace/demo',
+    );
+
+    expect(lastInitGitUri?.path, '/project/git/init');
+    expect(lastInitGitUri?.queryParameters['directory'], '/workspace/demo');
+    expect(target.directory, '/workspace/demo');
+    expect(target.vcs, 'git');
     expect(target.branch, 'main');
     service.dispose();
   });

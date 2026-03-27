@@ -379,6 +379,7 @@ class WorkspaceController extends ChangeNotifier {
   bool _selectedSessionHistoryLoading = false;
   bool _submittingPrompt = false;
   bool _interruptingSession = false;
+  bool _initializingGitRepository = false;
   bool _runningTerminal = false;
   bool _terminalOpen = false;
   bool _loadingFilePreview = false;
@@ -477,6 +478,7 @@ class WorkspaceController extends ChangeNotifier {
   bool get showingCachedSessionMessages => _showingCachedSessionMessages;
   bool get submittingPrompt => _submittingPrompt;
   bool get interruptingSession => _interruptingSession;
+  bool get initializingGitRepository => _initializingGitRepository;
   bool get runningTerminal => _runningTerminal;
   bool get terminalOpen => _terminalOpen;
   bool get loadingFilePreview => _loadingFilePreview;
@@ -1237,6 +1239,56 @@ class WorkspaceController extends ChangeNotifier {
       return;
     }
     await _loadWatchedSessionTimeline(normalized);
+  }
+
+  Future<void> initializeGitRepository() async {
+    final project = _project;
+    if (project == null || _initializingGitRepository) {
+      return;
+    }
+    _initializingGitRepository = true;
+    _actionNotice = null;
+    _notify();
+    try {
+      final initialized = await _projectCatalogService.initGit(
+        profile: profile,
+        directory: project.directory,
+      );
+      final updatedProject = project.copyWith(
+        label: initialized.label,
+        id: initialized.id,
+        name: initialized.name,
+        source: initialized.source ?? project.source,
+        vcs: initialized.vcs,
+        branch: initialized.branch,
+        icon: initialized.icon ?? project.icon,
+        commands: initialized.commands ?? project.commands,
+        lastSession: project.lastSession,
+        clearId: initialized.id == null,
+        clearName: initialized.name == null,
+        clearIcon: initialized.icon == null && project.icon == null,
+        clearCommands: initialized.commands == null && project.commands == null,
+      );
+      _project = updatedProject;
+      _availableProjects = List<ProjectTarget>.unmodifiable(
+        _upsertAvailableProject(updatedProject),
+      );
+      await _projectStore.recordRecentProject(updatedProject);
+      await _projectStore.saveLastWorkspace(
+        serverStorageKey: profile.storageKey,
+        target: updatedProject,
+      );
+      await _loadSessionPanels();
+      _actionNotice = 'Git repository created.';
+    } catch (error) {
+      final detail = error.toString().trim();
+      _actionNotice = detail.isEmpty
+          ? 'Couldn\'t create a Git repository.'
+          : 'Couldn\'t create a Git repository.\n$detail';
+    } finally {
+      _initializingGitRepository = false;
+      _notify();
+    }
   }
 
   Future<void> loadMoreTimelineSessionHistory(String? sessionId) async {
@@ -3610,38 +3662,54 @@ class WorkspaceController extends ChangeNotifier {
       _loadingReviewDiff = false;
       _replaceSelectedSessionTodos(const <TodoItem>[]);
     } else {
+      final isGitProject = (project.vcs ?? '').trim().toLowerCase() == 'git';
       final todoFuture = _todoService
           .fetchTodos(profile: profile, project: project, sessionId: sessionId)
           .then<Object?>((value) => value)
           .catchError((_) => const <TodoItem>[]);
-      final reviewFuture = _reviewDiffService
-          .fetchSessionDiffs(profile: profile, sessionId: sessionId)
-          .then<Object?>((value) => value)
-          .catchError((_) => null);
-      _loadingReviewDiff = true;
-      try {
-        final results = await Future.wait<Object?>(<Future<Object?>>[
-          todoFuture,
-          reviewFuture,
-        ]);
+      if (!isGitProject) {
+        final todos = await todoFuture;
         if (_disposed || _selectedSessionId != sessionId) {
           return;
         }
         _replaceSelectedSessionTodos(
-          (results[0] as List<TodoItem>?) ?? const <TodoItem>[],
+          (todos as List<TodoItem>?) ?? const <TodoItem>[],
         );
-        final reviewBundle = results[1] as ReviewSessionDiffBundle?;
-        if (reviewBundle == null) {
-          _reviewBundle = null;
-          _selectedReviewPath = null;
-          _reviewDiff = null;
-          _reviewDiffError = 'Couldn\'t load the review diff.';
-        } else {
-          _applyReviewBundle(reviewBundle);
-        }
-      } finally {
-        if (!_disposed && _selectedSessionId == sessionId) {
-          _loadingReviewDiff = false;
+        _reviewBundle = null;
+        _selectedReviewPath = null;
+        _reviewDiff = null;
+        _reviewDiffError = null;
+        _loadingReviewDiff = false;
+      } else {
+        final reviewFuture = _reviewDiffService
+            .fetchSessionDiffs(profile: profile, sessionId: sessionId)
+            .then<Object?>((value) => value)
+            .catchError((_) => null);
+        _loadingReviewDiff = true;
+        try {
+          final results = await Future.wait<Object?>(<Future<Object?>>[
+            todoFuture,
+            reviewFuture,
+          ]);
+          if (_disposed || _selectedSessionId != sessionId) {
+            return;
+          }
+          _replaceSelectedSessionTodos(
+            (results[0] as List<TodoItem>?) ?? const <TodoItem>[],
+          );
+          final reviewBundle = results[1] as ReviewSessionDiffBundle?;
+          if (reviewBundle == null) {
+            _reviewBundle = null;
+            _selectedReviewPath = null;
+            _reviewDiff = null;
+            _reviewDiffError = 'Couldn\'t load the review diff.';
+          } else {
+            _applyReviewBundle(reviewBundle);
+          }
+        } finally {
+          if (!_disposed && _selectedSessionId == sessionId) {
+            _loadingReviewDiff = false;
+          }
         }
       }
     }
@@ -4240,6 +4308,23 @@ class WorkspaceController extends ChangeNotifier {
     if (notify) {
       _notify();
     }
+  }
+
+  List<ProjectTarget> _upsertAvailableProject(ProjectTarget project) {
+    var replaced = false;
+    final next = _availableProjects
+        .map((candidate) {
+          if (candidate.directory != project.directory) {
+            return candidate;
+          }
+          replaced = true;
+          return project;
+        })
+        .toList(growable: true);
+    if (!replaced) {
+      next.insert(0, project);
+    }
+    return next;
   }
 
   T? _sessionTreeRequestForSession<T>(

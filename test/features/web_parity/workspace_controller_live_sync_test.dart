@@ -11,6 +11,7 @@ import 'package:opencode_mobile_remote/src/features/chat/prompt_attachment_model
 import 'package:opencode_mobile_remote/src/features/chat/session_action_service.dart';
 import 'package:opencode_mobile_remote/src/features/files/file_browser_service.dart';
 import 'package:opencode_mobile_remote/src/features/files/file_models.dart';
+import 'package:opencode_mobile_remote/src/features/files/review_diff_service.dart';
 import 'package:opencode_mobile_remote/src/features/projects/project_catalog_service.dart';
 import 'package:opencode_mobile_remote/src/features/projects/project_models.dart';
 import 'package:opencode_mobile_remote/src/features/projects/project_store.dart';
@@ -614,6 +615,45 @@ void main() {
         controller.timelineStateForSession('ses_2').historyLoading,
         isFalse,
       );
+    },
+  );
+
+  test(
+    'controller initializes git for no-VCS projects and refreshes project metadata',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final projectCatalogService = _FakeProjectCatalogService(
+        const ProjectTarget(
+          directory: '/workspace/demo',
+          label: 'Demo',
+          source: 'server',
+        ),
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: const ProjectTarget(
+          directory: '/workspace/demo',
+          label: 'Demo',
+          source: 'server',
+        ),
+        eventStreamService: eventStreamService,
+        projectCatalogService: projectCatalogService,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+
+      expect(controller.project?.vcs, isNull);
+      expect(controller.reviewStatuses, isEmpty);
+      expect(controller.reviewDiffError, isNull);
+
+      await controller.initializeGitRepository();
+
+      expect(projectCatalogService.initGitCallCount, 1);
+      expect(controller.project?.vcs, 'git');
+      expect(controller.project?.branch, 'main');
+      expect(controller.initializingGitRepository, isFalse);
+      expect(controller.actionNotice, 'Git repository created.');
     },
   );
 
@@ -1542,6 +1582,8 @@ WorkspaceController _buildController({
   required ProjectTarget project,
   required _ControlledEventStreamService eventStreamService,
   ChatService? chatService,
+  ProjectCatalogService? projectCatalogService,
+  ReviewDiffService? reviewDiffService,
   RequestService? requestService,
   SessionActionService? sessionActionService,
   StaleCacheStore? cacheStore,
@@ -1577,10 +1619,12 @@ WorkspaceController _buildController({
             selectedSessionId: initialSelectedSessionId ?? 'ses_1',
           ),
         ),
-    projectCatalogService: _FakeProjectCatalogService(project),
+    projectCatalogService:
+        projectCatalogService ?? _FakeProjectCatalogService(project),
     projectStore: _MemoryProjectStore(),
     cacheStore: cacheStore,
     fileBrowserService: _FakeFileBrowserService(),
+    reviewDiffService: reviewDiffService ?? _EmptyReviewDiffService(),
     todoService: _FakeTodoService(),
     requestService:
         requestService ?? _FakeRequestService(pendingBundle: pendingBundle),
@@ -1718,7 +1762,8 @@ String _scopeKeyFor(ServerProfile profile, ProjectTarget project) {
 class _FakeProjectCatalogService extends ProjectCatalogService {
   _FakeProjectCatalogService(this.project);
 
-  final ProjectTarget project;
+  ProjectTarget project;
+  int initGitCallCount = 0;
 
   @override
   Future<ProjectCatalog> fetchCatalog(ServerProfile profile) async {
@@ -1757,6 +1802,16 @@ class _FakeProjectCatalogService extends ProjectCatalogService {
     required ServerProfile profile,
     required String directory,
   }) async {
+    return project;
+  }
+
+  @override
+  Future<ProjectTarget> initGit({
+    required ServerProfile profile,
+    required String directory,
+  }) async {
+    initGitCallCount += 1;
+    project = project.copyWith(vcs: 'git', branch: 'main');
     return project;
   }
 }
@@ -1975,6 +2030,20 @@ class _FakeFileBrowserService extends FileBrowserService {
       preview: null,
       selectedPath: null,
     );
+  }
+
+  @override
+  void dispose() {}
+}
+
+class _EmptyReviewDiffService extends ReviewDiffService {
+  @override
+  Future<ReviewSessionDiffBundle> fetchSessionDiffs({
+    required ServerProfile profile,
+    required String sessionId,
+    String? messageId,
+  }) async {
+    return const ReviewSessionDiffBundle(entries: <ReviewSessionDiffEntry>[]);
   }
 
   @override

@@ -136,6 +136,31 @@ class ProjectCatalogService {
     );
   }
 
+  Future<ProjectTarget> initGit({
+    required ServerProfile profile,
+    required String directory,
+  }) async {
+    final baseUri = profile.uriOrNull;
+    if (baseUri == null) {
+      throw const FormatException('Invalid server profile URL.');
+    }
+
+    final headers = buildRequestHeaders(profile, accept: 'application/json');
+    final uri = _buildQueryUri(
+      baseUri,
+      '/project/git/init',
+      queryParameters: <String, String>{'directory': directory},
+    );
+    final response = await _client.post(uri, headers: headers);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw StateError(
+        'Request failed for $uri with status ${response.statusCode}.',
+      );
+    }
+
+    return inspectDirectory(profile: profile, directory: directory);
+  }
+
   Future<List<String>> suggestDirectories({
     required ServerProfile profile,
     required String input,

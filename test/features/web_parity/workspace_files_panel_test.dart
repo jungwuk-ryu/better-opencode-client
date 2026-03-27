@@ -238,7 +238,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Review'));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('workspace-side-tab-review-button')),
+    );
     await tester.pumpAndSettle();
 
     final statusText = tester.widget<Text>(
@@ -300,7 +302,9 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Review'));
+      await tester.tap(
+        find.byKey(const ValueKey<String>('workspace-side-tab-review-button')),
+      );
       await tester.pumpAndSettle();
 
       expect(
@@ -413,7 +417,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Review'));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('workspace-side-tab-review-button')),
+    );
     await tester.pumpAndSettle();
 
     expect(find.textContaining('diff --git a/README.md'), findsOneWidget);
@@ -463,6 +469,70 @@ void main() {
     expect(decoration.color!.a, lessThan(1));
   });
 
+  testWidgets('review panel shows a Git init CTA for projects without VCS', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final createdControllers = <_NoVcsWorkspaceController>[];
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            final controller = _NoVcsWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+            createdControllers.add(controller);
+            return controller;
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('workspace-side-tab-review-button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('review-no-vcs-title')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('review-init-git-button')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('review-init-git-button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(createdControllers.single.initializeGitCallCount, 1);
+    expect(createdControllers.single.project?.vcs, 'git');
+    expect(find.text('No file changes yet.'), findsOneWidget);
+  });
+
   testWidgets('review diff line comments can be added to composer context', (
     tester,
   ) async {
@@ -500,7 +570,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Review'));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('workspace-side-tab-review-button')),
+    );
     await tester.pumpAndSettle();
 
     final lineCommentButton = find.byKey(
@@ -572,7 +644,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Review'));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('workspace-side-tab-review-button')),
+    );
     await tester.pumpAndSettle();
 
     final panelFinder = find.byKey(
@@ -882,6 +956,97 @@ class _FilesWorkspaceController extends WorkspaceController {
     selectReviewFileCalls.add(path);
     _selectedReviewPath = path;
     _reviewDiff = FileDiffSummary(path: path, content: _diffByPath[path] ?? '');
+    notifyListeners();
+  }
+}
+
+class _NoVcsWorkspaceController extends WorkspaceController {
+  _NoVcsWorkspaceController({
+    required super.profile,
+    required super.directory,
+    super.initialSessionId,
+  });
+
+  static final List<SessionSummary> _sessions = <SessionSummary>[
+    SessionSummary(
+      id: 'ses_1',
+      directory: '/workspace/demo',
+      title: 'Session One',
+      version: '1',
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(1710000001000),
+    ),
+  ];
+
+  int initializeGitCallCount = 0;
+  bool _loading = true;
+  WorkspaceSideTab _sideTab = WorkspaceSideTab.review;
+  ProjectTarget? _project = const ProjectTarget(
+    directory: '/workspace/demo',
+    label: 'Demo',
+    source: 'server',
+  );
+  String? _selectedSessionId;
+
+  @override
+  bool get loading => _loading;
+
+  @override
+  WorkspaceSideTab get sideTab => _sideTab;
+
+  @override
+  ProjectTarget? get project => _project;
+
+  @override
+  List<ProjectTarget> get availableProjects =>
+      _project == null ? const <ProjectTarget>[] : <ProjectTarget>[_project!];
+
+  @override
+  List<SessionSummary> get sessions => _sessions;
+
+  @override
+  String? get selectedSessionId => _selectedSessionId;
+
+  @override
+  SessionSummary? get selectedSession => _sessions.first;
+
+  @override
+  List<ChatMessage> get messages => const <ChatMessage>[];
+
+  @override
+  List<FileStatusSummary> get reviewStatuses => const <FileStatusSummary>[];
+
+  @override
+  bool get loadingReviewDiff => false;
+
+  @override
+  String? get reviewDiffError => null;
+
+  @override
+  List<TodoItem> get todos => const <TodoItem>[];
+
+  @override
+  PendingRequestBundle get pendingRequests => const PendingRequestBundle(
+    questions: <QuestionRequestSummary>[],
+    permissions: <PermissionRequestSummary>[],
+  );
+
+  @override
+  Future<void> load() async {
+    _loading = false;
+    _selectedSessionId = initialSessionId ?? 'ses_1';
+    notifyListeners();
+  }
+
+  @override
+  void setSideTab(WorkspaceSideTab value) {
+    _sideTab = value;
+    notifyListeners();
+  }
+
+  @override
+  Future<void> initializeGitRepository() async {
+    initializeGitCallCount += 1;
+    _project = _project?.copyWith(vcs: 'git', branch: 'main');
     notifyListeners();
   }
 }

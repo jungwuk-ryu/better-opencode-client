@@ -22632,11 +22632,16 @@ class _SidePanel extends StatelessWidget {
         Expanded(
           child: switch (tab) {
             WorkspaceSideTab.review => _ReviewPanel(
+              project: controller.project,
               statuses: controller.reviewStatuses,
               selectedPath: controller.selectedReviewPath,
               diff: controller.reviewDiff,
               loadingDiff: controller.loadingReviewDiff,
               diffError: controller.reviewDiffError,
+              initializingGitRepository: controller.initializingGitRepository,
+              onInitializeGitRepository: () {
+                unawaited(controller.initializeGitRepository());
+              },
               onLineComment: onLineComment,
               onSelectFile: (path) {
                 unawaited(controller.selectReviewFile(path));
@@ -22916,20 +22921,26 @@ Color _workspaceSideTabAccent(
 
 class _ReviewPanel extends StatefulWidget {
   const _ReviewPanel({
+    required this.project,
     required this.statuses,
     required this.selectedPath,
     required this.diff,
     required this.loadingDiff,
     required this.diffError,
+    required this.initializingGitRepository,
+    required this.onInitializeGitRepository,
     required this.onLineComment,
     required this.onSelectFile,
   });
 
+  final ProjectTarget? project;
   final List<FileStatusSummary> statuses;
   final String? selectedPath;
   final FileDiffSummary? diff;
   final bool loadingDiff;
   final String? diffError;
+  final bool initializingGitRepository;
+  final VoidCallback onInitializeGitRepository;
   final ValueChanged<_ReviewLineCommentSubmission> onLineComment;
   final ValueChanged<String> onSelectFile;
 
@@ -23008,7 +23019,66 @@ class _ReviewPanelState extends State<_ReviewPanel> {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
+    final hasGitRepository =
+        (widget.project?.vcs ?? '').trim().toLowerCase() == 'git';
     if (widget.statuses.isEmpty) {
+      if (!hasGitRepository) {
+        return Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Padding(
+              padding: EdgeInsets.all(density.inset(AppSpacing.lg)),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Icon(
+                    Icons.source_rounded,
+                    size: 30,
+                    color: theme.colorScheme.primary,
+                  ),
+                  SizedBox(height: density.inset(AppSpacing.sm)),
+                  Text(
+                    'Create a Git repository',
+                    key: const ValueKey<String>('review-no-vcs-title'),
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  SizedBox(height: density.inset(AppSpacing.xs)),
+                  Text(
+                    'Initialize Git for this project to unlock review diffs and tracked file changes.',
+                    key: const ValueKey<String>('review-no-vcs-message'),
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: surfaces.muted,
+                    ),
+                  ),
+                  SizedBox(height: density.inset(AppSpacing.md)),
+                  FilledButton.icon(
+                    key: const ValueKey<String>('review-init-git-button'),
+                    onPressed: widget.initializingGitRepository
+                        ? null
+                        : widget.onInitializeGitRepository,
+                    icon: widget.initializingGitRepository
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.add_link_rounded),
+                    label: Text(
+                      widget.initializingGitRepository
+                          ? 'Creating repository...'
+                          : 'Create Git repository',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
       if (widget.loadingDiff) {
         return const Center(child: CircularProgressIndicator());
       }
