@@ -19118,7 +19118,7 @@ class _ReviewDiffView extends StatelessWidget {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
-    final parsedDiff = _parseReviewDiff(diff.content);
+    final parsedDiff = _cachedParsedReviewDiff(diff.content);
     return ClipRRect(
       borderRadius: BorderRadius.circular(AppSpacing.md),
       child: BackdropFilter(
@@ -19635,6 +19635,40 @@ class _ReviewSplitLinePair {
   final _ParsedReviewLine? right;
 }
 
+class _ParsedReviewDiffCacheEntry {
+  const _ParsedReviewDiffCacheEntry({
+    required this.content,
+    required this.parsedDiff,
+  });
+
+  final String content;
+  final _ParsedReviewDiff parsedDiff;
+}
+
+final _reviewDiffParseCache = _LruCache<int, _ParsedReviewDiffCacheEntry>(
+  maximumSize: 24,
+);
+
+_ParsedReviewDiff _cachedParsedReviewDiff(String content) {
+  if (content.trim().isEmpty) {
+    return const _ParsedReviewDiff(
+      headers: <String>[],
+      hunks: <_ParsedReviewHunk>[],
+    );
+  }
+  final signature = Object.hash(content.length, content.hashCode);
+  final cached = _reviewDiffParseCache.get(signature);
+  if (cached != null && cached.content == content) {
+    return cached.parsedDiff;
+  }
+  final parsedDiff = _parseReviewDiff(content);
+  _reviewDiffParseCache.set(
+    signature,
+    _ParsedReviewDiffCacheEntry(content: content, parsedDiff: parsedDiff),
+  );
+  return parsedDiff;
+}
+
 _ParsedReviewDiff _parseReviewDiff(String content) {
   if (content.trim().isEmpty) {
     return const _ParsedReviewDiff(
@@ -19860,7 +19894,7 @@ class _FilesPanelState extends State<_FilesPanel> {
         ),
       );
     }
-    final visibleNodes = _buildVisibleFileNodes(
+    final visibleNodes = _cachedVisibleFileNodes(
       bundle: bundle,
       expandedDirectories: widget.expandedDirectories,
       loadingDirectoryPath: widget.loadingDirectoryPath,
@@ -20088,6 +20122,89 @@ class _VisibleFileTreeEntry {
   final int depth;
   final bool expanded;
   final bool loading;
+}
+
+class _VisibleFileTreeCacheKey {
+  const _VisibleFileTreeCacheKey({
+    required this.nodeSignature,
+    required this.expandedSignature,
+    required this.loadingDirectoryPath,
+  });
+
+  final int nodeSignature;
+  final int expandedSignature;
+  final String? loadingDirectoryPath;
+
+  @override
+  bool operator ==(Object other) {
+    return other is _VisibleFileTreeCacheKey &&
+        other.nodeSignature == nodeSignature &&
+        other.expandedSignature == expandedSignature &&
+        other.loadingDirectoryPath == loadingDirectoryPath;
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(nodeSignature, expandedSignature, loadingDirectoryPath);
+}
+
+final Expando<int> _fileNodeSignatureCache = Expando<int>(
+  'workspaceFileNodeSignature',
+);
+final _visibleFileTreeCache =
+    _LruCache<_VisibleFileTreeCacheKey, List<_VisibleFileTreeEntry>>(
+      maximumSize: 48,
+    );
+
+int _fileNodeListSignature(List<FileNodeSummary> nodes) {
+  final cachedSignature = _fileNodeSignatureCache[nodes];
+  if (cachedSignature != null) {
+    return cachedSignature;
+  }
+  var signature = nodes.length;
+  for (final node in nodes) {
+    signature = Object.hash(
+      signature,
+      node.path,
+      node.name,
+      node.type,
+      node.ignored,
+    );
+  }
+  _fileNodeSignatureCache[nodes] = signature;
+  return signature;
+}
+
+int _expandedDirectoriesSignature(Set<String> expandedDirectories) {
+  if (expandedDirectories.isEmpty) {
+    return 0;
+  }
+  return Object.hashAllUnordered(expandedDirectories);
+}
+
+List<_VisibleFileTreeEntry> _cachedVisibleFileNodes({
+  required FileBrowserBundle bundle,
+  required Set<String> expandedDirectories,
+  required String? loadingDirectoryPath,
+}) {
+  final cacheKey = _VisibleFileTreeCacheKey(
+    nodeSignature: _fileNodeListSignature(bundle.nodes),
+    expandedSignature: _expandedDirectoriesSignature(expandedDirectories),
+    loadingDirectoryPath: loadingDirectoryPath,
+  );
+  final cached = _visibleFileTreeCache.get(cacheKey);
+  if (cached != null) {
+    return cached;
+  }
+  final visibleNodes = List<_VisibleFileTreeEntry>.unmodifiable(
+    _buildVisibleFileNodes(
+      bundle: bundle,
+      expandedDirectories: expandedDirectories,
+      loadingDirectoryPath: loadingDirectoryPath,
+    ),
+  );
+  _visibleFileTreeCache.set(cacheKey, visibleNodes);
+  return visibleNodes;
 }
 
 class _HighlightedFilePreview extends StatefulWidget {

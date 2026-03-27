@@ -184,6 +184,56 @@ class WorkspaceQueuedPrompt {
   }
 }
 
+const int _mainIsolateJsonDecodeThreshold = 32000;
+
+Future<Object?> _decodeJsonPayload(String payloadJson) async {
+  if (payloadJson.length < _mainIsolateJsonDecodeThreshold) {
+    return jsonDecode(payloadJson);
+  }
+  return compute(_jsonDecodeEntryPayload, payloadJson);
+}
+
+Object? _jsonDecodeEntryPayload(String payloadJson) {
+  return jsonDecode(payloadJson);
+}
+
+Map<String, List<WorkspaceQueuedPrompt>> _queuedPromptsFromDecodedJson(
+  Object? decoded,
+) {
+  final next = <String, List<WorkspaceQueuedPrompt>>{};
+  if (decoded is! Map) {
+    return next;
+  }
+  decoded.forEach((key, value) {
+    final sessionId = key.toString().trim();
+    if (sessionId.isEmpty) {
+      return;
+    }
+    final items = ((value as List?) ?? const <Object?>[])
+        .whereType<Map>()
+        .map(
+          (item) =>
+              WorkspaceQueuedPrompt.fromJson(item.cast<String, Object?>()),
+        )
+        .where((item) => item.id.isNotEmpty && item.sessionId.isNotEmpty)
+        .toList(growable: false);
+    if (items.isNotEmpty) {
+      next[sessionId] = items;
+    }
+  });
+  return next;
+}
+
+List<ChatMessage> _chatMessagesFromDecodedJson(Object? decoded) {
+  if (decoded is! List) {
+    return const <ChatMessage>[];
+  }
+  return decoded
+      .whereType<Map>()
+      .map((item) => ChatMessage.fromJson(item.cast<String, Object?>()))
+      .toList(growable: false);
+}
+
 class WorkspaceComposerModelOption {
   const WorkspaceComposerModelOption({
     required this.key,
@@ -2161,28 +2211,8 @@ class WorkspaceController extends ChangeNotifier {
       return;
     }
     try {
-      final decoded = jsonDecode(entry.payloadJson);
-      final next = <String, List<WorkspaceQueuedPrompt>>{};
-      if (decoded is Map) {
-        decoded.forEach((key, value) {
-          final sessionId = key.toString().trim();
-          if (sessionId.isEmpty) {
-            return;
-          }
-          final items = ((value as List?) ?? const <Object?>[])
-              .whereType<Map>()
-              .map(
-                (item) => WorkspaceQueuedPrompt.fromJson(
-                  item.cast<String, Object?>(),
-                ),
-              )
-              .where((item) => item.id.isNotEmpty && item.sessionId.isNotEmpty)
-              .toList(growable: false);
-          if (items.isNotEmpty) {
-            next[sessionId] = items;
-          }
-        });
-      }
+      final decoded = await _decodeJsonPayload(entry.payloadJson);
+      final next = _queuedPromptsFromDecodedJson(decoded);
       _queuedPromptsBySessionId = next;
     } catch (_) {
       _queuedPromptsBySessionId = const <String, List<WorkspaceQueuedPrompt>>{};
@@ -4156,10 +4186,8 @@ class WorkspaceController extends ChangeNotifier {
       return null;
     }
     try {
-      return ((jsonDecode(entry.payloadJson) as List)
-              .cast<Map<String, Object?>>())
-          .map(ChatMessage.fromJson)
-          .toList(growable: false);
+      final decoded = await _decodeJsonPayload(entry.payloadJson);
+      return _chatMessagesFromDecodedJson(decoded);
     } catch (_) {
       await _cacheStore.remove(_sessionMessagesCacheKey(project, sessionId));
       return null;
