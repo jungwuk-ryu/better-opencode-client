@@ -4257,6 +4257,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         heightFactor: 0.8,
         child: _WorkspaceSettingsSheet(
           appController: appController,
+          controller: controller,
           profile: profile,
           report: appController.selectedReport,
           project: controller.project,
@@ -6610,6 +6611,7 @@ class _SessionOverflowMenuItem extends StatelessWidget {
 class _WorkspaceSettingsSheet extends StatefulWidget {
   const _WorkspaceSettingsSheet({
     required this.appController,
+    required this.controller,
     required this.onManageServers,
     this.profile,
     this.report,
@@ -6617,6 +6619,7 @@ class _WorkspaceSettingsSheet extends StatefulWidget {
   });
 
   final WebParityAppController appController;
+  final WorkspaceController controller;
   final ServerProfile? profile;
   final ServerProbeReport? report;
   final ProjectTarget? project;
@@ -6629,6 +6632,7 @@ class _WorkspaceSettingsSheet extends StatefulWidget {
 
 class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
   bool _refreshingProbe = false;
+  String? _savingPermissionToolId;
 
   Future<void> _refreshProbe() async {
     final profile = widget.profile;
@@ -6658,6 +6662,36 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
     }
   }
 
+  Future<void> _setPermissionAction(
+    String toolId,
+    ConfigPermissionAction action,
+  ) async {
+    if (_savingPermissionToolId == toolId) {
+      return;
+    }
+    setState(() {
+      _savingPermissionToolId = toolId;
+    });
+    try {
+      await widget.controller.updateToolPermissionAction(toolId, action);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      showAppSnackBar(
+        context,
+        message: 'Failed to update tool permissions: $error',
+        tone: AppSnackBarTone.danger,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _savingPermissionToolId = null;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -6670,7 +6704,10 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
     final headerBottom = density.inset(AppSpacing.md, min: AppSpacing.sm);
 
     return AnimatedBuilder(
-      animation: widget.appController,
+      animation: Listenable.merge(<Listenable>[
+        widget.appController,
+        widget.controller,
+      ]),
       builder: (context, _) {
         final profile = widget.appController.selectedProfile ?? widget.profile;
         final report = widget.appController.selectedReport ?? widget.report;
@@ -6680,6 +6717,12 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
           report,
         );
         final currentProject = widget.project;
+        final permissionPolicies = resolveConfigPermissionToolPolicies(
+          widget.controller.configSnapshot?.config,
+        );
+        final hasCustomPermissionRules = permissionPolicies.any(
+          (policy) => policy.hasCustomPatterns,
+        );
 
         return Padding(
           padding: EdgeInsets.fromLTRB(
@@ -7016,6 +7059,71 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                 ),
                                 SizedBox(height: sectionGap),
                                 _WorkspaceSettingsSection(
+                                  title: 'Permissions',
+                                  child: _WorkspaceSettingsCard(
+                                    key: const ValueKey<String>(
+                                      'workspace-settings-permissions-card',
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: <Widget>[
+                                        Text(
+                                          'Control what tools the server can use by default.',
+                                          style: theme.textTheme.bodyMedium
+                                              ?.copyWith(color: surfaces.muted),
+                                        ),
+                                        if (hasCustomPermissionRules) ...<
+                                          Widget
+                                        >[
+                                          const SizedBox(height: AppSpacing.sm),
+                                          Text(
+                                            'Path-specific permission rules already in config are preserved when you change a default here.',
+                                            style: theme.textTheme.bodySmall
+                                                ?.copyWith(
+                                                  color: surfaces.muted,
+                                                ),
+                                          ),
+                                        ],
+                                        const SizedBox(height: AppSpacing.md),
+                                        for (
+                                          var index = 0;
+                                          index < permissionPolicies.length;
+                                          index += 1
+                                        ) ...<Widget>[
+                                          _WorkspaceSettingsPermissionRow(
+                                            key: ValueKey<String>(
+                                              'workspace-settings-permission-row-${permissionPolicies[index].tool.id}',
+                                            ),
+                                            policy: permissionPolicies[index],
+                                            saving:
+                                                _savingPermissionToolId ==
+                                                permissionPolicies[index]
+                                                    .tool
+                                                    .id,
+                                            onChanged: (value) {
+                                              unawaited(
+                                                _setPermissionAction(
+                                                  permissionPolicies[index]
+                                                      .tool
+                                                      .id,
+                                                  value,
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                          if (index !=
+                                              permissionPolicies.length - 1)
+                                            const SizedBox(
+                                              height: AppSpacing.md,
+                                            ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(height: sectionGap),
+                                _WorkspaceSettingsSection(
                                   title: 'Appearance',
                                   child: _WorkspaceSettingsCard(
                                     child: Column(
@@ -7170,7 +7278,7 @@ class _WorkspaceSettingsSection extends StatelessWidget {
 }
 
 class _WorkspaceSettingsCard extends StatelessWidget {
-  const _WorkspaceSettingsCard({required this.child});
+  const _WorkspaceSettingsCard({required this.child, super.key});
 
   final Widget child;
 
@@ -7257,6 +7365,104 @@ class _WorkspaceSettingsToggleRow extends StatelessWidget {
           ),
           SizedBox(width: density.inset(AppSpacing.md)),
           Switch.adaptive(value: value, onChanged: onChanged),
+        ],
+      ),
+    );
+  }
+}
+
+class _WorkspaceSettingsPermissionRow extends StatelessWidget {
+  const _WorkspaceSettingsPermissionRow({
+    required this.policy,
+    required this.saving,
+    required this.onChanged,
+    super.key,
+  });
+
+  final ConfigPermissionToolPolicy policy;
+  final bool saving;
+  final ValueChanged<ConfigPermissionAction> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final density = _workspaceDensity(context);
+    final notes = <String>[
+      if (policy.inheritedFromWildcard) 'Inherited from global default',
+      if (policy.hasCustomPatterns) 'Custom patterns preserved',
+    ];
+    return Container(
+      padding: EdgeInsets.all(density.inset(AppSpacing.md)),
+      decoration: BoxDecoration(
+        color: surfaces.panelMuted.withValues(alpha: 0.52),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      policy.tool.title,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xxs),
+                    Text(
+                      policy.tool.description,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: surfaces.muted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (saving)
+                const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+            ],
+          ),
+          if (notes.isNotEmpty) ...<Widget>[
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              notes.join(' • '),
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: surfaces.muted,
+              ),
+            ),
+          ],
+          SizedBox(height: density.inset(AppSpacing.sm)),
+          Wrap(
+            spacing: AppSpacing.xs,
+            runSpacing: AppSpacing.xs,
+            children: ConfigPermissionAction.values
+                .map((action) {
+                  final selected = policy.action == action;
+                  return ChoiceChip(
+                    key: ValueKey<String>(
+                      'workspace-settings-permission-${policy.tool.id}-${action.storageValue}',
+                    ),
+                    label: Text(action.label),
+                    selected: selected,
+                    onSelected: saving || selected
+                        ? null
+                        : (_) {
+                            onChanged(action);
+                          },
+                  );
+                })
+                .toList(growable: false),
+          ),
         ],
       ),
     );

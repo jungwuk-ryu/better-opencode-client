@@ -241,6 +241,237 @@ class ProviderModelDefinition {
   String get key => '$providerId/$id';
 }
 
+enum ConfigPermissionAction {
+  allow,
+  ask,
+  deny;
+
+  static ConfigPermissionAction? tryParse(String? value) {
+    return switch (value?.trim().toLowerCase()) {
+      'allow' => ConfigPermissionAction.allow,
+      'deny' => ConfigPermissionAction.deny,
+      'ask' => ConfigPermissionAction.ask,
+      _ => null,
+    };
+  }
+
+  String get storageValue => name;
+
+  String get label => switch (this) {
+    ConfigPermissionAction.allow => 'Allow',
+    ConfigPermissionAction.ask => 'Ask',
+    ConfigPermissionAction.deny => 'Deny',
+  };
+}
+
+class ConfigPermissionToolDefinition {
+  const ConfigPermissionToolDefinition({
+    required this.id,
+    required this.title,
+    required this.description,
+  });
+
+  final String id;
+  final String title;
+  final String description;
+}
+
+class ConfigPermissionToolPolicy {
+  const ConfigPermissionToolPolicy({
+    required this.tool,
+    required this.action,
+    required this.inheritedFromWildcard,
+    required this.hasCustomPatterns,
+  });
+
+  final ConfigPermissionToolDefinition tool;
+  final ConfigPermissionAction action;
+  final bool inheritedFromWildcard;
+  final bool hasCustomPatterns;
+}
+
+const List<ConfigPermissionToolDefinition> configPermissionTools =
+    <ConfigPermissionToolDefinition>[
+      ConfigPermissionToolDefinition(
+        id: 'read',
+        title: 'Read',
+        description: 'Reading a file (matches the file path)',
+      ),
+      ConfigPermissionToolDefinition(
+        id: 'edit',
+        title: 'Edit',
+        description:
+            'Modify files, including edits, writes, patches, and multi-edits',
+      ),
+      ConfigPermissionToolDefinition(
+        id: 'glob',
+        title: 'Glob',
+        description: 'Match files using glob patterns',
+      ),
+      ConfigPermissionToolDefinition(
+        id: 'grep',
+        title: 'Grep',
+        description: 'Search file contents using regular expressions',
+      ),
+      ConfigPermissionToolDefinition(
+        id: 'list',
+        title: 'List',
+        description: 'List files within a directory',
+      ),
+      ConfigPermissionToolDefinition(
+        id: 'bash',
+        title: 'Bash',
+        description: 'Run shell commands',
+      ),
+      ConfigPermissionToolDefinition(
+        id: 'task',
+        title: 'Task',
+        description: 'Launch sub-agents',
+      ),
+      ConfigPermissionToolDefinition(
+        id: 'skill',
+        title: 'Skill',
+        description: 'Load a skill by name',
+      ),
+      ConfigPermissionToolDefinition(
+        id: 'lsp',
+        title: 'LSP',
+        description: 'Run language server queries',
+      ),
+      ConfigPermissionToolDefinition(
+        id: 'todowrite',
+        title: 'Todo Write',
+        description: 'Update the todo list',
+      ),
+      ConfigPermissionToolDefinition(
+        id: 'webfetch',
+        title: 'Web Fetch',
+        description: 'Fetch content from a URL',
+      ),
+      ConfigPermissionToolDefinition(
+        id: 'websearch',
+        title: 'Web Search',
+        description: 'Search the web',
+      ),
+      ConfigPermissionToolDefinition(
+        id: 'codesearch',
+        title: 'Code Search',
+        description: 'Search code on the web',
+      ),
+      ConfigPermissionToolDefinition(
+        id: 'external_directory',
+        title: 'External Directory',
+        description: 'Access files outside the project directory',
+      ),
+      ConfigPermissionToolDefinition(
+        id: 'doom_loop',
+        title: 'Doom Loop',
+        description: 'Detect repeated tool calls with identical input',
+      ),
+    ];
+
+List<ConfigPermissionToolPolicy> resolveConfigPermissionToolPolicies(
+  RawJsonDocument? config,
+) {
+  final permissionConfig = config?.toJson()['permission'];
+  return configPermissionTools
+      .map(
+        (tool) => resolveConfigPermissionToolPolicy(
+          permissionConfig: permissionConfig,
+          tool: tool,
+        ),
+      )
+      .toList(growable: false);
+}
+
+ConfigPermissionToolPolicy resolveConfigPermissionToolPolicy({
+  required Object? permissionConfig,
+  required ConfigPermissionToolDefinition tool,
+}) {
+  final specificRule = _permissionRuleForTool(permissionConfig, tool.id);
+  final wildcardRule = _permissionWildcardRule(permissionConfig);
+  final specificAction = _defaultActionForPermissionRule(specificRule);
+  final wildcardAction = _defaultActionForPermissionRule(wildcardRule);
+  return ConfigPermissionToolPolicy(
+    tool: tool,
+    action: specificAction ?? wildcardAction ?? ConfigPermissionAction.ask,
+    inheritedFromWildcard: specificAction == null && wildcardAction != null,
+    hasCustomPatterns: _permissionRuleHasCustomPatterns(specificRule),
+  );
+}
+
+Map<String, Object?> buildToolPermissionConfig({
+  required Object? currentPermissionConfig,
+  required String toolId,
+  required ConfigPermissionAction action,
+}) {
+  final normalizedAction = action.storageValue;
+  final nextPermission = switch (currentPermissionConfig) {
+    final String value => <String, Object?>{
+      if (ConfigPermissionAction.tryParse(value) != null)
+        '*': value.trim().toLowerCase(),
+    },
+    final Map value => _deepJsonMapCopy(value),
+    _ => <String, Object?>{},
+  };
+  final currentToolRule = nextPermission[toolId];
+  if (currentToolRule is Map) {
+    final nextToolRule = _deepJsonMapCopy(currentToolRule);
+    nextToolRule['*'] = normalizedAction;
+    nextPermission[toolId] = nextToolRule;
+    return nextPermission;
+  }
+  nextPermission[toolId] = normalizedAction;
+  return nextPermission;
+}
+
+Map<String, Object?> _deepJsonMapCopy(Map<Object?, Object?> input) {
+  return (jsonDecode(jsonEncode(input)) as Map).cast<String, Object?>();
+}
+
+Object? _permissionRuleForTool(Object? permissionConfig, String toolId) {
+  if (permissionConfig is! Map) {
+    return null;
+  }
+  return permissionConfig[toolId];
+}
+
+Object? _permissionWildcardRule(Object? permissionConfig) {
+  if (permissionConfig is String) {
+    return permissionConfig;
+  }
+  if (permissionConfig is Map) {
+    return permissionConfig['*'];
+  }
+  return null;
+}
+
+ConfigPermissionAction? _defaultActionForPermissionRule(Object? rule) {
+  if (rule is String) {
+    return ConfigPermissionAction.tryParse(rule);
+  }
+  if (rule is Map) {
+    return ConfigPermissionAction.tryParse(rule['*']?.toString());
+  }
+  return null;
+}
+
+bool _permissionRuleHasCustomPatterns(Object? rule) {
+  if (rule is! Map) {
+    return false;
+  }
+  for (final entry in rule.entries) {
+    final key = entry.key.toString();
+    if (key == '*') {
+      continue;
+    }
+    if (ConfigPermissionAction.tryParse(entry.value?.toString()) != null) {
+      return true;
+    }
+  }
+  return false;
+}
+
 class ConfigService {
   ConfigService({http.Client? client}) : _client = client ?? http.Client();
 

@@ -9,6 +9,7 @@ import '../../core/connection/connection_models.dart';
 import '../../core/network/event_stream_service.dart';
 import '../../core/network/live_event_applier.dart';
 import '../../core/persistence/stale_cache_store.dart';
+import '../../core/spec/raw_json_document.dart';
 import '../chat/chat_models.dart';
 import '../chat/chat_service.dart';
 import '../chat/prompt_attachment_models.dart';
@@ -571,6 +572,40 @@ class WorkspaceController extends ChangeNotifier {
 
   ShellCommandResult? get lastShellResult => _lastShellResult;
   ConfigSnapshot? get configSnapshot => _configSnapshot;
+
+  Future<void> updateToolPermissionAction(
+    String toolId,
+    ConfigPermissionAction action,
+  ) async {
+    final project = _project;
+    if (project == null) {
+      throw StateError('No project is selected for this workspace.');
+    }
+    final currentSnapshot = _configSnapshot;
+    final nextPermissionConfig = buildToolPermissionConfig(
+      currentPermissionConfig: currentSnapshot?.config.toJson()['permission'],
+      toolId: toolId,
+      action: action,
+    );
+    final updatedConfig = await _configService.updateConfig(
+      profile: profile,
+      project: project,
+      config: <String, Object?>{'permission': nextPermissionConfig},
+    );
+    _configSnapshot = ConfigSnapshot(
+      config: updatedConfig,
+      providerConfig:
+          currentSnapshot?.providerConfig ??
+          RawJsonDocument(<String, Object?>{}),
+    );
+    _serverDefaultModelKey = _resolveDefaultComposerModelKey(_configSnapshot);
+    _serverDefaultReasoning = _resolveDefaultComposerReasoning(_configSnapshot);
+    if (!_isReasoningAllowed(_selectedReasoning, _selectedModelKey)) {
+      _selectedReasoning = _fallbackReasoningForModel(_selectedModelKey);
+    }
+    notifyListeners();
+  }
+
   List<AgentDefinition> get composerAgents => _composerAgents;
   List<WorkspaceComposerModelOption> get composerModels => _composerModels;
   List<CommandDefinition> get composerCommands => _composerCommands;

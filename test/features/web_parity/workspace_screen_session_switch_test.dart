@@ -9,12 +9,14 @@ import 'package:opencode_mobile_remote/src/app/app_controller.dart';
 import 'package:opencode_mobile_remote/src/app/app_routes.dart';
 import 'package:opencode_mobile_remote/src/app/app_scope.dart';
 import 'package:opencode_mobile_remote/src/core/connection/connection_models.dart';
+import 'package:opencode_mobile_remote/src/core/spec/raw_json_document.dart';
 import 'package:opencode_mobile_remote/src/design_system/app_theme.dart';
 import 'package:opencode_mobile_remote/src/features/chat/chat_models.dart';
 import 'package:opencode_mobile_remote/src/features/chat/prompt_attachment_models.dart';
 import 'package:opencode_mobile_remote/src/features/projects/project_catalog_service.dart';
 import 'package:opencode_mobile_remote/src/features/projects/project_models.dart';
 import 'package:opencode_mobile_remote/src/features/requests/request_models.dart';
+import 'package:opencode_mobile_remote/src/features/settings/config_service.dart';
 import 'package:opencode_mobile_remote/src/features/settings/integration_status_service.dart';
 import 'package:opencode_mobile_remote/src/features/terminal/pty_models.dart';
 import 'package:opencode_mobile_remote/src/features/terminal/pty_service.dart';
@@ -1129,6 +1131,104 @@ void main() {
       expect(find.text('hello from two'), findsOneWidget);
     },
   );
+
+  testWidgets('workspace settings edits default tool permission policies', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final createdControllers = <_RecordingWorkspaceController>[];
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            final controller = _RecordingWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+            createdControllers.add(controller);
+            return controller;
+          },
+    );
+    addTearDown(appController.dispose);
+
+    final navigatorKey = GlobalKey<NavigatorState>();
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        navigatorKey: navigatorKey,
+        initialRoute: '/',
+      ),
+    );
+    navigatorKey.currentState!.pushNamed(
+      buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+    );
+    await tester.pumpAndSettle();
+
+    await _sendShortcut(tester, <LogicalKeyboardKey>[
+      LogicalKeyboardKey.controlLeft,
+      LogicalKeyboardKey.comma,
+    ]);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 260));
+
+    final settingsListView = find.descendant(
+      of: find.byKey(const ValueKey<String>('workspace-settings-sheet')),
+      matching: find.byType(ListView),
+    );
+    await tester.dragUntilVisible(
+      find.byKey(const ValueKey<String>('workspace-settings-permissions-card')),
+      settingsListView,
+      const Offset(0, -220),
+    );
+    await tester.pumpAndSettle();
+
+    final bashRow = find.byKey(
+      const ValueKey<String>('workspace-settings-permission-row-bash'),
+    );
+    expect(bashRow, findsOneWidget);
+
+    final bashAllowChip = find.descendant(
+      of: bashRow,
+      matching: find.byKey(
+        const ValueKey<String>('workspace-settings-permission-bash-allow'),
+      ),
+    );
+    await tester.ensureVisible(bashAllowChip);
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      bashAllowChip,
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      createdControllers.single.permissionActionUpdates,
+      contains('bash:allow'),
+    );
+    expect(
+      tester
+          .widget<ChoiceChip>(
+            find.byKey(
+              const ValueKey<String>(
+                'workspace-settings-permission-bash-allow',
+              ),
+            ),
+          )
+          .selected,
+      isTrue,
+    );
+  });
 
   testWidgets('keyboard shortcut opens the project picker sheet', (
     tester,
@@ -3156,11 +3256,21 @@ class _RecordingWorkspaceController extends WorkspaceController {
   int loadCount = 0;
   int createEmptySessionCalls = 0;
   final List<String?> selectSessionCalls = <String?>[];
+  final List<String> permissionActionUpdates = <String>[];
 
   bool _loading = true;
   String? _selectedSessionId;
   List<ChatMessage> _messages = const <ChatMessage>[];
   List<SessionSummary> _sessions;
+  ConfigSnapshot _configSnapshot = ConfigSnapshot(
+    config: RawJsonDocument(<String, Object?>{
+      'permission': <String, Object?>{
+        '*': 'ask',
+        'edit': <String, Object?>{'*': 'ask', '~/scratch/**': 'deny'},
+      },
+    }),
+    providerConfig: RawJsonDocument(<String, Object?>{}),
+  );
 
   @override
   bool get loading => _loading;
@@ -3179,6 +3289,9 @@ class _RecordingWorkspaceController extends WorkspaceController {
 
   @override
   Map<String, SessionStatusSummary> get statuses => _sessionStatuses;
+
+  @override
+  ConfigSnapshot? get configSnapshot => _configSnapshot;
 
   @override
   String? get selectedSessionId => _selectedSessionId;
@@ -3272,6 +3385,25 @@ class _RecordingWorkspaceController extends WorkspaceController {
     _messages = const <ChatMessage>[];
     notifyListeners();
     return created;
+  }
+
+  @override
+  Future<void> updateToolPermissionAction(
+    String toolId,
+    ConfigPermissionAction action,
+  ) async {
+    permissionActionUpdates.add('$toolId:${action.storageValue}');
+    final nextConfig = _configSnapshot.config.toJson();
+    nextConfig['permission'] = buildToolPermissionConfig(
+      currentPermissionConfig: nextConfig['permission'],
+      toolId: toolId,
+      action: action,
+    );
+    _configSnapshot = ConfigSnapshot(
+      config: RawJsonDocument(nextConfig),
+      providerConfig: _configSnapshot.providerConfig,
+    );
+    notifyListeners();
   }
 
   List<ChatMessage> _messageListFor(String? sessionId) {
