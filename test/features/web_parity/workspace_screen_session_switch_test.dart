@@ -17,6 +17,7 @@ import 'package:opencode_mobile_remote/src/features/chat/prompt_attachment_model
 import 'package:opencode_mobile_remote/src/features/projects/project_catalog_service.dart';
 import 'package:opencode_mobile_remote/src/features/projects/project_models.dart';
 import 'package:opencode_mobile_remote/src/features/requests/pending_request_notification_service.dart';
+import 'package:opencode_mobile_remote/src/features/requests/pending_request_sound_service.dart';
 import 'package:opencode_mobile_remote/src/features/requests/request_models.dart';
 import 'package:opencode_mobile_remote/src/features/settings/config_service.dart';
 import 'package:opencode_mobile_remote/src/features/settings/integration_status_service.dart';
@@ -1240,6 +1241,7 @@ void main() {
 
     final createdControllers = <_NotifyingWorkspaceController>[];
     final notificationService = _FakePendingRequestNotificationService();
+    final soundService = _FakePendingRequestSoundService();
     final profile = ServerProfile(
       id: 'server',
       label: 'Mock',
@@ -1268,6 +1270,7 @@ void main() {
         navigatorKey: navigatorKey,
         initialRoute: '/',
         pendingRequestNotificationService: notificationService,
+        pendingRequestSoundService: soundService,
       ),
     );
     navigatorKey.currentState!.pushNamed(
@@ -1291,6 +1294,8 @@ void main() {
       'Permission requested',
     );
     expect(notificationService.notifications.single.body, contains('bash'));
+    expect(soundService.playedKeys, hasLength(1));
+    expect(soundService.playedKeys.single, contains('permission:per_1'));
   });
 
   testWidgets('keyboard shortcut opens the project picker sheet', (
@@ -3117,6 +3122,7 @@ class _WorkspaceRouteHarness extends StatelessWidget {
     this.attachmentPicker,
     this.integrationStatusService,
     this.pendingRequestNotificationService,
+    this.pendingRequestSoundService,
     this.platform,
   });
 
@@ -3128,6 +3134,7 @@ class _WorkspaceRouteHarness extends StatelessWidget {
   final Future<List<PromptAttachment>> Function()? attachmentPicker;
   final IntegrationStatusService? integrationStatusService;
   final PendingRequestNotificationService? pendingRequestNotificationService;
+  final PendingRequestSoundService? pendingRequestSoundService;
   final TargetPlatform? platform;
 
   @override
@@ -3162,6 +3169,7 @@ class _WorkspaceRouteHarness extends StatelessWidget {
                         integrationStatusService: integrationStatusService,
                         pendingRequestNotificationService:
                             pendingRequestNotificationService,
+                        pendingRequestSoundService: pendingRequestSoundService,
                       ),
                   };
                 },
@@ -3199,6 +3207,15 @@ class _FakePendingRequestNotificationService
     notifications.add(
       _NotificationRecord(dedupeKey: dedupeKey, title: title, body: body),
     );
+  }
+}
+
+class _FakePendingRequestSoundService implements PendingRequestSoundService {
+  final List<String> playedKeys = <String>[];
+
+  @override
+  Future<void> playPermissionRequestSound({required String dedupeKey}) async {
+    playedKeys.add(dedupeKey);
   }
 }
 

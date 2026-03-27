@@ -24,6 +24,7 @@ import '../files/file_models.dart';
 import '../projects/project_models.dart';
 import '../projects/project_store.dart';
 import '../requests/pending_request_notification_service.dart';
+import '../requests/pending_request_sound_service.dart';
 import '../requests/request_alerts.dart';
 import '../requests/request_models.dart';
 import '../requests/request_event_applier.dart';
@@ -110,6 +111,7 @@ class OpenCodeShellScreen extends StatefulWidget {
     this.eventStreamService,
     this.terminalService,
     this.pendingRequestNotificationService,
+    this.pendingRequestSoundService,
     super.key,
   });
 
@@ -131,6 +133,7 @@ class OpenCodeShellScreen extends StatefulWidget {
   final EventStreamService? eventStreamService;
   final TerminalService? terminalService;
   final PendingRequestNotificationService? pendingRequestNotificationService;
+  final PendingRequestSoundService? pendingRequestSoundService;
 
   @override
   State<OpenCodeShellScreen> createState() => _OpenCodeShellScreenState();
@@ -2049,10 +2052,17 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     }
     final title = pendingRequestAlertTitle(l10n, alert);
     final body = pendingRequestAlertBody(alert);
+    final dedupeKey =
+        '${widget.profile.storageKey}:${widget.project.directory}:${alert.kind.name}:${alert.requestId}';
+    if (alert.kind == PendingRequestAlertKind.permission) {
+      unawaited(
+        (widget.pendingRequestSoundService ?? sharedPendingRequestSoundService)
+            .playPermissionRequestSound(dedupeKey: dedupeKey),
+      );
+    }
     unawaited(
       _pendingRequestNotificationService.showPendingRequestNotification(
-        dedupeKey:
-            '${widget.profile.storageKey}:${widget.project.directory}:${alert.kind.name}:${alert.requestId}',
+        dedupeKey: dedupeKey,
         title: title,
         body: body,
       ),

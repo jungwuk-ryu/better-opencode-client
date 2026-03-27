@@ -28,6 +28,7 @@ import '../files/file_models.dart';
 import '../projects/project_catalog_service.dart';
 import '../projects/project_models.dart';
 import '../requests/pending_request_notification_service.dart';
+import '../requests/pending_request_sound_service.dart';
 import '../requests/request_alerts.dart';
 import '../requests/request_models.dart';
 import '../settings/agent_service.dart';
@@ -184,6 +185,7 @@ class WebParityWorkspaceScreen extends StatefulWidget {
     this.projectCatalogService,
     this.integrationStatusService,
     this.pendingRequestNotificationService,
+    this.pendingRequestSoundService,
     super.key,
   });
 
@@ -194,6 +196,7 @@ class WebParityWorkspaceScreen extends StatefulWidget {
   final ProjectCatalogService? projectCatalogService;
   final IntegrationStatusService? integrationStatusService;
   final PendingRequestNotificationService? pendingRequestNotificationService;
+  final PendingRequestSoundService? pendingRequestSoundService;
 
   @override
   State<WebParityWorkspaceScreen> createState() =>
@@ -300,6 +303,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   PendingRequestNotificationService get _pendingRequestNotificationService =>
       widget.pendingRequestNotificationService ??
       sharedPendingRequestNotificationService;
+  PendingRequestSoundService get _pendingRequestSoundService =>
+      widget.pendingRequestSoundService ?? sharedPendingRequestSoundService;
 
   @override
   void initState() {
@@ -3353,10 +3358,18 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     if (l10n == null) {
       return;
     }
+    final dedupeKey =
+        '${controller.profile.storageKey}:${controller.directory}:${alert.kind.name}:${alert.requestId}';
+    if (alert.kind == PendingRequestAlertKind.permission) {
+      unawaited(
+        _pendingRequestSoundService.playPermissionRequestSound(
+          dedupeKey: dedupeKey,
+        ),
+      );
+    }
     unawaited(
       _pendingRequestNotificationService.showPendingRequestNotification(
-        dedupeKey:
-            '${controller.profile.storageKey}:${controller.directory}:${alert.kind.name}:${alert.requestId}',
+        dedupeKey: dedupeKey,
         title: pendingRequestAlertTitle(l10n, alert),
         body: pendingRequestAlertBody(alert),
       ),

@@ -16,6 +16,7 @@ import 'package:opencode_mobile_remote/src/features/files/file_browser_service.d
 import 'package:opencode_mobile_remote/src/features/files/file_models.dart';
 import 'package:opencode_mobile_remote/src/features/projects/project_models.dart';
 import 'package:opencode_mobile_remote/src/features/requests/pending_request_notification_service.dart';
+import 'package:opencode_mobile_remote/src/features/requests/pending_request_sound_service.dart';
 import 'package:opencode_mobile_remote/src/features/requests/request_models.dart';
 import 'package:opencode_mobile_remote/src/features/requests/request_service.dart';
 import 'package:opencode_mobile_remote/src/features/shell/opencode_shell_screen.dart';
@@ -145,6 +146,7 @@ void main() {
     EventStreamService? eventStreamService,
     TerminalService? terminalService,
     PendingRequestNotificationService? pendingRequestNotificationService,
+    PendingRequestSoundService? pendingRequestSoundService,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -167,6 +169,7 @@ void main() {
         eventStreamService: eventStreamService,
         terminalService: terminalService,
         pendingRequestNotificationService: pendingRequestNotificationService,
+        pendingRequestSoundService: pendingRequestSoundService,
       ),
     );
     await _pumpShellFrames(tester);
@@ -285,6 +288,66 @@ void main() {
       );
     },
   );
+
+  testWidgets('shell plays a sound when a permission request arrives', (
+    tester,
+  ) async {
+    final eventStreamService = _ControlledEventStreamService();
+    final notificationService = _FakePendingRequestNotificationService();
+    final soundService = _FakePendingRequestSoundService();
+    final chatService = _ControlledChatService(
+      bundlesByScopeKey: <String, ChatSessionBundle>{
+        _scopeKeyFor(profile, project): ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _testSession(
+              'session-1',
+              'First session',
+              directory: project.directory,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{
+            'session-1': SessionStatusSummary(type: 'idle'),
+          },
+          messages: const <ChatMessage>[],
+          selectedSessionId: 'session-1',
+        ),
+      },
+    );
+
+    await pumpShellWithCapabilities(
+      tester,
+      size: const Size(1440, 1600),
+      capabilitiesToUse: eventCapabilities,
+      chatService: chatService,
+      todoService: _RecordingTodoService(),
+      fileBrowserService: _ControlledFileBrowserService.empty(),
+      requestService: _ControlledRequestService.empty(),
+      configService: _ControlledConfigService.empty(),
+      integrationStatusService: _ControlledIntegrationStatusService.empty(),
+      terminalService: _ControlledTerminalService(),
+      eventStreamService: eventStreamService,
+      pendingRequestNotificationService: notificationService,
+      pendingRequestSoundService: soundService,
+    );
+
+    eventStreamService.emitToScope(
+      profile,
+      project,
+      const EventEnvelope(
+        type: 'permission.asked',
+        properties: <String, Object?>{
+          'id': 'per_1',
+          'sessionID': 'session-1',
+          'permission': 'bash',
+          'patterns': <Object?>['npm test'],
+        },
+      ),
+    );
+    await _pumpShellFrames(tester);
+
+    expect(soundService.playedKeys, hasLength(1));
+    expect(soundService.playedKeys.single, contains('permission:per_1'));
+  });
 
   testWidgets('mobile shell opens a drawer with project and session picks', (
     tester,
@@ -2572,6 +2635,7 @@ Widget _buildShell({
   EventStreamService? eventStreamService,
   TerminalService? terminalService,
   PendingRequestNotificationService? pendingRequestNotificationService,
+  PendingRequestSoundService? pendingRequestSoundService,
 }) {
   return MaterialApp(
     theme: AppTheme.dark(),
@@ -2593,6 +2657,7 @@ Widget _buildShell({
       eventStreamService: eventStreamService,
       terminalService: terminalService,
       pendingRequestNotificationService: pendingRequestNotificationService,
+      pendingRequestSoundService: pendingRequestSoundService,
     ),
   );
 }
@@ -2622,6 +2687,15 @@ class _FakePendingRequestNotificationService
     notifications.add(
       _NotificationRecord(dedupeKey: dedupeKey, title: title, body: body),
     );
+  }
+}
+
+class _FakePendingRequestSoundService implements PendingRequestSoundService {
+  final List<String> playedKeys = <String>[];
+
+  @override
+  Future<void> playPermissionRequestSound({required String dedupeKey}) async {
+    playedKeys.add(dedupeKey);
   }
 }
 
