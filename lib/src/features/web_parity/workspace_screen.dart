@@ -4166,11 +4166,8 @@ class _WorkspaceTopBar extends StatelessWidget {
             fontWeight: FontWeight.w700,
             overflow: TextOverflow.ellipsis,
           );
-    final metaParts = <String>[
-      if (profile != null && profile!.effectiveLabel.trim().isNotEmpty)
-        profile!.effectiveLabel.trim(),
-      if (project?.directory.trim().isNotEmpty == true) project!.directory,
-    ];
+    final profileLabel = profile?.effectiveLabel.trim() ?? '';
+    final projectDirectory = project?.directory.trim() ?? '';
     final searchBar = chatSearchVisible
         ? Padding(
             padding: compact
@@ -4274,6 +4271,45 @@ class _WorkspaceTopBar extends StatelessWidget {
         ),
       ],
     ].where((section) => section.isNotEmpty).toList(growable: false);
+    final headerActionChips = <Widget>[
+      if (onToggleSessionsPanel != null)
+        _WorkspacePanelToggleChip(
+          key: const ValueKey<String>('workspace-toggle-sessions-panel-button'),
+          label: 'Sessions',
+          icon: Icons.view_sidebar_rounded,
+          active: sessionsPanelVisible,
+          tooltip:
+              '${sessionsPanelVisible ? 'Hide sessions panel' : 'Show sessions panel'} (${_formatWorkspaceShortcutLabel('mod+b')})',
+          onTap: onToggleSessionsPanel!,
+        ),
+      if (onToggleSidePanel != null)
+        _WorkspacePanelToggleChip(
+          key: const ValueKey<String>('workspace-toggle-side-panel-button'),
+          label: sidePanelLabel,
+          icon: Icons.dashboard_rounded,
+          active: sidePanelVisible,
+          tooltip: sidePanelVisible
+              ? 'Hide $sidePanelLabel panel'
+              : 'Show $sidePanelLabel panel',
+          onTap: onToggleSidePanel!,
+        ),
+      if (onSplitSessionPane != null)
+        _WorkspaceActionChip(
+          key: const ValueKey<String>('workspace-split-session-pane-button'),
+          label: sessionPaneCount > 1 ? 'Split ($sessionPaneCount)' : 'Split',
+          icon: Icons.splitscreen_rounded,
+          enabled: canSplitSessionPane,
+          tooltip: canSplitSessionPane
+              ? 'Split the chat area into another session pane'
+              : 'Maximum number of session panes open',
+          onTap: onSplitSessionPane,
+        ),
+    ];
+    final hasSessionMeta =
+        canReturnToMain ||
+        profileLabel.isNotEmpty ||
+        projectDirectory.isNotEmpty ||
+        headerActionChips.isNotEmpty;
     if (compact) {
       return Material(
         color: surfaces.panel,
@@ -4391,115 +4427,24 @@ class _WorkspaceTopBar extends StatelessWidget {
               horizontal: desktopHorizontal,
               vertical: desktopVertical,
             ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                if (compact)
-                  IconButton(
-                    onPressed: onOpenDrawer,
-                    icon: const Icon(Icons.menu_rounded),
-                  ),
-                IconButton(
-                  onPressed: onBackHome,
-                  icon: const Icon(Icons.arrow_back_rounded),
-                ),
-                if (onToggleSessionsPanel != null) ...<Widget>[
-                  SizedBox(width: density.inset(AppSpacing.xs, min: 4)),
-                  _WorkspacePanelToggleChip(
-                    key: const ValueKey<String>(
-                      'workspace-toggle-sessions-panel-button',
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: <Widget>[
+                    if (compact)
+                      IconButton(
+                        onPressed: onOpenDrawer,
+                        icon: const Icon(Icons.menu_rounded),
+                      ),
+                    IconButton(
+                      onPressed: onBackHome,
+                      icon: const Icon(Icons.arrow_back_rounded),
                     ),
-                    label: 'Sessions',
-                    icon: Icons.view_sidebar_rounded,
-                    active: sessionsPanelVisible,
-                    tooltip:
-                        '${sessionsPanelVisible ? 'Hide sessions panel' : 'Show sessions panel'} (${_formatWorkspaceShortcutLabel('mod+b')})',
-                    onTap: onToggleSessionsPanel!,
-                  ),
-                ],
-                if (onToggleSidePanel != null) ...<Widget>[
-                  SizedBox(width: density.inset(AppSpacing.xs, min: 4)),
-                  _WorkspacePanelToggleChip(
-                    key: const ValueKey<String>(
-                      'workspace-toggle-side-panel-button',
-                    ),
-                    label: sidePanelLabel,
-                    icon: Icons.dashboard_rounded,
-                    active: sidePanelVisible,
-                    tooltip: sidePanelVisible
-                        ? 'Hide $sidePanelLabel panel'
-                        : 'Show $sidePanelLabel panel',
-                    onTap: onToggleSidePanel!,
-                  ),
-                ],
-                if (onSplitSessionPane != null) ...<Widget>[
-                  SizedBox(width: density.inset(AppSpacing.xs, min: 4)),
-                  _WorkspaceActionChip(
-                    key: const ValueKey<String>(
-                      'workspace-split-session-pane-button',
-                    ),
-                    label: sessionPaneCount > 1
-                        ? 'Split ($sessionPaneCount)'
-                        : 'Split',
-                    icon: Icons.splitscreen_rounded,
-                    enabled: canSplitSessionPane,
-                    tooltip: canSplitSessionPane
-                        ? 'Split the chat area into another session pane'
-                        : 'Maximum number of session panes open',
-                    onTap: onSplitSessionPane,
-                  ),
-                ],
-                SizedBox(width: density.inset(AppSpacing.sm, min: 6)),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      if (canReturnToMain)
-                        Padding(
-                          padding: const EdgeInsets.only(
-                            bottom: AppSpacing.xxs,
-                          ),
-                          child: InkWell(
-                            key: const ValueKey<String>(
-                              'workspace-back-to-main-session-link',
-                            ),
-                            onTap: onBackToMainSession,
-                            borderRadius: BorderRadius.circular(AppSpacing.sm),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: AppSpacing.xs,
-                                vertical: 2,
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: <Widget>[
-                                  Icon(
-                                    Icons.subdirectory_arrow_left_rounded,
-                                    size: 14,
-                                    color: surfaces.muted,
-                                  ),
-                                  const SizedBox(width: AppSpacing.xxs),
-                                  Flexible(
-                                    child: Text(
-                                      rootSession.title.isNotEmpty
-                                          ? rootSession.title
-                                          : 'Main session',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall
-                                          ?.copyWith(
-                                            color: surfaces.muted,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      _SessionIdentity(
+                    SizedBox(width: density.inset(AppSpacing.sm, min: 6)),
+                    Expanded(
+                      child: _SessionIdentity(
                         compact: false,
                         title: title,
                         titleKey: ValueKey<String>(
@@ -4511,47 +4456,75 @@ class _WorkspaceTopBar extends StatelessWidget {
                           'session-header-busy-${session?.id ?? 'new'}',
                         ),
                       ),
-                      if (metaParts.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: AppSpacing.xxs),
-                          child: Text(
-                            metaParts.join('  •  '),
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(color: surfaces.muted),
-                            overflow: TextOverflow.ellipsis,
+                    ),
+                    if (session != null)
+                      Padding(
+                        padding: const EdgeInsets.only(left: AppSpacing.sm),
+                        child: _SessionContextUsageRing(
+                          key: ValueKey<String>(
+                            'session-header-context-ring-${session!.id}',
+                          ),
+                          usagePercent: contextSnapshot?.usagePercent,
+                          totalTokens: contextSnapshot?.totalTokens,
+                          contextLimit: contextSnapshot?.contextLimit,
+                        ),
+                      ),
+                    SizedBox(width: density.inset(AppSpacing.xs, min: 4)),
+                    IconButton(
+                      key: const ValueKey<String>(
+                        'workspace-chat-search-button',
+                      ),
+                      onPressed: onOpenChatSearch,
+                      icon: const Icon(Icons.search_rounded),
+                      tooltip: 'Search chat',
+                    ),
+                    IconButton(
+                      onPressed: onToggleTerminal,
+                      icon: Icon(
+                        terminalOpen
+                            ? Icons.terminal_rounded
+                            : Icons.terminal_outlined,
+                      ),
+                      tooltip: terminalOpen ? 'Hide terminal' : 'Show terminal',
+                    ),
+                    _SessionOverflowMenuButton(sections: menuSections),
+                  ],
+                ),
+                if (hasSessionMeta) ...<Widget>[
+                  SizedBox(height: density.inset(AppSpacing.sm, min: 6)),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Expanded(
+                        child: _WorkspaceSessionHeaderMetaBlock(
+                          profileLabel: profileLabel,
+                          projectDirectory: projectDirectory,
+                          canReturnToMain: canReturnToMain,
+                          rootSessionTitle: rootSession?.title ?? '',
+                          onBackToMainSession: onBackToMainSession,
+                        ),
+                      ),
+                      if (headerActionChips.isNotEmpty) ...<Widget>[
+                        SizedBox(width: density.inset(AppSpacing.md, min: 10)),
+                        Flexible(
+                          child: Align(
+                            alignment: Alignment.topRight,
+                            child: Wrap(
+                              key: const ValueKey<String>(
+                                'workspace-session-header-action-chips',
+                              ),
+                              alignment: WrapAlignment.end,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              spacing: density.inset(AppSpacing.xs, min: 4),
+                              runSpacing: density.inset(AppSpacing.xs, min: 4),
+                              children: headerActionChips,
+                            ),
                           ),
                         ),
+                      ],
                     ],
                   ),
-                ),
-                if (session != null)
-                  Padding(
-                    padding: const EdgeInsets.only(right: AppSpacing.sm),
-                    child: _SessionContextUsageRing(
-                      key: ValueKey<String>(
-                        'session-header-context-ring-${session!.id}',
-                      ),
-                      usagePercent: contextSnapshot?.usagePercent,
-                      totalTokens: contextSnapshot?.totalTokens,
-                      contextLimit: contextSnapshot?.contextLimit,
-                    ),
-                  ),
-                IconButton(
-                  key: const ValueKey<String>('workspace-chat-search-button'),
-                  onPressed: onOpenChatSearch,
-                  icon: const Icon(Icons.search_rounded),
-                  tooltip: 'Search chat',
-                ),
-                IconButton(
-                  onPressed: onToggleTerminal,
-                  icon: Icon(
-                    terminalOpen
-                        ? Icons.terminal_rounded
-                        : Icons.terminal_outlined,
-                  ),
-                  tooltip: terminalOpen ? 'Hide terminal' : 'Show terminal',
-                ),
-                _SessionOverflowMenuButton(sections: menuSections),
+                ],
               ],
             ),
           ),
@@ -4560,6 +4533,203 @@ class _WorkspaceTopBar extends StatelessWidget {
             switchInCurve: Curves.easeOutCubic,
             switchOutCurve: Curves.easeInCubic,
             child: searchBar,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WorkspaceSessionHeaderMetaBlock extends StatelessWidget {
+  const _WorkspaceSessionHeaderMetaBlock({
+    required this.profileLabel,
+    required this.projectDirectory,
+    required this.canReturnToMain,
+    required this.rootSessionTitle,
+    required this.onBackToMainSession,
+  });
+
+  final String profileLabel;
+  final String projectDirectory;
+  final bool canReturnToMain;
+  final String rootSessionTitle;
+  final VoidCallback? onBackToMainSession;
+
+  @override
+  Widget build(BuildContext context) {
+    final density = _workspaceDensity(context);
+    final hasMetaBadges = canReturnToMain || profileLabel.isNotEmpty;
+    final hasDirectory = projectDirectory.isNotEmpty;
+    if (!hasMetaBadges && !hasDirectory) {
+      return const SizedBox.shrink();
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        if (hasMetaBadges)
+          Wrap(
+            spacing: density.inset(AppSpacing.xs, min: 4),
+            runSpacing: density.inset(AppSpacing.xs, min: 4),
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: <Widget>[
+              if (canReturnToMain && onBackToMainSession != null)
+                _WorkspaceSessionHeaderBackLink(
+                  key: const ValueKey<String>(
+                    'workspace-back-to-main-session-link',
+                  ),
+                  rootSessionTitle: rootSessionTitle,
+                  onTap: onBackToMainSession!,
+                ),
+              if (profileLabel.isNotEmpty)
+                _WorkspaceSessionHeaderMetaChip(
+                  icon: Icons.dns_rounded,
+                  label: profileLabel,
+                ),
+            ],
+          ),
+        if (hasDirectory)
+          Padding(
+            padding: EdgeInsets.only(
+              top: hasMetaBadges ? density.inset(AppSpacing.xs, min: 4) : 0,
+            ),
+            child: _WorkspaceSessionHeaderPathLine(directory: projectDirectory),
+          ),
+      ],
+    );
+  }
+}
+
+class _WorkspaceSessionHeaderBackLink extends StatelessWidget {
+  const _WorkspaceSessionHeaderBackLink({
+    required this.rootSessionTitle,
+    required this.onTap,
+    super.key,
+  });
+
+  final String rootSessionTitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final density = _workspaceDensity(context);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
+        child: Container(
+          padding: EdgeInsets.symmetric(
+            horizontal: density.inset(AppSpacing.sm, min: 8),
+            vertical: density.inset(AppSpacing.xxs, min: 4),
+          ),
+          decoration: BoxDecoration(
+            color: surfaces.panelMuted.withValues(alpha: 0.68),
+            borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
+            border: Border.all(color: surfaces.lineSoft),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(
+                Icons.subdirectory_arrow_left_rounded,
+                size: 14,
+                color: surfaces.muted,
+              ),
+              const SizedBox(width: AppSpacing.xxs),
+              Text(
+                rootSessionTitle.isNotEmpty ? rootSessionTitle : 'Main session',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: surfaces.muted,
+                  fontWeight: FontWeight.w700,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WorkspaceSessionHeaderMetaChip extends StatelessWidget {
+  const _WorkspaceSessionHeaderMetaChip({
+    required this.icon,
+    required this.label,
+  });
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final density = _workspaceDensity(context);
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: density.inset(AppSpacing.sm, min: 8),
+        vertical: density.inset(AppSpacing.xxs, min: 4),
+      ),
+      decoration: BoxDecoration(
+        color: surfaces.panelMuted.withValues(alpha: 0.62),
+        borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
+        border: Border.all(color: surfaces.lineSoft),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(icon, size: 14, color: surfaces.muted),
+          const SizedBox(width: AppSpacing.xxs),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: surfaces.muted,
+              fontWeight: FontWeight.w700,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WorkspaceSessionHeaderPathLine extends StatelessWidget {
+  const _WorkspaceSessionHeaderPathLine({required this.directory});
+
+  final String directory;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final density = _workspaceDensity(context);
+    return Container(
+      key: const ValueKey<String>('session-header-project-path'),
+      width: double.infinity,
+      padding: EdgeInsets.symmetric(
+        horizontal: density.inset(AppSpacing.sm, min: 8),
+        vertical: density.inset(AppSpacing.xs, min: 6),
+      ),
+      decoration: BoxDecoration(
+        color: surfaces.panelRaised.withValues(alpha: 0.52),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: surfaces.lineSoft),
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(Icons.folder_open_rounded, size: 16, color: surfaces.muted),
+          SizedBox(width: density.inset(AppSpacing.xs, min: 4)),
+          Expanded(
+            child: Text(
+              directory,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: surfaces.muted,
+                fontWeight: FontWeight.w600,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
         ],
       ),

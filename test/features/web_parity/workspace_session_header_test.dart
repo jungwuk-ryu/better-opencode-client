@@ -76,6 +76,68 @@ void main() {
     },
   );
 
+  testWidgets(
+    'desktop session header keeps controls trailing and project metadata below the title',
+    (tester) async {
+      tester.view.physicalSize = const Size(1480, 960);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              return _HeaderWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+            },
+      );
+      addTearDown(appController.dispose);
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          initialRoute: buildWorkspaceRoute(
+            '/workspace/demo',
+            sessionId: 'ses_1',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 120));
+
+      final titleRect = tester.getRect(
+        find.byKey(const ValueKey<String>('session-header-title-ses_1')),
+      );
+      final pathRect = tester.getRect(
+        find.byKey(const ValueKey<String>('session-header-project-path')),
+      );
+      final actionRect = tester.getRect(
+        find.byKey(
+          const ValueKey<String>('workspace-session-header-action-chips'),
+        ),
+      );
+      final sessionsRect = tester.getRect(
+        find.byKey(
+          const ValueKey<String>('workspace-toggle-sessions-panel-button'),
+        ),
+      );
+
+      expect(pathRect.top, greaterThan(titleRect.bottom - 1));
+      expect(actionRect.top, greaterThan(titleRect.top + 12));
+      expect(sessionsRect.left, greaterThan(titleRect.left + 120));
+      expect(pathRect.left, lessThan(actionRect.left));
+    },
+  );
+
   testWidgets('session header menu opens with the styled overflow panel', (
     tester,
   ) async {
