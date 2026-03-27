@@ -781,6 +781,23 @@ void main() {
 
     expect(demoImage(), findsOneWidget);
 
+    final initialProvider = tester.widget<Image>(demoImage()).image;
+
+    controllerInstance.applyProjectTargetUpdate(
+      demoProject.copyWith(
+        branch: 'release',
+        icon: const ProjectIconInfo(
+          url: demoIconDataUrl,
+          override: demoIconDataUrl,
+          color: 'mint',
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(demoImage(), findsOneWidget);
+    expect(tester.widget<Image>(demoImage()).image, same(initialProvider));
+
     controllerInstance.applyProjectTargetUpdate(
       demoProject.copyWith(icon: const ProjectIconInfo(color: 'mint')),
     );

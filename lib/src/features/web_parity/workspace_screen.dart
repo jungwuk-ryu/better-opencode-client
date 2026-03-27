@@ -12239,13 +12239,33 @@ class _ProjectAvatar extends StatelessWidget {
   }
 }
 
-class _ProjectAvatarImage extends StatelessWidget {
+class _ProjectAvatarImage extends StatefulWidget {
   const _ProjectAvatarImage({required this.image});
 
   final String image;
 
   @override
-  Widget build(BuildContext context) {
+  State<_ProjectAvatarImage> createState() => _ProjectAvatarImageState();
+}
+
+class _ProjectAvatarImageState extends State<_ProjectAvatarImage> {
+  ImageProvider<Object>? _provider;
+
+  @override
+  void initState() {
+    super.initState();
+    _provider = _resolveProvider(widget.image);
+  }
+
+  @override
+  void didUpdateWidget(covariant _ProjectAvatarImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.image != widget.image) {
+      _provider = _resolveProvider(widget.image);
+    }
+  }
+
+  ImageProvider<Object>? _resolveProvider(String image) {
     UriData? uriData;
     if (image.startsWith('data:')) {
       try {
@@ -12255,18 +12275,26 @@ class _ProjectAvatarImage extends StatelessWidget {
       }
     }
     if (uriData != null) {
-      return Image.memory(
-        uriData.contentAsBytes(),
-        width: double.infinity,
-        height: double.infinity,
-        fit: BoxFit.cover,
-      );
+      return MemoryImage(uriData.contentAsBytes());
     }
-    return Image.network(
-      image,
+    if (image.trim().isEmpty) {
+      return null;
+    }
+    return NetworkImage(image);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = _provider;
+    if (provider == null) {
+      return const SizedBox.shrink();
+    }
+    return Image(
+      image: provider,
       width: double.infinity,
       height: double.infinity,
       fit: BoxFit.cover,
+      gaplessPlayback: true,
       errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
     );
   }
