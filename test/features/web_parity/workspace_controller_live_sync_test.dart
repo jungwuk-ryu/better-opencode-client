@@ -657,6 +657,36 @@ void main() {
     },
   );
 
+  test(
+    'controller skips review diff loading when snapshot tracking is disabled',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final reviewDiffService = _TrackingReviewDiffService();
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        reviewDiffService: reviewDiffService,
+        configService: _FakeConfigService(
+          snapshot: ConfigSnapshot(
+            config: RawJsonDocument(<String, Object?>{'snapshot': false}),
+            providerConfig: RawJsonDocument(<String, Object?>{
+              'providers': <Object?>[],
+            }),
+          ),
+        ),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+
+      expect(reviewDiffService.fetchCount, 0);
+      expect(controller.reviewStatuses, isEmpty);
+      expect(controller.reviewDiffError, isNull);
+      expect(controller.loadingReviewDiff, isFalse);
+    },
+  );
+
   test('controller interrupts the selected busy session', () async {
     final eventStreamService = _ControlledEventStreamService();
     final sessionActionService = _RecordingSessionActionService();
@@ -1586,6 +1616,7 @@ WorkspaceController _buildController({
   ReviewDiffService? reviewDiffService,
   RequestService? requestService,
   SessionActionService? sessionActionService,
+  ConfigService? configService,
   StaleCacheStore? cacheStore,
   List<SessionSummary>? initialSessions,
   String? initialSelectedSessionId,
@@ -1630,7 +1661,7 @@ WorkspaceController _buildController({
         requestService ?? _FakeRequestService(pendingBundle: pendingBundle),
     eventStreamService: eventStreamService,
     sessionActionService: sessionActionService,
-    configService: _FakeConfigService(),
+    configService: configService ?? _FakeConfigService(),
     agentService: _FakeAgentService(),
   );
 }
@@ -2050,6 +2081,23 @@ class _EmptyReviewDiffService extends ReviewDiffService {
   void dispose() {}
 }
 
+class _TrackingReviewDiffService extends ReviewDiffService {
+  int fetchCount = 0;
+
+  @override
+  Future<ReviewSessionDiffBundle> fetchSessionDiffs({
+    required ServerProfile profile,
+    required String sessionId,
+    String? messageId,
+  }) async {
+    fetchCount += 1;
+    return const ReviewSessionDiffBundle(entries: <ReviewSessionDiffEntry>[]);
+  }
+
+  @override
+  void dispose() {}
+}
+
 class _FakeTodoService extends TodoService {
   @override
   Future<List<TodoItem>> fetchTodos({
@@ -2108,17 +2156,22 @@ class _FakeRequestService extends RequestService {
 }
 
 class _FakeConfigService extends ConfigService {
+  _FakeConfigService({ConfigSnapshot? snapshot}) : _snapshot = snapshot;
+
+  final ConfigSnapshot? _snapshot;
+
   @override
   Future<ConfigSnapshot> fetch({
     required ServerProfile profile,
     required ProjectTarget project,
   }) async {
-    return ConfigSnapshot(
-      config: RawJsonDocument(<String, Object?>{}),
-      providerConfig: RawJsonDocument(<String, Object?>{
-        'providers': <Object?>[],
-      }),
-    );
+    return _snapshot ??
+        ConfigSnapshot(
+          config: RawJsonDocument(<String, Object?>{}),
+          providerConfig: RawJsonDocument(<String, Object?>{
+            'providers': <Object?>[],
+          }),
+        );
   }
 
   @override

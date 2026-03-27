@@ -3663,11 +3663,13 @@ class WorkspaceController extends ChangeNotifier {
       _replaceSelectedSessionTodos(const <TodoItem>[]);
     } else {
       final isGitProject = (project.vcs ?? '').trim().toLowerCase() == 'git';
+      final snapshotTrackingEnabled =
+          _configSnapshot?.snapshotTrackingEnabled ?? true;
       final todoFuture = _todoService
           .fetchTodos(profile: profile, project: project, sessionId: sessionId)
           .then<Object?>((value) => value)
           .catchError((_) => const <TodoItem>[]);
-      if (!isGitProject) {
+      if (!isGitProject || !snapshotTrackingEnabled) {
         final todos = await todoFuture;
         if (_disposed || _selectedSessionId != sessionId) {
           return;

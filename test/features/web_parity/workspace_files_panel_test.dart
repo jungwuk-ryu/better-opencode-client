@@ -6,11 +6,13 @@ import 'package:opencode_mobile_remote/src/app/app_controller.dart';
 import 'package:opencode_mobile_remote/src/app/app_routes.dart';
 import 'package:opencode_mobile_remote/src/app/app_scope.dart';
 import 'package:opencode_mobile_remote/src/core/connection/connection_models.dart';
+import 'package:opencode_mobile_remote/src/core/spec/raw_json_document.dart';
 import 'package:opencode_mobile_remote/src/design_system/app_theme.dart';
 import 'package:opencode_mobile_remote/src/features/chat/chat_models.dart';
 import 'package:opencode_mobile_remote/src/features/files/file_models.dart';
 import 'package:opencode_mobile_remote/src/features/projects/project_models.dart';
 import 'package:opencode_mobile_remote/src/features/requests/request_models.dart';
+import 'package:opencode_mobile_remote/src/features/settings/config_service.dart';
 import 'package:opencode_mobile_remote/src/features/terminal/pty_models.dart';
 import 'package:opencode_mobile_remote/src/features/terminal/pty_service.dart';
 import 'package:opencode_mobile_remote/src/features/tools/todo_models.dart';
@@ -533,6 +535,64 @@ void main() {
     expect(find.text('No file changes yet.'), findsOneWidget);
   });
 
+  testWidgets(
+    'review panel shows a snapshot-disabled empty state when tracking is off',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              return _NoSnapshotWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+            },
+      );
+      addTearDown(appController.dispose);
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          initialRoute: buildWorkspaceRoute(
+            '/workspace/demo',
+            sessionId: 'ses_1',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('workspace-side-tab-review-button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey<String>('review-no-snapshot-title')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('review-no-snapshot-message')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('review-init-git-button')),
+        findsNothing,
+      );
+      expect(find.text('No file changes yet.'), findsNothing);
+    },
+  );
+
   testWidgets('review diff line comments can be added to composer context', (
     tester,
   ) async {
@@ -1047,6 +1107,97 @@ class _NoVcsWorkspaceController extends WorkspaceController {
   Future<void> initializeGitRepository() async {
     initializeGitCallCount += 1;
     _project = _project?.copyWith(vcs: 'git', branch: 'main');
+    notifyListeners();
+  }
+}
+
+class _NoSnapshotWorkspaceController extends WorkspaceController {
+  _NoSnapshotWorkspaceController({
+    required super.profile,
+    required super.directory,
+    super.initialSessionId,
+  });
+
+  static final List<SessionSummary> _sessions = <SessionSummary>[
+    SessionSummary(
+      id: 'ses_1',
+      directory: '/workspace/demo',
+      title: 'Session One',
+      version: '1',
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(1710000001000),
+    ),
+  ];
+
+  static final ConfigSnapshot _configSnapshot = ConfigSnapshot(
+    config: RawJsonDocument(<String, Object?>{'snapshot': false}),
+    providerConfig: RawJsonDocument(<String, Object?>{}),
+  );
+
+  bool _loading = true;
+  WorkspaceSideTab _sideTab = WorkspaceSideTab.review;
+  String? _selectedSessionId;
+
+  @override
+  bool get loading => _loading;
+
+  @override
+  WorkspaceSideTab get sideTab => _sideTab;
+
+  @override
+  ProjectTarget? get project => const ProjectTarget(
+    directory: '/workspace/demo',
+    label: 'Demo',
+    source: 'server',
+    vcs: 'git',
+    branch: 'main',
+  );
+
+  @override
+  List<ProjectTarget> get availableProjects => <ProjectTarget>[project!];
+
+  @override
+  ConfigSnapshot? get configSnapshot => _configSnapshot;
+
+  @override
+  List<SessionSummary> get sessions => _sessions;
+
+  @override
+  String? get selectedSessionId => _selectedSessionId;
+
+  @override
+  SessionSummary? get selectedSession => _sessions.first;
+
+  @override
+  List<ChatMessage> get messages => const <ChatMessage>[];
+
+  @override
+  List<FileStatusSummary> get reviewStatuses => const <FileStatusSummary>[];
+
+  @override
+  bool get loadingReviewDiff => false;
+
+  @override
+  String? get reviewDiffError => null;
+
+  @override
+  List<TodoItem> get todos => const <TodoItem>[];
+
+  @override
+  PendingRequestBundle get pendingRequests => const PendingRequestBundle(
+    questions: <QuestionRequestSummary>[],
+    permissions: <PermissionRequestSummary>[],
+  );
+
+  @override
+  Future<void> load() async {
+    _loading = false;
+    _selectedSessionId = initialSessionId ?? 'ses_1';
+    notifyListeners();
+  }
+
+  @override
+  void setSideTab(WorkspaceSideTab value) {
+    _sideTab = value;
     notifyListeners();
   }
 }

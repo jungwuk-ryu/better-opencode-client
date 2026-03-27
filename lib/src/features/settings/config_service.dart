@@ -13,6 +13,8 @@ class ConfigSnapshot {
   final RawJsonDocument config;
   final RawJsonDocument providerConfig;
 
+  bool get snapshotTrackingEnabled => config.toJson()['snapshot'] != false;
+
   ProviderCatalog get providerCatalog =>
       ProviderCatalog.fromJson(providerConfig.toJson());
 }

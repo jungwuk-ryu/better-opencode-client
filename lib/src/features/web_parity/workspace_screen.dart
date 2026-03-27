@@ -22633,6 +22633,7 @@ class _SidePanel extends StatelessWidget {
           child: switch (tab) {
             WorkspaceSideTab.review => _ReviewPanel(
               project: controller.project,
+              configSnapshot: controller.configSnapshot,
               statuses: controller.reviewStatuses,
               selectedPath: controller.selectedReviewPath,
               diff: controller.reviewDiff,
@@ -22922,6 +22923,7 @@ Color _workspaceSideTabAccent(
 class _ReviewPanel extends StatefulWidget {
   const _ReviewPanel({
     required this.project,
+    required this.configSnapshot,
     required this.statuses,
     required this.selectedPath,
     required this.diff,
@@ -22934,6 +22936,7 @@ class _ReviewPanel extends StatefulWidget {
   });
 
   final ProjectTarget? project;
+  final ConfigSnapshot? configSnapshot;
   final List<FileStatusSummary> statuses;
   final String? selectedPath;
   final FileDiffSummary? diff;
@@ -23021,6 +23024,8 @@ class _ReviewPanelState extends State<_ReviewPanel> {
     final density = _workspaceDensity(context);
     final hasGitRepository =
         (widget.project?.vcs ?? '').trim().toLowerCase() == 'git';
+    final snapshotTrackingDisabled =
+        widget.configSnapshot?.snapshotTrackingEnabled == false;
     if (widget.statuses.isEmpty) {
       if (!hasGitRepository) {
         return Center(
@@ -23071,6 +23076,44 @@ class _ReviewPanelState extends State<_ReviewPanel> {
                       widget.initializingGitRepository
                           ? 'Creating repository...'
                           : 'Create Git repository',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
+      if (snapshotTrackingDisabled) {
+        return Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Padding(
+              padding: EdgeInsets.all(density.inset(AppSpacing.lg)),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Icon(
+                    Icons.history_toggle_off_rounded,
+                    size: 30,
+                    color: surfaces.warning,
+                  ),
+                  SizedBox(height: density.inset(AppSpacing.sm)),
+                  Text(
+                    'Snapshot tracking is disabled',
+                    key: const ValueKey<String>('review-no-snapshot-title'),
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  SizedBox(height: density.inset(AppSpacing.xs)),
+                  Text(
+                    'Snapshot tracking is disabled in config, so session changes are unavailable.',
+                    key: const ValueKey<String>('review-no-snapshot-message'),
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: surfaces.muted,
                     ),
                   ),
                 ],
