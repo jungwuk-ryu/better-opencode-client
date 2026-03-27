@@ -5110,6 +5110,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                           ),
                         );
                       },
+                      projectNotificationStateForDirectory:
+                          controller.projectNotificationForDirectory,
+                      sessionNotificationStateForSession:
+                          controller.sessionNotificationForSession,
                       hoverPreviewStateForSession:
                           controller.sessionHoverPreviewForSession,
                       onPrefetchSessionHoverPreview:
@@ -5175,6 +5179,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                         ),
                       );
                     },
+                    projectNotificationStateForDirectory:
+                        controller.projectNotificationForDirectory,
+                    sessionNotificationStateForSession:
+                        controller.sessionNotificationForSession,
                     hoverPreviewStateForSession:
                         controller.sessionHoverPreviewForSession,
                     onPrefetchSessionHoverPreview:
@@ -10252,6 +10260,8 @@ class _WorkspaceSidebar extends StatefulWidget {
     required this.onRemoveProject,
     required this.onReorderProjects,
     required this.onSelectSession,
+    required this.projectNotificationStateForDirectory,
+    required this.sessionNotificationStateForSession,
     required this.hoverPreviewStateForSession,
     required this.onPrefetchSessionHoverPreview,
     required this.onFocusSessionMessage,
@@ -10274,6 +10284,10 @@ class _WorkspaceSidebar extends StatefulWidget {
   final ValueChanged<ProjectTarget> onRemoveProject;
   final Future<void> Function(List<ProjectTarget> projects) onReorderProjects;
   final ValueChanged<String> onSelectSession;
+  final WorkspaceSidebarNotificationState Function(String directory)
+  projectNotificationStateForDirectory;
+  final WorkspaceSidebarNotificationState Function(String sessionId)
+  sessionNotificationStateForSession;
   final WorkspaceSessionHoverPreviewState Function(String sessionId)
   hoverPreviewStateForSession;
   final Future<void> Function(String sessionId) onPrefetchSessionHoverPreview;
@@ -10444,6 +10458,10 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
                           'workspace-project-${project.directory}',
                         ),
                         project: project,
+                        notificationState: widget
+                            .projectNotificationStateForDirectory(
+                              project.directory,
+                            ),
                         selected: selected,
                         onSelect: () => widget.onSelectProject(project),
                         onEdit: () => widget.onEditProject(project),
@@ -10593,6 +10611,10 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
                                 ),
                                 entry: entry,
                                 project: currentProject,
+                                notificationState: widget
+                                    .sessionNotificationStateForSession(
+                                      entry.session.id,
+                                    ),
                                 hoverPreviewState: widget
                                     .hoverPreviewStateForSession(
                                       entry.session.id,
@@ -10763,6 +10785,7 @@ class _SidebarProjectMenuButton extends StatelessWidget {
 class _ProjectSidebarTile extends StatefulWidget {
   const _ProjectSidebarTile({
     required this.project,
+    required this.notificationState,
     required this.selected,
     required this.onSelect,
     required this.onEdit,
@@ -10771,6 +10794,7 @@ class _ProjectSidebarTile extends StatefulWidget {
   });
 
   final ProjectTarget project;
+  final WorkspaceSidebarNotificationState notificationState;
   final bool selected;
   final VoidCallback onSelect;
   final VoidCallback onEdit;
@@ -10812,30 +10836,95 @@ class _ProjectSidebarTileState extends State<_ProjectSidebarTile> {
           child: InkWell(
             onTap: widget.onSelect,
             borderRadius: BorderRadius.circular(AppSpacing.md),
-            child: Container(
-              height: 48,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: widget.selected
-                    ? Theme.of(
-                        context,
-                      ).colorScheme.primary.withValues(alpha: 0.16)
-                    : surfaces.panelRaised,
-                borderRadius: BorderRadius.circular(AppSpacing.md),
-                border: Border.all(
-                  color: widget.selected
-                      ? Theme.of(context).colorScheme.primary
-                      : surfaces.lineSoft,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: <Widget>[
+                Container(
+                  height: 48,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: widget.selected
+                        ? Theme.of(
+                            context,
+                          ).colorScheme.primary.withValues(alpha: 0.16)
+                        : surfaces.panelRaised,
+                    borderRadius: BorderRadius.circular(AppSpacing.md),
+                    border: Border.all(
+                      color: widget.selected
+                          ? Theme.of(context).colorScheme.primary
+                          : surfaces.lineSoft,
+                    ),
+                  ),
+                  child: _ProjectAvatar(
+                    project: widget.project,
+                    size: 38,
+                    fontSize: 22,
+                    rounded: 10,
+                  ),
                 ),
-              ),
-              child: _ProjectAvatar(
-                project: widget.project,
-                size: 38,
-                fontSize: 22,
-                rounded: 10,
-              ),
+                if (widget.notificationState.visible)
+                  Positioned(
+                    top: 6,
+                    right: 6,
+                    child: _WorkspaceSidebarNotificationBadge(
+                      key: ValueKey<String>(
+                        'workspace-project-notification-badge-${widget.project.directory}',
+                      ),
+                      state: widget.notificationState,
+                      compact: true,
+                    ),
+                  ),
+              ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WorkspaceSidebarNotificationBadge extends StatelessWidget {
+  const _WorkspaceSidebarNotificationBadge({
+    required this.state,
+    this.compact = false,
+    super.key,
+  });
+
+  final WorkspaceSidebarNotificationState state;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final color = state.hasError
+        ? Theme.of(context).colorScheme.error
+        : Theme.of(context).colorScheme.primary;
+    final tooltip = switch (state.unseenCount) {
+      0 => null,
+      1 when state.hasError => '1 unseen update, including an error',
+      1 => '1 unseen update',
+      final count when state.hasError => '$count unseen updates, including an error',
+      final count => '$count unseen updates',
+    };
+    final size = compact ? 10.0 : 8.0;
+
+    return Tooltip(
+      message: tooltip,
+      waitDuration: const Duration(milliseconds: 150),
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: color,
+          shape: BoxShape.circle,
+          border: Border.all(color: surfaces.panelRaised, width: 1.2),
+          boxShadow: <BoxShadow>[
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.12),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
       ),
     );
@@ -10860,6 +10949,7 @@ class _SidebarSessionTreeRow extends StatefulWidget {
   const _SidebarSessionTreeRow({
     required this.entry,
     required this.project,
+    required this.notificationState,
     required this.hoverPreviewState,
     required this.selected,
     required this.hoverPreviewEnabled,
@@ -10871,6 +10961,7 @@ class _SidebarSessionTreeRow extends StatefulWidget {
 
   final _SidebarSessionEntry entry;
   final ProjectTarget? project;
+  final WorkspaceSidebarNotificationState notificationState;
   final WorkspaceSessionHoverPreviewState hoverPreviewState;
   final bool selected;
   final bool hoverPreviewEnabled;
@@ -11013,6 +11104,15 @@ class _SidebarSessionTreeRowState extends State<_SidebarSessionTreeRow> {
                           ),
                         ),
                       ),
+                      if (widget.notificationState.visible) ...<Widget>[
+                        const SizedBox(width: AppSpacing.xs),
+                        _WorkspaceSidebarNotificationBadge(
+                          key: ValueKey<String>(
+                            'workspace-session-notification-badge-${widget.entry.session.id}',
+                          ),
+                          state: widget.notificationState,
+                        ),
+                      ],
                     ],
                   ),
                 ),

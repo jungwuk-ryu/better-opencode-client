@@ -92,6 +92,119 @@ void main() {
     },
   );
 
+  test('controller tracks unseen sidebar notifications for background sessions', () async {
+    final eventStreamService = _ControlledEventStreamService();
+    final chatService = _FakeChatService(
+      bundle: ChatSessionBundle(
+        sessions: <SessionSummary>[
+          _session(
+            id: 'ses_2',
+            title: 'Background session',
+            createdAt: 1710000007000,
+            updatedAt: 1710000007000,
+          ),
+          _session(
+            id: 'ses_1',
+            title: 'Initial session',
+            createdAt: 1710000001000,
+            updatedAt: 1710000005000,
+          ),
+        ],
+        statuses: const <String, SessionStatusSummary>{
+          'ses_1': SessionStatusSummary(type: 'idle'),
+          'ses_2': SessionStatusSummary(type: 'idle'),
+        },
+        messages: const <ChatMessage>[],
+        selectedSessionId: 'ses_1',
+      ),
+    );
+    final controller = _buildController(
+      profile: profile,
+      project: project,
+      eventStreamService: eventStreamService,
+      chatService: chatService,
+      initialSessions: <SessionSummary>[
+        _session(
+          id: 'ses_2',
+          title: 'Background session',
+          createdAt: 1710000007000,
+          updatedAt: 1710000007000,
+        ),
+        _session(
+          id: 'ses_1',
+          title: 'Initial session',
+          createdAt: 1710000001000,
+          updatedAt: 1710000005000,
+        ),
+      ],
+    );
+    addTearDown(controller.dispose);
+
+    await controller.load();
+
+    expect(
+      controller.sessionNotificationForSession('ses_2'),
+      const WorkspaceSidebarNotificationState(),
+    );
+
+    eventStreamService.emitToScope(
+      profile,
+      project,
+      const EventEnvelope(
+        type: 'session.status',
+        properties: <String, Object?>{
+          'sessionID': 'ses_2',
+          'status': <String, Object?>{'type': 'busy'},
+        },
+      ),
+    );
+    eventStreamService.emitToScope(
+      profile,
+      project,
+      const EventEnvelope(
+        type: 'session.status',
+        properties: <String, Object?>{
+          'sessionID': 'ses_2',
+          'status': <String, Object?>{'type': 'idle'},
+        },
+      ),
+    );
+
+    expect(
+      controller.sessionNotificationForSession('ses_2'),
+      const WorkspaceSidebarNotificationState(unseenCount: 1),
+    );
+    expect(
+      controller.projectNotificationForDirectory('/workspace/demo'),
+      const WorkspaceSidebarNotificationState(unseenCount: 1),
+    );
+
+    eventStreamService.emitToScope(
+      profile,
+      project,
+      const EventEnvelope(
+        type: 'session.error',
+        properties: <String, Object?>{'sessionID': 'ses_2'},
+      ),
+    );
+
+    expect(
+      controller.sessionNotificationForSession('ses_2'),
+      const WorkspaceSidebarNotificationState(unseenCount: 2, hasError: true),
+    );
+
+    await controller.selectSession('ses_2');
+
+    expect(
+      controller.sessionNotificationForSession('ses_2'),
+      const WorkspaceSidebarNotificationState(),
+    );
+    expect(
+      controller.projectNotificationForDirectory('/workspace/demo'),
+      const WorkspaceSidebarNotificationState(),
+    );
+  });
+
   test('controller caches ordered timeline and context derivations', () async {
     final eventStreamService = _ControlledEventStreamService();
     final olderMessage = ChatMessage(

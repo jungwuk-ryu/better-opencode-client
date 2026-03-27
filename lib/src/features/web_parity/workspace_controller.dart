@@ -142,6 +142,105 @@ class WorkspaceSessionHoverPreviewState {
       (summary?.trim().isNotEmpty ?? false) || messages.isNotEmpty;
 }
 
+enum WorkspaceNotificationType {
+  activity,
+  error;
+
+  static WorkspaceNotificationType fromStorage(String? value) {
+    return switch (value?.trim().toLowerCase()) {
+      'error' => WorkspaceNotificationType.error,
+      _ => WorkspaceNotificationType.activity,
+    };
+  }
+
+  String get storageValue => name;
+}
+
+class WorkspaceNotificationEntry {
+  const WorkspaceNotificationEntry({
+    required this.directory,
+    required this.sessionId,
+    required this.timeMs,
+    required this.viewed,
+    required this.type,
+  });
+
+  final String directory;
+  final String sessionId;
+  final int timeMs;
+  final bool viewed;
+  final WorkspaceNotificationType type;
+
+  WorkspaceNotificationEntry copyWith({
+    String? directory,
+    String? sessionId,
+    int? timeMs,
+    bool? viewed,
+    WorkspaceNotificationType? type,
+  }) {
+    return WorkspaceNotificationEntry(
+      directory: directory ?? this.directory,
+      sessionId: sessionId ?? this.sessionId,
+      timeMs: timeMs ?? this.timeMs,
+      viewed: viewed ?? this.viewed,
+      type: type ?? this.type,
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'directory': directory,
+    'sessionId': sessionId,
+    'timeMs': timeMs,
+    'viewed': viewed,
+    'type': type.storageValue,
+  };
+
+  factory WorkspaceNotificationEntry.fromJson(Map<String, Object?> json) {
+    return WorkspaceNotificationEntry(
+      directory: (json['directory'] as String?) ?? '',
+      sessionId: (json['sessionId'] as String?) ?? '',
+      timeMs: (json['timeMs'] as num?)?.toInt() ?? 0,
+      viewed: json['viewed'] as bool? ?? false,
+      type: WorkspaceNotificationType.fromStorage(json['type'] as String?),
+    );
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is WorkspaceNotificationEntry &&
+        other.directory == directory &&
+        other.sessionId == sessionId &&
+        other.timeMs == timeMs &&
+        other.viewed == viewed &&
+        other.type == type;
+  }
+
+  @override
+  int get hashCode => Object.hash(directory, sessionId, timeMs, viewed, type);
+}
+
+class WorkspaceSidebarNotificationState {
+  const WorkspaceSidebarNotificationState({
+    this.unseenCount = 0,
+    this.hasError = false,
+  });
+
+  final int unseenCount;
+  final bool hasError;
+
+  bool get visible => unseenCount > 0;
+
+  @override
+  bool operator ==(Object other) {
+    return other is WorkspaceSidebarNotificationState &&
+        other.unseenCount == unseenCount &&
+        other.hasError == hasError;
+  }
+
+  @override
+  int get hashCode => Object.hash(unseenCount, hasError);
+}
+
 class WorkspaceQueuedPrompt {
   const WorkspaceQueuedPrompt({
     required this.id,
@@ -287,6 +386,11 @@ List<ChatMessage> _chatMessagesFromDecodedJson(Object? decoded) {
 const String _permissionAutoAcceptStorageKeyPrefix =
     'workspace.permission_auto_accept';
 const String _permissionAutoAcceptProjectScopeKey = '__project__';
+const String _workspaceNotificationStorageKeyPrefix =
+    'workspace.notification_index';
+const int _workspaceNotificationMaxEntries = 500;
+const int _workspaceNotificationTtlMs = 1000 * 60 * 60 * 24 * 30;
+const int _workspaceNotificationDedupWindowMs = 1500;
 
 String _permissionAutoAcceptStorageKey(
   ServerProfile profile,
@@ -294,6 +398,47 @@ String _permissionAutoAcceptStorageKey(
 ) {
   final encodedDirectory = base64Url.encode(utf8.encode(project.directory));
   return '$_permissionAutoAcceptStorageKeyPrefix::${profile.storageKey}::$encodedDirectory';
+}
+
+String _workspaceNotificationStorageKey(ServerProfile profile) {
+  return '$_workspaceNotificationStorageKeyPrefix::${profile.storageKey}';
+}
+
+List<WorkspaceNotificationEntry> _pruneWorkspaceNotifications(
+  List<WorkspaceNotificationEntry> notifications,
+) {
+  final cutoff = DateTime.now().millisecondsSinceEpoch -
+      _workspaceNotificationTtlMs;
+  final pruned = notifications
+      .where((notification) => notification.timeMs >= cutoff)
+      .toList(growable: false);
+  if (pruned.length <= _workspaceNotificationMaxEntries) {
+    return pruned;
+  }
+  return pruned.sublist(pruned.length - _workspaceNotificationMaxEntries);
+}
+
+List<WorkspaceNotificationEntry> _workspaceNotificationsFromDecodedJson(
+  Object? decoded,
+) {
+  if (decoded is! List) {
+    return const <WorkspaceNotificationEntry>[];
+  }
+  return _pruneWorkspaceNotifications(
+    decoded
+        .whereType<Map>()
+        .map(
+          (item) => WorkspaceNotificationEntry.fromJson(
+            item.cast<String, Object?>(),
+          ),
+        )
+        .where(
+          (item) =>
+              item.directory.trim().isNotEmpty &&
+              item.sessionId.trim().isNotEmpty,
+        )
+        .toList(growable: false),
+  );
 }
 
 Map<String, bool> _permissionAutoAcceptFromDecodedJson(Object? decoded) {
@@ -491,6 +636,14 @@ class WorkspaceController extends ChangeNotifier {
       const <String, String>{};
   Map<String, int> _activeChildSessionCachedPreviewVersionById =
       const <String, int>{};
+  List<WorkspaceNotificationEntry> _notifications =
+      const <WorkspaceNotificationEntry>[];
+  Map<String, WorkspaceSidebarNotificationState>
+  _sessionNotificationStateById =
+      const <String, WorkspaceSidebarNotificationState>{};
+  Map<String, WorkspaceSidebarNotificationState>
+  _projectNotificationStateByDirectory =
+      const <String, WorkspaceSidebarNotificationState>{};
   Map<String, String> _sessionHoverPreviewSummaryById =
       const <String, String>{};
   Map<String, List<WorkspaceSessionHoverPreviewMessage>>
@@ -539,6 +692,28 @@ class WorkspaceController extends ChangeNotifier {
   List<SessionSummary> get sessions => _sessions;
   List<SessionSummary> get visibleSessions => _visibleRootSessions(sessions);
   Map<String, SessionStatusSummary> get statuses => _statuses;
+  WorkspaceSidebarNotificationState sessionNotificationForSession(
+    String? sessionId,
+  ) {
+    final normalized = sessionId?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return const WorkspaceSidebarNotificationState();
+    }
+    return _sessionNotificationStateById[normalized] ??
+        const WorkspaceSidebarNotificationState();
+  }
+
+  WorkspaceSidebarNotificationState projectNotificationForDirectory(
+    String? directory,
+  ) {
+    final normalized = directory?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return const WorkspaceSidebarNotificationState();
+    }
+    return _projectNotificationStateByDirectory[normalized] ??
+        const WorkspaceSidebarNotificationState();
+  }
+
   String? get selectedSessionId => _selectedSessionId;
   List<ChatMessage> get messages => _messages;
   WorkspaceSessionHoverPreviewState sessionHoverPreviewForSession(
@@ -1044,6 +1219,7 @@ class WorkspaceController extends ChangeNotifier {
     _notify();
 
     try {
+      await _restoreNotifications();
       final catalog = await _projectCatalogService.fetchCatalog(profile);
       final recentProjects = await _projectStore.loadRecentProjects();
       final hiddenProjects = await _projectStore.loadHiddenProjects();
@@ -1089,6 +1265,7 @@ class WorkspaceController extends ChangeNotifier {
         project: resolvedProject,
         sessions: bundle.sessions,
       );
+      _markSessionNotificationsViewed(_selectedSessionId, notify: false);
       _loading = false;
       _notify();
 
@@ -1169,6 +1346,7 @@ class WorkspaceController extends ChangeNotifier {
       project: project,
       sessions: bundle.sessions,
     );
+    _markSessionNotificationsViewed(_selectedSessionId, notify: false);
     if (_selectedSessionId != null) {
       await _loadSelectedSessionMessages(
         project: project,
@@ -1221,6 +1399,7 @@ class WorkspaceController extends ChangeNotifier {
         promotedWatchedTimeline.error == null;
 
     _selectedSessionId = nextSessionId;
+    _markSessionNotificationsViewed(nextSessionId, notify: false);
     if (canReuseWatchedTimeline) {
       _messages = promotedWatchedTimeline.messages;
       _sessionLoading = false;
@@ -2936,6 +3115,7 @@ class WorkspaceController extends ChangeNotifier {
     );
     _replaceSession(created);
     _selectedSessionId = created.id;
+    _markSessionNotificationsViewed(created.id, notify: false);
     _messages = const <ChatMessage>[];
     _sessionLoading = false;
     _showingCachedSessionMessages = false;
@@ -3054,6 +3234,7 @@ class WorkspaceController extends ChangeNotifier {
       ..._sessions.where((session) => session.id != forked.id),
     ];
     _selectedSessionId = forked.id;
+    _markSessionNotificationsViewed(forked.id, notify: false);
     _messages = const <ChatMessage>[];
     await _loadSelectedSessionMessages(
       project: project,
@@ -3085,6 +3266,7 @@ class WorkspaceController extends ChangeNotifier {
     );
     _replaceSession(updated);
     _selectedSessionId = updated.id;
+    _markSessionNotificationsViewed(updated.id, notify: false);
     _messages = const <ChatMessage>[];
     _showingCachedSessionMessages = false;
     _resetSelectedSessionHistoryState();
@@ -3210,6 +3392,7 @@ class WorkspaceController extends ChangeNotifier {
       _clearQueuedPromptStateForSession(removedSessionId);
     }
     _selectedSessionId = _sessions.isEmpty ? null : _sessions.first.id;
+    _markSessionNotificationsViewed(_selectedSessionId, notify: false);
     if (_selectedSessionId == null) {
       _messages = const <ChatMessage>[];
       _sessionLoading = false;
@@ -3962,6 +4145,228 @@ class WorkspaceController extends ChangeNotifier {
     );
   }
 
+  Future<void> _restoreNotifications() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_workspaceNotificationStorageKey(profile));
+    if (raw == null || raw.trim().isEmpty) {
+      _setNotifications(
+        const <WorkspaceNotificationEntry>[],
+        notify: false,
+        persist: false,
+      );
+      return;
+    }
+    try {
+      final decoded = await _decodeJsonPayload(raw);
+      _setNotifications(
+        _workspaceNotificationsFromDecodedJson(decoded),
+        notify: false,
+        persist: false,
+      );
+    } catch (_) {
+      _setNotifications(
+        const <WorkspaceNotificationEntry>[],
+        notify: false,
+        persist: false,
+      );
+      await prefs.remove(_workspaceNotificationStorageKey(profile));
+    }
+  }
+
+  Future<void> _persistNotifications() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (_notifications.isEmpty) {
+      await prefs.remove(_workspaceNotificationStorageKey(profile));
+      return;
+    }
+    await prefs.setString(
+      _workspaceNotificationStorageKey(profile),
+      jsonEncode(
+        _notifications.map((item) => item.toJson()).toList(growable: false),
+      ),
+    );
+  }
+
+  void _setNotifications(
+    List<WorkspaceNotificationEntry> notifications, {
+    bool notify = true,
+    bool persist = true,
+  }) {
+    final next = List<WorkspaceNotificationEntry>.unmodifiable(
+      _pruneWorkspaceNotifications(
+        notifications.toList(growable: false)
+          ..sort((left, right) => left.timeMs.compareTo(right.timeMs)),
+      ),
+    );
+    if (listEquals(_notifications, next)) {
+      return;
+    }
+    _notifications = next;
+    _rebuildNotificationIndex();
+    if (persist) {
+      unawaited(_persistNotifications());
+    }
+    if (notify) {
+      _notify();
+    }
+  }
+
+  void _rebuildNotificationIndex() {
+    final sessionCountById = <String, int>{};
+    final sessionErrorById = <String, bool>{};
+    final projectCountByDirectory = <String, int>{};
+    final projectErrorByDirectory = <String, bool>{};
+
+    for (final notification in _notifications) {
+      if (notification.viewed) {
+        continue;
+      }
+      sessionCountById[notification.sessionId] =
+          (sessionCountById[notification.sessionId] ?? 0) + 1;
+      projectCountByDirectory[notification.directory] =
+          (projectCountByDirectory[notification.directory] ?? 0) + 1;
+      if (notification.type == WorkspaceNotificationType.error) {
+        sessionErrorById[notification.sessionId] = true;
+        projectErrorByDirectory[notification.directory] = true;
+      }
+    }
+
+    _sessionNotificationStateById =
+        Map<String, WorkspaceSidebarNotificationState>.unmodifiable(
+          <String, WorkspaceSidebarNotificationState>{
+            for (final entry in sessionCountById.entries)
+              entry.key: WorkspaceSidebarNotificationState(
+                unseenCount: entry.value,
+                hasError: sessionErrorById[entry.key] ?? false,
+              ),
+          },
+        );
+    _projectNotificationStateByDirectory =
+        Map<String, WorkspaceSidebarNotificationState>.unmodifiable(
+          <String, WorkspaceSidebarNotificationState>{
+            for (final entry in projectCountByDirectory.entries)
+              entry.key: WorkspaceSidebarNotificationState(
+                unseenCount: entry.value,
+                hasError: projectErrorByDirectory[entry.key] ?? false,
+              ),
+          },
+        );
+  }
+
+  bool _markSessionNotificationsViewed(
+    String? sessionId, {
+    bool notify = true,
+  }) {
+    final normalized = sessionId?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return false;
+    }
+    var changed = false;
+    final next = _notifications
+        .map((notification) {
+          if (notification.sessionId != normalized || notification.viewed) {
+            return notification;
+          }
+          changed = true;
+          return notification.copyWith(viewed: true);
+        })
+        .toList(growable: false);
+    if (!changed) {
+      return false;
+    }
+    _setNotifications(next, notify: notify);
+    return true;
+  }
+
+  void _appendSessionNotification({
+    required SessionSummary session,
+    required WorkspaceNotificationType type,
+    bool viewed = false,
+    bool notify = true,
+  }) {
+    if (session.archivedAt != null || (session.parentId?.isNotEmpty ?? false)) {
+      return;
+    }
+    final now = DateTime.now().millisecondsSinceEpoch;
+    for (var index = _notifications.length - 1; index >= 0; index -= 1) {
+      final existing = _notifications[index];
+      if (existing.sessionId != session.id ||
+          existing.directory != session.directory ||
+          existing.type != type) {
+        continue;
+      }
+      if (now - existing.timeMs <= _workspaceNotificationDedupWindowMs) {
+        return;
+      }
+      break;
+    }
+    _setNotifications(
+      <WorkspaceNotificationEntry>[
+        ..._notifications,
+        WorkspaceNotificationEntry(
+          directory: session.directory,
+          sessionId: session.id,
+          timeMs: now,
+          viewed: viewed,
+          type: type,
+        ),
+      ],
+      notify: notify,
+    );
+  }
+
+  bool _notificationViewedInCurrentSession(SessionSummary session) {
+    return _project?.directory == session.directory &&
+        _selectedSessionId == session.id;
+  }
+
+  bool _isNotificationBusyStatus(SessionStatusSummary? status) {
+    final type = status?.type.trim().toLowerCase();
+    return switch (type) {
+      'busy' || 'running' || 'pending' || 'retry' => true,
+      _ => false,
+    };
+  }
+
+  bool _isNotificationErrorStatus(SessionStatusSummary? status) {
+    final type = status?.type.trim().toLowerCase();
+    return switch (type) {
+      'error' || 'failed' || 'failure' || 'crashed' => true,
+      _ => false,
+    };
+  }
+
+  void _recordSessionStatusNotification({
+    required String? sessionId,
+    required SessionStatusSummary? previousStatus,
+    required SessionStatusSummary? nextStatus,
+  }) {
+    final session = _sessionById(sessionId);
+    if (session == null || session.archivedAt != null) {
+      return;
+    }
+    if (_isNotificationErrorStatus(nextStatus) &&
+        !_isNotificationErrorStatus(previousStatus)) {
+      _appendSessionNotification(
+        session: session,
+        type: WorkspaceNotificationType.error,
+        viewed: _notificationViewedInCurrentSession(session),
+        notify: false,
+      );
+      return;
+    }
+    if (_isNotificationBusyStatus(previousStatus) &&
+        !_isNotificationBusyStatus(nextStatus) &&
+        !_isNotificationErrorStatus(nextStatus)) {
+      _appendSessionNotification(
+        session: session,
+        type: WorkspaceNotificationType.activity,
+        viewed: _notificationViewedInCurrentSession(session),
+        notify: false,
+      );
+    }
+  }
+
   List<String> _sessionLineageIds(String sessionId) {
     final normalizedSessionId = sessionId.trim();
     if (normalizedSessionId.isEmpty) {
@@ -4136,11 +4541,39 @@ class WorkspaceController extends ChangeNotifier {
       _removeActiveChildPreviewState(removedSessionId);
       _clearQueuedPromptStateForSession(removedSessionId);
       _removeCachedTodosForSession(removedSessionId);
+      if (removedSessionId != null && removedSessionId.isNotEmpty) {
+        _setNotifications(
+          _notifications
+              .where((notification) => notification.sessionId != removedSessionId)
+              .toList(growable: false),
+          notify: false,
+        );
+      }
     } else if (type == 'session.status') {
+      final sessionId = event.properties['sessionID']?.toString();
+      final previousStatus =
+          sessionId == null || sessionId.isEmpty ? null : _statuses[sessionId];
       _statuses = applySessionStatusEvent(_statuses, event.properties);
+      _recordSessionStatusNotification(
+        sessionId: sessionId,
+        previousStatus: previousStatus,
+        nextStatus: sessionId == null || sessionId.isEmpty
+            ? null
+            : _statuses[sessionId],
+      );
       _maybeFlushQueuedPrompts(
         sessionId: event.properties['sessionID']?.toString(),
       );
+    } else if (type == 'session.error') {
+      final session = _sessionById(event.properties['sessionID']?.toString());
+      if (session != null) {
+        _appendSessionNotification(
+          session: session,
+          type: WorkspaceNotificationType.error,
+          viewed: _notificationViewedInCurrentSession(session),
+          notify: false,
+        );
+      }
     } else if (type == 'session.diff') {
       final sessionId = event.properties['sessionID']?.toString();
       if (sessionId == _selectedSessionId) {

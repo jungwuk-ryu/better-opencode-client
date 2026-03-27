@@ -175,6 +175,66 @@ void main() {
     expect(find.text('Another root session'), findsAtLeastNWidgets(1));
   });
 
+  testWidgets('sidebar shows project and session notification badges', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _SidebarNotificationWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(
+      find.byKey(
+        const ValueKey<String>(
+          'workspace-project-notification-badge-/workspace/demo',
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        const ValueKey<String>('workspace-session-notification-badge-ses_2'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        const ValueKey<String>('workspace-session-notification-badge-ses_1'),
+      ),
+      findsNothing,
+    );
+  });
+
   testWidgets('sidebar settings opens a real workspace settings sheet', (
     tester,
   ) async {
@@ -1066,6 +1126,38 @@ class _SidebarHoverPreviewWorkspaceController
       ),
     };
     notifyListeners();
+  }
+}
+
+class _SidebarNotificationWorkspaceController
+    extends _SidebarWorkspaceController {
+  _SidebarNotificationWorkspaceController({
+    required super.profile,
+    required super.directory,
+    super.initialSessionId,
+  });
+
+  @override
+  WorkspaceSidebarNotificationState sessionNotificationForSession(
+    String? sessionId,
+  ) {
+    return switch (sessionId) {
+      'ses_2' => const WorkspaceSidebarNotificationState(unseenCount: 2),
+      _ => const WorkspaceSidebarNotificationState(),
+    };
+  }
+
+  @override
+  WorkspaceSidebarNotificationState projectNotificationForDirectory(
+    String? directory,
+  ) {
+    return switch (directory) {
+      '/workspace/demo' => const WorkspaceSidebarNotificationState(
+        unseenCount: 2,
+        hasError: true,
+      ),
+      _ => const WorkspaceSidebarNotificationState(),
+    };
   }
 }
 
