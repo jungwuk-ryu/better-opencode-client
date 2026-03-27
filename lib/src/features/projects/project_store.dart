@@ -158,6 +158,22 @@ class ProjectStore {
     await prefs.remove(_lastWorkspaceKey(serverStorageKey));
   }
 
+  Future<void> transferLastWorkspace({
+    required String fromServerStorageKey,
+    required String toServerStorageKey,
+  }) async {
+    if (fromServerStorageKey == toServerStorageKey) {
+      return;
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_lastWorkspaceKey(fromServerStorageKey));
+    if (raw == null || raw.isEmpty) {
+      return;
+    }
+    await prefs.setString(_lastWorkspaceKey(toServerStorageKey), raw);
+    await prefs.remove(_lastWorkspaceKey(fromServerStorageKey));
+  }
+
   Future<Set<String>> loadPinnedProjects() async {
     final prefs = await SharedPreferences.getInstance();
     return (prefs.getStringList(_pinnedProjectsKey) ?? const <String>[])

@@ -9,9 +9,13 @@ import 'package:opencode_mobile_remote/src/core/network/opencode_server_probe.da
 import 'package:opencode_mobile_remote/src/core/spec/capability_registry.dart';
 import 'package:opencode_mobile_remote/src/core/spec/probe_snapshot.dart';
 import 'package:opencode_mobile_remote/src/design_system/app_theme.dart';
+import 'package:opencode_mobile_remote/src/features/chat/chat_models.dart';
 import 'package:opencode_mobile_remote/src/features/projects/project_models.dart';
 import 'package:opencode_mobile_remote/src/features/projects/project_store.dart';
+import 'package:opencode_mobile_remote/src/features/tools/todo_models.dart';
 import 'package:opencode_mobile_remote/src/features/web_parity/web_home_screen.dart';
+import 'package:opencode_mobile_remote/src/features/web_parity/workspace_controller.dart';
+import 'package:opencode_mobile_remote/src/features/web_parity/workspace_layout_store.dart';
 import 'package:opencode_mobile_remote/src/i18n/locale_controller.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -42,9 +46,13 @@ void main() {
           ),
         ),
       );
-      final controller = _StaticHomeAppController(
-        profile: profile,
-        recent: const <ProjectTarget>[
+      final controller = _MutableHomeAppController(
+        profiles: <ServerProfile>[profile],
+        selected: profile,
+        reports: <String, ServerProbeReport>{
+          profile.storageKey: _probeReport(profile, version: '1.0.0'),
+        },
+        recentProjects: const <ProjectTarget>[
           ProjectTarget(
             directory: '/workspace/demo',
             label: 'Demo',
@@ -76,6 +84,10 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      expect(
+        find.byKey(const ValueKey<String>('home-server-card-server')),
+        findsOneWidget,
+      );
       await tester.tap(find.widgetWithText(ActionChip, 'Demo'));
       await tester.pumpAndSettle();
 
@@ -87,66 +99,104 @@ void main() {
     },
   );
 
-  testWidgets('see servers sheet shows status and server details inline', (
-    tester,
-  ) async {
-    _setLargeSurface(tester);
-    final alpha = ServerProfile(
-      id: 'alpha',
-      label: 'Alpha',
-      baseUrl: 'https://alpha.example.com',
-      username: 'ci-bot',
-    );
-    final beta = ServerProfile(
-      id: 'beta',
-      label: 'Beta',
-      baseUrl: 'https://beta.example.com',
-    );
-    final controller = _MutableHomeAppController(
-      profiles: <ServerProfile>[alpha, beta],
-      selected: alpha,
-      reports: <String, ServerProbeReport>{
-        alpha.storageKey: _probeReport(
-          alpha,
-          version: '1.2.3',
-          classification: ConnectionProbeClassification.ready,
-        ),
-        beta.storageKey: _probeReport(
-          beta,
-          version: '0.9.0',
-          classification: ConnectionProbeClassification.authFailure,
-        ),
-      },
-    );
-    addTearDown(controller.dispose);
+  testWidgets(
+    'home shows saved servers immediately and the sheet still works',
+    (tester) async {
+      _setLargeSurface(tester);
+      final alpha = ServerProfile(
+        id: 'alpha',
+        label: 'Alpha',
+        baseUrl: 'https://alpha.example.com',
+        username: 'ci-bot',
+      );
+      final beta = ServerProfile(
+        id: 'beta',
+        label: 'Beta',
+        baseUrl: 'https://beta.example.com',
+      );
+      final controller = _MutableHomeAppController(
+        profiles: <ServerProfile>[alpha, beta],
+        selected: alpha,
+        reports: <String, ServerProbeReport>{
+          alpha.storageKey: _probeReport(
+            alpha,
+            version: '1.2.3',
+            classification: ConnectionProbeClassification.ready,
+          ),
+          beta.storageKey: _probeReport(
+            beta,
+            version: '0.9.0',
+            classification: ConnectionProbeClassification.authFailure,
+          ),
+        },
+      );
+      addTearDown(controller.dispose);
 
-    await tester.pumpWidget(
-      AppScope(
-        controller: controller,
-        child: MaterialApp(
-          theme: AppTheme.dark(),
-          home: WebParityHomeScreen(
-            flavor: AppFlavor.debug,
-            localeController: LocaleController(),
+      await tester.pumpWidget(
+        AppScope(
+          controller: controller,
+          child: MaterialApp(
+            theme: AppTheme.dark(),
+            home: WebParityHomeScreen(
+              flavor: AppFlavor.debug,
+              localeController: LocaleController(),
+            ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithText(OutlinedButton, 'See Servers'));
-    await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey<String>('home-server-card-alpha')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('home-server-card-beta')),
+        findsOneWidget,
+      );
+      expect(find.text('https://alpha.example.com'), findsWidgets);
+      expect(find.text('https://beta.example.com'), findsWidgets);
+      expect(find.text('Ready'), findsWidgets);
+      expect(find.text('Sign In'), findsWidgets);
 
-    expect(find.text('Manage Servers'), findsNothing);
-    expect(find.text('Add Server'), findsOneWidget);
-    expect(find.text('https://alpha.example.com'), findsOneWidget);
-    expect(find.text('https://beta.example.com'), findsOneWidget);
-    expect(find.text('v1.2.3'), findsOneWidget);
-    expect(find.text('ci-bot'), findsOneWidget);
-    expect(find.text('Active'), findsOneWidget);
-    expect(find.text('Ready'), findsOneWidget);
-    expect(find.text('Sign In'), findsOneWidget);
-  });
+      await tester.tap(find.widgetWithText(OutlinedButton, 'See Servers'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey<String>('servers-sheet-add-button')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('servers-sheet-card-alpha')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('servers-sheet-card-beta')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('servers-sheet-card-alpha')),
+          matching: find.text('v1.2.3'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('servers-sheet-card-alpha')),
+          matching: find.text('ci-bot'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('servers-sheet-card-alpha')),
+          matching: find.text('Selected'),
+        ),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('see servers sheet can add delete and reorder servers', (
     tester,
@@ -236,22 +286,264 @@ void main() {
 
     expect(controller.profiles.any((profile) => profile.id == 'beta'), isFalse);
   });
-}
 
-class _StaticHomeAppController extends WebParityAppController {
-  _StaticHomeAppController({required this.profile, required this.recent});
+  testWidgets(
+    'home detail shows remembered panes, running sessions, todo progress, and project add tile',
+    (tester) async {
+      _setLargeSurface(tester);
+      final profile = ServerProfile(
+        id: 'alpha',
+        label: 'Alpha',
+        baseUrl: 'https://alpha.example.com',
+      );
+      final controller = _MutableHomeAppController(
+        profiles: <ServerProfile>[profile],
+        selected: profile,
+        reports: <String, ServerProbeReport>{
+          profile.storageKey: _probeReport(profile, version: '1.2.3'),
+        },
+        recentProjects: const <ProjectTarget>[
+          ProjectTarget(
+            directory: '/workspace/demo',
+            label: 'Demo',
+            source: 'server',
+          ),
+          ProjectTarget(
+            directory: '/workspace/review',
+            label: 'Review',
+            source: 'server',
+          ),
+        ],
+        workspacePaneLayouts: <String, WorkspacePaneLayoutSnapshot>{
+          profile.storageKey: const WorkspacePaneLayoutSnapshot(
+            activePaneId: 'pane_main',
+            panes: <WorkspacePaneLayoutPane>[
+              WorkspacePaneLayoutPane(
+                id: 'pane_main',
+                directory: '/workspace/demo',
+                sessionId: 'ses_live',
+              ),
+              WorkspacePaneLayoutPane(
+                id: 'pane_review',
+                directory: '/workspace/review',
+                sessionId: 'ses_idle',
+              ),
+            ],
+          ),
+        },
+        workspaceControllers: <String, WorkspaceController>{
+          '${profile.storageKey}::/workspace/demo':
+              _FakeHomeWorkspaceController(
+                profile: profile,
+                directory: '/workspace/demo',
+                projectTarget: const ProjectTarget(
+                  directory: '/workspace/demo',
+                  label: 'Demo',
+                  source: 'server',
+                ),
+                availableProjects: const <ProjectTarget>[
+                  ProjectTarget(
+                    directory: '/workspace/demo',
+                    label: 'Demo',
+                    source: 'server',
+                  ),
+                  ProjectTarget(
+                    directory: '/workspace/review',
+                    label: 'Review',
+                    source: 'server',
+                  ),
+                  ProjectTarget(
+                    directory: '/workspace/ops',
+                    label: 'Ops',
+                    source: 'server',
+                  ),
+                ],
+                sessionItems: <SessionSummary>[
+                  SessionSummary(
+                    id: 'ses_live',
+                    directory: '/workspace/demo',
+                    title: 'Live deploy',
+                    version: '1',
+                    updatedAt: DateTime(2026, 3, 27, 1, 30),
+                  ),
+                  SessionSummary(
+                    id: 'ses_done',
+                    directory: '/workspace/demo',
+                    title: 'Done session',
+                    version: '1',
+                    updatedAt: DateTime(2026, 3, 27, 1, 0),
+                  ),
+                ],
+                statusItems: <String, SessionStatusSummary>{
+                  'ses_live': const SessionStatusSummary(type: 'running'),
+                  'ses_done': const SessionStatusSummary(type: 'idle'),
+                },
+                todosBySession: <String, List<TodoItem>>{
+                  'ses_live': const <TodoItem>[
+                    TodoItem(
+                      id: 'todo_1',
+                      content: 'Ship dashboard',
+                      status: 'completed',
+                      priority: 'high',
+                    ),
+                    TodoItem(
+                      id: 'todo_2',
+                      content: 'Polish cards',
+                      status: 'in_progress',
+                      priority: 'medium',
+                    ),
+                  ],
+                },
+              ),
+          '${profile.storageKey}::/workspace/review':
+              _FakeHomeWorkspaceController(
+                profile: profile,
+                directory: '/workspace/review',
+                projectTarget: const ProjectTarget(
+                  directory: '/workspace/review',
+                  label: 'Review',
+                  source: 'server',
+                ),
+                sessionItems: <SessionSummary>[
+                  SessionSummary(
+                    id: 'ses_idle',
+                    directory: '/workspace/review',
+                    title: 'Review queue',
+                    version: '1',
+                    updatedAt: DateTime(2026, 3, 27, 1, 10),
+                  ),
+                ],
+                statusItems: <String, SessionStatusSummary>{
+                  'ses_idle': const SessionStatusSummary(type: 'idle'),
+                },
+              ),
+        },
+      );
+      addTearDown(controller.dispose);
 
-  final ServerProfile profile;
-  final List<ProjectTarget> recent;
+      await tester.pumpWidget(
+        AppScope(
+          controller: controller,
+          child: MaterialApp(
+            theme: AppTheme.dark(),
+            home: WebParityHomeScreen(
+              flavor: AppFlavor.debug,
+              localeController: LocaleController(),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
 
-  @override
-  bool get loading => false;
+      expect(
+        find.byKey(const ValueKey<String>('home-pane-card-pane_main')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('home-pane-card-pane_review')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('home-running-session-ses_live')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(
+            const ValueKey<String>('home-running-session-ses_live'),
+          ),
+          matching: find.text('Live deploy'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('1/2 todos complete'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('home-server-project-add-button')),
+        findsOneWidget,
+      );
+      expect(find.widgetWithText(ActionChip, 'Ops'), findsOneWidget);
+    },
+  );
 
-  @override
-  ServerProfile? get selectedProfile => profile;
+  testWidgets(
+    'resume workspace restores the active pane for the selected server',
+    (tester) async {
+      _setLargeSurface(tester);
+      final profile = ServerProfile(
+        id: 'alpha',
+        label: 'Alpha',
+        baseUrl: 'https://alpha.example.com',
+      );
+      final store = _FakeProjectStore(
+        lastWorkspace: const ProjectTarget(
+          directory: '/workspace/demo',
+          label: 'Demo',
+          source: 'server',
+          lastSession: ProjectSessionHint(
+            id: 'ses_saved',
+            title: 'Saved session',
+          ),
+        ),
+      );
+      final controller = _MutableHomeAppController(
+        profiles: <ServerProfile>[profile],
+        selected: profile,
+        reports: <String, ServerProbeReport>{
+          profile.storageKey: _probeReport(profile, version: '1.2.3'),
+        },
+        workspacePaneLayouts: <String, WorkspacePaneLayoutSnapshot>{
+          profile.storageKey: const WorkspacePaneLayoutSnapshot(
+            activePaneId: 'pane_focus',
+            panes: <WorkspacePaneLayoutPane>[
+              WorkspacePaneLayoutPane(
+                id: 'pane_focus',
+                directory: '/workspace/review',
+                sessionId: 'ses_focus',
+              ),
+              WorkspacePaneLayoutPane(
+                id: 'pane_other',
+                directory: '/workspace/demo',
+                sessionId: 'ses_saved',
+              ),
+            ],
+          ),
+        },
+      );
+      addTearDown(controller.dispose);
 
-  @override
-  List<ProjectTarget> get recentProjects => recent;
+      final observer = _RecordingNavigatorObserver();
+
+      await tester.pumpWidget(
+        AppScope(
+          controller: controller,
+          child: MaterialApp(
+            theme: AppTheme.dark(),
+            home: WebParityHomeScreen(
+              flavor: AppFlavor.debug,
+              localeController: LocaleController(),
+              projectStore: store,
+            ),
+            navigatorObservers: <NavigatorObserver>[observer],
+            onGenerateRoute: (settings) => MaterialPageRoute<void>(
+              settings: settings,
+              builder: (_) => const SizedBox.shrink(),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('home-server-resume-button-alpha')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        observer.lastRouteName,
+        buildWorkspaceRoute('/workspace/review', sessionId: 'ses_focus'),
+      );
+    },
+  );
 }
 
 class _MutableHomeAppController extends WebParityAppController {
@@ -259,13 +551,28 @@ class _MutableHomeAppController extends WebParityAppController {
     required List<ServerProfile> profiles,
     required ServerProfile selected,
     required Map<String, ServerProbeReport> reports,
+    List<ProjectTarget> recentProjects = const <ProjectTarget>[],
+    Map<String, WorkspacePaneLayoutSnapshot> workspacePaneLayouts =
+        const <String, WorkspacePaneLayoutSnapshot>{},
+    Map<String, WorkspaceController> workspaceControllers =
+        const <String, WorkspaceController>{},
   }) : _profiles = List<ServerProfile>.from(profiles),
        _selectedProfile = selected,
-       _reports = Map<String, ServerProbeReport>.from(reports);
+       _reports = Map<String, ServerProbeReport>.from(reports),
+       _recentProjects = List<ProjectTarget>.from(recentProjects),
+       _workspacePaneLayouts = Map<String, WorkspacePaneLayoutSnapshot>.from(
+         workspacePaneLayouts,
+       ),
+       _workspaceControllers = Map<String, WorkspaceController>.from(
+         workspaceControllers,
+       );
 
   List<ServerProfile> _profiles;
   ServerProfile? _selectedProfile;
   Map<String, ServerProbeReport> _reports;
+  final List<ProjectTarget> _recentProjects;
+  final Map<String, WorkspacePaneLayoutSnapshot> _workspacePaneLayouts;
+  final Map<String, WorkspaceController> _workspaceControllers;
 
   @override
   bool get loading => false;
@@ -282,12 +589,41 @@ class _MutableHomeAppController extends WebParityAppController {
   ServerProfile? get selectedProfile => _selectedProfile;
 
   @override
+  List<ProjectTarget> get recentProjects =>
+      List<ProjectTarget>.unmodifiable(_recentProjects);
+
+  @override
   ServerProbeReport? get selectedReport {
     final selectedProfile = _selectedProfile;
     if (selectedProfile == null) {
       return null;
     }
     return _reports[selectedProfile.storageKey];
+  }
+
+  @override
+  WorkspacePaneLayoutSnapshot? workspacePaneLayoutFor(ServerProfile? profile) {
+    if (profile == null) {
+      return null;
+    }
+    return _workspacePaneLayouts[profile.storageKey];
+  }
+
+  @override
+  Future<WorkspacePaneLayoutSnapshot?> ensureWorkspacePaneLayout(
+    ServerProfile profile,
+  ) async {
+    return workspacePaneLayoutFor(profile);
+  }
+
+  @override
+  WorkspaceController obtainWorkspaceController({
+    required ServerProfile profile,
+    required String directory,
+    String? initialSessionId,
+  }) {
+    return _workspaceControllers['${profile.storageKey}::$directory'] ??
+        _FakeHomeWorkspaceController(profile: profile, directory: directory);
   }
 
   @override
@@ -381,6 +717,46 @@ class _FakeProjectStore extends ProjectStore {
     required ProjectTarget target,
   }) async {
     savedTarget = target;
+  }
+}
+
+class _FakeHomeWorkspaceController extends WorkspaceController {
+  _FakeHomeWorkspaceController({
+    required super.profile,
+    required super.directory,
+    this.projectTarget,
+    this.availableProjects = const <ProjectTarget>[],
+    this.sessionItems = const <SessionSummary>[],
+    this.statusItems = const <String, SessionStatusSummary>{},
+    this.todosBySession = const <String, List<TodoItem>>{},
+  });
+
+  final ProjectTarget? projectTarget;
+  @override
+  final List<ProjectTarget> availableProjects;
+  final List<SessionSummary> sessionItems;
+  final Map<String, SessionStatusSummary> statusItems;
+  final Map<String, List<TodoItem>> todosBySession;
+
+  @override
+  bool get loading => false;
+
+  @override
+  ProjectTarget? get project => projectTarget;
+
+  @override
+  List<SessionSummary> get sessions =>
+      List<SessionSummary>.unmodifiable(sessionItems);
+
+  @override
+  Map<String, SessionStatusSummary> get statuses =>
+      Map<String, SessionStatusSummary>.unmodifiable(statusItems);
+
+  @override
+  List<TodoItem> todosForSession(String? sessionId) {
+    return List<TodoItem>.unmodifiable(
+      todosBySession[sessionId?.trim()] ?? const <TodoItem>[],
+    );
   }
 }
 

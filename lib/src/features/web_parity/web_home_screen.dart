@@ -12,21 +12,26 @@ import '../../design_system/app_snack_bar.dart';
 import '../../design_system/app_spacing.dart';
 import '../../design_system/app_theme.dart';
 import '../../i18n/locale_controller.dart';
+import '../projects/project_catalog_service.dart';
 import '../projects/project_models.dart';
 import '../projects/project_store.dart';
 import 'project_picker_sheet.dart';
+import 'workspace_controller.dart';
+import 'workspace_layout_store.dart';
 
 class WebParityHomeScreen extends StatefulWidget {
   const WebParityHomeScreen({
     required this.flavor,
     required this.localeController,
     this.projectStore,
+    this.projectCatalogService,
     super.key,
   });
 
   final AppFlavor flavor;
   final LocaleController localeController;
   final ProjectStore? projectStore;
+  final ProjectCatalogService? projectCatalogService;
 
   @override
   State<WebParityHomeScreen> createState() => _WebParityHomeScreenState();
@@ -34,20 +39,27 @@ class WebParityHomeScreen extends StatefulWidget {
 
 class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
   late final ProjectStore _projectStore = widget.projectStore ?? ProjectStore();
+  final Map<String, ProjectTarget> _lastWorkspaceByServerStorageKey =
+      <String, ProjectTarget>{};
+  final Map<String, WorkspaceController> _observedWorkspaceControllersByKey =
+      <String, WorkspaceController>{};
+  final Map<WorkspaceController, VoidCallback>
+  _observedWorkspaceControllerListeners = <WorkspaceController, VoidCallback>{};
+  bool _workspaceStateSyncInFlight = false;
+  bool _workspaceStateSyncQueued = false;
+  String _lastWorkspaceStateSignature = '';
+  String _inFlightWorkspaceStateSignature = '';
+  int _workspaceStateSyncRevision = 0;
 
   Future<ProjectTarget> _resolveNavigationTarget(
     WebParityAppController controller,
+    ServerProfile profile,
     ProjectTarget target,
   ) async {
-    final selectedProfile = controller.selectedProfile;
-    if (selectedProfile == null) {
-      return target;
-    }
-
     ProjectSessionHint? remembered = target.lastSession;
     if (remembered?.id == null || remembered!.id!.trim().isEmpty) {
       final lastWorkspace = await _projectStore.loadLastWorkspace(
-        selectedProfile.storageKey,
+        profile.storageKey,
       );
       if (lastWorkspace?.directory == target.directory &&
           lastWorkspace?.lastSession != null) {
@@ -72,20 +84,22 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
 
   Future<void> _openResolvedProject(
     WebParityAppController controller,
+    ServerProfile profile,
     ProjectTarget target,
   ) async {
-    final selectedProfile = controller.selectedProfile;
-    if (selectedProfile == null) {
-      await _openServers(controller);
-      return;
-    }
-
-    final resolvedTarget = await _resolveNavigationTarget(controller, target);
+    final resolvedTarget = await _resolveNavigationTarget(
+      controller,
+      profile,
+      target,
+    );
     await _projectStore.recordRecentProject(resolvedTarget);
     await _projectStore.saveLastWorkspace(
-      serverStorageKey: selectedProfile.storageKey,
+      serverStorageKey: profile.storageKey,
       target: resolvedTarget,
     );
+    if (controller.selectedProfile?.id != profile.id) {
+      await controller.selectProfile(profile);
+    }
     if (!mounted) {
       return;
     }
@@ -97,9 +111,11 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
     );
   }
 
-  Future<void> _openProjectPicker(WebParityAppController controller) async {
-    final selectedProfile = controller.selectedProfile;
-    if (selectedProfile == null) {
+  Future<void> _openProjectPicker(
+    WebParityAppController controller,
+    ServerProfile? profile,
+  ) async {
+    if (profile == null) {
       await _openServers(controller);
       return;
     }
@@ -111,13 +127,334 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
       backgroundColor: Theme.of(context).colorScheme.surface,
       builder: (context) => FractionallySizedBox(
         heightFactor: 0.82,
-        child: ProjectPickerSheet(profile: selectedProfile),
+        child: ProjectPickerSheet(
+          profile: profile,
+          projectCatalogService: widget.projectCatalogService,
+        ),
       ),
     );
     if (target == null || !mounted) {
       return;
     }
-    await _openResolvedProject(controller, target);
+    await _openResolvedProject(controller, profile, target);
+  }
+
+  ProjectTarget? _lastWorkspaceForProfile(ServerProfile profile) {
+    return _lastWorkspaceByServerStorageKey[profile.storageKey];
+  }
+
+  WorkspacePaneLayoutSnapshot? _layoutForProfile(
+    WebParityAppController controller,
+    ServerProfile profile,
+  ) {
+    return controller.workspacePaneLayoutFor(profile);
+  }
+
+  String _workspaceStateSignature(WebParityAppController controller) {
+    final buffer = StringBuffer()..write('loading=${controller.loading};');
+    for (final profile in controller.profiles) {
+      buffer
+        ..write(profile.storageKey)
+        ..write('::');
+      final layout = controller.workspacePaneLayoutFor(profile);
+      if (layout != null) {
+        buffer
+          ..write(layout.activePaneId)
+          ..write('[');
+        for (final pane in layout.panes) {
+          buffer
+            ..write(pane.id)
+            ..write(':')
+            ..write(pane.directory)
+            ..write(':')
+            ..write(pane.sessionId ?? '')
+            ..write(';');
+        }
+        buffer.write(']');
+      }
+      buffer.write('|');
+    }
+    return buffer.toString();
+  }
+
+  void _scheduleWorkspaceStateSyncIfNeeded(WebParityAppController controller) {
+    if (controller.loading) {
+      return;
+    }
+    final signature = _workspaceStateSignature(controller);
+    if (_workspaceStateSyncInFlight) {
+      if (signature != _inFlightWorkspaceStateSignature) {
+        _workspaceStateSyncQueued = true;
+      }
+      return;
+    }
+    if (signature == _lastWorkspaceStateSignature) {
+      return;
+    }
+    _workspaceStateSyncInFlight = true;
+    _inFlightWorkspaceStateSignature = signature;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      unawaited(_syncWorkspaceState(controller));
+    });
+  }
+
+  Future<void> _syncWorkspaceState(WebParityAppController controller) async {
+    final revision = ++_workspaceStateSyncRevision;
+    final profiles = controller.profiles.toList(growable: false);
+    await Future.wait(
+      profiles.map((profile) => controller.ensureWorkspacePaneLayout(profile)),
+    );
+    final workspaceEntries = await Future.wait(
+      profiles.map((profile) async {
+        final target = await _projectStore.loadLastWorkspace(
+          profile.storageKey,
+        );
+        return MapEntry<String, ProjectTarget?>(profile.storageKey, target);
+      }),
+    );
+    if (!mounted ||
+        _workspaceStateSyncRevision != revision ||
+        controller != AppScope.of(context)) {
+      _workspaceStateSyncInFlight = false;
+      _inFlightWorkspaceStateSignature = '';
+      return;
+    }
+    final nextLastWorkspaces = <String, ProjectTarget>{
+      for (final entry in workspaceEntries)
+        if (entry.value != null) entry.key: entry.value!,
+    };
+    setState(() {
+      _lastWorkspaceByServerStorageKey
+        ..clear()
+        ..addAll(nextLastWorkspaces);
+    });
+    _syncObservedWorkspaceControllers(controller, profiles);
+    _lastWorkspaceStateSignature = _workspaceStateSignature(controller);
+    _workspaceStateSyncInFlight = false;
+    _inFlightWorkspaceStateSignature = '';
+    final shouldResync =
+        _workspaceStateSyncQueued &&
+        _lastWorkspaceStateSignature != _workspaceStateSignature(controller);
+    _workspaceStateSyncQueued = false;
+    if (shouldResync) {
+      _scheduleWorkspaceStateSyncIfNeeded(controller);
+    }
+  }
+
+  String _workspaceControllerKey(ServerProfile profile, String directory) {
+    return '${profile.storageKey}::$directory';
+  }
+
+  List<String> _rememberedDirectoriesForProfile(
+    WebParityAppController controller,
+    ServerProfile profile,
+  ) {
+    final layout = _layoutForProfile(controller, profile);
+    final directories = <String>[];
+    final seen = <String>{};
+    if (layout != null) {
+      for (final pane in layout.panes) {
+        if (seen.add(pane.directory)) {
+          directories.add(pane.directory);
+        }
+      }
+    }
+    final lastWorkspace = _lastWorkspaceForProfile(profile);
+    if (lastWorkspace != null && seen.add(lastWorkspace.directory)) {
+      directories.add(lastWorkspace.directory);
+    }
+    return directories;
+  }
+
+  String? _preferredSessionIdForDirectory(
+    WebParityAppController controller,
+    ServerProfile profile,
+    String directory,
+  ) {
+    final layout = _layoutForProfile(controller, profile);
+    if (layout != null) {
+      final activePane = layout.activePane;
+      if (activePane != null &&
+          activePane.directory == directory &&
+          activePane.sessionId != null) {
+        return activePane.sessionId;
+      }
+      for (final pane in layout.panes) {
+        if (pane.directory == directory && pane.sessionId != null) {
+          return pane.sessionId;
+        }
+      }
+    }
+    final lastWorkspace = _lastWorkspaceForProfile(profile);
+    if (lastWorkspace?.directory == directory) {
+      return lastWorkspace?.lastSession?.id;
+    }
+    return null;
+  }
+
+  void _syncObservedWorkspaceControllers(
+    WebParityAppController controller,
+    List<ServerProfile> profiles,
+  ) {
+    final desiredKeys = <String>{};
+    for (final profile in profiles) {
+      for (final directory in _rememberedDirectoriesForProfile(
+        controller,
+        profile,
+      )) {
+        final key = _workspaceControllerKey(profile, directory);
+        desiredKeys.add(key);
+        if (_observedWorkspaceControllersByKey.containsKey(key)) {
+          continue;
+        }
+        final observedController = controller.obtainWorkspaceController(
+          profile: profile,
+          directory: directory,
+          initialSessionId: _preferredSessionIdForDirectory(
+            controller,
+            profile,
+            directory,
+          ),
+        );
+        void listener() {
+          if (!mounted) {
+            return;
+          }
+          setState(() {});
+        }
+
+        observedController.addListener(listener);
+        _observedWorkspaceControllersByKey[key] = observedController;
+        _observedWorkspaceControllerListeners[observedController] = listener;
+      }
+    }
+
+    final staleKeys = _observedWorkspaceControllersByKey.keys
+        .where((key) => !desiredKeys.contains(key))
+        .toList(growable: false);
+    for (final key in staleKeys) {
+      final observedController = _observedWorkspaceControllersByKey.remove(key);
+      final listener = observedController == null
+          ? null
+          : _observedWorkspaceControllerListeners.remove(observedController);
+      if (observedController != null && listener != null) {
+        observedController.removeListener(listener);
+      }
+    }
+  }
+
+  WorkspaceController? _observedWorkspaceController(
+    ServerProfile profile,
+    String directory,
+  ) {
+    return _observedWorkspaceControllersByKey[_workspaceControllerKey(
+      profile,
+      directory,
+    )];
+  }
+
+  WorkspacePaneLayoutPane? _resumePaneForProfile(
+    WebParityAppController controller,
+    ServerProfile profile,
+  ) {
+    return _layoutForProfile(controller, profile)?.activePane;
+  }
+
+  Future<void> _resumeWorkspace(
+    WebParityAppController controller,
+    ServerProfile profile,
+  ) async {
+    final activePane = _resumePaneForProfile(controller, profile);
+    if (activePane != null) {
+      if (controller.selectedProfile?.id != profile.id) {
+        await controller.selectProfile(profile);
+      }
+      if (!mounted) {
+        return;
+      }
+      Navigator.of(context).pushNamed(
+        buildWorkspaceRoute(
+          activePane.directory,
+          sessionId: activePane.sessionId,
+        ),
+      );
+      return;
+    }
+
+    final lastWorkspace = _lastWorkspaceForProfile(profile);
+    if (lastWorkspace != null) {
+      await _openResolvedProject(controller, profile, lastWorkspace);
+      return;
+    }
+    await _openProjectPicker(controller, profile);
+  }
+
+  Future<void> _openServerEditor(
+    WebParityAppController controller, {
+    ServerProfile? profile,
+  }) async {
+    final draft = await showModalBottomSheet<ServerProfile>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      builder: (context) => FractionallySizedBox(
+        heightFactor: 0.72,
+        child: _ServerEditorSheet(initialProfile: profile),
+      ),
+    );
+    if (draft == null) {
+      return;
+    }
+    final savedProfile = await controller.saveProfile(draft);
+    if (!mounted) {
+      return;
+    }
+    showAppSnackBar(
+      context,
+      message: 'Saved "${savedProfile.effectiveLabel}" and refreshed status.',
+      tone: AppSnackBarTone.success,
+    );
+  }
+
+  Future<void> _confirmDeleteServer(
+    WebParityAppController controller,
+    ServerProfile profile,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete server?'),
+        content: Text(
+          'Remove "${profile.effectiveLabel}" from saved servers? This keeps the rest of your home screen intact.',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) {
+      return;
+    }
+    await controller.deleteServerProfile(profile);
+    if (!mounted) {
+      return;
+    }
+    showAppSnackBar(
+      context,
+      message: 'Removed "${profile.effectiveLabel}".',
+      tone: AppSnackBarTone.warning,
+    );
   }
 
   Future<void> _openServers(WebParityAppController controller) async {
@@ -135,9 +472,298 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
 
   Future<void> _openRecentProject(
     WebParityAppController controller,
+    ServerProfile profile,
     ProjectTarget target,
   ) async {
-    await _openResolvedProject(controller, target);
+    await _openResolvedProject(controller, profile, target);
+  }
+
+  bool _isServerActivityLoading(
+    WebParityAppController controller,
+    ServerProfile profile,
+  ) {
+    final directories = _rememberedDirectoriesForProfile(controller, profile);
+    if (directories.isEmpty) {
+      return false;
+    }
+    for (final directory in directories) {
+      final observedController = _observedWorkspaceController(
+        profile,
+        directory,
+      );
+      if (observedController == null || observedController.loading) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _isSessionActive(String? status) {
+    return (status?.trim().toLowerCase() ?? 'idle') != 'idle';
+  }
+
+  String _projectLabelForDirectory(
+    WebParityAppController controller,
+    ServerProfile profile,
+    String directory,
+  ) {
+    final observedController = _observedWorkspaceController(profile, directory);
+    final project = observedController?.project;
+    if (project != null) {
+      return project.title;
+    }
+    final lastWorkspace = _lastWorkspaceForProfile(profile);
+    if (lastWorkspace?.directory == directory) {
+      return lastWorkspace!.title;
+    }
+    for (final target in controller.recentProjects) {
+      if (target.directory == directory) {
+        return target.title;
+      }
+    }
+    return projectDisplayLabel(directory);
+  }
+
+  String _sessionTitleForPane(
+    WorkspaceController? controller,
+    WorkspacePaneLayoutPane pane, {
+    ProjectTarget? lastWorkspace,
+  }) {
+    final sessionId = pane.sessionId?.trim();
+    if (sessionId != null && sessionId.isNotEmpty && controller != null) {
+      for (final session in controller.sessions) {
+        if (session.id == sessionId) {
+          final title = session.title.trim();
+          return title.isNotEmpty ? title : session.id;
+        }
+      }
+    }
+    if (lastWorkspace?.directory == pane.directory &&
+        lastWorkspace?.lastSession?.title?.trim().isNotEmpty == true) {
+      return lastWorkspace!.lastSession!.title!.trim();
+    }
+    return sessionId == null || sessionId.isEmpty ? 'New session' : sessionId;
+  }
+
+  String? _sessionStatusForPane(
+    WorkspaceController? controller,
+    WorkspacePaneLayoutPane pane, {
+    ProjectTarget? lastWorkspace,
+  }) {
+    final sessionId = pane.sessionId?.trim();
+    if (sessionId != null && sessionId.isNotEmpty && controller != null) {
+      return controller.statuses[sessionId]?.type;
+    }
+    if (lastWorkspace?.directory == pane.directory &&
+        lastWorkspace?.lastSession?.id == sessionId) {
+      return lastWorkspace?.lastSession?.status;
+    }
+    return null;
+  }
+
+  List<_HomeRunningSession> _runningSessionsForProfile(
+    WebParityAppController controller,
+    ServerProfile profile,
+  ) {
+    final items = <_HomeRunningSession>[];
+    final seenSessionKeys = <String>{};
+    for (final directory in _rememberedDirectoriesForProfile(
+      controller,
+      profile,
+    )) {
+      final observedController = _observedWorkspaceController(
+        profile,
+        directory,
+      );
+      if (observedController == null) {
+        continue;
+      }
+      for (final session in observedController.sessions) {
+        if (session.archivedAt != null) {
+          continue;
+        }
+        final status = observedController.statuses[session.id];
+        if (!_isSessionActive(status?.type)) {
+          continue;
+        }
+        final key = '$directory::${session.id}';
+        if (!seenSessionKeys.add(key)) {
+          continue;
+        }
+        final todos = observedController.todosForSession(session.id);
+        final completedTodoCount = todos
+            .where((todo) => todo.status.trim().toLowerCase() == 'completed')
+            .length;
+        items.add(
+          _HomeRunningSession(
+            directory: directory,
+            projectLabel: _projectLabelForDirectory(
+              controller,
+              profile,
+              directory,
+            ),
+            sessionId: session.id,
+            sessionTitle: session.title.trim().isEmpty
+                ? session.id
+                : session.title.trim(),
+            status: status?.type ?? 'running',
+            completedTodoCount: completedTodoCount,
+            totalTodoCount: todos.length,
+            updatedAt: session.updatedAt,
+          ),
+        );
+      }
+    }
+    items.sort((left, right) {
+      final leftTime =
+          left.updatedAt?.millisecondsSinceEpoch ?? left.sessionId.hashCode;
+      final rightTime =
+          right.updatedAt?.millisecondsSinceEpoch ?? right.sessionId.hashCode;
+      return rightTime.compareTo(leftTime);
+    });
+    return items;
+  }
+
+  _HomeServerSummary _serverSummaryForProfile(
+    WebParityAppController controller,
+    ServerProfile profile,
+  ) {
+    final runningSessions = _runningSessionsForProfile(controller, profile);
+    final layout = _layoutForProfile(controller, profile);
+    final lastWorkspace = _lastWorkspaceForProfile(profile);
+    final paneCount = layout?.panes.length ?? (lastWorkspace == null ? 0 : 1);
+    var completedTodoCount = 0;
+    var totalTodoCount = 0;
+    for (final session in runningSessions) {
+      completedTodoCount += session.completedTodoCount;
+      totalTodoCount += session.totalTodoCount;
+    }
+    return _HomeServerSummary(
+      paneCount: paneCount,
+      runningSessionCount: runningSessions.length,
+      completedTodoCount: completedTodoCount,
+      totalTodoCount: totalTodoCount,
+      activeDirectory:
+          layout?.activePane?.directory ?? lastWorkspace?.directory,
+    );
+  }
+
+  List<ProjectTarget> _projectTargetsForProfile(
+    WebParityAppController controller,
+    ServerProfile profile,
+  ) {
+    final layout = _layoutForProfile(controller, profile);
+    final lastWorkspace = _lastWorkspaceForProfile(profile);
+    final activeDirectory =
+        layout?.activePane?.directory ?? lastWorkspace?.directory;
+    final byDirectory = <String, ProjectTarget>{};
+
+    void add(ProjectTarget target) {
+      byDirectory[target.directory] = target;
+    }
+
+    if (activeDirectory != null) {
+      final observedController = _observedWorkspaceController(
+        profile,
+        activeDirectory,
+      );
+      for (final target
+          in observedController?.availableProjects ?? const <ProjectTarget>[]) {
+        add(target);
+      }
+    }
+    if (lastWorkspace != null) {
+      add(lastWorkspace);
+    }
+    if (layout != null) {
+      for (final pane in layout.panes) {
+        byDirectory.putIfAbsent(
+          pane.directory,
+          () => ProjectTarget(
+            directory: pane.directory,
+            label: _projectLabelForDirectory(
+              controller,
+              profile,
+              pane.directory,
+            ),
+          ),
+        );
+      }
+    }
+    if (byDirectory.isEmpty) {
+      for (final target in controller.recentProjects) {
+        add(target);
+      }
+    }
+
+    final projects = byDirectory.values.toList(growable: false);
+    projects.sort(
+      (left, right) =>
+          left.title.toLowerCase().compareTo(right.title.toLowerCase()),
+    );
+    return projects.take(8).toList(growable: false);
+  }
+
+  List<_HomePaneSnapshot> _paneSnapshotsForProfile(
+    WebParityAppController controller,
+    ServerProfile profile,
+  ) {
+    final layout = _layoutForProfile(controller, profile);
+    final lastWorkspace = _lastWorkspaceForProfile(profile);
+    if (layout == null) {
+      if (lastWorkspace == null) {
+        return const <_HomePaneSnapshot>[];
+      }
+      return <_HomePaneSnapshot>[
+        _HomePaneSnapshot(
+          paneId: 'last_workspace',
+          label: 'Last workspace',
+          projectLabel: lastWorkspace.title,
+          directory: lastWorkspace.directory,
+          sessionTitle: lastWorkspace.lastSession?.title ?? 'New session',
+          status: lastWorkspace.lastSession?.status,
+          active: true,
+        ),
+      ];
+    }
+    return List<_HomePaneSnapshot>.generate(layout.panes.length, (index) {
+      final pane = layout.panes[index];
+      final observedController = _observedWorkspaceController(
+        profile,
+        pane.directory,
+      );
+      return _HomePaneSnapshot(
+        paneId: pane.id,
+        label: 'Pane ${index + 1}',
+        projectLabel: _projectLabelForDirectory(
+          controller,
+          profile,
+          pane.directory,
+        ),
+        directory: pane.directory,
+        sessionTitle: _sessionTitleForPane(
+          observedController,
+          pane,
+          lastWorkspace: lastWorkspace,
+        ),
+        status: _sessionStatusForPane(
+          observedController,
+          pane,
+          lastWorkspace: lastWorkspace,
+        ),
+        active: pane.id == layout.activePaneId,
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    for (final entry in _observedWorkspaceControllerListeners.entries) {
+      entry.key.removeListener(entry.value);
+    }
+    _observedWorkspaceControllerListeners.clear();
+    _observedWorkspaceControllersByKey.clear();
+    super.dispose();
   }
 
   @override
@@ -148,8 +774,21 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
     return AnimatedBuilder(
       animation: controller,
       builder: (context, _) {
+        _scheduleWorkspaceStateSyncIfNeeded(controller);
         final selectedProfile = controller.selectedProfile;
         final selectedReport = controller.selectedReport;
+        final selectedSummary = selectedProfile == null
+            ? null
+            : _serverSummaryForProfile(controller, selectedProfile);
+        final selectedRunningSessions = selectedProfile == null
+            ? const <_HomeRunningSession>[]
+            : _runningSessionsForProfile(controller, selectedProfile);
+        final selectedPaneSnapshots = selectedProfile == null
+            ? const <_HomePaneSnapshot>[]
+            : _paneSnapshotsForProfile(controller, selectedProfile);
+        final selectedProjectTargets = selectedProfile == null
+            ? const <ProjectTarget>[]
+            : _projectTargetsForProfile(controller, selectedProfile);
         return Scaffold(
           body: DecoratedBox(
             decoration: BoxDecoration(
@@ -168,80 +807,178 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
               ),
             ),
             child: SafeArea(
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 1120),
-                  child: Padding(
-                    padding: const EdgeInsets.all(AppSpacing.lg),
-                    child: controller.loading
-                        ? const Center(child: CircularProgressIndicator())
-                        : Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: <Widget>[
-                              Align(
-                                alignment: Alignment.topRight,
-                                child: Wrap(
-                                  spacing: AppSpacing.sm,
-                                  runSpacing: AppSpacing.sm,
-                                  children: <Widget>[
-                                    _ServerPill(
-                                      profile: selectedProfile,
-                                      report: selectedReport,
-                                      onTap: () => _openServers(controller),
-                                    ),
-                                    OutlinedButton.icon(
-                                      onPressed: () => _openServers(controller),
-                                      icon: const Icon(Icons.storage_rounded),
-                                      label: const Text('See Servers'),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const Spacer(),
-                              Center(
-                                child: Column(
-                                  children: <Widget>[
-                                    Text(
-                                      'OpenCode',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .headlineMedium
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w800,
-                                          ),
-                                    ),
-                                    const SizedBox(height: AppSpacing.sm),
-                                    Text(
-                                      'Open a recent project or pick a new directory to start a session.',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodyLarge
-                                          ?.copyWith(color: surfaces.muted),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                    const SizedBox(height: AppSpacing.lg),
-                                    FilledButton.icon(
-                                      onPressed: () =>
-                                          _openProjectPicker(controller),
-                                      icon: const Icon(
-                                        Icons.folder_open_rounded,
-                                      ),
-                                      label: const Text('Open Project'),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(height: AppSpacing.xxl),
-                              _RecentProjectsSection(
-                                recentProjects: controller.recentProjects,
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.lg),
+                child: controller.loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 1440),
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              final wide = constraints.maxWidth >= 1180;
+                              final serverListPanel = _HomeServerListPanel(
+                                profiles: controller.profiles,
                                 selectedProfile: selectedProfile,
-                                onOpenProject: (target) =>
-                                    _openRecentProject(controller, target),
-                              ),
-                            ],
+                                reports: controller.reports,
+                                isRefreshingProfile:
+                                    controller.isRefreshingProfile,
+                                summaryForProfile: (profile) =>
+                                    _serverSummaryForProfile(
+                                      controller,
+                                      profile,
+                                    ),
+                                onSelectProfile: controller.selectProfile,
+                                onOpenServers: () => _openServers(controller),
+                                onAddServer: () =>
+                                    _openServerEditor(controller),
+                                onRefreshProfile: controller.refreshProbe,
+                                onEditProfile: (profile) => _openServerEditor(
+                                  controller,
+                                  profile: profile,
+                                ),
+                                onDeleteProfile: (profile) =>
+                                    _confirmDeleteServer(controller, profile),
+                                onMoveProfile: controller.moveProfile,
+                              );
+                              final detailPanel = _HomeServerDetailPanel(
+                                profile: selectedProfile,
+                                report: selectedReport,
+                                summary: selectedSummary,
+                                activityLoading: selectedProfile == null
+                                    ? false
+                                    : _isServerActivityLoading(
+                                        controller,
+                                        selectedProfile,
+                                      ),
+                                runningSessions: selectedRunningSessions,
+                                paneSnapshots: selectedPaneSnapshots,
+                                projectTargets: selectedProjectTargets,
+                                onResumeWorkspace: selectedProfile == null
+                                    ? null
+                                    : () => _resumeWorkspace(
+                                        controller,
+                                        selectedProfile,
+                                      ),
+                                onEditServer: selectedProfile == null
+                                    ? null
+                                    : () => _openServerEditor(
+                                        controller,
+                                        profile: selectedProfile,
+                                      ),
+                                onOpenProjectPicker: selectedProfile == null
+                                    ? null
+                                    : () => _openProjectPicker(
+                                        controller,
+                                        selectedProfile,
+                                      ),
+                                onOpenProject: selectedProfile == null
+                                    ? null
+                                    : (target) => _openRecentProject(
+                                        controller,
+                                        selectedProfile,
+                                        target,
+                                      ),
+                              );
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: <Widget>[
+                                  Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: <Widget>[
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: <Widget>[
+                                            Text(
+                                              'Servers',
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .headlineSmall
+                                                  ?.copyWith(
+                                                    fontWeight: FontWeight.w800,
+                                                  ),
+                                            ),
+                                            const SizedBox(
+                                              height: AppSpacing.xxs,
+                                            ),
+                                            Text(
+                                              'Choose a server, inspect its current status, and jump back into the exact workspace layout you were using last.',
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .bodyLarge
+                                                  ?.copyWith(
+                                                    color: surfaces.muted,
+                                                  ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: AppSpacing.lg),
+                                      Wrap(
+                                        spacing: AppSpacing.sm,
+                                        runSpacing: AppSpacing.sm,
+                                        children: <Widget>[
+                                          _ServerPill(
+                                            profile: selectedProfile,
+                                            report: selectedReport,
+                                            onTap: () =>
+                                                _openServers(controller),
+                                          ),
+                                          OutlinedButton.icon(
+                                            onPressed: () =>
+                                                _openServers(controller),
+                                            icon: const Icon(
+                                              Icons.storage_rounded,
+                                            ),
+                                            label: const Text('See Servers'),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: AppSpacing.lg),
+                                  Expanded(
+                                    child: wide
+                                        ? Row(
+                                            children: <Widget>[
+                                              Flexible(
+                                                flex: 4,
+                                                child: serverListPanel,
+                                              ),
+                                              const SizedBox(
+                                                width: AppSpacing.lg,
+                                              ),
+                                              Flexible(
+                                                flex: 6,
+                                                child: detailPanel,
+                                              ),
+                                            ],
+                                          )
+                                        : Column(
+                                            children: <Widget>[
+                                              Expanded(
+                                                flex: 4,
+                                                child: serverListPanel,
+                                              ),
+                                              const SizedBox(
+                                                height: AppSpacing.lg,
+                                              ),
+                                              Expanded(
+                                                flex: 6,
+                                                child: detailPanel,
+                                              ),
+                                            ],
+                                          ),
+                                  ),
+                                ],
+                              );
+                            },
                           ),
-                  ),
-                ),
+                        ),
+                      ),
               ),
             ),
           ),
@@ -259,21 +996,96 @@ String? _preferredSessionId(ProjectTarget target) {
   return sessionId;
 }
 
-class _RecentProjectsSection extends StatelessWidget {
-  const _RecentProjectsSection({
-    required this.recentProjects,
-    required this.selectedProfile,
-    required this.onOpenProject,
+class _HomeServerSummary {
+  const _HomeServerSummary({
+    required this.paneCount,
+    required this.runningSessionCount,
+    required this.completedTodoCount,
+    required this.totalTodoCount,
+    required this.activeDirectory,
   });
 
-  final List<ProjectTarget> recentProjects;
+  final int paneCount;
+  final int runningSessionCount;
+  final int completedTodoCount;
+  final int totalTodoCount;
+  final String? activeDirectory;
+}
+
+class _HomeRunningSession {
+  const _HomeRunningSession({
+    required this.directory,
+    required this.projectLabel,
+    required this.sessionId,
+    required this.sessionTitle,
+    required this.status,
+    required this.completedTodoCount,
+    required this.totalTodoCount,
+    required this.updatedAt,
+  });
+
+  final String directory;
+  final String projectLabel;
+  final String sessionId;
+  final String sessionTitle;
+  final String status;
+  final int completedTodoCount;
+  final int totalTodoCount;
+  final DateTime? updatedAt;
+}
+
+class _HomePaneSnapshot {
+  const _HomePaneSnapshot({
+    required this.paneId,
+    required this.label,
+    required this.projectLabel,
+    required this.directory,
+    required this.sessionTitle,
+    required this.status,
+    required this.active,
+  });
+
+  final String paneId;
+  final String label;
+  final String projectLabel;
+  final String directory;
+  final String sessionTitle;
+  final String? status;
+  final bool active;
+}
+
+class _HomeServerListPanel extends StatelessWidget {
+  const _HomeServerListPanel({
+    required this.profiles,
+    required this.selectedProfile,
+    required this.reports,
+    required this.isRefreshingProfile,
+    required this.summaryForProfile,
+    required this.onSelectProfile,
+    required this.onOpenServers,
+    required this.onAddServer,
+    required this.onRefreshProfile,
+    required this.onEditProfile,
+    required this.onDeleteProfile,
+    required this.onMoveProfile,
+  });
+
+  final List<ServerProfile> profiles;
   final ServerProfile? selectedProfile;
-  final ValueChanged<ProjectTarget> onOpenProject;
+  final Map<String, ServerProbeReport> reports;
+  final bool Function(ServerProfile profile) isRefreshingProfile;
+  final _HomeServerSummary Function(ServerProfile profile) summaryForProfile;
+  final Future<void> Function(ServerProfile profile) onSelectProfile;
+  final VoidCallback onOpenServers;
+  final Future<void> Function() onAddServer;
+  final Future<void> Function(ServerProfile profile) onRefreshProfile;
+  final Future<void> Function(ServerProfile profile) onEditProfile;
+  final Future<void> Function(ServerProfile profile) onDeleteProfile;
+  final Future<void> Function(String profileId, int offset) onMoveProfile;
 
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
-
     return Container(
       decoration: BoxDecoration(
         color: surfaces.panelRaised.withValues(alpha: 0.9),
@@ -287,46 +1099,662 @@ class _RecentProjectsSection extends StatelessWidget {
           Row(
             children: <Widget>[
               Expanded(
-                child: Text(
-                  'Recent Projects',
-                  style: Theme.of(context).textTheme.titleLarge,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      'Servers',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: AppSpacing.xxs),
+                    Text(
+                      'Saved servers stay visible here, with status and workspace summaries attached.',
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
+                    ),
+                  ],
                 ),
               ),
-              if (selectedProfile == null)
-                Text(
-                  'Choose a server to open one.',
+              const SizedBox(width: AppSpacing.md),
+              Wrap(
+                spacing: AppSpacing.sm,
+                runSpacing: AppSpacing.sm,
+                children: <Widget>[
+                  OutlinedButton.icon(
+                    onPressed: onOpenServers,
+                    icon: const Icon(Icons.tune_rounded),
+                    label: const Text('Manage'),
+                  ),
+                  FilledButton.icon(
+                    key: const ValueKey<String>('home-add-server-button'),
+                    onPressed: () => unawaited(onAddServer()),
+                    icon: const Icon(Icons.add_rounded),
+                    label: const Text('Add Server'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          if (profiles.isEmpty)
+            Expanded(
+              child: Center(
+                child: Text(
+                  'No saved servers yet. Add your first server to start tracking its workspace.',
                   style: Theme.of(
                     context,
-                  ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
+                  ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            )
+          else
+            Expanded(
+              child: ListView.separated(
+                itemCount: profiles.length,
+                separatorBuilder: (_, _) =>
+                    const SizedBox(height: AppSpacing.sm),
+                itemBuilder: (context, index) {
+                  final profile = profiles[index];
+                  final selected = selectedProfile?.id == profile.id;
+                  return _ServerManagementCard(
+                    key: ValueKey<String>('home-server-card-${profile.id}'),
+                    keyNamespace: 'home-server',
+                    profile: profile,
+                    report: reports[profile.storageKey],
+                    selected: selected,
+                    isRefreshing: isRefreshingProfile(profile),
+                    canMoveUp: index > 0,
+                    canMoveDown: index < profiles.length - 1,
+                    footer: _HomeServerCardFooter(
+                      summary: summaryForProfile(profile),
+                    ),
+                    onSelect: () => unawaited(onSelectProfile(profile)),
+                    onRefresh: () => unawaited(onRefreshProfile(profile)),
+                    onEdit: () => unawaited(onEditProfile(profile)),
+                    onDelete: () => unawaited(onDeleteProfile(profile)),
+                    onMoveUp: index > 0
+                        ? () => unawaited(onMoveProfile(profile.id, -1))
+                        : null,
+                    onMoveDown: index < profiles.length - 1
+                        ? () => unawaited(onMoveProfile(profile.id, 1))
+                        : null,
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HomeServerCardFooter extends StatelessWidget {
+  const _HomeServerCardFooter({required this.summary});
+
+  final _HomeServerSummary summary;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final badges = <Widget>[
+      if (summary.paneCount > 0)
+        _ServerMetaBadge(
+          icon: Icons.splitscreen_rounded,
+          label:
+              '${summary.paneCount} pane${summary.paneCount == 1 ? '' : 's'}',
+          tint: Theme.of(context).colorScheme.primary,
+        ),
+      if (summary.runningSessionCount > 0)
+        _ServerMetaBadge(
+          icon: Icons.bolt_rounded,
+          label:
+              '${summary.runningSessionCount} running session${summary.runningSessionCount == 1 ? '' : 's'}',
+          tint: surfaces.success,
+        ),
+      if (summary.totalTodoCount > 0)
+        _ServerMetaBadge(
+          icon: Icons.checklist_rtl_rounded,
+          label:
+              '${summary.completedTodoCount}/${summary.totalTodoCount} todos',
+          tint: surfaces.warning,
+        ),
+      if ((summary.activeDirectory ?? '').isNotEmpty)
+        _ServerMetaBadge(
+          icon: Icons.folder_open_rounded,
+          label: projectDisplayLabel(summary.activeDirectory!),
+          tint: surfaces.muted,
+        ),
+    ];
+    if (badges.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Wrap(
+      spacing: AppSpacing.xs,
+      runSpacing: AppSpacing.xs,
+      children: badges,
+    );
+  }
+}
+
+class _HomeServerDetailPanel extends StatelessWidget {
+  const _HomeServerDetailPanel({
+    required this.profile,
+    required this.report,
+    required this.summary,
+    required this.activityLoading,
+    required this.runningSessions,
+    required this.paneSnapshots,
+    required this.projectTargets,
+    required this.onResumeWorkspace,
+    required this.onEditServer,
+    required this.onOpenProjectPicker,
+    required this.onOpenProject,
+  });
+
+  final ServerProfile? profile;
+  final ServerProbeReport? report;
+  final _HomeServerSummary? summary;
+  final bool activityLoading;
+  final List<_HomeRunningSession> runningSessions;
+  final List<_HomePaneSnapshot> paneSnapshots;
+  final List<ProjectTarget> projectTargets;
+  final VoidCallback? onResumeWorkspace;
+  final VoidCallback? onEditServer;
+  final VoidCallback? onOpenProjectPicker;
+  final ValueChanged<ProjectTarget>? onOpenProject;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    if (profile == null) {
+      return _HomeSectionCard(
+        child: Center(
+          child: Text(
+            'Select a server to inspect its status and restore its workspace.',
+            style: Theme.of(
+              context,
+            ).textTheme.bodyLarge?.copyWith(color: surfaces.muted),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+
+    final meta = _serverMetaItems(context, profile!, report);
+    return _HomeSectionCard(
+      child: SingleChildScrollView(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compactHeader = constraints.maxWidth < 720;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                if (compactHeader)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      _HomeServerDetailIdentity(
+                        profile: profile!,
+                        report: report,
+                        meta: meta,
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      _HomeServerDetailActions(
+                        profileId: profile!.id,
+                        paneCount: summary?.paneCount ?? 0,
+                        onResumeWorkspace: onResumeWorkspace,
+                        onEditServer: onEditServer,
+                      ),
+                    ],
+                  )
+                else
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Expanded(
+                        child: _HomeServerDetailIdentity(
+                          profile: profile!,
+                          report: report,
+                          meta: meta,
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.lg),
+                      _HomeServerDetailActions(
+                        profileId: profile!.id,
+                        paneCount: summary?.paneCount ?? 0,
+                        onResumeWorkspace: onResumeWorkspace,
+                        onEditServer: onEditServer,
+                      ),
+                    ],
+                  ),
+                const SizedBox(height: AppSpacing.lg),
+                _HomeDetailSection(
+                  title: 'Workspace',
+                  subtitle:
+                      'This is the last remembered pane layout for the selected server.',
+                  child: paneSnapshots.isEmpty
+                      ? Text(
+                          'No remembered workspace yet. Open a project and the layout will appear here.',
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(color: surfaces.muted),
+                        )
+                      : Wrap(
+                          spacing: AppSpacing.sm,
+                          runSpacing: AppSpacing.sm,
+                          children: paneSnapshots
+                              .map((pane) => _HomePaneCard(pane: pane))
+                              .toList(growable: false),
+                        ),
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                _HomeDetailSection(
+                  title: 'Running Now',
+                  subtitle:
+                      'Best-effort activity from the projects in your remembered workspace.',
+                  child: activityLoading
+                      ? const Padding(
+                          padding: EdgeInsets.symmetric(
+                            vertical: AppSpacing.md,
+                          ),
+                          child: Center(child: CircularProgressIndicator()),
+                        )
+                      : runningSessions.isEmpty
+                      ? Text(
+                          'No active agent sessions were found in the remembered projects.',
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(color: surfaces.muted),
+                        )
+                      : Column(
+                          children: runningSessions
+                              .map(
+                                (session) => Padding(
+                                  padding: const EdgeInsets.only(
+                                    bottom: AppSpacing.sm,
+                                  ),
+                                  child: _HomeRunningSessionCard(
+                                    session: session,
+                                  ),
+                                ),
+                              )
+                              .toList(growable: false),
+                        ),
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                _HomeDetailSection(
+                  title: 'Projects',
+                  subtitle:
+                      'Jump into a project directly, or add another one from the server like a quick action tile.',
+                  child: Wrap(
+                    spacing: AppSpacing.sm,
+                    runSpacing: AppSpacing.sm,
+                    children: <Widget>[
+                      _HomeAddProjectTile(onTap: onOpenProjectPicker),
+                      ...projectTargets.map(
+                        (target) => ActionChip(
+                          avatar: const Icon(Icons.folder_outlined, size: 18),
+                          label: Text(target.title),
+                          onPressed: onOpenProject == null
+                              ? null
+                              : () => onOpenProject!(target),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeServerDetailIdentity extends StatelessWidget {
+  const _HomeServerDetailIdentity({
+    required this.profile,
+    required this.report,
+    required this.meta,
+  });
+
+  final ServerProfile profile;
+  final ServerProbeReport? report;
+  final List<_ServerMetaItem> meta;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Expanded(
+              child: Text(
+                profile.effectiveLabel,
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            _ServerStatusBadge(report: report),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          profile.normalizedBaseUrl,
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge?.copyWith(color: surfaces.muted),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Wrap(
+          spacing: AppSpacing.xs,
+          runSpacing: AppSpacing.xs,
+          children: meta
+              .map(
+                (item) => _ServerMetaBadge(
+                  icon: item.icon,
+                  label: item.label,
+                  tint: item.tint,
+                ),
+              )
+              .toList(growable: false),
+        ),
+      ],
+    );
+  }
+}
+
+class _HomeServerDetailActions extends StatelessWidget {
+  const _HomeServerDetailActions({
+    required this.profileId,
+    required this.paneCount,
+    required this.onResumeWorkspace,
+    required this.onEditServer,
+  });
+
+  final String profileId;
+  final int paneCount;
+  final VoidCallback? onResumeWorkspace;
+  final VoidCallback? onEditServer;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: AppSpacing.sm,
+      runSpacing: AppSpacing.sm,
+      alignment: WrapAlignment.end,
+      children: <Widget>[
+        FilledButton.icon(
+          key: ValueKey<String>('home-server-resume-button-$profileId'),
+          onPressed: onResumeWorkspace,
+          icon: const Icon(Icons.play_arrow_rounded),
+          label: Text(
+            paneCount > 1 ? 'Resume $paneCount Panes' : 'Resume Workspace',
+          ),
+        ),
+        OutlinedButton.icon(
+          onPressed: onEditServer,
+          icon: const Icon(Icons.edit_outlined),
+          label: const Text('Edit Server'),
+        ),
+      ],
+    );
+  }
+}
+
+class _HomeSectionCard extends StatelessWidget {
+  const _HomeSectionCard({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: surfaces.panelRaised.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
+        border: Border.all(color: surfaces.lineSoft),
+      ),
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      child: child,
+    );
+  }
+}
+
+class _HomeDetailSection extends StatelessWidget {
+  const _HomeDetailSection({
+    required this.title,
+    required this.subtitle,
+    required this.child,
+  });
+
+  final String title;
+  final String subtitle;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(title, style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: AppSpacing.xxs),
+        Text(
+          subtitle,
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        child,
+      ],
+    );
+  }
+}
+
+class _HomePaneCard extends StatelessWidget {
+  const _HomePaneCard({required this.pane});
+
+  final _HomePaneSnapshot pane;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return Container(
+      key: ValueKey<String>('home-pane-card-${pane.paneId}'),
+      width: 240,
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: pane.active
+            ? Color.alphaBlend(
+                Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
+                surfaces.panel,
+              )
+            : surfaces.panel,
+        borderRadius: BorderRadius.circular(AppSpacing.lg),
+        border: Border.all(
+          color: pane.active
+              ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.42)
+              : surfaces.lineSoft,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  pane.label,
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: surfaces.muted,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              if (pane.active)
+                _ServerMetaBadge(
+                  icon: Icons.radio_button_checked_rounded,
+                  label: 'Active',
+                  tint: Theme.of(context).colorScheme.primary,
                 ),
             ],
           ),
-          const SizedBox(height: AppSpacing.md),
-          if (recentProjects.isEmpty)
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            pane.projectLabel,
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            pane.directory,
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            pane.sessionTitle,
+            style: Theme.of(context).textTheme.bodyMedium,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          if ((pane.status ?? '').trim().isNotEmpty) ...<Widget>[
+            const SizedBox(height: AppSpacing.sm),
+            _ServerMetaBadge(
+              icon: Icons.timelapse_rounded,
+              label: _statusTextForSession(pane.status),
+              tint: _sessionStatusTint(context, pane.status),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _HomeRunningSessionCard extends StatelessWidget {
+  const _HomeRunningSessionCard({required this.session});
+
+  final _HomeRunningSession session;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return Container(
+      key: ValueKey<String>('home-running-session-${session.sessionId}'),
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: surfaces.panel,
+        borderRadius: BorderRadius.circular(AppSpacing.lg),
+        border: Border.all(color: surfaces.lineSoft),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      session.sessionTitle,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xxs),
+                    Text(
+                      '${session.projectLabel}  •  ${session.directory}',
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
+                    ),
+                  ],
+                ),
+              ),
+              _ServerMetaBadge(
+                icon: Icons.bolt_rounded,
+                label: _statusTextForSession(session.status),
+                tint: _sessionStatusTint(context, session.status),
+              ),
+            ],
+          ),
+          if (session.totalTodoCount > 0) ...<Widget>[
+            const SizedBox(height: AppSpacing.sm),
+            LinearProgressIndicator(
+              value: session.completedTodoCount / session.totalTodoCount,
+              minHeight: 6,
+              borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
+            ),
+            const SizedBox(height: AppSpacing.xs),
             Text(
-              'No recent projects yet.',
+              '${session.completedTodoCount}/${session.totalTodoCount} todos complete',
               style: Theme.of(
                 context,
-              ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
-            )
-          else
-            Wrap(
-              spacing: AppSpacing.sm,
-              runSpacing: AppSpacing.sm,
-              children: recentProjects
-                  .take(8)
-                  .map(
-                    (target) => ActionChip(
-                      label: Text(target.label),
-                      avatar: const Icon(Icons.folder_outlined, size: 18),
-                      onPressed: selectedProfile == null
-                          ? null
-                          : () => onOpenProject(target),
-                    ),
-                  )
-                  .toList(growable: false),
+              ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
             ),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+class _HomeAddProjectTile extends StatelessWidget {
+  const _HomeAddProjectTile({required this.onTap});
+
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final enabled = onTap != null;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        key: const ValueKey<String>('home-server-project-add-button'),
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppSpacing.lg),
+        child: Ink(
+          width: 56,
+          height: 56,
+          decoration: BoxDecoration(
+            color: enabled
+                ? surfaces.panel
+                : surfaces.panel.withValues(alpha: 0.6),
+            borderRadius: BorderRadius.circular(AppSpacing.lg),
+            border: Border.all(
+              color: enabled
+                  ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.4)
+                  : surfaces.lineSoft,
+            ),
+          ),
+          child: Icon(
+            Icons.add_rounded,
+            color: enabled
+                ? Theme.of(context).colorScheme.primary
+                : surfaces.muted,
+          ),
+        ),
       ),
     );
   }
@@ -606,6 +2034,8 @@ class _ServerManagementCard extends StatelessWidget {
     required this.onDelete,
     required this.onMoveUp,
     required this.onMoveDown,
+    this.keyNamespace = 'servers-sheet',
+    this.footer,
     super.key,
   });
 
@@ -621,6 +2051,8 @@ class _ServerManagementCard extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback? onMoveUp;
   final VoidCallback? onMoveDown;
+  final String keyNamespace;
+  final Widget? footer;
 
   @override
   Widget build(BuildContext context) {
@@ -712,66 +2144,116 @@ class _ServerManagementCard extends StatelessWidget {
                       )
                       .toList(growable: false),
                 ),
+                if (footer != null) ...<Widget>[
+                  const SizedBox(height: AppSpacing.sm),
+                  footer!,
+                ],
                 const SizedBox(height: AppSpacing.sm),
-                Row(
-                  children: <Widget>[
-                    TextButton.icon(
-                      key: ValueKey<String>(
-                        'servers-sheet-select-${profile.id}',
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final compact = constraints.maxWidth < 560;
+                    final actionButtons = <Widget>[
+                      IconButton(
+                        key: ValueKey<String>(
+                          '$keyNamespace-refresh-${profile.id}',
+                        ),
+                        tooltip: 'Refresh status',
+                        onPressed: isRefreshing ? null : onRefresh,
+                        icon: isRefreshing
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.refresh_rounded),
                       ),
-                      onPressed: onSelect,
-                      icon: Icon(
-                        selected
-                            ? Icons.check_circle_rounded
-                            : Icons.radio_button_unchecked_rounded,
+                      IconButton(
+                        key: ValueKey<String>(
+                          '$keyNamespace-move-up-${profile.id}',
+                        ),
+                        tooltip: 'Move up',
+                        onPressed: onMoveUp,
+                        icon: const Icon(Icons.arrow_upward_rounded),
                       ),
-                      label: Text(selected ? 'Selected' : 'Use This Server'),
-                    ),
-                    const Spacer(),
-                    IconButton(
-                      key: ValueKey<String>(
-                        'servers-sheet-refresh-${profile.id}',
+                      IconButton(
+                        key: ValueKey<String>(
+                          '$keyNamespace-move-down-${profile.id}',
+                        ),
+                        tooltip: 'Move down',
+                        onPressed: onMoveDown,
+                        icon: const Icon(Icons.arrow_downward_rounded),
                       ),
-                      tooltip: 'Refresh status',
-                      onPressed: isRefreshing ? null : onRefresh,
-                      icon: isRefreshing
-                          ? const SizedBox.square(
-                              dimension: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.refresh_rounded),
-                    ),
-                    IconButton(
-                      key: ValueKey<String>(
-                        'servers-sheet-move-up-${profile.id}',
+                      IconButton(
+                        key: ValueKey<String>(
+                          '$keyNamespace-edit-${profile.id}',
+                        ),
+                        tooltip: 'Edit server',
+                        onPressed: onEdit,
+                        icon: const Icon(Icons.edit_outlined),
                       ),
-                      tooltip: 'Move up',
-                      onPressed: onMoveUp,
-                      icon: const Icon(Icons.arrow_upward_rounded),
-                    ),
-                    IconButton(
-                      key: ValueKey<String>(
-                        'servers-sheet-move-down-${profile.id}',
+                      IconButton(
+                        key: ValueKey<String>(
+                          '$keyNamespace-delete-${profile.id}',
+                        ),
+                        tooltip: 'Delete server',
+                        onPressed: onDelete,
+                        icon: const Icon(Icons.delete_outline_rounded),
                       ),
-                      tooltip: 'Move down',
-                      onPressed: onMoveDown,
-                      icon: const Icon(Icons.arrow_downward_rounded),
-                    ),
-                    IconButton(
-                      key: ValueKey<String>('servers-sheet-edit-${profile.id}'),
-                      tooltip: 'Edit server',
-                      onPressed: onEdit,
-                      icon: const Icon(Icons.edit_outlined),
-                    ),
-                    IconButton(
-                      key: ValueKey<String>(
-                        'servers-sheet-delete-${profile.id}',
-                      ),
-                      tooltip: 'Delete server',
-                      onPressed: onDelete,
-                      icon: const Icon(Icons.delete_outline_rounded),
-                    ),
-                  ],
+                    ];
+                    if (compact) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          TextButton.icon(
+                            key: ValueKey<String>(
+                              '$keyNamespace-select-${profile.id}',
+                            ),
+                            onPressed: onSelect,
+                            icon: Icon(
+                              selected
+                                  ? Icons.check_circle_rounded
+                                  : Icons.radio_button_unchecked_rounded,
+                            ),
+                            label: Text(
+                              selected ? 'Selected' : 'Use This Server',
+                            ),
+                          ),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: Wrap(
+                              spacing: AppSpacing.xs,
+                              children: actionButtons,
+                            ),
+                          ),
+                        ],
+                      );
+                    }
+                    return Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: TextButton.icon(
+                              key: ValueKey<String>(
+                                '$keyNamespace-select-${profile.id}',
+                              ),
+                              onPressed: onSelect,
+                              icon: Icon(
+                                selected
+                                    ? Icons.check_circle_rounded
+                                    : Icons.radio_button_unchecked_rounded,
+                              ),
+                              label: Text(
+                                selected ? 'Selected' : 'Use This Server',
+                              ),
+                            ),
+                          ),
+                        ),
+                        ...actionButtons,
+                      ],
+                    );
+                  },
                 ),
               ],
             ),
@@ -1142,6 +2624,35 @@ Color _statusColor(BuildContext context, ServerProbeReport? report) {
     ConnectionProbeClassification.specFetchFailure => surfaces.warning,
     ConnectionProbeClassification.connectivityFailure => surfaces.danger,
     null => surfaces.muted,
+  };
+}
+
+String _statusTextForSession(String? status) {
+  final normalized = status?.trim().toLowerCase() ?? 'idle';
+  return switch (normalized) {
+    'running' => 'Running',
+    'completed' => 'Completed',
+    'error' => 'Error',
+    'pending' => 'Pending',
+    'queued' => 'Queued',
+    'starting' => 'Starting',
+    'steering' => 'Steering',
+    'waiting' => 'Waiting',
+    'idle' => 'Idle',
+    _ =>
+      normalized.isEmpty
+          ? 'Idle'
+          : '${normalized[0].toUpperCase()}${normalized.substring(1)}',
+  };
+}
+
+Color _sessionStatusTint(BuildContext context, String? status) {
+  final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+  return switch (status?.trim().toLowerCase()) {
+    'completed' => surfaces.success,
+    'error' => surfaces.danger,
+    'idle' => surfaces.muted,
+    _ => Theme.of(context).colorScheme.primary,
   };
 }
 

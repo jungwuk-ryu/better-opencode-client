@@ -11,6 +11,7 @@ import '../core/persistence/stale_cache_store.dart';
 import '../features/projects/project_models.dart';
 import '../features/projects/project_store.dart';
 import '../features/web_parity/workspace_controller.dart';
+import '../features/web_parity/workspace_layout_store.dart';
 
 typedef WorkspaceControllerFactory =
     WorkspaceController Function({
@@ -67,11 +68,14 @@ class WebParityAppController extends ChangeNotifier {
     ProjectStore? projectStore,
     StaleCacheStore? cacheStore,
     OpenCodeServerProbe? probeService,
+    WorkspacePaneLayoutStore? workspacePaneLayoutStore,
     WorkspaceControllerFactory? workspaceControllerFactory,
   }) : _profileStore = profileStore ?? ServerProfileStore(),
        _projectStore = projectStore ?? ProjectStore(),
        _cacheStore = cacheStore ?? StaleCacheStore(),
        _probeService = probeService ?? OpenCodeServerProbe(),
+       _workspacePaneLayoutStore =
+           workspacePaneLayoutStore ?? WorkspacePaneLayoutStore(),
        _workspaceControllerFactory =
            workspaceControllerFactory ?? _defaultWorkspaceControllerFactory;
 
@@ -100,12 +104,15 @@ class WebParityAppController extends ChangeNotifier {
   final ProjectStore _projectStore;
   final StaleCacheStore _cacheStore;
   final OpenCodeServerProbe _probeService;
+  final WorkspacePaneLayoutStore _workspacePaneLayoutStore;
   final WorkspaceControllerFactory _workspaceControllerFactory;
 
   bool _loading = true;
   List<ServerProfile> _profiles = const <ServerProfile>[];
   List<ProjectTarget> _recentProjects = const <ProjectTarget>[];
   Map<String, ServerProbeReport> _reports = const <String, ServerProbeReport>{};
+  Map<String, WorkspacePaneLayoutSnapshot> _workspacePaneLayoutsByStorageKey =
+      const <String, WorkspacePaneLayoutSnapshot>{};
   ServerProfile? _selectedProfile;
   bool _shellToolPartsExpanded = true;
   bool _timelineProgressDetailsVisible = false;
@@ -124,6 +131,8 @@ class WebParityAppController extends ChangeNotifier {
   List<ServerProfile> get profiles => _profiles;
   List<ProjectTarget> get recentProjects => _recentProjects;
   Map<String, ServerProbeReport> get reports => _reports;
+  Map<String, WorkspacePaneLayoutSnapshot>
+  get workspacePaneLayoutsByStorageKey => _workspacePaneLayoutsByStorageKey;
   ServerProfile? get selectedProfile => _selectedProfile;
   bool get shellToolPartsExpanded => _shellToolPartsExpanded;
   bool get timelineProgressDetailsVisible => _timelineProgressDetailsVisible;
@@ -157,6 +166,7 @@ class WebParityAppController extends ChangeNotifier {
     final profiles = await _profileStore.load();
     final recentProjects = await _projectStore.loadRecentProjects();
     final reports = await _loadCachedReports(profiles);
+    final workspacePaneLayouts = await _loadWorkspacePaneLayouts(profiles);
     final prefs = await SharedPreferences.getInstance();
     final selectedProfileId = prefs.getString(_selectedProfileKey);
     final shellToolPartsExpanded =
@@ -194,6 +204,7 @@ class WebParityAppController extends ChangeNotifier {
     _profiles = profiles;
     _recentProjects = recentProjects;
     _reports = reports;
+    _workspacePaneLayoutsByStorageKey = workspacePaneLayouts;
     _selectedProfile = selectedProfile;
     _shellToolPartsExpanded = shellToolPartsExpanded;
     _timelineProgressDetailsVisible = timelineProgressDetailsVisible;
@@ -326,13 +337,46 @@ class WebParityAppController extends ChangeNotifier {
   }
 
   Future<ServerProfile> saveProfile(ServerProfile profile) async {
+    final previousProfile = _profiles.cast<ServerProfile?>().firstWhere(
+      (item) => item?.id == profile.id,
+      orElse: () => null,
+    );
     final profiles = await _profileStore.upsertProfile(profile);
     final savedProfile = profiles.firstWhere(
       (item) => item.id == profile.id || item.storageKey == profile.storageKey,
       orElse: () => profile,
     );
+    if (previousProfile != null &&
+        previousProfile.storageKey != savedProfile.storageKey) {
+      await _workspacePaneLayoutStore.transfer(
+        fromServerStorageKey: previousProfile.storageKey,
+        toServerStorageKey: savedProfile.storageKey,
+      );
+      await _projectStore.transferLastWorkspace(
+        fromServerStorageKey: previousProfile.storageKey,
+        toServerStorageKey: savedProfile.storageKey,
+      );
+    }
     _profiles = profiles;
     _reports = _retainReportsForProfiles(profiles);
+    _workspacePaneLayoutsByStorageKey = _retainWorkspacePaneLayoutsForProfiles(
+      profiles,
+    );
+    if (previousProfile != null &&
+        previousProfile.storageKey != savedProfile.storageKey) {
+      final transferred = await _workspacePaneLayoutStore.load(
+        savedProfile.storageKey,
+      );
+      if (transferred != null) {
+        _workspacePaneLayoutsByStorageKey =
+            Map<String, WorkspacePaneLayoutSnapshot>.unmodifiable(
+              <String, WorkspacePaneLayoutSnapshot>{
+                ..._workspacePaneLayoutsByStorageKey,
+                savedProfile.storageKey: transferred,
+              },
+            );
+      }
+    }
     _selectedProfile = savedProfile;
     notifyListeners();
     await _persistSelectedProfile(savedProfile);
@@ -342,8 +386,12 @@ class WebParityAppController extends ChangeNotifier {
 
   Future<void> deleteServerProfile(ServerProfile profile) async {
     final profiles = await _profileStore.deleteProfile(profile.id);
+    await _workspacePaneLayoutStore.clear(profile.storageKey);
     _profiles = profiles;
     _reports = _retainReportsForProfiles(profiles);
+    _workspacePaneLayoutsByStorageKey = _retainWorkspacePaneLayoutsForProfiles(
+      profiles,
+    );
     final selectedId = _selectedProfile?.id;
     _selectedProfile = selectedId == null
         ? (profiles.isEmpty ? null : profiles.first)
@@ -445,6 +493,50 @@ class WebParityAppController extends ChangeNotifier {
     return controller;
   }
 
+  WorkspacePaneLayoutSnapshot? workspacePaneLayoutFor(ServerProfile? profile) {
+    if (profile == null) {
+      return null;
+    }
+    return _workspacePaneLayoutsByStorageKey[profile.storageKey];
+  }
+
+  Future<WorkspacePaneLayoutSnapshot?> ensureWorkspacePaneLayout(
+    ServerProfile profile,
+  ) async {
+    final existing = workspacePaneLayoutFor(profile);
+    if (existing != null) {
+      return existing;
+    }
+    final snapshot = await _workspacePaneLayoutStore.load(profile.storageKey);
+    if (snapshot == null) {
+      return null;
+    }
+    _workspacePaneLayoutsByStorageKey =
+        Map<String, WorkspacePaneLayoutSnapshot>.unmodifiable(
+          <String, WorkspacePaneLayoutSnapshot>{
+            ..._workspacePaneLayoutsByStorageKey,
+            profile.storageKey: snapshot,
+          },
+        );
+    notifyListeners();
+    return snapshot;
+  }
+
+  Future<void> persistWorkspacePaneLayout({
+    required ServerProfile profile,
+    required WorkspacePaneLayoutSnapshot snapshot,
+  }) async {
+    await _workspacePaneLayoutStore.save(profile.storageKey, snapshot);
+    _workspacePaneLayoutsByStorageKey =
+        Map<String, WorkspacePaneLayoutSnapshot>.unmodifiable(
+          <String, WorkspacePaneLayoutSnapshot>{
+            ..._workspacePaneLayoutsByStorageKey,
+            profile.storageKey: snapshot,
+          },
+        );
+    notifyListeners();
+  }
+
   String _workspaceControllerKey({
     required ServerProfile profile,
     required String directory,
@@ -518,6 +610,26 @@ class WebParityAppController extends ChangeNotifier {
     };
   }
 
+  Future<Map<String, WorkspacePaneLayoutSnapshot>> _loadWorkspacePaneLayouts(
+    List<ServerProfile> profiles,
+  ) async {
+    final entries = await Future.wait(
+      profiles.map((profile) async {
+        final snapshot = await _workspacePaneLayoutStore.load(
+          profile.storageKey,
+        );
+        return MapEntry<String, WorkspacePaneLayoutSnapshot?>(
+          profile.storageKey,
+          snapshot,
+        );
+      }),
+    );
+    return <String, WorkspacePaneLayoutSnapshot>{
+      for (final entry in entries)
+        if (entry.value != null) entry.key: entry.value!,
+    };
+  }
+
   @override
   void dispose() {
     for (final controller in _workspaceControllers.values) {
@@ -551,6 +663,15 @@ class WebParityAppController extends ChangeNotifier {
     final keys = profiles.map((profile) => profile.storageKey).toSet();
     return <String, ServerProbeReport>{
       for (final entry in _reports.entries)
+        if (keys.contains(entry.key)) entry.key: entry.value,
+    };
+  }
+
+  Map<String, WorkspacePaneLayoutSnapshot>
+  _retainWorkspacePaneLayoutsForProfiles(List<ServerProfile> profiles) {
+    final keys = profiles.map((profile) => profile.storageKey).toSet();
+    return <String, WorkspacePaneLayoutSnapshot>{
+      for (final entry in _workspacePaneLayoutsByStorageKey.entries)
         if (keys.contains(entry.key)) entry.key: entry.value,
     };
   }
