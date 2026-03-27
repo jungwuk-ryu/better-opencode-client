@@ -468,6 +468,74 @@ void main() {
     },
   );
 
+  testWidgets(
+    'desktop composer submits on enter and keeps shift enter for new lines',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      late _SubmittingRecordingWorkspaceController controllerInstance;
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              controllerInstance = _SubmittingRecordingWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+              return controllerInstance;
+            },
+      );
+      addTearDown(appController.dispose);
+
+      final navigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          navigatorKey: navigatorKey,
+          initialRoute: '/',
+          platform: TargetPlatform.macOS,
+        ),
+      );
+      navigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+      );
+      await tester.pumpAndSettle();
+
+      final textField = find.byKey(
+        const ValueKey<String>('composer-text-field'),
+      );
+      await tester.tap(textField);
+      await tester.pump();
+      await tester.enterText(textField, 'first line');
+      await tester.pump();
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pump();
+
+      expect(_composerText(tester), 'first line\n');
+      expect(controllerInstance.submittedPrompts, isEmpty);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(controllerInstance.submittedPrompts, <String>['first line']);
+      expect(_composerText(tester), isEmpty);
+    },
+  );
+
   testWidgets('keyboard shortcut opens workspace settings', (tester) async {
     tester.view.physicalSize = const Size(1600, 1000);
     tester.view.devicePixelRatio = 1;
@@ -2047,6 +2115,7 @@ class _WorkspaceRouteHarness extends StatelessWidget {
     this.navigatorObservers = const <NavigatorObserver>[],
     this.projectCatalogService,
     this.attachmentPicker,
+    this.platform,
   });
 
   final WebParityAppController controller;
@@ -2055,6 +2124,7 @@ class _WorkspaceRouteHarness extends StatelessWidget {
   final List<NavigatorObserver> navigatorObservers;
   final ProjectCatalogService? projectCatalogService;
   final Future<List<PromptAttachment>> Function()? attachmentPicker;
+  final TargetPlatform? platform;
 
   @override
   Widget build(BuildContext context) {
@@ -2063,7 +2133,7 @@ class _WorkspaceRouteHarness extends StatelessWidget {
       child: MaterialApp(
         navigatorKey: navigatorKey,
         navigatorObservers: navigatorObservers,
-        theme: AppTheme.dark(),
+        theme: AppTheme.dark().copyWith(platform: platform),
         initialRoute: initialRoute,
         onGenerateRoute: (settings) {
           final route = AppRouteData.parse(settings.name);
@@ -2455,6 +2525,27 @@ class _PaneMetadataWorkspaceController extends _RecordingWorkspaceController {
     }
     _todosBySession.remove(normalizedSessionId);
     notifyListeners();
+  }
+}
+
+class _SubmittingRecordingWorkspaceController
+    extends _RecordingWorkspaceController {
+  _SubmittingRecordingWorkspaceController({
+    required super.profile,
+    required super.directory,
+    super.initialSessionId,
+  });
+
+  final List<String> submittedPrompts = <String>[];
+
+  @override
+  Future<String?> submitPrompt(
+    String prompt, {
+    List<PromptAttachment> attachments = const <PromptAttachment>[],
+    WorkspacePromptDispatchMode? mode,
+  }) async {
+    submittedPrompts.add(prompt.trim());
+    return selectedSessionId;
   }
 }
 

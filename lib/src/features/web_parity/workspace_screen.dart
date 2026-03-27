@@ -11232,6 +11232,84 @@ class _PromptComposerState extends State<_PromptComposer> {
   bool get _canSubmit =>
       widget.controller.text.trim().isNotEmpty || widget.attachments.isNotEmpty;
 
+  bool _usesDesktopEnterToSubmit(TargetPlatform platform) {
+    switch (platform) {
+      case TargetPlatform.macOS:
+      case TargetPlatform.windows:
+      case TargetPlatform.linux:
+        return true;
+      case TargetPlatform.android:
+      case TargetPlatform.iOS:
+      case TargetPlatform.fuchsia:
+        return false;
+    }
+  }
+
+  bool get _hasActiveTextComposition {
+    final composing = widget.controller.value.composing;
+    return composing.isValid && !composing.isCollapsed;
+  }
+
+  bool _isPlainSubmitKey(KeyEvent event) {
+    if (event.logicalKey != LogicalKeyboardKey.enter &&
+        event.logicalKey != LogicalKeyboardKey.numpadEnter) {
+      return false;
+    }
+    final keyboard = HardwareKeyboard.instance;
+    return !keyboard.isShiftPressed &&
+        !keyboard.isAltPressed &&
+        !keyboard.isControlPressed &&
+        !keyboard.isMetaPressed;
+  }
+
+  bool _isShiftNewlineKey(KeyEvent event) {
+    if (event.logicalKey != LogicalKeyboardKey.enter &&
+        event.logicalKey != LogicalKeyboardKey.numpadEnter) {
+      return false;
+    }
+    final keyboard = HardwareKeyboard.instance;
+    return keyboard.isShiftPressed &&
+        !keyboard.isAltPressed &&
+        !keyboard.isControlPressed &&
+        !keyboard.isMetaPressed;
+  }
+
+  void _insertComposerNewLine() {
+    final value = widget.controller.value;
+    final fallbackSelection = TextSelection.collapsed(
+      offset: value.text.length,
+    );
+    final selection = value.selection.isValid
+        ? value.selection
+        : fallbackSelection;
+    final start = math.min(selection.start, selection.end);
+    final end = math.max(selection.start, selection.end);
+    final nextText = value.text.replaceRange(start, end, '\n');
+    final nextOffset = start + 1;
+    widget.controller.value = TextEditingValue(
+      text: nextText,
+      selection: TextSelection.collapsed(offset: nextOffset),
+      composing: TextRange.empty,
+    );
+  }
+
+  KeyEventResult _handleComposerKeyEvent(FocusNode node, KeyEvent event) {
+    if (!_usesDesktopEnterToSubmit(Theme.of(context).platform) ||
+        event is! KeyDownEvent ||
+        _hasActiveTextComposition) {
+      return KeyEventResult.ignored;
+    }
+    if (_isShiftNewlineKey(event)) {
+      _insertComposerNewLine();
+      return KeyEventResult.handled;
+    }
+    if (_isPlainSubmitKey(event)) {
+      unawaited(_handleSubmit());
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -11828,25 +11906,30 @@ class _PromptComposerState extends State<_PromptComposer> {
                     ),
                   ),
                 ],
-                TextField(
-                  key: widget.textFieldKey,
-                  controller: widget.controller,
-                  focusNode: _focusNode,
-                  minLines: isCompact ? 2 : 3,
-                  maxLines: isCompact ? 6 : 8,
-                  decoration: const InputDecoration(
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    filled: false,
-                    hintText: 'Ask anything...',
-                    contentPadding: EdgeInsets.zero,
+                Focus(
+                  canRequestFocus: false,
+                  skipTraversal: true,
+                  onKeyEvent: _handleComposerKeyEvent,
+                  child: TextField(
+                    key: widget.textFieldKey,
+                    controller: widget.controller,
+                    focusNode: _focusNode,
+                    minLines: isCompact ? 2 : 3,
+                    maxLines: isCompact ? 6 : 8,
+                    decoration: const InputDecoration(
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      filled: false,
+                      hintText: 'Ask anything...',
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyLarge?.copyWith(height: 1.55),
+                    onTap: widget.onActivateComposer,
+                    onSubmitted: (_) => _handleSubmit(),
                   ),
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyLarge?.copyWith(height: 1.55),
-                  onTap: widget.onActivateComposer,
-                  onSubmitted: (_) => _handleSubmit(),
                 ),
                 SizedBox(
                   height: density.inset(
