@@ -5311,6 +5311,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                           ),
                         );
                       },
+                      onAddProject: () {
+                        unawaited(_openProjectPickerShortcut());
+                      },
                       onNewSession: () => _createNewSession(controller),
                       onOpenSettings: () => _openWorkspaceSettingsSheet(
                         appController,
@@ -5379,6 +5382,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                           focusMessageId: messageId,
                         ),
                       );
+                    },
+                    onAddProject: () {
+                      unawaited(_openProjectPickerShortcut());
                     },
                     onNewSession: () => _createNewSession(controller),
                     onOpenSettings: () =>
@@ -10589,6 +10595,7 @@ class _WorkspaceSidebar extends StatefulWidget {
     required this.hoverPreviewStateForSession,
     required this.onPrefetchSessionHoverPreview,
     required this.onFocusSessionMessage,
+    required this.onAddProject,
     required this.onNewSession,
     required this.onOpenSettings,
   });
@@ -10616,6 +10623,7 @@ class _WorkspaceSidebar extends StatefulWidget {
   hoverPreviewStateForSession;
   final Future<void> Function(String sessionId) onPrefetchSessionHoverPreview;
   final void Function(String sessionId, String messageId) onFocusSessionMessage;
+  final VoidCallback onAddProject;
   final VoidCallback onNewSession;
   final VoidCallback onOpenSettings;
 
@@ -10811,6 +10819,14 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
                       );
                     },
                   ),
+                ),
+                IconButton(
+                  key: const ValueKey<String>(
+                    'workspace-sidebar-add-project-button',
+                  ),
+                  onPressed: widget.onAddProject,
+                  icon: const Icon(Icons.add_rounded),
+                  tooltip: 'Add project',
                 ),
                 IconButton(
                   key: const ValueKey<String>(

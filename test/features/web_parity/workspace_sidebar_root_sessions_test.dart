@@ -560,6 +560,69 @@ void main() {
     expect(appController.themePreset, AppThemePreset.amoled);
   });
 
+  testWidgets(
+    'sidebar add project button opens the home project picker sheet',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              return _SidebarWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+            },
+      );
+      addTearDown(appController.dispose);
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          initialRoute: buildWorkspaceRoute(
+            '/workspace/demo',
+            sessionId: 'ses_1',
+          ),
+          projectCatalogService: _FakeProjectCatalogService(),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 220));
+
+      expect(
+        find.byKey(
+          const ValueKey<String>('workspace-sidebar-add-project-button'),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('workspace-sidebar-add-project-button'),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 240));
+
+      expect(find.text('Open Project'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('project-picker-manual-path-field')),
+        findsOneWidget,
+      );
+      expect(find.text('Design System'), findsOneWidget);
+    },
+  );
+
   testWidgets('project tile context menu edits and removes projects', (
     tester,
   ) async {
@@ -1296,6 +1359,62 @@ class _EditableSidebarWorkspaceController extends _SidebarWorkspaceController {
 }
 
 class _FakeProjectCatalogService extends ProjectCatalogService {
+  @override
+  Future<ProjectCatalog> fetchCatalog(ServerProfile profile) async {
+    return const ProjectCatalog(
+      currentProject: ProjectSummary(
+        id: 'demo',
+        directory: '/workspace/demo',
+        worktree: '/workspace/demo',
+        name: 'Demo',
+        vcs: 'git',
+        updatedAt: null,
+      ),
+      projects: <ProjectSummary>[
+        ProjectSummary(
+          id: 'demo',
+          directory: '/workspace/demo',
+          worktree: '/workspace/demo',
+          name: 'Demo',
+          vcs: 'git',
+          updatedAt: null,
+        ),
+        ProjectSummary(
+          id: 'design-system',
+          directory: '/workspace/design-system',
+          worktree: '/workspace/design-system',
+          name: 'Design System',
+          vcs: 'git',
+          updatedAt: null,
+        ),
+      ],
+      pathInfo: PathInfo(
+        home: '/home/tester',
+        state: '/state',
+        config: '/config',
+        worktree: '/workspace/demo',
+        directory: '/workspace/demo',
+      ),
+      vcsInfo: VcsInfo(branch: 'main'),
+    );
+  }
+
+  @override
+  Future<ProjectTarget> inspectDirectory({
+    required ServerProfile profile,
+    required String directory,
+  }) async {
+    final normalized = directory.trim().isEmpty ? '/workspace/demo' : directory;
+    return ProjectTarget(
+      id: normalized,
+      directory: normalized,
+      label: projectDisplayLabel(normalized),
+      source: 'manual',
+      vcs: 'git',
+      branch: 'main',
+    );
+  }
+
   @override
   Future<ProjectTarget> updateProject({
     required ServerProfile profile,
