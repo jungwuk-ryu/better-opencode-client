@@ -171,6 +171,62 @@ void main() {
       findsNothing,
     );
   });
+
+  testWidgets('permission dock replaces composer and submits responses', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final workspaceController = _PermissionDockWorkspaceController(
+      profile: profile,
+      directory: '/workspace/demo',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceController: workspaceController,
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_root',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.text('Permission Request'), findsOneWidget);
+    expect(find.text('bash'), findsOneWidget);
+    expect(find.text('npm test'), findsOneWidget);
+    expect(find.text('Ask anything...'), findsNothing);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('permission-dock-allow-always')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(
+      workspaceController.permissionReplies,
+      <({String requestId, String reply})>[
+        (requestId: 'per_1', reply: 'always'),
+      ],
+    );
+    expect(find.text('Ask anything...'), findsOneWidget);
+    expect(find.text('Permission Request'), findsNothing);
+  });
 }
 
 class _WorkspaceRouteHarness extends StatelessWidget {
@@ -382,6 +438,124 @@ class _QuestionDockWorkspaceController extends WorkspaceController {
 
   @override
   Future<void> rejectQuestion(String requestId) async {
+    _request = null;
+    notifyListeners();
+  }
+}
+
+class _PermissionDockWorkspaceController extends WorkspaceController {
+  _PermissionDockWorkspaceController({
+    required super.profile,
+    required super.directory,
+  });
+
+  static const ProjectTarget _projectTarget = ProjectTarget(
+    directory: '/workspace/demo',
+    label: 'Demo',
+    source: 'server',
+    vcs: 'git',
+    branch: 'main',
+  );
+
+  static final SessionSummary _rootSession = SessionSummary(
+    id: 'ses_root',
+    directory: '/workspace/demo',
+    title: 'Design initial architecture',
+    version: '1',
+    updatedAt: DateTime.fromMillisecondsSinceEpoch(1710000001000),
+  );
+
+  static final SessionSummary _childSession = SessionSummary(
+    id: 'ses_child',
+    directory: '/workspace/demo',
+    title: 'Sub-agent permission',
+    version: '1',
+    updatedAt: DateTime.fromMillisecondsSinceEpoch(1710000002000),
+    parentId: 'ses_root',
+  );
+
+  static final List<ChatMessage> _messages = <ChatMessage>[
+    ChatMessage(
+      info: const ChatMessageInfo(
+        id: 'msg_assistant_permission',
+        role: 'assistant',
+        sessionId: 'ses_root',
+      ),
+      parts: const <ChatPart>[
+        ChatPart(
+          id: 'part_permission_pending',
+          type: 'tool',
+          tool: 'permission',
+          metadata: <String, Object?>{
+            'state': <String, Object?>{
+              'status': 'pending',
+              'input': <String, Object?>{
+                'permission': 'bash',
+                'patterns': <Object?>['npm test'],
+              },
+            },
+          },
+        ),
+      ],
+    ),
+  ];
+
+  bool _loading = true;
+  PermissionRequestSummary? _request = const PermissionRequestSummary(
+    id: 'per_1',
+    sessionId: 'ses_child',
+    permission: 'bash',
+    patterns: <String>['npm test'],
+  );
+  final List<({String requestId, String reply})> permissionReplies =
+      <({String requestId, String reply})>[];
+
+  @override
+  bool get loading => _loading;
+
+  @override
+  ProjectTarget? get project => _projectTarget;
+
+  @override
+  List<ProjectTarget> get availableProjects => const <ProjectTarget>[
+    _projectTarget,
+  ];
+
+  @override
+  List<SessionSummary> get sessions => <SessionSummary>[
+    _rootSession,
+    _childSession,
+  ];
+
+  @override
+  List<SessionSummary> get visibleSessions => <SessionSummary>[_rootSession];
+
+  @override
+  String? get selectedSessionId => 'ses_root';
+
+  @override
+  SessionSummary? get selectedSession => _rootSession;
+
+  @override
+  List<ChatMessage> get messages => _messages;
+
+  @override
+  PendingRequestBundle get pendingRequests => PendingRequestBundle(
+    questions: const <QuestionRequestSummary>[],
+    permissions: _request == null
+        ? const <PermissionRequestSummary>[]
+        : <PermissionRequestSummary>[_request!],
+  );
+
+  @override
+  Future<void> load() async {
+    _loading = false;
+    notifyListeners();
+  }
+
+  @override
+  Future<void> replyToPermission(String requestId, String reply) async {
+    permissionReplies.add((requestId: requestId, reply: reply));
     _request = null;
     notifyListeners();
   }

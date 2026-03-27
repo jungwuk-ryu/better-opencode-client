@@ -195,6 +195,8 @@ class WebParityWorkspaceScreen extends StatefulWidget {
 class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   static const int _maxDesktopSessionPanes = 8;
   static const String _composerDraftKeyPrefix = 'workspace.composerDraft';
+  static const String _composerHistoryKeyPrefix = 'workspace.composerHistory';
+  static const int _maxComposerHistoryEntries = 100;
   static const Duration _composerDraftPersistDebounce = Duration(
     milliseconds: 250,
   );
@@ -242,6 +244,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   Timer? _composerDraftPersistTimer;
   Map<String, String?> _pendingComposerDraftByStorageKey =
       const <String, String?>{};
+  Map<String, List<String>> _composerHistoryByScope =
+      const <String, List<String>>{};
+  Set<String> _loadedComposerHistoryScopeKeys = const <String>{};
   Map<String, int> _composerDraftRevisionByScope = const <String, int>{};
   Map<String, int> _promptComposerFocusTokensByScope = const <String, int>{};
   int _sessionPaneSequence = 0;
@@ -607,6 +612,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   void _activateComposerScope(String scopeKey) {
     if (_activeComposerScopeKey == scopeKey) {
       unawaited(_restorePersistedComposerDraft(scopeKey));
+      unawaited(_restorePersistedComposerHistory(scopeKey));
       return;
     }
     _persistActiveComposerScope();
@@ -625,6 +631,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       composing: TextRange.empty,
     );
     unawaited(_restorePersistedComposerDraft(scopeKey));
+    unawaited(_restorePersistedComposerHistory(scopeKey));
   }
 
   void _syncComposerScopeForController(WorkspaceController controller) {
@@ -682,6 +689,103 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         );
       }
     });
+  }
+
+  String _composerHistoryStorageKey(
+    String profileStorageKey,
+    String scopeKey,
+  ) => '$_composerHistoryKeyPrefix::$profileStorageKey::$scopeKey';
+
+  List<String> _composerHistoryForScope(String scopeKey) {
+    return _composerHistoryByScope[scopeKey] ?? const <String>[];
+  }
+
+  void _setComposerHistoryForScope(String scopeKey, List<String> entries) {
+    final nextEntries = List<String>.unmodifiable(entries);
+    final updated = Map<String, List<String>>.from(_composerHistoryByScope);
+    if (nextEntries.isEmpty) {
+      updated.remove(scopeKey);
+    } else {
+      updated[scopeKey] = nextEntries;
+    }
+    _composerHistoryByScope = Map<String, List<String>>.unmodifiable(updated);
+  }
+
+  Future<void> _persistComposerHistoryForScope(String scopeKey) async {
+    final profile = _profile;
+    if (profile == null) {
+      return;
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final storageKey = _composerHistoryStorageKey(profile.storageKey, scopeKey);
+    final entries = _composerHistoryForScope(scopeKey);
+    if (entries.isEmpty) {
+      await prefs.remove(storageKey);
+      return;
+    }
+    await prefs.setStringList(storageKey, entries);
+  }
+
+  Future<void> _restorePersistedComposerHistory(String scopeKey) async {
+    final profile = _profile;
+    if (profile == null || _loadedComposerHistoryScopeKeys.contains(scopeKey)) {
+      return;
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final entries = prefs.getStringList(
+      _composerHistoryStorageKey(profile.storageKey, scopeKey),
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      final loaded = Set<String>.from(_loadedComposerHistoryScopeKeys)
+        ..add(scopeKey);
+      _loadedComposerHistoryScopeKeys = Set<String>.unmodifiable(loaded);
+      if (entries == null || entries.isEmpty) {
+        return;
+      }
+      _setComposerHistoryForScope(
+        scopeKey,
+        entries
+            .map((item) => item.trimRight())
+            .where((item) => item.trim().isNotEmpty)
+            .take(_maxComposerHistoryEntries)
+            .toList(growable: false),
+      );
+    });
+  }
+
+  Future<void> _appendComposerHistoryEntry(
+    String scopeKey,
+    String draft,
+  ) async {
+    final trimmed = draft.trim();
+    if (trimmed.isEmpty) {
+      return;
+    }
+    final current = _composerHistoryForScope(scopeKey);
+    final next = <String>[trimmed];
+    for (final entry in current) {
+      if (entry == trimmed) {
+        continue;
+      }
+      next.add(entry);
+      if (next.length >= _maxComposerHistoryEntries) {
+        break;
+      }
+    }
+    if (listEquals(current, next)) {
+      return;
+    }
+    if (mounted) {
+      setState(() {
+        _setComposerHistoryForScope(scopeKey, next);
+      });
+    } else {
+      _setComposerHistoryForScope(scopeKey, next);
+    }
+    await _persistComposerHistoryForScope(scopeKey);
   }
 
   void _handleActiveWorkspaceControllerChanged() {
@@ -2656,6 +2760,70 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     }());
   }
 
+  Future<void> _togglePermissionAutoAcceptForController(
+    WorkspaceController controller, {
+    required String? sessionId,
+  }) async {
+    try {
+      final enabled = await controller.togglePermissionAutoAcceptForSession(
+        sessionId,
+      );
+      if (!mounted) {
+        return;
+      }
+      final targetLabel = sessionId == null || sessionId.trim().isEmpty
+          ? 'this project'
+          : 'this session';
+      _showSnackBar(
+        enabled
+            ? 'Permission auto-accept enabled for $targetLabel.'
+            : 'Permission auto-accept disabled for $targetLabel.',
+        tone: enabled ? AppSnackBarTone.success : AppSnackBarTone.info,
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      _showSnackBar(
+        'Failed to update permission auto-accept: $error',
+        tone: AppSnackBarTone.danger,
+      );
+    }
+  }
+
+  Future<void> _toggleSelectedPermissionAutoAccept() async {
+    final controller = _controller;
+    if (controller == null) {
+      return;
+    }
+    await _togglePermissionAutoAcceptForController(
+      controller,
+      sessionId: controller.selectedSessionId,
+    );
+  }
+
+  Future<void> _togglePermissionAutoAcceptForPane(
+    _WorkspacePaneViewModel paneViewModel,
+  ) async {
+    final scopeKey = _composerScopeKeyForPane(paneViewModel);
+    if (_activeComposerScopeKey == scopeKey &&
+        _activeDesktopSessionPaneId == paneViewModel.pane.id) {
+      await _togglePermissionAutoAcceptForController(
+        paneViewModel.controller,
+        sessionId: paneViewModel.pane.sessionId,
+      );
+      return;
+    }
+    final controller = await _activatePaneComposer(paneViewModel);
+    if (!mounted || controller == null) {
+      return;
+    }
+    await _togglePermissionAutoAcceptForController(
+      controller,
+      sessionId: paneViewModel.pane.sessionId,
+    );
+  }
+
   Future<void> _submitPrompt(WorkspacePromptDispatchMode? mode) async {
     final controller = _controller;
     final scopeKey = _activeComposerScopeKey;
@@ -2710,6 +2878,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         attachments: attachments,
         mode: effectiveMode,
       );
+      await _appendComposerHistoryEntry(scopeKey, draft);
     } catch (error) {
       if (!mounted) {
         return;
@@ -3382,6 +3551,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     final questionRequest = controller.currentQuestionRequestForSession(
       sessionId,
     );
+    final permissionRequest = controller.currentPermissionRequestForSession(
+      sessionId,
+    );
 
     if (sessionId == null && controller.loading) {
       return Container(
@@ -3399,7 +3571,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       return const SizedBox.shrink();
     }
 
-    if (questionRequest != null) {
+    if (questionRequest != null || permissionRequest != null) {
       return const SizedBox.shrink();
     }
 
@@ -3435,10 +3607,16 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       selectedReasoning: controller.selectedReasoning,
       reasoningValues: controller.availableReasoningValues,
       customCommands: controller.composerCommands,
+      historyEntries: _composerHistoryForScope(scopeKey),
+      permissionAutoAccepting: controller.autoAcceptsPermissionForSession(
+        sessionId,
+      ),
       onSelectAgent: (value) => _selectAgentForPane(paneViewModel, value),
       onSelectModel: (value) => _selectModelForPane(paneViewModel, value),
       onSelectReasoning: (value) =>
           _selectReasoningForPane(paneViewModel, value),
+      onTogglePermissionAutoAccept: () =>
+          _togglePermissionAutoAcceptForPane(paneViewModel),
       onCreateSession: () => _createSessionFromPane(paneViewModel),
       onInterrupt: () => _interruptPaneSession(paneViewModel),
       onPickAttachments: () => _pickComposerAttachmentsForPane(paneViewModel),
@@ -3805,6 +3983,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                   attachments: _composerAttachmentsForScope(
                                     activeComposerScopeKey,
                                   ),
+                                  historyEntries: _composerHistoryForScope(
+                                    activeComposerScopeKey,
+                                  ),
                                   promptController: _composerControllerForScope(
                                     activeComposerScopeKey,
                                   ),
@@ -3887,6 +4068,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                   },
                                   onPickAttachments: _pickComposerAttachments,
                                   onRemoveAttachment: _removeComposerAttachment,
+                                  onTogglePermissionAutoAccept:
+                                      _toggleSelectedPermissionAutoAccept,
                                   inlineComposerBuilder: usePerPaneComposer
                                       ? (paneViewModel, selected, compact) =>
                                             _buildPaneComposer(
@@ -8453,6 +8636,7 @@ class _WorkspaceBody extends StatelessWidget {
     required this.interruptingPrompt,
     required this.pickingAttachments,
     required this.attachments,
+    required this.historyEntries,
     required this.promptController,
     required this.promptFocusRequestToken,
     required this.submittedDraftEpoch,
@@ -8480,6 +8664,7 @@ class _WorkspaceBody extends StatelessWidget {
     required this.onCloseSessionPane,
     required this.onPickAttachments,
     required this.onRemoveAttachment,
+    required this.onTogglePermissionAutoAccept,
     this.onShowSidePanel,
     this.inlineComposerBuilder,
     required this.onToggleTerminal,
@@ -8502,6 +8687,7 @@ class _WorkspaceBody extends StatelessWidget {
   final bool interruptingPrompt;
   final bool pickingAttachments;
   final List<PromptAttachment> attachments;
+  final List<String> historyEntries;
   final TextEditingController promptController;
   final int promptFocusRequestToken;
   final int submittedDraftEpoch;
@@ -8529,6 +8715,7 @@ class _WorkspaceBody extends StatelessWidget {
   final ValueChanged<String> onCloseSessionPane;
   final Future<void> Function() onPickAttachments;
   final ValueChanged<String> onRemoveAttachment;
+  final Future<void> Function() onTogglePermissionAutoAccept;
   final VoidCallback? onShowSidePanel;
   final Widget Function(
     _WorkspacePaneViewModel paneViewModel,
@@ -8548,6 +8735,7 @@ class _WorkspaceBody extends StatelessWidget {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
     final questionRequest = controller.currentQuestionRequest;
+    final permissionRequest = controller.currentPermissionRequest;
     final usesInlinePaneComposer = inlineComposerBuilder != null;
     final content = Column(
       children: <Widget>[
@@ -8603,6 +8791,13 @@ class _WorkspaceBody extends StatelessWidget {
             request: questionRequest,
             compact: compact,
           )
+        else if (!usesInlinePaneComposer &&
+            activeWorkspaceError == null &&
+            permissionRequest != null)
+          _PendingPermissionComposerNotice(
+            request: permissionRequest,
+            compact: compact,
+          )
         else if (!usesInlinePaneComposer && activeWorkspaceError == null)
           _PromptComposer(
             controller: promptController,
@@ -8628,9 +8823,14 @@ class _WorkspaceBody extends StatelessWidget {
             selectedReasoning: controller.selectedReasoning,
             reasoningValues: controller.availableReasoningValues,
             customCommands: controller.composerCommands,
+            historyEntries: historyEntries,
+            permissionAutoAccepting: controller.autoAcceptsPermissionForSession(
+              controller.selectedSessionId,
+            ),
             onSelectAgent: controller.selectAgent,
             onSelectModel: controller.selectModel,
             onSelectReasoning: controller.selectReasoning,
+            onTogglePermissionAutoAccept: onTogglePermissionAutoAccept,
             onCreateSession: onCreateSession,
             onInterrupt: onInterruptPrompt,
             onPickAttachments: onPickAttachments,
@@ -8952,8 +9152,14 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
     final paneQuestionRequest = controller.currentQuestionRequestForSession(
       sessionId,
     );
+    final panePermissionRequest = controller.currentPermissionRequestForSession(
+      sessionId,
+    );
     final paneTodos = controller.todosForSession(sessionId);
-    final paneTodoLive = paneTodos.isNotEmpty || paneQuestionRequest != null;
+    final paneTodoLive =
+        paneTodos.isNotEmpty ||
+        paneQuestionRequest != null ||
+        panePermissionRequest != null;
     final visuallySelected = selected && showSelectionChrome;
 
     Future<void> handleFocus() async {
@@ -9313,6 +9519,18 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                           onReply: controller.replyToQuestion,
                           onReject: controller.rejectQuestion,
                         ),
+                      if (sessionId != null && panePermissionRequest != null)
+                        _PermissionPromptDock(
+                          key: ValueKey<String>(
+                            'session-permission-dock-${pane.id}::$normalizedSessionId-${panePermissionRequest.id}',
+                          ),
+                          request: panePermissionRequest,
+                          compact: compact,
+                          responding: controller.permissionRequestResponding(
+                            panePermissionRequest.id,
+                          ),
+                          onDecide: controller.replyToPermission,
+                        ),
                       if (sessionId != null)
                         _SessionTodoDock(
                           key: ValueKey<String>(
@@ -9321,7 +9539,9 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                           sessionId: sessionId,
                           todos: paneTodos,
                           live: paneTodoLive,
-                          blocked: paneQuestionRequest != null,
+                          blocked:
+                              paneQuestionRequest != null ||
+                              panePermissionRequest != null,
                           compact: compact,
                           onClearStale: () =>
                               controller.clearTodosForSession(sessionId),
@@ -11152,9 +11372,12 @@ class _PromptComposer extends StatefulWidget {
     required this.selectedReasoning,
     required this.reasoningValues,
     required this.customCommands,
+    required this.historyEntries,
+    required this.permissionAutoAccepting,
     required this.onSelectAgent,
     required this.onSelectModel,
     required this.onSelectReasoning,
+    required this.onTogglePermissionAutoAccept,
     required this.onCreateSession,
     required this.onInterrupt,
     required this.onPickAttachments,
@@ -11196,9 +11419,12 @@ class _PromptComposer extends StatefulWidget {
   final String? selectedReasoning;
   final List<String> reasoningValues;
   final List<CommandDefinition> customCommands;
+  final List<String> historyEntries;
+  final bool permissionAutoAccepting;
   final ValueChanged<String?> onSelectAgent;
   final ValueChanged<String?> onSelectModel;
   final ValueChanged<String?> onSelectReasoning;
+  final Future<void> Function() onTogglePermissionAutoAccept;
   final Future<void> Function() onCreateSession;
   final Future<void> Function() onInterrupt;
   final Future<void> Function() onPickAttachments;
@@ -11228,6 +11454,9 @@ class _PromptComposerState extends State<_PromptComposer> {
   Timer? _restoredDraftGuardTimer;
   String? _guardedRestoredDraft;
   bool _clearingRestoredDraft = false;
+  int _historyIndex = -1;
+  String? _savedHistoryDraft;
+  bool _applyingPromptHistory = false;
 
   bool get _canSubmit =>
       widget.controller.text.trim().isNotEmpty || widget.attachments.isNotEmpty;
@@ -11274,6 +11503,87 @@ class _PromptComposerState extends State<_PromptComposer> {
         !keyboard.isMetaPressed;
   }
 
+  bool _isPlainArrowHistoryKey(KeyEvent event) {
+    if (event.logicalKey != LogicalKeyboardKey.arrowUp &&
+        event.logicalKey != LogicalKeyboardKey.arrowDown) {
+      return false;
+    }
+    final keyboard = HardwareKeyboard.instance;
+    return !keyboard.isShiftPressed &&
+        !keyboard.isAltPressed &&
+        !keyboard.isControlPressed &&
+        !keyboard.isMetaPressed;
+  }
+
+  bool _canNavigatePromptHistory({required bool up}) {
+    if (widget.historyEntries.isEmpty) {
+      return false;
+    }
+    final selection = widget.controller.selection;
+    if (!selection.isValid || !selection.isCollapsed) {
+      return false;
+    }
+    final text = widget.controller.text;
+    final cursor = selection.baseOffset.clamp(0, text.length);
+    if (_historyIndex >= 0) {
+      return cursor == 0 || cursor == text.length;
+    }
+    if (!up) {
+      return false;
+    }
+    return cursor == 0 && text.isEmpty;
+  }
+
+  void _applyPromptHistoryEntry(String text, {required bool moveToStart}) {
+    _applyingPromptHistory = true;
+    widget.controller.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: moveToStart ? 0 : text.length),
+      composing: TextRange.empty,
+    );
+    _applyingPromptHistory = false;
+  }
+
+  bool _navigatePromptHistory(bool up) {
+    final entries = widget.historyEntries;
+    if (entries.isEmpty) {
+      return false;
+    }
+    if (up) {
+      if (_historyIndex == -1) {
+        _savedHistoryDraft = widget.controller.text;
+        _historyIndex = 0;
+        _applyPromptHistoryEntry(entries.first, moveToStart: true);
+        return true;
+      }
+      if (_historyIndex < entries.length - 1) {
+        _historyIndex += 1;
+        _applyPromptHistoryEntry(entries[_historyIndex], moveToStart: true);
+        return true;
+      }
+      return false;
+    }
+
+    if (_historyIndex > 0) {
+      _historyIndex -= 1;
+      _applyPromptHistoryEntry(entries[_historyIndex], moveToStart: false);
+      return true;
+    }
+    if (_historyIndex == 0) {
+      final restored = _savedHistoryDraft ?? '';
+      _historyIndex = -1;
+      _savedHistoryDraft = null;
+      _applyPromptHistoryEntry(restored, moveToStart: false);
+      return true;
+    }
+    return false;
+  }
+
+  void _resetPromptHistoryNavigation() {
+    _historyIndex = -1;
+    _savedHistoryDraft = null;
+  }
+
   void _insertComposerNewLine() {
     final value = widget.controller.value;
     final fallbackSelection = TextSelection.collapsed(
@@ -11298,6 +11608,12 @@ class _PromptComposerState extends State<_PromptComposer> {
         event is! KeyDownEvent ||
         _hasActiveTextComposition) {
       return KeyEventResult.ignored;
+    }
+    if (_isPlainArrowHistoryKey(event)) {
+      final up = event.logicalKey == LogicalKeyboardKey.arrowUp;
+      if (_canNavigatePromptHistory(up: up) && _navigatePromptHistory(up)) {
+        return KeyEventResult.handled;
+      }
     }
     if (_isShiftNewlineKey(event)) {
       _insertComposerNewLine();
@@ -11326,8 +11642,12 @@ class _PromptComposerState extends State<_PromptComposer> {
     if (oldWidget.submittedDraftEpoch != widget.submittedDraftEpoch) {
       _armRestoredDraftGuard(widget.recentSubmittedDraft);
     }
+    if (_historyIndex >= widget.historyEntries.length) {
+      _resetPromptHistoryNavigation();
+    }
     if (oldWidget.scopeKey != widget.scopeKey) {
       _clearRestoredDraftGuard();
+      _resetPromptHistoryNavigation();
       _dismissFocus();
     }
     if (oldWidget.focusRequestToken != widget.focusRequestToken) {
@@ -11352,6 +11672,12 @@ class _PromptComposerState extends State<_PromptComposer> {
     if (_clearingRestoredDraft) {
       return;
     }
+    if (_applyingPromptHistory) {
+      if (mounted) {
+        setState(() {});
+      }
+      return;
+    }
     final guardedDraft = _guardedRestoredDraft;
     final currentText = widget.controller.text;
     if (guardedDraft != null && currentText == guardedDraft) {
@@ -11366,6 +11692,12 @@ class _PromptComposerState extends State<_PromptComposer> {
     }
     if (guardedDraft != null && currentText.isNotEmpty) {
       _clearRestoredDraftGuard();
+    }
+    if (_historyIndex >= 0 && currentText != _savedHistoryDraft) {
+      // Keep the currently recalled prompt visible, but stop treating future
+      // navigation as part of the previous history traversal once the user edits.
+      _historyIndex = -1;
+      _savedHistoryDraft = null;
     }
     if (mounted) {
       setState(() {});
@@ -11477,6 +11809,14 @@ class _PromptComposerState extends State<_PromptComposer> {
           type: _ComposerSlashCommandType.builtin,
           action: _ComposerBuiltinSlashAction.reasoningPicker,
         ),
+      const _ComposerSlashCommand(
+        id: 'builtin.permissions',
+        trigger: 'permissions',
+        title: 'Toggle permission auto-accept',
+        description: 'Enable or disable auto-accept for this session',
+        type: _ComposerSlashCommandType.builtin,
+        action: _ComposerBuiltinSlashAction.permissionAutoAccept,
+      ),
       const _ComposerSlashCommand(
         id: 'builtin.terminal',
         trigger: 'terminal',
@@ -11686,6 +12026,9 @@ class _PromptComposerState extends State<_PromptComposer> {
                 : selection,
           );
         }
+        break;
+      case _ComposerBuiltinSlashAction.permissionAutoAccept:
+        await widget.onTogglePermissionAutoAccept();
         break;
       case _ComposerBuiltinSlashAction.terminal:
         await widget.onToggleTerminal();
@@ -11948,6 +12291,24 @@ class _PromptComposerState extends State<_PromptComposer> {
                               unawaited(widget.onPickAttachments());
                             },
                       busy: widget.pickingAttachments,
+                    ),
+                    SizedBox(
+                      width: density.inset(
+                        isCompact ? AppSpacing.xs : AppSpacing.sm,
+                      ),
+                    ),
+                    _ComposerIconButton(
+                      key: const ValueKey<String>(
+                        'composer-permissions-button',
+                      ),
+                      compact: isCompact,
+                      icon: widget.permissionAutoAccepting
+                          ? Icons.verified_user_rounded
+                          : Icons.policy_outlined,
+                      onTap: () {
+                        unawaited(widget.onTogglePermissionAutoAccept());
+                      },
+                      filled: widget.permissionAutoAccepting,
                     ),
                     SizedBox(
                       width: density.inset(
@@ -12305,6 +12666,7 @@ enum _ComposerBuiltinSlashAction {
   modelPicker,
   agentPicker,
   reasoningPicker,
+  permissionAutoAccept,
   terminal,
   reviewTab,
   filesTab,
@@ -12404,6 +12766,100 @@ class _PendingQuestionComposerNotice extends StatelessWidget {
                       ),
                       Text(
                         'Answer it in the session panel to continue.',
+                        maxLines: compact ? 2 : 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: surfaces.muted,
+                          height: 1.45,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PendingPermissionComposerNotice extends StatelessWidget {
+  const _PendingPermissionComposerNotice({
+    required this.request,
+    required this.compact,
+  });
+
+  final PermissionRequestSummary request;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final density = _workspaceDensity(context);
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        density.inset(compact ? AppSpacing.sm : AppSpacing.md),
+        density.inset(compact ? AppSpacing.xs : AppSpacing.sm),
+        density.inset(compact ? AppSpacing.sm : AppSpacing.md),
+        density.inset(compact ? AppSpacing.sm : AppSpacing.md),
+      ),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: density.maxContentWidth(920)),
+          child: Container(
+            padding: EdgeInsets.all(
+              density.inset(compact ? AppSpacing.sm : AppSpacing.md),
+            ),
+            decoration: BoxDecoration(
+              color: surfaces.panel,
+              borderRadius: BorderRadius.circular(compact ? 16 : 20),
+              border: Border.all(color: surfaces.lineSoft),
+            ),
+            child: Row(
+              children: <Widget>[
+                Container(
+                  width: compact ? 34 : 40,
+                  height: compact ? 34 : 40,
+                  decoration: BoxDecoration(
+                    color: surfaces.warning.withValues(alpha: 0.16),
+                    borderRadius: BorderRadius.circular(compact ? 12 : 14),
+                  ),
+                  child: Icon(
+                    Icons.policy_outlined,
+                    size: compact ? 18 : 20,
+                    color: surfaces.warning,
+                  ),
+                ),
+                SizedBox(
+                  width: density.inset(compact ? AppSpacing.sm : AppSpacing.md),
+                ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text(
+                        'Permission required in the active session',
+                        style:
+                            (compact
+                                    ? theme.textTheme.titleSmall
+                                    : theme.textTheme.titleMedium)
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                      SizedBox(
+                        height: density.inset(
+                          compact ? AppSpacing.xxs : AppSpacing.xs,
+                          min: 2,
+                        ),
+                      ),
+                      Text(
+                        request.permission.trim().isEmpty
+                            ? 'Approve or reject it in the session panel to continue.'
+                            : 'Approve or reject ${request.permission} in the session panel to continue.',
                         maxLines: compact ? 2 : 3,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.bodyMedium?.copyWith(
@@ -12962,6 +13418,212 @@ class _QuestionPromptDockState extends State<_QuestionPromptDock> {
                           : Text(_isLastQuestion ? 'Submit' : 'Next'),
                     ),
                   ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PermissionPromptDock extends StatelessWidget {
+  const _PermissionPromptDock({
+    required this.request,
+    required this.compact,
+    required this.responding,
+    required this.onDecide,
+    super.key,
+  });
+
+  final PermissionRequestSummary request;
+  final bool compact;
+  final bool responding;
+  final Future<void> Function(String requestId, String reply) onDecide;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final density = _workspaceDensity(context);
+    final patterns = request.patterns
+        .map((pattern) => pattern.trim())
+        .where((pattern) => pattern.isNotEmpty)
+        .toList(growable: false);
+
+    Future<void> decide(String reply) async {
+      if (responding) {
+        return;
+      }
+      await onDecide(request.id, reply);
+    }
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        compact ? AppSpacing.sm : AppSpacing.md,
+        compact ? AppSpacing.xs : AppSpacing.sm,
+        compact ? AppSpacing.sm : AppSpacing.md,
+        compact ? AppSpacing.sm : AppSpacing.md,
+      ),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 920),
+          child: Container(
+            padding: EdgeInsets.all(compact ? AppSpacing.sm : AppSpacing.md),
+            decoration: BoxDecoration(
+              color: surfaces.panel,
+              borderRadius: BorderRadius.circular(compact ? 16 : 20),
+              border: Border.all(color: surfaces.lineSoft),
+              boxShadow: <BoxShadow>[
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.22),
+                  blurRadius: compact ? 16 : 24,
+                  offset: Offset(0, compact ? 6 : 10),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    Container(
+                      width: compact ? 34 : 40,
+                      height: compact ? 34 : 40,
+                      decoration: BoxDecoration(
+                        color: surfaces.warning.withValues(alpha: 0.16),
+                        borderRadius: BorderRadius.circular(compact ? 12 : 14),
+                      ),
+                      child: Icon(
+                        Icons.policy_outlined,
+                        size: compact ? 18 : 20,
+                        color: surfaces.warning,
+                      ),
+                    ),
+                    SizedBox(
+                      width: density.inset(
+                        compact ? AppSpacing.sm : AppSpacing.md,
+                      ),
+                    ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            'Permission Request',
+                            style:
+                                (compact
+                                        ? theme.textTheme.titleMedium
+                                        : theme.textTheme.titleLarge)
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                          SizedBox(
+                            height: density.inset(
+                              compact ? AppSpacing.xxs : AppSpacing.xs,
+                              min: 2,
+                            ),
+                          ),
+                          Text(
+                            request.permission.trim().isEmpty
+                                ? 'A tool is asking for permission.'
+                                : request.permission,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: surfaces.muted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                if (patterns.isNotEmpty) ...<Widget>[
+                  SizedBox(height: compact ? AppSpacing.sm : AppSpacing.md),
+                  Wrap(
+                    spacing: AppSpacing.xs,
+                    runSpacing: AppSpacing.xs,
+                    children: patterns
+                        .map(
+                          (pattern) => Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.sm,
+                              vertical: AppSpacing.xxs,
+                            ),
+                            decoration: BoxDecoration(
+                              color: surfaces.panelMuted,
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(color: surfaces.lineSoft),
+                            ),
+                            child: Text(
+                              pattern,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                fontFamily: 'monospace',
+                              ),
+                            ),
+                          ),
+                        )
+                        .toList(growable: false),
+                  ),
+                ],
+                SizedBox(height: compact ? AppSpacing.sm : AppSpacing.md),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final narrow = constraints.maxWidth < 440;
+                    final denyButton = TextButton(
+                      key: const ValueKey<String>('permission-dock-deny'),
+                      onPressed: responding
+                          ? null
+                          : () => unawaited(decide('reject')),
+                      child: const Text('Deny'),
+                    );
+                    final alwaysButton = OutlinedButton(
+                      key: const ValueKey<String>(
+                        'permission-dock-allow-always',
+                      ),
+                      onPressed: responding
+                          ? null
+                          : () => unawaited(decide('always')),
+                      child: const Text('Allow Always'),
+                    );
+                    final onceButton = FilledButton(
+                      key: const ValueKey<String>('permission-dock-allow-once'),
+                      onPressed: responding
+                          ? null
+                          : () => unawaited(decide('once')),
+                      child: responding
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Allow Once'),
+                    );
+                    if (!narrow) {
+                      return Row(
+                        children: <Widget>[
+                          denyButton,
+                          const Spacer(),
+                          alwaysButton,
+                          const SizedBox(width: AppSpacing.sm),
+                          onceButton,
+                        ],
+                      );
+                    }
+                    return Align(
+                      alignment: Alignment.centerRight,
+                      child: Wrap(
+                        spacing: AppSpacing.sm,
+                        runSpacing: AppSpacing.sm,
+                        alignment: WrapAlignment.end,
+                        children: <Widget>[
+                          denyButton,
+                          alwaysButton,
+                          onceButton,
+                        ],
+                      ),
+                    );
+                  },
                 ),
               ],
             ),

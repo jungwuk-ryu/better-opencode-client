@@ -536,6 +536,149 @@ void main() {
     },
   );
 
+  testWidgets(
+    'desktop composer recalls submitted prompt history per session and across launches',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      late _SubmittingRecordingWorkspaceController controllerInstance;
+      final firstAppController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              controllerInstance = _SubmittingRecordingWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+              return controllerInstance;
+            },
+      );
+      addTearDown(firstAppController.dispose);
+
+      final firstNavigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: firstAppController,
+          navigatorKey: firstNavigatorKey,
+          initialRoute: '/',
+          platform: TargetPlatform.macOS,
+        ),
+      );
+      firstNavigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+      );
+      await tester.pumpAndSettle();
+
+      final textField = find.byKey(
+        const ValueKey<String>('composer-text-field'),
+      );
+
+      await tester.tap(textField);
+      await tester.pump();
+      await tester.enterText(textField, 'history one');
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      await tester.tap(find.text('Session Two'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(textField);
+      await tester.pump();
+      await tester.enterText(textField, 'history two');
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(controllerInstance.submittedPrompts, <String>[
+        'history one',
+        'history two',
+      ]);
+
+      await tester.tap(find.text('Session One'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(textField);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pump();
+      expect(_composerText(tester), 'history one');
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+      expect(_composerText(tester), isEmpty);
+
+      await tester.tap(find.text('Session Two'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(textField);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pump();
+      expect(_composerText(tester), 'history two');
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final restoredAppController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              return _SubmittingRecordingWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+            },
+      );
+      addTearDown(restoredAppController.dispose);
+
+      final restoredNavigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: restoredAppController,
+          navigatorKey: restoredNavigatorKey,
+          initialRoute: '/',
+          platform: TargetPlatform.macOS,
+        ),
+      );
+      restoredNavigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pumpAndSettle();
+
+      await tester.tap(textField);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pump();
+      expect(_composerText(tester), 'history one');
+
+      await tester.tap(find.text('Session Two'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(textField);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pump();
+      expect(_composerText(tester), 'history two');
+    },
+  );
+
   testWidgets('keyboard shortcut opens workspace settings', (tester) async {
     tester.view.physicalSize = const Size(1600, 1000);
     tester.view.devicePixelRatio = 1;
@@ -978,17 +1121,11 @@ void main() {
       );
 
       expect(
-        find.descendant(
-          of: sessionOnePane,
-          matching: busyIndicatorFinder,
-        ),
+        find.descendant(of: sessionOnePane, matching: busyIndicatorFinder),
         findsOneWidget,
       );
       expect(
-        find.descendant(
-          of: sessionTwoPane,
-          matching: busyIndicatorFinder,
-        ),
+        find.descendant(of: sessionTwoPane, matching: busyIndicatorFinder),
         findsNothing,
       );
     },
@@ -1467,6 +1604,70 @@ void main() {
         find.text('Question pending in the active session'),
         findsOneWidget,
       );
+      expect(
+        find.byKey(const ValueKey<String>('composer-text-field')),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
+    'split panes keep each session permission panel visible without focus',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              return _PanePermissionWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+            },
+      );
+      addTearDown(appController.dispose);
+
+      final navigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          navigatorKey: navigatorKey,
+          initialRoute: '/',
+        ),
+      );
+      navigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('workspace-split-session-pane-button'),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      await tester.tap(find.text('Session Two'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.text('bash'), findsOneWidget);
+      expect(find.text('edit'), findsOneWidget);
+      expect(find.text('npm test'), findsOneWidget);
+      expect(find.text('lib/**'), findsOneWidget);
       expect(
         find.byKey(const ValueKey<String>('composer-text-field')),
         findsNothing,
@@ -2702,6 +2903,36 @@ class _PaneQuestionWorkspaceController extends _RecordingWorkspaceController {
   PendingRequestBundle get pendingRequests => PendingRequestBundle(
     questions: _questionsBySession.values.toList(growable: false),
     permissions: const <PermissionRequestSummary>[],
+  );
+}
+
+class _PanePermissionWorkspaceController extends _RecordingWorkspaceController {
+  _PanePermissionWorkspaceController({
+    required super.profile,
+    required super.directory,
+    super.initialSessionId,
+  });
+
+  final Map<String, PermissionRequestSummary> _permissionsBySession =
+      <String, PermissionRequestSummary>{
+        'ses_1': const PermissionRequestSummary(
+          id: 'per_ses_1',
+          sessionId: 'ses_1',
+          permission: 'bash',
+          patterns: <String>['npm test'],
+        ),
+        'ses_2': const PermissionRequestSummary(
+          id: 'per_ses_2',
+          sessionId: 'ses_2',
+          permission: 'edit',
+          patterns: <String>['lib/**'],
+        ),
+      };
+
+  @override
+  PendingRequestBundle get pendingRequests => PendingRequestBundle(
+    questions: const <QuestionRequestSummary>[],
+    permissions: _permissionsBySession.values.toList(growable: false),
   );
 }
 

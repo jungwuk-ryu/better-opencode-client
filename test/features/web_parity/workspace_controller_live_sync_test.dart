@@ -648,6 +648,121 @@ void main() {
   );
 
   test(
+    'controller auto-accepts child session permissions and persists the preference',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final requestService = _FakeRequestService(
+        pendingBundle: PendingRequestBundle(
+          questions: const <QuestionRequestSummary>[],
+          permissions: <PermissionRequestSummary>[
+            const PermissionRequestSummary(
+              id: 'per_1',
+              sessionId: 'ses_child',
+              permission: 'bash',
+              patterns: <String>['npm test'],
+            ),
+          ],
+        ),
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        requestService: requestService,
+        initialSelectedSessionId: 'ses_root',
+        initialSessions: <SessionSummary>[
+          _session(
+            id: 'ses_root',
+            title: 'Root session',
+            createdAt: 1710000001000,
+            updatedAt: 1710000005000,
+          ),
+          _session(
+            id: 'ses_child',
+            title: 'Child session',
+            createdAt: 1710000002000,
+            updatedAt: 1710000006000,
+            parentId: 'ses_root',
+          ),
+        ],
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+
+      expect(controller.currentPermissionRequest?.id, 'per_1');
+      expect(controller.currentPermissionRequest?.sessionId, 'ses_child');
+
+      final enabled = await controller.togglePermissionAutoAcceptForSession(
+        'ses_root',
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(enabled, isTrue);
+      expect(requestService.permissionReplies, hasLength(1));
+      expect(requestService.permissionReplies.single.requestId, 'per_1');
+      expect(requestService.permissionReplies.single.reply, 'once');
+      expect(controller.currentPermissionRequest, isNull);
+
+      final restoredEventStreamService = _ControlledEventStreamService();
+      final restoredRequestService = _FakeRequestService();
+      final restoredController = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: restoredEventStreamService,
+        requestService: restoredRequestService,
+        initialSelectedSessionId: 'ses_root',
+        initialSessions: <SessionSummary>[
+          _session(
+            id: 'ses_root',
+            title: 'Root session',
+            createdAt: 1710000001000,
+            updatedAt: 1710000005000,
+          ),
+          _session(
+            id: 'ses_child',
+            title: 'Child session',
+            createdAt: 1710000002000,
+            updatedAt: 1710000006000,
+            parentId: 'ses_root',
+          ),
+        ],
+      );
+      addTearDown(restoredController.dispose);
+
+      await restoredController.load();
+
+      expect(
+        restoredController.autoAcceptsPermissionForSession('ses_child'),
+        isTrue,
+      );
+
+      restoredEventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'permission.asked',
+          properties: <String, Object?>{
+            'id': 'per_2',
+            'sessionID': 'ses_child',
+            'permission': 'edit',
+            'patterns': <Object?>['lib/**'],
+          },
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(restoredRequestService.permissionReplies, hasLength(1));
+      expect(
+        restoredRequestService.permissionReplies.single.requestId,
+        'per_2',
+      );
+      expect(restoredRequestService.permissionReplies.single.reply, 'once');
+      expect(restoredController.currentPermissionRequest, isNull);
+    },
+  );
+
+  test(
     'controller applies todo updates in real time for the active session',
     () async {
       final eventStreamService = _ControlledEventStreamService();
@@ -1182,6 +1297,7 @@ WorkspaceController _buildController({
   required ProjectTarget project,
   required _ControlledEventStreamService eventStreamService,
   ChatService? chatService,
+  RequestService? requestService,
   SessionActionService? sessionActionService,
   StaleCacheStore? cacheStore,
   List<SessionSummary>? initialSessions,
@@ -1221,7 +1337,8 @@ WorkspaceController _buildController({
     cacheStore: cacheStore,
     fileBrowserService: _FakeFileBrowserService(),
     todoService: _FakeTodoService(),
-    requestService: _FakeRequestService(pendingBundle: pendingBundle),
+    requestService:
+        requestService ?? _FakeRequestService(pendingBundle: pendingBundle),
     eventStreamService: eventStreamService,
     sessionActionService: sessionActionService,
     configService: _FakeConfigService(),
@@ -1567,9 +1684,16 @@ class _FakeTodoService extends TodoService {
 }
 
 class _FakeRequestService extends RequestService {
-  _FakeRequestService({required this.pendingBundle});
+  _FakeRequestService({
+    this.pendingBundle = const PendingRequestBundle(
+      questions: <QuestionRequestSummary>[],
+      permissions: <PermissionRequestSummary>[],
+    ),
+  });
 
-  final PendingRequestBundle pendingBundle;
+  PendingRequestBundle pendingBundle;
+  final List<({String requestId, String reply})> permissionReplies =
+      <({String requestId, String reply})>[];
 
   @override
   Future<PendingRequestBundle> fetchPending({
@@ -1579,6 +1703,23 @@ class _FakeRequestService extends RequestService {
     bool supportsPermissions = true,
   }) async {
     return pendingBundle;
+  }
+
+  @override
+  Future<bool> replyToPermission({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String requestId,
+    required String reply,
+  }) async {
+    permissionReplies.add((requestId: requestId, reply: reply));
+    pendingBundle = PendingRequestBundle(
+      questions: pendingBundle.questions,
+      permissions: pendingBundle.permissions
+          .where((item) => item.id != requestId)
+          .toList(growable: false),
+    );
+    return true;
   }
 
   @override

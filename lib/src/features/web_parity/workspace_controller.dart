@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/connection/connection_models.dart';
 import '../../core/network/event_stream_service.dart';
@@ -234,6 +235,33 @@ List<ChatMessage> _chatMessagesFromDecodedJson(Object? decoded) {
       .toList(growable: false);
 }
 
+const String _permissionAutoAcceptStorageKeyPrefix =
+    'workspace.permission_auto_accept';
+const String _permissionAutoAcceptProjectScopeKey = '__project__';
+
+String _permissionAutoAcceptStorageKey(
+  ServerProfile profile,
+  ProjectTarget project,
+) {
+  final encodedDirectory = base64Url.encode(utf8.encode(project.directory));
+  return '$_permissionAutoAcceptStorageKeyPrefix::${profile.storageKey}::$encodedDirectory';
+}
+
+Map<String, bool> _permissionAutoAcceptFromDecodedJson(Object? decoded) {
+  if (decoded is! Map) {
+    return const <String, bool>{};
+  }
+  final next = <String, bool>{};
+  decoded.forEach((key, value) {
+    final normalizedKey = key.toString().trim();
+    if (normalizedKey.isEmpty || value is! bool) {
+      return;
+    }
+    next[normalizedKey] = value;
+  });
+  return Map<String, bool>.unmodifiable(next);
+}
+
 class WorkspaceComposerModelOption {
   const WorkspaceComposerModelOption({
     required this.key,
@@ -420,6 +448,8 @@ class WorkspaceController extends ChangeNotifier {
   Map<String, String> _sendingQueuedPromptBySessionId =
       const <String, String>{};
   int _queuedPromptSequence = 0;
+  Map<String, bool> _permissionAutoAcceptByKey = const <String, bool>{};
+  Set<String> _respondingPermissionRequestIds = const <String>{};
 
   bool get loading => _loading;
   bool get sessionLoading => _sessionLoading;
@@ -507,10 +537,38 @@ class WorkspaceController extends ChangeNotifier {
         (request) => request.sessionId,
       );
   PermissionRequestSummary? get currentPermissionRequest =>
-      _sessionTreeRequest<PermissionRequestSummary>(
-        _pendingRequests.permissions,
-        (request) => request.sessionId,
-      );
+      currentPermissionRequestForSession(selectedSessionId);
+  PermissionRequestSummary? currentPermissionRequestForSession(
+    String? sessionId,
+  ) => _sessionTreeRequestForSession<PermissionRequestSummary>(
+    sessionId,
+    pendingRequests.permissions,
+    (request) => request.sessionId,
+  );
+  bool get projectPermissionAutoAccepting =>
+      _permissionAutoAcceptByKey[_permissionAutoAcceptProjectScopeKey] ?? false;
+  bool autoAcceptsPermissionForSession(String? sessionId) {
+    final normalizedSessionId = sessionId?.trim();
+    if (normalizedSessionId == null || normalizedSessionId.isEmpty) {
+      return projectPermissionAutoAccepting;
+    }
+    for (final candidateSessionId in _sessionLineageIds(normalizedSessionId)) {
+      final stored = _permissionAutoAcceptByKey[candidateSessionId];
+      if (stored != null) {
+        return stored;
+      }
+    }
+    return projectPermissionAutoAccepting;
+  }
+
+  bool permissionRequestResponding(String? requestId) {
+    final normalizedRequestId = requestId?.trim();
+    if (normalizedRequestId == null || normalizedRequestId.isEmpty) {
+      return false;
+    }
+    return _respondingPermissionRequestIds.contains(normalizedRequestId);
+  }
+
   ShellCommandResult? get lastShellResult => _lastShellResult;
   ConfigSnapshot? get configSnapshot => _configSnapshot;
   List<AgentDefinition> get composerAgents => _composerAgents;
@@ -844,6 +902,7 @@ class WorkspaceController extends ChangeNotifier {
           )
           ? availableProjects
           : <ProjectTarget>[resolvedProject, ...availableProjects];
+      await _restorePermissionAutoAccept(resolvedProject);
       await _restoreQueuedPrompts(resolvedProject);
 
       await _projectStore.recordRecentProject(resolvedProject);
@@ -926,6 +985,7 @@ class WorkspaceController extends ChangeNotifier {
       serverStorageKey: profile.storageKey,
       target: project,
     );
+    await _restorePermissionAutoAccept(project);
     await _restoreQueuedPrompts(project);
 
     await _loadComposerState(project);
@@ -2334,7 +2394,7 @@ class WorkspaceController extends ChangeNotifier {
       requestId: trimmed,
       answers: answers,
     );
-    await _loadSessionPanels();
+    await _loadPendingRequests();
     _notify();
   }
 
@@ -2349,8 +2409,40 @@ class WorkspaceController extends ChangeNotifier {
       project: project,
       requestId: trimmed,
     );
-    await _loadSessionPanels();
+    await _loadPendingRequests();
     _notify();
+  }
+
+  Future<void> replyToPermission(String requestId, String reply) async {
+    await _replyToPermissionInternal(
+      requestId: requestId,
+      reply: reply,
+      reloadPendingAfter: true,
+    );
+  }
+
+  Future<bool> togglePermissionAutoAcceptForSession(String? sessionId) async {
+    final project = _project;
+    if (project == null) {
+      return false;
+    }
+    final normalizedSessionId = sessionId?.trim();
+    final targetKey = normalizedSessionId == null || normalizedSessionId.isEmpty
+        ? _permissionAutoAcceptProjectScopeKey
+        : normalizedSessionId;
+    final currentlyEnabled =
+        normalizedSessionId == null || normalizedSessionId.isEmpty
+        ? projectPermissionAutoAccepting
+        : autoAcceptsPermissionForSession(normalizedSessionId);
+    final next = Map<String, bool>.from(_permissionAutoAcceptByKey)
+      ..[targetKey] = !currentlyEnabled;
+    _permissionAutoAcceptByKey = Map<String, bool>.unmodifiable(next);
+    await _persistPermissionAutoAccept(project);
+    if (!currentlyEnabled) {
+      unawaited(_autoRespondPendingPermissions(project));
+    }
+    _notify();
+    return !currentlyEnabled;
   }
 
   Future<SessionSummary?> forkSelectedSession({String? messageId}) async {
@@ -3147,17 +3239,203 @@ class WorkspaceController extends ChangeNotifier {
       }
     }
 
+    await _loadPendingRequests();
+  }
+
+  Future<void> _loadPendingRequests() async {
+    final project = _project;
+    if (project == null) {
+      _pendingRequests = const PendingRequestBundle(
+        questions: <QuestionRequestSummary>[],
+        permissions: <PermissionRequestSummary>[],
+      );
+      return;
+    }
     try {
       final pending = await _requestService.fetchPending(
         profile: profile,
         project: project,
       );
-      _pendingRequests = pending;
+      _pendingRequests = await _resolvePendingRequestsWithAutoAccept(
+        project: project,
+        pending: pending,
+      );
     } catch (_) {
       _pendingRequests = const PendingRequestBundle(
         questions: <QuestionRequestSummary>[],
         permissions: <PermissionRequestSummary>[],
       );
+    }
+  }
+
+  Future<PendingRequestBundle> _resolvePendingRequestsWithAutoAccept({
+    required ProjectTarget project,
+    required PendingRequestBundle pending,
+  }) async {
+    if (pending.permissions.isEmpty) {
+      return pending;
+    }
+    final remainingPermissions = <PermissionRequestSummary>[];
+    for (final request in pending.permissions) {
+      if (!_shouldAutoAcceptPermission(request)) {
+        remainingPermissions.add(request);
+        continue;
+      }
+      final responded = await _replyToPermissionInternal(
+        requestId: request.id,
+        reply: 'once',
+        reloadPendingAfter: false,
+        request: request,
+      );
+      if (!responded) {
+        remainingPermissions.add(request);
+      }
+    }
+    return PendingRequestBundle(
+      questions: pending.questions,
+      permissions: remainingPermissions,
+    );
+  }
+
+  Future<void> _restorePermissionAutoAccept(ProjectTarget project) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(
+      _permissionAutoAcceptStorageKey(profile, project),
+    );
+    if (raw == null || raw.trim().isEmpty) {
+      _permissionAutoAcceptByKey = const <String, bool>{};
+      return;
+    }
+    try {
+      final decoded = await _decodeJsonPayload(raw);
+      _permissionAutoAcceptByKey = _permissionAutoAcceptFromDecodedJson(
+        decoded,
+      );
+    } catch (_) {
+      _permissionAutoAcceptByKey = const <String, bool>{};
+      await prefs.remove(_permissionAutoAcceptStorageKey(profile, project));
+    }
+  }
+
+  Future<void> _persistPermissionAutoAccept(ProjectTarget project) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (_permissionAutoAcceptByKey.isEmpty) {
+      await prefs.remove(_permissionAutoAcceptStorageKey(profile, project));
+      return;
+    }
+    await prefs.setString(
+      _permissionAutoAcceptStorageKey(profile, project),
+      jsonEncode(_permissionAutoAcceptByKey),
+    );
+  }
+
+  List<String> _sessionLineageIds(String sessionId) {
+    final normalizedSessionId = sessionId.trim();
+    if (normalizedSessionId.isEmpty) {
+      return const <String>[];
+    }
+    final ids = <String>[normalizedSessionId];
+    final seen = <String>{normalizedSessionId};
+    var currentId = normalizedSessionId;
+    while (true) {
+      final session = _sessionById(currentId);
+      final parentId = session?.parentId?.trim();
+      if (parentId == null || parentId.isEmpty || !seen.add(parentId)) {
+        break;
+      }
+      ids.add(parentId);
+      currentId = parentId;
+    }
+    return ids;
+  }
+
+  bool _shouldAutoAcceptPermission(PermissionRequestSummary request) {
+    return autoAcceptsPermissionForSession(request.sessionId);
+  }
+
+  void _optimisticallyResolvePermissionRequest(String requestId) {
+    _pendingRequests = PendingRequestBundle(
+      questions: _pendingRequests.questions,
+      permissions: applyPermissionResolvedEvent(
+        _pendingRequests.permissions,
+        <String, Object?>{'requestID': requestId},
+        selectedSessionId: null,
+      ),
+    );
+  }
+
+  Future<void> _autoRespondPendingPermissions(ProjectTarget project) async {
+    final requests = _pendingRequests.permissions
+        .where(_shouldAutoAcceptPermission)
+        .toList(growable: false);
+    if (requests.isEmpty) {
+      return;
+    }
+    for (final request in requests) {
+      await _replyToPermissionInternal(
+        requestId: request.id,
+        reply: 'once',
+        reloadPendingAfter: false,
+        request: request,
+      );
+    }
+    if (!_disposed && _project?.directory == project.directory) {
+      await _loadPendingRequests();
+      _notify();
+    }
+  }
+
+  Future<bool> _replyToPermissionInternal({
+    required String requestId,
+    required String reply,
+    required bool reloadPendingAfter,
+    PermissionRequestSummary? request,
+  }) async {
+    final project = _project;
+    final trimmedRequestId = requestId.trim();
+    final normalizedReply = reply.trim();
+    if (project == null ||
+        trimmedRequestId.isEmpty ||
+        normalizedReply.isEmpty ||
+        _respondingPermissionRequestIds.contains(trimmedRequestId)) {
+      return false;
+    }
+    final nextResponding = Set<String>.from(_respondingPermissionRequestIds)
+      ..add(trimmedRequestId);
+    _respondingPermissionRequestIds = Set<String>.unmodifiable(nextResponding);
+    _optimisticallyResolvePermissionRequest(trimmedRequestId);
+    _notify();
+    try {
+      await _requestService.replyToPermission(
+        profile: profile,
+        project: project,
+        requestId: trimmedRequestId,
+        reply: normalizedReply,
+      );
+      if (reloadPendingAfter) {
+        await _loadPendingRequests();
+      }
+      return true;
+    } catch (_) {
+      if (reloadPendingAfter) {
+        await _loadPendingRequests();
+      } else if (request != null) {
+        _pendingRequests = PendingRequestBundle(
+          questions: _pendingRequests.questions,
+          permissions: List<PermissionRequestSummary>.unmodifiable(
+            <PermissionRequestSummary>[
+              ..._pendingRequests.permissions,
+              request,
+            ],
+          ),
+        );
+      }
+      return false;
+    } finally {
+      final next = Set<String>.from(_respondingPermissionRequestIds)
+        ..remove(trimmedRequestId);
+      _respondingPermissionRequestIds = Set<String>.unmodifiable(next);
+      _notify();
     }
   }
 
@@ -3397,6 +3675,17 @@ class WorkspaceController extends ChangeNotifier {
           selectedSessionId: null,
         ),
       );
+      final request = PermissionRequestSummary.fromJson(event.properties);
+      if (_shouldAutoAcceptPermission(request)) {
+        unawaited(
+          _replyToPermissionInternal(
+            requestId: request.id,
+            reply: 'once',
+            reloadPendingAfter: false,
+            request: request,
+          ),
+        );
+      }
     } else if (type == 'permission.replied' || type == 'permission.rejected') {
       _pendingRequests = PendingRequestBundle(
         questions: _pendingRequests.questions,
@@ -3532,17 +3821,6 @@ class WorkspaceController extends ChangeNotifier {
     if (notify) {
       _notify();
     }
-  }
-
-  T? _sessionTreeRequest<T>(
-    List<T> requests,
-    String Function(T request) sessionIdOf,
-  ) {
-    return _sessionTreeRequestForSession<T>(
-      selectedSessionId,
-      requests,
-      sessionIdOf,
-    );
   }
 
   T? _sessionTreeRequestForSession<T>(
