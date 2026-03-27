@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -40,6 +41,30 @@ void main() {
       workspaceController: workspaceController,
     );
     addTearDown(appController.dispose);
+    const clipboardChannel = SystemChannels.platform;
+    var clipboardText = 'paste fallback text';
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      clipboardChannel,
+      (call) async {
+        switch (call.method) {
+          case 'Clipboard.getData':
+            return <String, dynamic>{'text': clipboardText};
+          case 'Clipboard.setData':
+            final arguments = call.arguments;
+            if (arguments is Map<Object?, Object?>) {
+              clipboardText = (arguments['text'] as String?) ?? clipboardText;
+            }
+            return null;
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        clipboardChannel,
+        null,
+      ),
+    );
 
     await tester.pumpWidget(
       _WorkspaceRouteHarness(
@@ -149,6 +174,71 @@ void main() {
       'diagram.png',
     );
   });
+
+  testWidgets('pasting an image into the composer attaches it', (tester) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final workspaceController = _AttachmentWorkspaceController(
+      profile: profile,
+      directory: '/workspace/demo',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceController: workspaceController,
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+        attachmentPicker: () async => const <PromptAttachment>[],
+        clipboardImageAttachmentLoader: () async => const PromptAttachment(
+          id: 'att_pasted',
+          filename: 'pasted-image.png',
+          mime: 'image/png',
+          url:
+              'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Z9QAAAABJRU5ErkJggg==',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    await tester.tap(find.byKey(const ValueKey<String>('composer-text-field')));
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyV);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+
+    expect(find.text('pasted-image.png'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('composer-submit-button')),
+    );
+    await tester.pump();
+
+    expect(workspaceController.submitPromptCalls, 1);
+    expect(workspaceController.lastSubmittedPrompt, isEmpty);
+    expect(workspaceController.lastSubmittedAttachments, hasLength(1));
+    expect(
+      workspaceController.lastSubmittedAttachments.single.filename,
+      'pasted-image.png',
+    );
+  });
 }
 
 class _WorkspaceRouteHarness extends StatelessWidget {
@@ -156,11 +246,13 @@ class _WorkspaceRouteHarness extends StatelessWidget {
     required this.controller,
     required this.initialRoute,
     required this.attachmentPicker,
+    this.clipboardImageAttachmentLoader,
   });
 
   final WebParityAppController controller;
   final String initialRoute;
   final Future<List<PromptAttachment>> Function() attachmentPicker;
+  final Future<PromptAttachment?> Function()? clipboardImageAttachmentLoader;
 
   @override
   Widget build(BuildContext context) {
@@ -183,6 +275,8 @@ class _WorkspaceRouteHarness extends StatelessWidget {
                     sessionId: sessionId,
                     ptyServiceFactory: _FakePtyService.new,
                     attachmentPicker: attachmentPicker,
+                    clipboardImageAttachmentLoader:
+                        clipboardImageAttachmentLoader,
                   ),
               };
             },

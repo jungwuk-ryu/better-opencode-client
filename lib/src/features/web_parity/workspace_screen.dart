@@ -21,6 +21,7 @@ import '../../design_system/app_snack_bar.dart';
 import '../../design_system/app_spacing.dart';
 import '../../design_system/app_theme.dart';
 import '../chat/chat_models.dart';
+import '../chat/clipboard_image_service.dart';
 import '../chat/prompt_attachment_models.dart';
 import '../chat/prompt_attachment_service.dart';
 import '../chat/session_context_insights.dart';
@@ -191,6 +192,7 @@ class WebParityWorkspaceScreen extends StatefulWidget {
     this.sessionId,
     this.ptyServiceFactory,
     this.attachmentPicker,
+    this.clipboardImageAttachmentLoader,
     this.projectCatalogService,
     this.integrationStatusService,
     this.pendingRequestNotificationService,
@@ -202,6 +204,7 @@ class WebParityWorkspaceScreen extends StatefulWidget {
   final String? sessionId;
   final PtyService Function()? ptyServiceFactory;
   final Future<List<PromptAttachment>> Function()? attachmentPicker;
+  final Future<PromptAttachment?> Function()? clipboardImageAttachmentLoader;
   final ProjectCatalogService? projectCatalogService;
   final IntegrationStatusService? integrationStatusService;
   final PendingRequestNotificationService? pendingRequestNotificationService;
@@ -234,6 +237,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   );
   static final PromptAttachmentService _attachmentService =
       PromptAttachmentService();
+  static final ClipboardImageService _clipboardImageService =
+      ClipboardImageService();
   static const Object _composerRecentDraftUnset = Object();
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   WorkspaceController? _controller;
@@ -561,6 +566,63 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         });
       }
     }
+  }
+
+  Future<PromptAttachment?> _loadClipboardImageAttachment() async {
+    final loader = widget.clipboardImageAttachmentLoader;
+    if (loader != null) {
+      return loader();
+    }
+    return _clipboardImageService.loadClipboardImageAttachment(
+      _attachmentService,
+    );
+  }
+
+  Future<bool> _tryPasteComposerClipboardImageForScope(String scopeKey) async {
+    if (_promptSubmitInFlightScopeKeys.contains(scopeKey)) {
+      return false;
+    }
+    try {
+      final attachment = await _loadClipboardImageAttachment();
+      if (!mounted || attachment == null) {
+        return false;
+      }
+      return _appendComposerAttachmentsForScope(scopeKey, <PromptAttachment>[
+        attachment,
+      ], requestFocus: true);
+    } catch (error) {
+      if (mounted) {
+        _showSnackBar(
+          'Failed to paste image: $error',
+          tone: AppSnackBarTone.danger,
+        );
+      }
+      return false;
+    }
+  }
+
+  Future<void> _handleComposerContentInsertionForScope(
+    String scopeKey,
+    KeyboardInsertedContent content,
+  ) async {
+    if (_promptSubmitInFlightScopeKeys.contains(scopeKey)) {
+      return;
+    }
+    final attachment = _attachmentService.attachmentFromInsertedContent(
+      content,
+    );
+    if (attachment == null) {
+      if (mounted && content.mimeType.startsWith('image/')) {
+        _showSnackBar(
+          'This image format is not supported for chat attachments.',
+          tone: AppSnackBarTone.warning,
+        );
+      }
+      return;
+    }
+    _appendComposerAttachmentsForScope(scopeKey, <PromptAttachment>[
+      attachment,
+    ], requestFocus: true);
   }
 
   bool _appendComposerAttachmentsForScope(
@@ -3749,6 +3811,24 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     await _pickComposerAttachmentsForScope(scopeKey);
   }
 
+  Future<bool> _tryPasteComposerClipboardImage() async {
+    final scopeKey = _activeComposerScopeKey;
+    if (scopeKey == null || _activePromptSubmitInFlight) {
+      return false;
+    }
+    return _tryPasteComposerClipboardImageForScope(scopeKey);
+  }
+
+  Future<void> _handleComposerContentInsertion(
+    KeyboardInsertedContent content,
+  ) async {
+    final scopeKey = _activeComposerScopeKey;
+    if (scopeKey == null || _activePromptSubmitInFlight) {
+      return;
+    }
+    await _handleComposerContentInsertionForScope(scopeKey, content);
+  }
+
   Future<List<PromptAttachment>> _pickSystemAttachments() async {
     final files = await openFiles(
       acceptedTypeGroups: <XTypeGroup>[PromptAttachmentService.pickerTypeGroup],
@@ -4899,6 +4979,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       onCreateSession: () => _createSessionFromPane(paneViewModel),
       onInterrupt: () => _interruptPaneSession(paneViewModel),
       onPickAttachments: () => _pickComposerAttachmentsForPane(paneViewModel),
+      onPasteClipboardImage: () =>
+          _tryPasteComposerClipboardImageForScope(scopeKey),
+      onContentInserted: (content) =>
+          _handleComposerContentInsertionForScope(scopeKey, content),
       onRemoveAttachment: (attachmentId) =>
           _removeComposerAttachmentForScope(scopeKey, attachmentId),
       onEditQueuedPrompt: (queuedPromptId) =>
@@ -5484,6 +5568,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                       },
                                       onPickAttachments:
                                           _pickComposerAttachments,
+                                      onPasteClipboardImage:
+                                          _tryPasteComposerClipboardImage,
+                                      onContentInserted:
+                                          _handleComposerContentInsertion,
                                       onRemoveAttachment:
                                           _removeComposerAttachment,
                                       onAddReviewCommentToComposerContext:
@@ -7614,7 +7702,8 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                                       CrossAxisAlignment.start,
                                                   children: <Widget>[
                                                     Text(
-                                                      widget.appController
+                                                      widget
+                                                                  .appController
                                                                   .currentReleaseNotes ==
                                                               null
                                                           ? 'No release notes are bundled yet.'
@@ -7650,7 +7739,9 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                                 key: const ValueKey<String>(
                                                   'workspace-settings-open-whats-new-button',
                                                 ),
-                                                onPressed: widget.appController
+                                                onPressed:
+                                                    widget
+                                                            .appController
                                                             .currentReleaseNotes ==
                                                         null
                                                     ? null
@@ -11035,7 +11126,8 @@ class _WorkspaceSidebarNotificationBadge extends StatelessWidget {
       0 => null,
       1 when state.hasError => '1 unseen update, including an error',
       1 => '1 unseen update',
-      final count when state.hasError => '$count unseen updates, including an error',
+      final count when state.hasError =>
+        '$count unseen updates, including an error',
       final count => '$count unseen updates',
     };
     final size = compact ? 10.0 : 8.0;
@@ -12404,6 +12496,8 @@ class _WorkspaceBody extends StatelessWidget {
     required this.onSelectSessionPane,
     required this.onCloseSessionPane,
     required this.onPickAttachments,
+    required this.onPasteClipboardImage,
+    required this.onContentInserted,
     required this.onRemoveAttachment,
     required this.onAddReviewCommentToComposerContext,
     required this.onTogglePermissionAutoAccept,
@@ -12462,6 +12556,9 @@ class _WorkspaceBody extends StatelessWidget {
   final Future<void> Function(String paneId) onSelectSessionPane;
   final ValueChanged<String> onCloseSessionPane;
   final Future<void> Function() onPickAttachments;
+  final Future<bool> Function() onPasteClipboardImage;
+  final Future<void> Function(KeyboardInsertedContent content)
+  onContentInserted;
   final ValueChanged<String> onRemoveAttachment;
   final ValueChanged<_ReviewLineCommentSubmission>
   onAddReviewCommentToComposerContext;
@@ -12591,6 +12688,8 @@ class _WorkspaceBody extends StatelessWidget {
             onCreateSession: onCreateSession,
             onInterrupt: onInterruptPrompt,
             onPickAttachments: onPickAttachments,
+            onPasteClipboardImage: onPasteClipboardImage,
+            onContentInserted: onContentInserted,
             onRemoveAttachment: onRemoveAttachment,
             onEditQueuedPrompt: onEditQueuedPrompt,
             onDeleteQueuedPrompt: onDeleteQueuedPrompt,
@@ -15452,6 +15551,8 @@ class _PromptComposer extends StatefulWidget {
     required this.onCreateSession,
     required this.onInterrupt,
     required this.onPickAttachments,
+    required this.onPasteClipboardImage,
+    required this.onContentInserted,
     required this.onRemoveAttachment,
     required this.onEditQueuedPrompt,
     required this.onDeleteQueuedPrompt,
@@ -15500,6 +15601,9 @@ class _PromptComposer extends StatefulWidget {
   final Future<void> Function() onCreateSession;
   final Future<void> Function() onInterrupt;
   final Future<void> Function() onPickAttachments;
+  final Future<bool> Function() onPasteClipboardImage;
+  final Future<void> Function(KeyboardInsertedContent content)
+  onContentInserted;
   final ValueChanged<String> onRemoveAttachment;
   final Future<void> Function(String queuedPromptId) onEditQueuedPrompt;
   final Future<void> Function(String queuedPromptId) onDeleteQueuedPrompt;
@@ -16132,6 +16236,59 @@ class _PromptComposerState extends State<_PromptComposer> {
     }
   }
 
+  List<ContextMenuButtonItem> _contextMenuButtonItems(
+    EditableTextState editableTextState,
+  ) {
+    return editableTextState.contextMenuButtonItems
+        .map((item) {
+          if (item.type != ContextMenuButtonType.paste) {
+            return item;
+          }
+          return item.copyWith(
+            onPressed: () {
+              unawaited(_handleContextMenuPaste(editableTextState));
+            },
+          );
+        })
+        .toList(growable: false);
+  }
+
+  Future<void> _handleContextMenuPaste(
+    EditableTextState editableTextState,
+  ) async {
+    final handledImagePaste = await widget.onPasteClipboardImage();
+    if (handledImagePaste) {
+      editableTextState.hideToolbar();
+      return;
+    }
+    await _pasteClipboardText();
+    editableTextState.hideToolbar();
+  }
+
+  Future<void> _pasteClipboardText() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final text = data?.text;
+    if (text == null || text.isEmpty) {
+      return;
+    }
+    final value = widget.controller.value;
+    final fallbackSelection = TextSelection.collapsed(
+      offset: value.text.length,
+    );
+    final selection = value.selection.isValid
+        ? value.selection
+        : fallbackSelection;
+    final start = math.min(selection.start, selection.end);
+    final end = math.max(selection.start, selection.end);
+    final nextText = value.text.replaceRange(start, end, text);
+    final nextOffset = start + text.length;
+    widget.controller.value = TextEditingValue(
+      text: nextText,
+      selection: TextSelection.collapsed(offset: nextOffset),
+      composing: TextRange.empty,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
@@ -16333,29 +16490,58 @@ class _PromptComposerState extends State<_PromptComposer> {
                     ),
                   ),
                 ],
-                Focus(
-                  canRequestFocus: false,
-                  skipTraversal: true,
-                  onKeyEvent: _handleComposerKeyEvent,
-                  child: TextField(
-                    key: widget.textFieldKey,
-                    controller: widget.controller,
-                    focusNode: _focusNode,
-                    minLines: isCompact ? 2 : 3,
-                    maxLines: isCompact ? 6 : 8,
-                    decoration: const InputDecoration(
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      filled: false,
-                      hintText: 'Ask anything...',
-                      contentPadding: EdgeInsets.zero,
+                Actions(
+                  actions: <Type, Action<Intent>>{
+                    PasteTextIntent: _ComposerPasteTextAction(
+                      onPasteImage: widget.onPasteClipboardImage,
+                      onPasteText: _pasteClipboardText,
                     ),
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodyLarge?.copyWith(height: 1.55),
-                    onTap: widget.onActivateComposer,
-                    onSubmitted: (_) => _handleSubmit(),
+                  },
+                  child: Focus(
+                    canRequestFocus: false,
+                    skipTraversal: true,
+                    onKeyEvent: _handleComposerKeyEvent,
+                    child: TextField(
+                      key: widget.textFieldKey,
+                      controller: widget.controller,
+                      focusNode: _focusNode,
+                      minLines: isCompact ? 2 : 3,
+                      maxLines: isCompact ? 6 : 8,
+                      contextMenuBuilder: kIsWeb
+                          ? null
+                          : (
+                              BuildContext context,
+                              EditableTextState editableTextState,
+                            ) {
+                              return AdaptiveTextSelectionToolbar.buttonItems(
+                                anchors: editableTextState.contextMenuAnchors,
+                                buttonItems: _contextMenuButtonItems(
+                                  editableTextState,
+                                ),
+                              );
+                            },
+                      contentInsertionConfiguration:
+                          ContentInsertionConfiguration(
+                            allowedMimeTypes: PromptAttachmentService
+                                .supportedContentInsertionMimeTypes,
+                            onContentInserted: (content) {
+                              unawaited(widget.onContentInserted(content));
+                            },
+                          ),
+                      decoration: const InputDecoration(
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        filled: false,
+                        hintText: 'Ask anything...',
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodyLarge?.copyWith(height: 1.55),
+                      onTap: widget.onActivateComposer,
+                      onSubmitted: (_) => _handleSubmit(),
+                    ),
                   ),
                 ),
                 SizedBox(
@@ -16738,6 +16924,38 @@ class _ComposerAttachmentTile extends StatelessWidget {
       ),
     );
   }
+}
+
+class _ComposerPasteTextAction extends Action<PasteTextIntent> {
+  _ComposerPasteTextAction({
+    required this.onPasteImage,
+    required this.onPasteText,
+  });
+
+  final Future<bool> Function() onPasteImage;
+  final Future<void> Function() onPasteText;
+
+  @override
+  Object? invoke(PasteTextIntent intent, [BuildContext? context]) {
+    return _invokeAsync(intent, context);
+  }
+
+  Future<void> _invokeAsync(
+    PasteTextIntent intent,
+    BuildContext? context,
+  ) async {
+    final handledImagePaste = await onPasteImage();
+    if (handledImagePaste) {
+      return;
+    }
+    await onPasteText();
+  }
+
+  @override
+  bool consumesKey(PasteTextIntent intent) => true;
+
+  @override
+  bool isEnabled(PasteTextIntent intent) => true;
 }
 
 enum _ComposerSlashCommandType { builtin, custom }

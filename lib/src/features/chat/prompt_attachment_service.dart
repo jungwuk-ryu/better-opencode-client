@@ -1,7 +1,7 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/services.dart';
 
 import 'prompt_attachment_models.dart';
 
@@ -65,6 +65,20 @@ class PromptAttachmentService {
   );
 
   static const int _textSampleSize = 4096;
+  static const List<String> supportedImageMimeTypes = <String>[
+    'image/png',
+    'image/jpeg',
+    'image/jpg',
+    'image/gif',
+    'image/webp',
+  ];
+  static const List<String> supportedContentInsertionMimeTypes = <String>[
+    'image/png',
+    'image/jpeg',
+    'image/jpg',
+    'image/gif',
+    'image/webp',
+  ];
   static const Map<String, String> _imageMimeByExtension = <String, String>{
     'png': 'image/png',
     'jpg': 'image/jpeg',
@@ -102,31 +116,87 @@ class PromptAttachmentService {
     );
   }
 
-  Future<PromptAttachment?> _readFile(XFile file, int index) async {
-    final bytes = await file.readAsBytes();
-    final mime = _attachmentMime(file, bytes);
-    if (mime == null) {
+  PromptAttachment? attachmentFromBytes({
+    required Uint8List bytes,
+    required String mime,
+    String? filename,
+    int fallbackIndex = 0,
+  }) {
+    final resolvedMime = _attachmentMime(
+      name: filename ?? '',
+      mimeType: mime,
+      bytes: bytes,
+    );
+    if (resolvedMime == null) {
       return null;
     }
-    final name = file.name.trim().isEmpty ? 'attachment-$index' : file.name;
+    return _buildAttachment(
+      bytes: bytes,
+      mime: resolvedMime,
+      filename: filename,
+      fallbackIndex: fallbackIndex,
+    );
+  }
+
+  PromptAttachment? attachmentFromInsertedContent(
+    KeyboardInsertedContent content,
+  ) {
+    final data = content.data;
+    if (data == null || data.isEmpty) {
+      return null;
+    }
+    return attachmentFromBytes(
+      bytes: data,
+      mime: content.mimeType,
+      filename: _filenameFromInsertedContent(
+        uri: content.uri,
+        mime: content.mimeType,
+      ),
+    );
+  }
+
+  Future<PromptAttachment?> _readFile(XFile file, int index) async {
+    final bytes = await file.readAsBytes();
+    return attachmentFromBytes(
+      bytes: bytes,
+      mime: file.mimeType ?? '',
+      filename: file.name,
+      fallbackIndex: index,
+    );
+  }
+
+  PromptAttachment _buildAttachment({
+    required Uint8List bytes,
+    required String mime,
+    required int fallbackIndex,
+    String? filename,
+  }) {
+    final trimmedFilename = filename?.trim();
+    final resolvedFilename = trimmedFilename == null || trimmedFilename.isEmpty
+        ? _defaultFilenameForMime(mime, fallbackIndex)
+        : trimmedFilename;
     return PromptAttachment(
-      id: 'att_${DateTime.now().microsecondsSinceEpoch}_$index',
-      filename: name,
+      id: 'att_${DateTime.now().microsecondsSinceEpoch}_$fallbackIndex',
+      filename: resolvedFilename,
       mime: mime,
       url: 'data:$mime;base64,${base64Encode(bytes)}',
     );
   }
 
-  String? _attachmentMime(XFile file, Uint8List bytes) {
-    final type = _normalizedMime(file.mimeType ?? '');
-    if (_imageMimeByExtension.containsValue(type)) {
+  String? _attachmentMime({
+    required String name,
+    required String mimeType,
+    required Uint8List bytes,
+  }) {
+    final type = _normalizedMime(mimeType);
+    if (supportedImageMimeTypes.contains(type)) {
       return type;
     }
     if (type == 'application/pdf') {
       return type;
     }
 
-    final extension = _fileExtension(file.name);
+    final extension = _fileExtension(name);
     final imageFallback = _imageMimeByExtension[extension];
     if ((type.isEmpty || type == 'application/octet-stream') &&
         imageFallback != null) {
@@ -145,6 +215,9 @@ class PromptAttachmentService {
 
   String _normalizedMime(String type) {
     final normalized = type.split(';').first.trim().toLowerCase();
+    if (normalized == 'image/jpg') {
+      return 'image/jpeg';
+    }
     return normalized;
   }
 
@@ -190,5 +263,31 @@ class PromptAttachmentService {
       }
     }
     return controlCount / length <= 0.3;
+  }
+
+  String _filenameFromInsertedContent({
+    required String uri,
+    required String mime,
+  }) {
+    final parsed = Uri.tryParse(uri);
+    final lastSegment = parsed?.pathSegments.isNotEmpty == true
+        ? parsed!.pathSegments.last.trim()
+        : '';
+    if (lastSegment.isNotEmpty && lastSegment.contains('.')) {
+      return lastSegment;
+    }
+    return _defaultFilenameForMime(_normalizedMime(mime), 0);
+  }
+
+  String _defaultFilenameForMime(String mime, int fallbackIndex) {
+    final extension = switch (mime) {
+      'image/png' => 'png',
+      'image/jpeg' => 'jpg',
+      'image/gif' => 'gif',
+      'image/webp' => 'webp',
+      'application/pdf' => 'pdf',
+      _ => 'txt',
+    };
+    return 'attachment-$fallbackIndex.$extension';
   }
 }
