@@ -23,6 +23,7 @@ import '../files/file_browser_service.dart';
 import '../files/file_models.dart';
 import '../projects/project_models.dart';
 import '../projects/project_store.dart';
+import '../requests/pending_request_notification_service.dart';
 import '../requests/request_alerts.dart';
 import '../requests/request_models.dart';
 import '../requests/request_event_applier.dart';
@@ -108,6 +109,7 @@ class OpenCodeShellScreen extends StatefulWidget {
     this.integrationStatusService,
     this.eventStreamService,
     this.terminalService,
+    this.pendingRequestNotificationService,
     super.key,
   });
 
@@ -128,6 +130,7 @@ class OpenCodeShellScreen extends StatefulWidget {
   final IntegrationStatusService? integrationStatusService;
   final EventStreamService? eventStreamService;
   final TerminalService? terminalService;
+  final PendingRequestNotificationService? pendingRequestNotificationService;
 
   @override
   State<OpenCodeShellScreen> createState() => _OpenCodeShellScreenState();
@@ -149,6 +152,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
   late bool _ownsIntegrationStatusService;
   late TerminalService _terminalService;
   late bool _ownsTerminalService;
+  late PendingRequestNotificationService _pendingRequestNotificationService;
   final StaleCacheStore _cacheStore = StaleCacheStore();
   late TodoService _todoService;
   late bool _ownsTodoService;
@@ -228,6 +232,9 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         widget.integrationStatusService ?? IntegrationStatusService();
     _ownsTerminalService = widget.terminalService == null;
     _terminalService = widget.terminalService ?? TerminalService();
+    _pendingRequestNotificationService =
+        widget.pendingRequestNotificationService ??
+        sharedPendingRequestNotificationService;
     _loadBundle();
   }
 
@@ -249,6 +256,9 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         oldWidget.integrationStatusService != widget.integrationStatusService;
     final terminalServiceChanged =
         oldWidget.terminalService != widget.terminalService;
+    final pendingRequestNotificationServiceChanged =
+        oldWidget.pendingRequestNotificationService !=
+        widget.pendingRequestNotificationService;
     final capabilitiesChanged =
         oldWidget.capabilities.asMap().toString() !=
         widget.capabilities.asMap().toString();
@@ -327,6 +337,11 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       }
       _ownsTerminalService = widget.terminalService == null;
       _terminalService = widget.terminalService ?? TerminalService();
+    }
+    if (pendingRequestNotificationServiceChanged) {
+      _pendingRequestNotificationService =
+          widget.pendingRequestNotificationService ??
+          sharedPendingRequestNotificationService;
     }
     final scopeChanged =
         oldWidget.project.directory != widget.project.directory ||
@@ -2029,11 +2044,24 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       return;
     }
     final l10n = AppLocalizations.of(context);
-    if (ScaffoldMessenger.maybeOf(context) == null || l10n == null) {
+    if (l10n == null) {
+      return;
+    }
+    final title = pendingRequestAlertTitle(l10n, alert);
+    final body = pendingRequestAlertBody(alert);
+    unawaited(
+      _pendingRequestNotificationService.showPendingRequestNotification(
+        dedupeKey:
+            '${widget.profile.storageKey}:${widget.project.directory}:${alert.kind.name}:${alert.requestId}',
+        title: title,
+        body: body,
+      ),
+    );
+    if (ScaffoldMessenger.maybeOf(context) == null) {
       return;
     }
     final compact = MediaQuery.sizeOf(context).width < 960;
-    final message = _pendingRequestAlertMessage(l10n, alert);
+    final message = pendingRequestAlertMessage(l10n, alert);
     showAppSnackBar(
       context,
       message: message,
@@ -2052,22 +2080,6 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
             )
           : null,
     );
-  }
-
-  String _pendingRequestAlertMessage(
-    AppLocalizations l10n,
-    PendingRequestAlert alert,
-  ) {
-    final title = switch (alert.kind) {
-      PendingRequestAlertKind.question => l10n.shellQuestionAskedNotification,
-      PendingRequestAlertKind.permission =>
-        l10n.shellPermissionAskedNotification,
-    };
-    final detail = alert.detail?.trim();
-    if (detail == null || detail.isEmpty || detail == alert.summary) {
-      return '$title: ${alert.summary}';
-    }
-    return '$title: ${alert.summary} - $detail';
   }
 
   @override

@@ -1,3 +1,4 @@
+import '../../../l10n/app_localizations.dart';
 import 'request_models.dart';
 
 enum PendingRequestAlertKind { question, permission }
@@ -7,12 +8,14 @@ class PendingRequestAlert {
     required this.kind,
     required this.requestId,
     required this.summary,
+    required this.sessionId,
     this.detail,
   });
 
   final PendingRequestAlertKind kind;
   final String requestId;
   final String summary;
+  final String sessionId;
   final String? detail;
 }
 
@@ -33,6 +36,7 @@ PendingRequestAlert? buildQuestionAskedAlert({
     kind: PendingRequestAlertKind.question,
     requestId: request.id,
     summary: summary,
+    sessionId: request.sessionId,
     detail: _cleanText(prompt?.question),
   );
 }
@@ -57,8 +61,34 @@ PendingRequestAlert? buildPermissionAskedAlert({
     kind: PendingRequestAlertKind.permission,
     requestId: request.id,
     summary: _cleanText(request.permission) ?? request.id,
+    sessionId: request.sessionId,
     detail: detail.isEmpty ? null : detail,
   );
+}
+
+String pendingRequestAlertTitle(
+  AppLocalizations l10n,
+  PendingRequestAlert alert,
+) {
+  return switch (alert.kind) {
+    PendingRequestAlertKind.question => l10n.shellQuestionAskedNotification,
+    PendingRequestAlertKind.permission => l10n.shellPermissionAskedNotification,
+  };
+}
+
+String pendingRequestAlertBody(PendingRequestAlert alert) {
+  final detail = alert.detail?.trim();
+  if (detail == null || detail.isEmpty || detail == alert.summary) {
+    return alert.summary;
+  }
+  return '${alert.summary} - $detail';
+}
+
+String pendingRequestAlertMessage(
+  AppLocalizations l10n,
+  PendingRequestAlert alert,
+) {
+  return '${pendingRequestAlertTitle(l10n, alert)}: ${pendingRequestAlertBody(alert)}';
 }
 
 String? _cleanText(String? value) {

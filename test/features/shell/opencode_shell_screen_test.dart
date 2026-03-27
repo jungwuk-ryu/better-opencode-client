@@ -15,6 +15,7 @@ import 'package:opencode_mobile_remote/src/core/spec/probe_snapshot.dart';
 import 'package:opencode_mobile_remote/src/features/files/file_browser_service.dart';
 import 'package:opencode_mobile_remote/src/features/files/file_models.dart';
 import 'package:opencode_mobile_remote/src/features/projects/project_models.dart';
+import 'package:opencode_mobile_remote/src/features/requests/pending_request_notification_service.dart';
 import 'package:opencode_mobile_remote/src/features/requests/request_models.dart';
 import 'package:opencode_mobile_remote/src/features/requests/request_service.dart';
 import 'package:opencode_mobile_remote/src/features/shell/opencode_shell_screen.dart';
@@ -143,6 +144,7 @@ void main() {
     IntegrationStatusService? integrationStatusService,
     EventStreamService? eventStreamService,
     TerminalService? terminalService,
+    PendingRequestNotificationService? pendingRequestNotificationService,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -164,6 +166,7 @@ void main() {
         integrationStatusService: integrationStatusService,
         eventStreamService: eventStreamService,
         terminalService: terminalService,
+        pendingRequestNotificationService: pendingRequestNotificationService,
       ),
     );
     await _pumpShellFrames(tester);
@@ -206,6 +209,82 @@ void main() {
     expect(find.text('Conversation'), findsOneWidget);
     expect(find.text('Back to servers'), findsOneWidget);
   });
+
+  testWidgets(
+    'shell sends an OS notification when a question request arrives',
+    (tester) async {
+      final eventStreamService = _ControlledEventStreamService();
+      final notificationService = _FakePendingRequestNotificationService();
+      final chatService = _ControlledChatService(
+        bundlesByScopeKey: <String, ChatSessionBundle>{
+          _scopeKeyFor(profile, project): ChatSessionBundle(
+            sessions: <SessionSummary>[
+              _testSession(
+                'session-1',
+                'First session',
+                directory: project.directory,
+              ),
+            ],
+            statuses: const <String, SessionStatusSummary>{
+              'session-1': SessionStatusSummary(type: 'idle'),
+            },
+            messages: const <ChatMessage>[],
+            selectedSessionId: 'session-1',
+          ),
+        },
+      );
+
+      await pumpShellWithCapabilities(
+        tester,
+        size: const Size(1440, 1600),
+        capabilitiesToUse: eventCapabilities,
+        chatService: chatService,
+        todoService: _RecordingTodoService(),
+        fileBrowserService: _ControlledFileBrowserService.empty(),
+        requestService: _ControlledRequestService.empty(),
+        configService: _ControlledConfigService.empty(),
+        integrationStatusService: _ControlledIntegrationStatusService.empty(),
+        terminalService: _ControlledTerminalService(),
+        eventStreamService: eventStreamService,
+        pendingRequestNotificationService: notificationService,
+      );
+      expect(
+        eventStreamService.connectedScopeKeys,
+        contains(_scopeKeyFor(profile, project)),
+      );
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'question.asked',
+          properties: <String, Object?>{
+            'id': 'req_1',
+            'sessionID': 'session-1',
+            'questions': <Object?>[
+              <String, Object?>{
+                'header': 'Execution',
+                'question': 'Which execution path should I use?',
+                'multiple': false,
+                'options': <Object?>[],
+              },
+            ],
+          },
+        ),
+      );
+      await _pumpShellFrames(tester);
+
+      expect(notificationService.notifications, hasLength(1));
+      expect(
+        notificationService.notifications.single.title,
+        'Question requested',
+      );
+      expect(
+        notificationService.notifications.single.body,
+        contains('Execution'),
+      );
+    },
+  );
 
   testWidgets('mobile shell opens a drawer with project and session picks', (
     tester,
@@ -2492,6 +2571,7 @@ Widget _buildShell({
   IntegrationStatusService? integrationStatusService,
   EventStreamService? eventStreamService,
   TerminalService? terminalService,
+  PendingRequestNotificationService? pendingRequestNotificationService,
 }) {
   return MaterialApp(
     theme: AppTheme.dark(),
@@ -2512,8 +2592,37 @@ Widget _buildShell({
       integrationStatusService: integrationStatusService,
       eventStreamService: eventStreamService,
       terminalService: terminalService,
+      pendingRequestNotificationService: pendingRequestNotificationService,
     ),
   );
+}
+
+class _NotificationRecord {
+  const _NotificationRecord({
+    required this.dedupeKey,
+    required this.title,
+    required this.body,
+  });
+
+  final String dedupeKey;
+  final String title;
+  final String body;
+}
+
+class _FakePendingRequestNotificationService
+    implements PendingRequestNotificationService {
+  final List<_NotificationRecord> notifications = <_NotificationRecord>[];
+
+  @override
+  Future<void> showPendingRequestNotification({
+    required String dedupeKey,
+    required String title,
+    required String body,
+  }) async {
+    notifications.add(
+      _NotificationRecord(dedupeKey: dedupeKey, title: title, body: body),
+    );
+  }
 }
 
 String _scopeKeyFor(ServerProfile profile, ProjectTarget project) {

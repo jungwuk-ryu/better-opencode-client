@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:opencode_mobile_remote/l10n/app_localizations.dart';
 import 'package:opencode_mobile_remote/src/app/app_controller.dart';
 import 'package:opencode_mobile_remote/src/app/app_routes.dart';
 import 'package:opencode_mobile_remote/src/app/app_scope.dart';
@@ -15,6 +16,7 @@ import 'package:opencode_mobile_remote/src/features/chat/chat_models.dart';
 import 'package:opencode_mobile_remote/src/features/chat/prompt_attachment_models.dart';
 import 'package:opencode_mobile_remote/src/features/projects/project_catalog_service.dart';
 import 'package:opencode_mobile_remote/src/features/projects/project_models.dart';
+import 'package:opencode_mobile_remote/src/features/requests/pending_request_notification_service.dart';
 import 'package:opencode_mobile_remote/src/features/requests/request_models.dart';
 import 'package:opencode_mobile_remote/src/features/settings/config_service.dart';
 import 'package:opencode_mobile_remote/src/features/settings/integration_status_service.dart';
@@ -1207,9 +1209,7 @@ void main() {
     await tester.ensureVisible(bashAllowChip);
     await tester.pumpAndSettle();
 
-    await tester.tap(
-      bashAllowChip,
-    );
+    await tester.tap(bashAllowChip);
     await tester.pumpAndSettle();
 
     expect(
@@ -1228,6 +1228,69 @@ void main() {
           .selected,
       isTrue,
     );
+  });
+
+  testWidgets('workspace sends an OS notification when a permission arrives', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final createdControllers = <_NotifyingWorkspaceController>[];
+    final notificationService = _FakePendingRequestNotificationService();
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            final controller = _NotifyingWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+            createdControllers.add(controller);
+            return controller;
+          },
+    );
+    addTearDown(appController.dispose);
+
+    final navigatorKey = GlobalKey<NavigatorState>();
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        navigatorKey: navigatorKey,
+        initialRoute: '/',
+        pendingRequestNotificationService: notificationService,
+      ),
+    );
+    navigatorKey.currentState!.pushNamed(
+      buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+    );
+    await tester.pumpAndSettle();
+
+    createdControllers.single.emitPermissionRequest(
+      const PermissionRequestSummary(
+        id: 'per_1',
+        sessionId: 'ses_1',
+        permission: 'bash',
+        patterns: <String>['npm test'],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(notificationService.notifications, hasLength(1));
+    expect(
+      notificationService.notifications.single.title,
+      'Permission requested',
+    );
+    expect(notificationService.notifications.single.body, contains('bash'));
   });
 
   testWidgets('keyboard shortcut opens the project picker sheet', (
@@ -3053,6 +3116,7 @@ class _WorkspaceRouteHarness extends StatelessWidget {
     this.projectCatalogService,
     this.attachmentPicker,
     this.integrationStatusService,
+    this.pendingRequestNotificationService,
     this.platform,
   });
 
@@ -3063,6 +3127,7 @@ class _WorkspaceRouteHarness extends StatelessWidget {
   final ProjectCatalogService? projectCatalogService;
   final Future<List<PromptAttachment>> Function()? attachmentPicker;
   final IntegrationStatusService? integrationStatusService;
+  final PendingRequestNotificationService? pendingRequestNotificationService;
   final TargetPlatform? platform;
 
   @override
@@ -3076,6 +3141,8 @@ class _WorkspaceRouteHarness extends StatelessWidget {
             navigatorKey: navigatorKey,
             navigatorObservers: navigatorObservers,
             theme: controller.themeData.copyWith(platform: platform),
+            supportedLocales: AppLocalizations.supportedLocales,
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
             initialRoute: initialRoute,
             onGenerateRoute: (settings) {
               final route = AppRouteData.parse(settings.name);
@@ -3093,6 +3160,8 @@ class _WorkspaceRouteHarness extends StatelessWidget {
                         attachmentPicker: attachmentPicker,
                         projectCatalogService: projectCatalogService,
                         integrationStatusService: integrationStatusService,
+                        pendingRequestNotificationService:
+                            pendingRequestNotificationService,
                       ),
                   };
                 },
@@ -3101,6 +3170,34 @@ class _WorkspaceRouteHarness extends StatelessWidget {
           );
         },
       ),
+    );
+  }
+}
+
+class _NotificationRecord {
+  const _NotificationRecord({
+    required this.dedupeKey,
+    required this.title,
+    required this.body,
+  });
+
+  final String dedupeKey;
+  final String title;
+  final String body;
+}
+
+class _FakePendingRequestNotificationService
+    implements PendingRequestNotificationService {
+  final List<_NotificationRecord> notifications = <_NotificationRecord>[];
+
+  @override
+  Future<void> showPendingRequestNotification({
+    required String dedupeKey,
+    required String title,
+    required String body,
+  }) async {
+    notifications.add(
+      _NotificationRecord(dedupeKey: dedupeKey, title: title, body: body),
     );
   }
 }
@@ -3457,6 +3554,33 @@ class _RecordingWorkspaceController extends WorkspaceController {
         ),
       ],
     };
+  }
+}
+
+class _NotifyingWorkspaceController extends _RecordingWorkspaceController {
+  _NotifyingWorkspaceController({
+    required super.profile,
+    required super.directory,
+    super.initialSessionId,
+  });
+
+  PendingRequestBundle _pendingRequestBundle = const PendingRequestBundle(
+    questions: <QuestionRequestSummary>[],
+    permissions: <PermissionRequestSummary>[],
+  );
+
+  @override
+  PendingRequestBundle get pendingRequests => _pendingRequestBundle;
+
+  void emitPermissionRequest(PermissionRequestSummary request) {
+    _pendingRequestBundle = PendingRequestBundle(
+      questions: _pendingRequestBundle.questions,
+      permissions: <PermissionRequestSummary>[
+        ..._pendingRequestBundle.permissions,
+        request,
+      ],
+    );
+    notifyListeners();
   }
 }
 

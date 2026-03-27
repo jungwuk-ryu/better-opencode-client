@@ -11,6 +11,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../l10n/app_localizations.dart';
 import '../../app/app_controller.dart';
 import '../../app/app_scope.dart';
 import '../../core/connection/connection_models.dart';
@@ -26,6 +27,8 @@ import '../commands/command_service.dart';
 import '../files/file_models.dart';
 import '../projects/project_catalog_service.dart';
 import '../projects/project_models.dart';
+import '../requests/pending_request_notification_service.dart';
+import '../requests/request_alerts.dart';
 import '../requests/request_models.dart';
 import '../settings/agent_service.dart';
 import '../settings/config_service.dart';
@@ -180,6 +183,7 @@ class WebParityWorkspaceScreen extends StatefulWidget {
     this.attachmentPicker,
     this.projectCatalogService,
     this.integrationStatusService,
+    this.pendingRequestNotificationService,
     super.key,
   });
 
@@ -189,6 +193,7 @@ class WebParityWorkspaceScreen extends StatefulWidget {
   final Future<List<PromptAttachment>> Function()? attachmentPicker;
   final ProjectCatalogService? projectCatalogService;
   final IntegrationStatusService? integrationStatusService;
+  final PendingRequestNotificationService? pendingRequestNotificationService;
 
   @override
   State<WebParityWorkspaceScreen> createState() =>
@@ -277,6 +282,11 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       const <WorkspaceController, Set<String>>{};
   Set<WorkspaceController> _observedPaneControllers =
       const <WorkspaceController>{};
+  Map<WorkspaceController, PendingRequestBundle>
+  _observedPendingRequestsByController =
+      const <WorkspaceController, PendingRequestBundle>{};
+  Set<WorkspaceController> _primedPendingRequestNotificationControllers =
+      const <WorkspaceController>{};
   bool _watchedSessionSyncScheduled = false;
   int _desktopSessionPaneLayoutRevision = 0;
   late String _activeDirectory;
@@ -286,6 +296,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   late final bool _ownsProjectCatalogService;
   late IntegrationStatusService _integrationStatusService;
   late bool _ownsIntegrationStatusService;
+
+  PendingRequestNotificationService get _pendingRequestNotificationService =>
+      widget.pendingRequestNotificationService ??
+      sharedPendingRequestNotificationService;
 
   @override
   void initState() {
@@ -3227,6 +3241,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     if (!mounted) {
       return;
     }
+    _dispatchObservedPendingRequestNotifications();
     setState(() {});
   }
 
@@ -3235,6 +3250,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       controller.removeListener(_handleObservedPaneControllerChanged);
     }
     _observedPaneControllers = const <WorkspaceController>{};
+    _observedPendingRequestsByController =
+        const <WorkspaceController, PendingRequestBundle>{};
+    _primedPendingRequestNotificationControllers =
+        const <WorkspaceController>{};
   }
 
   void _syncObservedPaneControllers(Iterable<WorkspaceController> controllers) {
@@ -3249,6 +3268,99 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       controller.addListener(_handleObservedPaneControllerChanged);
     }
     _observedPaneControllers = next;
+    _observedPendingRequestsByController =
+        <WorkspaceController, PendingRequestBundle>{
+          for (final entry
+              in _observedPendingRequestsByController.entries.where(
+                (entry) => next.contains(entry.key),
+              ))
+            entry.key: entry.value,
+          for (final controller in next.difference(
+            _observedPendingRequestsByController.keys.toSet(),
+          ))
+            controller: controller.pendingRequests,
+        };
+    _primedPendingRequestNotificationControllers =
+        Set<WorkspaceController>.unmodifiable(<WorkspaceController>{
+          for (final controller
+              in _primedPendingRequestNotificationControllers.where(
+                next.contains,
+              ))
+            controller,
+          for (final controller in next.where(
+            (controller) => !controller.loading,
+          ))
+            controller,
+        });
+  }
+
+  void _dispatchObservedPendingRequestNotifications() {
+    if (_observedPaneControllers.isEmpty) {
+      return;
+    }
+    final nextTracked = <WorkspaceController, PendingRequestBundle>{
+      ..._observedPendingRequestsByController,
+    };
+    final nextPrimed = <WorkspaceController>{
+      ..._primedPendingRequestNotificationControllers,
+    };
+    for (final controller in _observedPaneControllers) {
+      final previous =
+          _observedPendingRequestsByController[controller] ??
+          controller.pendingRequests;
+      final current = controller.pendingRequests;
+      nextTracked[controller] = current;
+      final primed = nextPrimed.contains(controller);
+      if (!primed) {
+        if (!controller.loading) {
+          nextPrimed.add(controller);
+        }
+        continue;
+      }
+
+      final questionAlert = buildQuestionAskedAlert(
+        previous: previous.questions,
+        next: current.questions,
+      );
+      if (questionAlert != null) {
+        _showPendingRequestNotification(controller, questionAlert);
+      }
+
+      final permissionAlert = buildPermissionAskedAlert(
+        previous: previous.permissions,
+        next: current.permissions,
+      );
+      if (permissionAlert != null &&
+          !controller.autoAcceptsPermissionForSession(
+            permissionAlert.sessionId,
+          )) {
+        _showPendingRequestNotification(controller, permissionAlert);
+      }
+    }
+    _observedPendingRequestsByController =
+        Map<WorkspaceController, PendingRequestBundle>.unmodifiable(
+          nextTracked,
+        );
+    _primedPendingRequestNotificationControllers =
+        Set<WorkspaceController>.unmodifiable(nextPrimed);
+  }
+
+  void _showPendingRequestNotification(
+    WorkspaceController controller,
+    PendingRequestAlert alert,
+  ) {
+    final l10n = AppLocalizations.of(context);
+    if (l10n == null) {
+      return;
+    }
+    unawaited(
+      _pendingRequestNotificationService.showPendingRequestNotification(
+        dedupeKey:
+            '${controller.profile.storageKey}:${controller.directory}:${alert.kind.name}:${alert.requestId}',
+        title: pendingRequestAlertTitle(l10n, alert),
+        body: pendingRequestAlertBody(alert),
+      ),
+    );
   }
 
   void _scheduleWatchedSessionSync(
