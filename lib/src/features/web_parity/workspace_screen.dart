@@ -196,7 +196,19 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   static const int _maxDesktopSessionPanes = 8;
   static const String _composerDraftKeyPrefix = 'workspace.composerDraft';
   static const String _composerHistoryKeyPrefix = 'workspace.composerHistory';
+  static const String _desktopSidebarWidthKeyPrefix =
+      'workspace.desktopSidebarWidth';
+  static const String _desktopSidePanelWidthKeyPrefix =
+      'workspace.desktopSidePanelWidth';
   static const int _maxComposerHistoryEntries = 100;
+  static const double _desktopSidebarDefaultWidth = 340;
+  static const double _desktopSidebarMinWidth = 260;
+  static const double _desktopSidebarMaxWidth = 520;
+  static const double _desktopSidePanelDefaultWidth = 360;
+  static const double _desktopSidePanelMinWidth = 260;
+  static const double _desktopSidePanelMaxWidth = 520;
+  static const double _desktopCenterMinWidth = 480;
+  static const double _desktopResizeHandleWidth = 12;
   static const Duration _composerDraftPersistDebounce = Duration(
     milliseconds: 250,
   );
@@ -232,6 +244,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   bool _creatingPtySession = false;
   bool _desktopSidebarVisible = true;
   bool _desktopSidePanelVisible = true;
+  double _desktopSidebarWidth = _desktopSidebarDefaultWidth;
+  double _desktopSidePanelWidth = _desktopSidePanelDefaultWidth;
   int _terminalEpoch = 0;
   bool _hasPendingSessionRouteSync = false;
   bool _sessionRouteSyncInFlight = false;
@@ -951,6 +965,194 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     );
   }
 
+  String _desktopSidebarWidthStorageKey(ServerProfile profile) =>
+      '$_desktopSidebarWidthKeyPrefix::${profile.storageKey}';
+
+  String _desktopSidePanelWidthStorageKey(ServerProfile profile) =>
+      '$_desktopSidePanelWidthKeyPrefix::${profile.storageKey}';
+
+  Future<void> _restorePersistedDesktopColumnWidths(
+    ServerProfile profile,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    final restoredSidebarWidth = prefs.getDouble(
+      _desktopSidebarWidthStorageKey(profile),
+    );
+    final restoredSidePanelWidth = prefs.getDouble(
+      _desktopSidePanelWidthStorageKey(profile),
+    );
+    if (!mounted || _profile?.storageKey != profile.storageKey) {
+      return;
+    }
+    setState(() {
+      _desktopSidebarWidth = restoredSidebarWidth?.isFinite == true
+          ? restoredSidebarWidth!
+                .clamp(_desktopSidebarMinWidth, _desktopSidebarMaxWidth)
+                .toDouble()
+          : _desktopSidebarDefaultWidth;
+      _desktopSidePanelWidth = restoredSidePanelWidth?.isFinite == true
+          ? restoredSidePanelWidth!
+                .clamp(_desktopSidePanelMinWidth, _desktopSidePanelMaxWidth)
+                .toDouble()
+          : _desktopSidePanelDefaultWidth;
+    });
+  }
+
+  Future<void> _persistDesktopColumnWidths() async {
+    final profile = _profile;
+    if (profile == null) {
+      return;
+    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(
+      _desktopSidebarWidthStorageKey(profile),
+      _desktopSidebarWidth,
+    );
+    await prefs.setDouble(
+      _desktopSidePanelWidthStorageKey(profile),
+      _desktopSidePanelWidth,
+    );
+  }
+
+  ({double sidebarWidth, double sidePanelWidth}) _resolvedDesktopColumnWidths({
+    required double totalWidth,
+    required bool sidebarVisible,
+    required bool sidePanelVisible,
+  }) {
+    final visibleHandleCount =
+        (sidebarVisible ? 1 : 0) + (sidePanelVisible ? 1 : 0);
+    final reservedHandleWidth = visibleHandleCount * _desktopResizeHandleWidth;
+
+    var sidebarWidth = 0.0;
+    if (sidebarVisible) {
+      final maxSidebarWidth = math.min(
+        _desktopSidebarMaxWidth,
+        totalWidth -
+            _desktopCenterMinWidth -
+            reservedHandleWidth -
+            (sidePanelVisible ? _desktopSidePanelMinWidth : 0),
+      );
+      sidebarWidth = _desktopSidebarWidth
+          .clamp(
+            _desktopSidebarMinWidth,
+            math.max(_desktopSidebarMinWidth, maxSidebarWidth),
+          )
+          .toDouble();
+    }
+
+    var sidePanelWidth = 0.0;
+    if (sidePanelVisible) {
+      final maxSidePanelWidth = math.min(
+        _desktopSidePanelMaxWidth,
+        totalWidth -
+            _desktopCenterMinWidth -
+            reservedHandleWidth -
+            (sidebarVisible ? sidebarWidth : 0),
+      );
+      sidePanelWidth = _desktopSidePanelWidth
+          .clamp(
+            _desktopSidePanelMinWidth,
+            math.max(_desktopSidePanelMinWidth, maxSidePanelWidth),
+          )
+          .toDouble();
+    }
+
+    return (sidebarWidth: sidebarWidth, sidePanelWidth: sidePanelWidth);
+  }
+
+  double _maxDesktopSidebarWidth({
+    required double totalWidth,
+    required bool sidePanelVisible,
+  }) {
+    final reservedHandleWidth =
+        _desktopResizeHandleWidth +
+        (sidePanelVisible ? _desktopResizeHandleWidth : 0);
+    return math.min(
+      _desktopSidebarMaxWidth,
+      totalWidth -
+          _desktopCenterMinWidth -
+          reservedHandleWidth -
+          (sidePanelVisible ? _desktopSidePanelMinWidth : 0),
+    );
+  }
+
+  double _maxDesktopSidePanelWidth({
+    required double totalWidth,
+    required bool sidebarVisible,
+    required double sidebarWidth,
+  }) {
+    final reservedHandleWidth =
+        _desktopResizeHandleWidth +
+        (sidebarVisible ? _desktopResizeHandleWidth : 0);
+    return math.min(
+      _desktopSidePanelMaxWidth,
+      totalWidth -
+          _desktopCenterMinWidth -
+          reservedHandleWidth -
+          (sidebarVisible ? sidebarWidth : 0),
+    );
+  }
+
+  void _resizeDesktopSidebar({
+    required double widthDelta,
+    required double totalWidth,
+    required bool sidePanelVisible,
+    required double currentWidth,
+  }) {
+    final maxWidth = _maxDesktopSidebarWidth(
+      totalWidth: totalWidth,
+      sidePanelVisible: sidePanelVisible,
+    );
+    final clampedWidth = (currentWidth + widthDelta)
+        .clamp(
+          _desktopSidebarMinWidth,
+          math.max(_desktopSidebarMinWidth, maxWidth),
+        )
+        .toDouble();
+    if ((clampedWidth - currentWidth).abs() < 0.01) {
+      return;
+    }
+    setState(() {
+      _desktopSidebarWidth = clampedWidth;
+    });
+  }
+
+  void _resizeDesktopSidePanel({
+    required double widthDelta,
+    required double totalWidth,
+    required bool sidebarVisible,
+    required double currentWidth,
+  }) {
+    final resolvedSidebarWidth = sidebarVisible
+        ? _resolvedDesktopColumnWidths(
+            totalWidth: totalWidth,
+            sidebarVisible: true,
+            sidePanelVisible: true,
+          ).sidebarWidth
+        : 0.0;
+    final maxWidth = _maxDesktopSidePanelWidth(
+      totalWidth: totalWidth,
+      sidebarVisible: sidebarVisible,
+      sidebarWidth: resolvedSidebarWidth,
+    );
+    final clampedWidth = (currentWidth + widthDelta)
+        .clamp(
+          _desktopSidePanelMinWidth,
+          math.max(_desktopSidePanelMinWidth, maxWidth),
+        )
+        .toDouble();
+    if ((clampedWidth - currentWidth).abs() < 0.01) {
+      return;
+    }
+    setState(() {
+      _desktopSidePanelWidth = clampedWidth;
+    });
+  }
+
+  void _finishDesktopColumnResize() {
+    unawaited(_persistDesktopColumnWidths());
+  }
+
   Future<void> _restorePersistedDesktopSessionPaneLayout({
     required ServerProfile profile,
     required String initialDirectory,
@@ -1156,6 +1358,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         initialSessionId: routeSessionId,
       );
       _resetTerminalState(profile);
+      unawaited(_restorePersistedDesktopColumnWidths(profile));
       unawaited(
         _restorePersistedDesktopSessionPaneLayout(
           profile: profile,
@@ -3794,345 +3997,466 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
             selectedSession,
           );
           final chatSearch = _resolveChatSearchState(controller);
-          final sidebar = _WorkspaceSidebar(
-            currentDirectory: _currentDirectory,
-            currentSessionId: showProjectLoadingShell
-                ? null
-                : controller.selectedSessionId,
-            project: displayProject,
-            projects: displayProjects,
-            sessions: displaySessions,
-            allSessions: displayAllSessions,
-            statuses: displayStatuses,
-            showSubsessions: appController.sidebarChildSessionsVisible,
-            loadingProjectContents: showProjectLoadingShell,
-            onSelectProject: (project) =>
-                unawaited(_selectProjectInPlace(project, compact: compact)),
-            onEditProject: (project) => unawaited(_editProject(project)),
-            onRemoveProject: (project) => unawaited(
-              _removeProject(controller, project, compact: compact),
-            ),
-            onReorderProjects: (projects) =>
-                _reorderProjects(appController, projects),
-            onSelectSession: (sessionId) {
-              unawaited(
-                _selectSessionInPlace(controller, sessionId, compact: compact),
-              );
-            },
-            onNewSession: () => _createNewSession(controller),
-            onOpenSettings: () =>
-                _openWorkspaceSettingsSheet(appController, controller),
-          );
-
           return Scaffold(
             key: _scaffoldKey,
-            drawer: compact ? Drawer(child: sidebar) : null,
-            body: SafeArea(
-              child: Row(
-                children: <Widget>[
-                  if (!compact)
-                    _HorizontalReveal(
-                      key: const ValueKey<String>(
-                        'workspace-desktop-sidebar-reveal',
+            drawer: compact
+                ? Drawer(
+                    child: _WorkspaceSidebar(
+                      width: _desktopSidebarDefaultWidth,
+                      currentDirectory: _currentDirectory,
+                      currentSessionId: showProjectLoadingShell
+                          ? null
+                          : controller.selectedSessionId,
+                      project: displayProject,
+                      projects: displayProjects,
+                      sessions: displaySessions,
+                      allSessions: displayAllSessions,
+                      statuses: displayStatuses,
+                      showSubsessions:
+                          appController.sidebarChildSessionsVisible,
+                      loadingProjectContents: showProjectLoadingShell,
+                      onSelectProject: (project) => unawaited(
+                        _selectProjectInPlace(project, compact: compact),
                       ),
-                      visible: desktopSidebarVisible,
-                      alignment: Alignment.centerLeft,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: <Widget>[
-                          KeyedSubtree(
-                            key: const ValueKey<String>(
-                              'workspace-desktop-sidebar-pane',
-                            ),
-                            child: sidebar,
+                      onEditProject: (project) =>
+                          unawaited(_editProject(project)),
+                      onRemoveProject: (project) => unawaited(
+                        _removeProject(controller, project, compact: compact),
+                      ),
+                      onReorderProjects: (projects) =>
+                          _reorderProjects(appController, projects),
+                      onSelectSession: (sessionId) {
+                        unawaited(
+                          _selectSessionInPlace(
+                            controller,
+                            sessionId,
+                            compact: compact,
                           ),
-                          Container(
-                            width: 1,
-                            color: Theme.of(context).dividerColor,
-                          ),
-                        ],
+                        );
+                      },
+                      onNewSession: () => _createNewSession(controller),
+                      onOpenSettings: () => _openWorkspaceSettingsSheet(
+                        appController,
+                        controller,
                       ),
                     ),
-                  Expanded(
-                    child: Column(
-                      children: <Widget>[
-                        _WorkspaceTopBar(
-                          compact: compact,
-                          profile: appController.selectedProfile,
-                          project: displayProject,
-                          session: selectedSession,
-                          mainSession: mainSession,
-                          status: showProjectLoadingShell
-                              ? null
-                              : controller.selectedStatus,
-                          contextMetrics: showProjectLoadingShell
-                              ? const SessionContextMetrics(
-                                  totalCost: 0,
-                                  context: null,
-                                )
-                              : controller.sessionContextMetrics,
-                          shellToolPartsExpanded:
-                              appController.shellToolPartsExpanded,
-                          onSetShellToolPartsExpanded:
-                              appController.setShellToolPartsExpanded,
-                          timelineProgressDetailsVisible:
-                              appController.timelineProgressDetailsVisible,
-                          onSetTimelineProgressDetailsVisible:
-                              appController.setTimelineProgressDetailsVisible,
-                          terminalOpen: _terminalPanelOpen,
-                          chatSearchVisible: _chatSearchVisible,
-                          chatSearchController: _chatSearchController,
-                          chatSearchFocusNode: _chatSearchFocusNode,
-                          chatSearchStatusText: chatSearch.statusText,
-                          chatSearchNavigationEnabled: chatSearch.hasMatches,
-                          onOpenChatSearch: _openChatSearch,
-                          onCloseChatSearch: _closeChatSearch,
-                          onChatSearchChanged: _handleChatSearchChanged,
-                          onPreviousChatSearchMatch: () =>
-                              _moveChatSearchMatch(-1),
-                          onNextChatSearchMatch: () => _moveChatSearchMatch(1),
-                          onBackHome: () => Navigator.of(
-                            context,
-                          ).pushNamedAndRemoveUntil('/', (route) => false),
-                          sessionsPanelVisible: desktopSidebarVisible,
+                  )
+                : null,
+            body: SafeArea(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final totalWidth = constraints.maxWidth;
+                  final resolvedDesktopWidths = compact
+                      ? (sidebarWidth: 0.0, sidePanelWidth: 0.0)
+                      : _resolvedDesktopColumnWidths(
+                          totalWidth: totalWidth,
+                          sidebarVisible: desktopSidebarVisible,
                           sidePanelVisible: desktopSidePanelVisible,
-                          sidePanelLabel: _desktopSidePanelLabel(controller),
-                          onToggleSessionsPanel: compact
-                              ? null
-                              : _toggleDesktopSidebarVisibility,
-                          onToggleSidePanel: compact
-                              ? null
-                              : _toggleDesktopSidePanelVisibility,
-                          sessionPaneCount: compact
-                              ? 1
-                              : desktopSessionPanes.length,
-                          canSplitSessionPane:
-                              !compact &&
-                              !controller.loading &&
-                              controller.error == null &&
-                              desktopSessionPanes.length <
-                                  _maxDesktopSessionPanes,
-                          onSplitSessionPane:
-                              compact ||
-                                  controller.loading ||
-                                  controller.error != null
-                              ? null
-                              : () => _splitDesktopSessionPane(controller),
-                          onOpenDrawer: compact
-                              ? () => _scaffoldKey.currentState?.openDrawer()
-                              : null,
-                          onToggleTerminal: _toggleTerminalPanel,
-                          onBackToMainSession:
-                              selectedSession != null &&
-                                  mainSession != null &&
-                                  selectedSession.id != mainSession.id
-                              ? () {
-                                  unawaited(
-                                    _selectSessionInPlace(
-                                      controller,
-                                      mainSession.id,
-                                      compact: compact,
-                                    ),
-                                  );
-                                }
-                              : null,
-                          onRename: () => _renameSelectedSession(controller),
-                          onFork: controller.selectedSession == null
-                              ? null
-                              : () => _forkSelectedSession(controller),
-                          onShare: controller.selectedSession == null
-                              ? null
-                              : () => _shareSelectedSession(controller),
-                          onDelete: controller.selectedSession == null
-                              ? null
-                              : () => _deleteSelectedSession(controller),
+                        );
+                  final sidebar = _WorkspaceSidebar(
+                    width: resolvedDesktopWidths.sidebarWidth,
+                    currentDirectory: _currentDirectory,
+                    currentSessionId: showProjectLoadingShell
+                        ? null
+                        : controller.selectedSessionId,
+                    project: displayProject,
+                    projects: displayProjects,
+                    sessions: displaySessions,
+                    allSessions: displayAllSessions,
+                    statuses: displayStatuses,
+                    showSubsessions: appController.sidebarChildSessionsVisible,
+                    loadingProjectContents: showProjectLoadingShell,
+                    onSelectProject: (project) => unawaited(
+                      _selectProjectInPlace(project, compact: compact),
+                    ),
+                    onEditProject: (project) =>
+                        unawaited(_editProject(project)),
+                    onRemoveProject: (project) => unawaited(
+                      _removeProject(controller, project, compact: compact),
+                    ),
+                    onReorderProjects: (projects) =>
+                        _reorderProjects(appController, projects),
+                    onSelectSession: (sessionId) {
+                      unawaited(
+                        _selectSessionInPlace(
+                          controller,
+                          sessionId,
+                          compact: compact,
                         ),
-                        Expanded(
-                          child: showBodyProjectLoadingShell
-                              ? _WorkspaceProjectLoadingView(
-                                  key: ValueKey<String>(
-                                    'workspace-project-loading-${displayProject?.directory ?? _currentDirectory}',
-                                  ),
-                                  project: displayProject,
-                                  compact: compact,
-                                )
-                              : showBodyInitialLoading
-                              ? const Center(child: CircularProgressIndicator())
-                              : showBodyError
-                              ? _WorkspaceError(
-                                  error: controller.error!,
-                                  onBackHome: () => Navigator.of(context)
-                                      .pushNamedAndRemoveUntil(
-                                        '/',
-                                        (route) => false,
-                                      ),
-                                )
-                              : _WorkspaceBody(
-                                  compact: compact,
-                                  controller: controller,
-                                  paneViewModels: paneViewModels,
-                                  activePaneId: activePaneId,
-                                  activeWorkspaceLoading: controller.loading,
-                                  activeWorkspaceError: controller.error,
-                                  sidePanelVisible: desktopSidePanelVisible,
-                                  submittingPrompt:
-                                      _activePromptSubmitInFlight ||
-                                      controller.submittingPrompt,
-                                  pickingAttachments:
-                                      _pickingComposerAttachments,
-                                  attachments: _composerAttachmentsForScope(
-                                    activeComposerScopeKey,
-                                  ),
-                                  historyEntries: _composerHistoryForScope(
-                                    activeComposerScopeKey,
-                                  ),
-                                  promptController: _composerControllerForScope(
-                                    activeComposerScopeKey,
-                                  ),
-                                  promptFocusRequestToken:
-                                      _promptComposerFocusTokenForScope(
-                                        activeComposerScopeKey,
-                                      ),
-                                  submittedDraftEpoch:
-                                      _submittedDraftEpochForScope(
-                                        activeComposerScopeKey,
-                                      ),
-                                  recentSubmittedDraft:
-                                      _recentSubmittedDraftForScope(
-                                        activeComposerScopeKey,
-                                      ),
-                                  compactPane: _compactPane,
-                                  busyFollowupMode:
-                                      appController.busyFollowupMode,
-                                  shellToolDefaultExpanded:
-                                      appController.shellToolPartsExpanded,
-                                  timelineProgressDetailsVisible: appController
-                                      .timelineProgressDetailsVisible,
-                                  chatSearchQuery: chatSearch.query,
-                                  chatSearchMatchMessageIds:
-                                      chatSearch.matchMessageIds,
-                                  chatSearchActiveMessageId:
-                                      chatSearch.activeMessageId,
-                                  chatSearchRevision: chatSearch.revision,
-                                  timelineJumpEpoch: _timelineJumpEpoch,
-                                  onForkMessage: (message) =>
-                                      _forkMessageIntoSession(
-                                        controller,
-                                        message,
-                                      ),
-                                  onRevertMessage: (message) =>
-                                      _revertToMessage(controller, message),
-                                  interruptiblePrompt:
-                                      controller.selectedSessionId != null &&
-                                      (_activePromptSubmitInFlight ||
-                                          controller
-                                              .selectedSessionInterruptible),
-                                  interruptingPrompt:
-                                      controller.interruptingSession,
-                                  onCompactPaneChanged: (value) {
-                                    if (_compactPane == value) {
-                                      return;
+                      );
+                    },
+                    onNewSession: () => _createNewSession(controller),
+                    onOpenSettings: () =>
+                        _openWorkspaceSettingsSheet(appController, controller),
+                  );
+
+                  return Row(
+                    children: <Widget>[
+                      if (!compact)
+                        _HorizontalReveal(
+                          key: const ValueKey<String>(
+                            'workspace-desktop-sidebar-reveal',
+                          ),
+                          visible: desktopSidebarVisible,
+                          alignment: Alignment.centerLeft,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              KeyedSubtree(
+                                key: const ValueKey<String>(
+                                  'workspace-desktop-sidebar-pane',
+                                ),
+                                child: sidebar,
+                              ),
+                              Container(
+                                width: 1,
+                                color: Theme.of(context).dividerColor,
+                              ),
+                              _DesktopResizeHandle(
+                                key: const ValueKey<String>(
+                                  'workspace-desktop-sidebar-resize-handle',
+                                ),
+                                onDragUpdate: (delta) {
+                                  _resizeDesktopSidebar(
+                                    widthDelta: delta,
+                                    totalWidth: totalWidth,
+                                    sidePanelVisible: desktopSidePanelVisible,
+                                    currentWidth:
+                                        resolvedDesktopWidths.sidebarWidth,
+                                  );
+                                },
+                                onDragEnd: _finishDesktopColumnResize,
+                              ),
+                            ],
+                          ),
+                        ),
+                      Expanded(
+                        child: Column(
+                          children: <Widget>[
+                            _WorkspaceTopBar(
+                              compact: compact,
+                              profile: appController.selectedProfile,
+                              project: displayProject,
+                              session: selectedSession,
+                              mainSession: mainSession,
+                              status: showProjectLoadingShell
+                                  ? null
+                                  : controller.selectedStatus,
+                              contextMetrics: showProjectLoadingShell
+                                  ? const SessionContextMetrics(
+                                      totalCost: 0,
+                                      context: null,
+                                    )
+                                  : controller.sessionContextMetrics,
+                              shellToolPartsExpanded:
+                                  appController.shellToolPartsExpanded,
+                              onSetShellToolPartsExpanded:
+                                  appController.setShellToolPartsExpanded,
+                              timelineProgressDetailsVisible:
+                                  appController.timelineProgressDetailsVisible,
+                              onSetTimelineProgressDetailsVisible: appController
+                                  .setTimelineProgressDetailsVisible,
+                              terminalOpen: _terminalPanelOpen,
+                              chatSearchVisible: _chatSearchVisible,
+                              chatSearchController: _chatSearchController,
+                              chatSearchFocusNode: _chatSearchFocusNode,
+                              chatSearchStatusText: chatSearch.statusText,
+                              chatSearchNavigationEnabled:
+                                  chatSearch.hasMatches,
+                              onOpenChatSearch: _openChatSearch,
+                              onCloseChatSearch: _closeChatSearch,
+                              onChatSearchChanged: _handleChatSearchChanged,
+                              onPreviousChatSearchMatch: () =>
+                                  _moveChatSearchMatch(-1),
+                              onNextChatSearchMatch: () =>
+                                  _moveChatSearchMatch(1),
+                              onBackHome: () => Navigator.of(
+                                context,
+                              ).pushNamedAndRemoveUntil('/', (route) => false),
+                              sessionsPanelVisible: desktopSidebarVisible,
+                              sidePanelVisible: desktopSidePanelVisible,
+                              sidePanelLabel: _desktopSidePanelLabel(
+                                controller,
+                              ),
+                              onToggleSessionsPanel: compact
+                                  ? null
+                                  : _toggleDesktopSidebarVisibility,
+                              onToggleSidePanel: compact
+                                  ? null
+                                  : _toggleDesktopSidePanelVisibility,
+                              sessionPaneCount: compact
+                                  ? 1
+                                  : desktopSessionPanes.length,
+                              canSplitSessionPane:
+                                  !compact &&
+                                  !controller.loading &&
+                                  controller.error == null &&
+                                  desktopSessionPanes.length <
+                                      _maxDesktopSessionPanes,
+                              onSplitSessionPane:
+                                  compact ||
+                                      controller.loading ||
+                                      controller.error != null
+                                  ? null
+                                  : () => _splitDesktopSessionPane(controller),
+                              onOpenDrawer: compact
+                                  ? () =>
+                                        _scaffoldKey.currentState?.openDrawer()
+                                  : null,
+                              onToggleTerminal: _toggleTerminalPanel,
+                              onBackToMainSession:
+                                  selectedSession != null &&
+                                      mainSession != null &&
+                                      selectedSession.id != mainSession.id
+                                  ? () {
+                                      unawaited(
+                                        _selectSessionInPlace(
+                                          controller,
+                                          mainSession.id,
+                                          compact: compact,
+                                        ),
+                                      );
                                     }
-                                    setState(() {
-                                      _compactPane = value;
-                                    });
-                                  },
-                                  onSubmitPrompt: _submitPrompt,
-                                  onEditQueuedPrompt: _editQueuedPrompt,
-                                  onDeleteQueuedPrompt: _deleteQueuedPrompt,
-                                  onSendQueuedPromptNow: _sendQueuedPromptNow,
-                                  onInterruptPrompt: _interruptSelectedSession,
-                                  onCreateSession: () =>
-                                      _createNewSession(controller),
-                                  onOpenSession: (sessionId) {
-                                    unawaited(
-                                      _selectSessionInPlace(
-                                        controller,
-                                        sessionId,
-                                        compact: compact,
+                                  : null,
+                              onRename: () =>
+                                  _renameSelectedSession(controller),
+                              onFork: controller.selectedSession == null
+                                  ? null
+                                  : () => _forkSelectedSession(controller),
+                              onShare: controller.selectedSession == null
+                                  ? null
+                                  : () => _shareSelectedSession(controller),
+                              onDelete: controller.selectedSession == null
+                                  ? null
+                                  : () => _deleteSelectedSession(controller),
+                            ),
+                            Expanded(
+                              child: showBodyProjectLoadingShell
+                                  ? _WorkspaceProjectLoadingView(
+                                      key: ValueKey<String>(
+                                        'workspace-project-loading-${displayProject?.directory ?? _currentDirectory}',
                                       ),
-                                    );
-                                  },
-                                  onSelectSessionPane: (paneId) =>
-                                      _activateDesktopSessionPane(
-                                        controller,
-                                        paneId,
+                                      project: displayProject,
+                                      compact: compact,
+                                    )
+                                  : showBodyInitialLoading
+                                  ? const Center(
+                                      child: CircularProgressIndicator(),
+                                    )
+                                  : showBodyError
+                                  ? _WorkspaceError(
+                                      error: controller.error!,
+                                      onBackHome: () => Navigator.of(context)
+                                          .pushNamedAndRemoveUntil(
+                                            '/',
+                                            (route) => false,
+                                          ),
+                                    )
+                                  : _WorkspaceBody(
+                                      compact: compact,
+                                      controller: controller,
+                                      paneViewModels: paneViewModels,
+                                      activePaneId: activePaneId,
+                                      activeWorkspaceLoading:
+                                          controller.loading,
+                                      activeWorkspaceError: controller.error,
+                                      sidePanelVisible: desktopSidePanelVisible,
+                                      sidePanelWidth:
+                                          resolvedDesktopWidths.sidePanelWidth,
+                                      submittingPrompt:
+                                          _activePromptSubmitInFlight ||
+                                          controller.submittingPrompt,
+                                      pickingAttachments:
+                                          _pickingComposerAttachments,
+                                      attachments: _composerAttachmentsForScope(
+                                        activeComposerScopeKey,
                                       ),
-                                  onCloseSessionPane: (paneId) {
-                                    unawaited(
-                                      _closeDesktopSessionPane(
-                                        controller,
-                                        paneId,
+                                      historyEntries: _composerHistoryForScope(
+                                        activeComposerScopeKey,
                                       ),
-                                    );
-                                  },
-                                  onPickAttachments: _pickComposerAttachments,
-                                  onRemoveAttachment: _removeComposerAttachment,
-                                  onTogglePermissionAutoAccept:
-                                      _toggleSelectedPermissionAutoAccept,
-                                  inlineComposerBuilder: usePerPaneComposer
-                                      ? (paneViewModel, selected, compact) =>
-                                            _buildPaneComposer(
+                                      promptController:
+                                          _composerControllerForScope(
+                                            activeComposerScopeKey,
+                                          ),
+                                      promptFocusRequestToken:
+                                          _promptComposerFocusTokenForScope(
+                                            activeComposerScopeKey,
+                                          ),
+                                      submittedDraftEpoch:
+                                          _submittedDraftEpochForScope(
+                                            activeComposerScopeKey,
+                                          ),
+                                      recentSubmittedDraft:
+                                          _recentSubmittedDraftForScope(
+                                            activeComposerScopeKey,
+                                          ),
+                                      compactPane: _compactPane,
+                                      busyFollowupMode:
+                                          appController.busyFollowupMode,
+                                      shellToolDefaultExpanded:
+                                          appController.shellToolPartsExpanded,
+                                      timelineProgressDetailsVisible:
+                                          appController
+                                              .timelineProgressDetailsVisible,
+                                      chatSearchQuery: chatSearch.query,
+                                      chatSearchMatchMessageIds:
+                                          chatSearch.matchMessageIds,
+                                      chatSearchActiveMessageId:
+                                          chatSearch.activeMessageId,
+                                      chatSearchRevision: chatSearch.revision,
+                                      timelineJumpEpoch: _timelineJumpEpoch,
+                                      onForkMessage: (message) =>
+                                          _forkMessageIntoSession(
+                                            controller,
+                                            message,
+                                          ),
+                                      onRevertMessage: (message) =>
+                                          _revertToMessage(controller, message),
+                                      interruptiblePrompt:
+                                          controller.selectedSessionId !=
+                                              null &&
+                                          (_activePromptSubmitInFlight ||
+                                              controller
+                                                  .selectedSessionInterruptible),
+                                      interruptingPrompt:
+                                          controller.interruptingSession,
+                                      onCompactPaneChanged: (value) {
+                                        if (_compactPane == value) {
+                                          return;
+                                        }
+                                        setState(() {
+                                          _compactPane = value;
+                                        });
+                                      },
+                                      onSubmitPrompt: _submitPrompt,
+                                      onEditQueuedPrompt: _editQueuedPrompt,
+                                      onDeleteQueuedPrompt: _deleteQueuedPrompt,
+                                      onSendQueuedPromptNow:
+                                          _sendQueuedPromptNow,
+                                      onInterruptPrompt:
+                                          _interruptSelectedSession,
+                                      onCreateSession: () =>
+                                          _createNewSession(controller),
+                                      onOpenSession: (sessionId) {
+                                        unawaited(
+                                          _selectSessionInPlace(
+                                            controller,
+                                            sessionId,
+                                            compact: compact,
+                                          ),
+                                        );
+                                      },
+                                      onSelectSessionPane: (paneId) =>
+                                          _activateDesktopSessionPane(
+                                            controller,
+                                            paneId,
+                                          ),
+                                      onCloseSessionPane: (paneId) {
+                                        unawaited(
+                                          _closeDesktopSessionPane(
+                                            controller,
+                                            paneId,
+                                          ),
+                                        );
+                                      },
+                                      onPickAttachments:
+                                          _pickComposerAttachments,
+                                      onRemoveAttachment:
+                                          _removeComposerAttachment,
+                                      onTogglePermissionAutoAccept:
+                                          _toggleSelectedPermissionAutoAccept,
+                                      inlineComposerBuilder: usePerPaneComposer
+                                          ? (
+                                              paneViewModel,
+                                              selected,
+                                              compact,
+                                            ) => _buildPaneComposer(
                                               appController,
                                               paneViewModel,
                                               compact: compact,
                                               selected: selected,
                                             )
-                                      : null,
-                                  onShowSidePanel: compact
-                                      ? null
-                                      : () => _setDesktopSidePanelVisible(true),
-                                  onShareSession:
-                                      controller.selectedSession == null
-                                      ? null
-                                      : () => _shareSelectedSession(controller),
-                                  onUnshareSession:
-                                      controller.selectedSession == null
-                                      ? null
-                                      : () =>
-                                            _unshareSelectedSession(controller),
-                                  onSummarizeSession:
-                                      controller.selectedSession == null
-                                      ? null
-                                      : () => _summarizeSelectedSession(
-                                          controller,
-                                        ),
-                                  onToggleTerminal: _toggleTerminalPanel,
-                                  terminalPanelOpen: _terminalPanelOpen,
-                                  terminalPanel:
-                                      !_terminalPanelMounted ||
-                                          _ptyService == null
-                                      ? null
-                                      : PtyTerminalPanel(
-                                          profile: _profile!,
-                                          directory: _currentDirectory,
-                                          service: _ptyService!,
-                                          sessions: _ptySessions,
-                                          activeSessionId: _activePtyId,
-                                          loading: _loadingPtySessions,
-                                          creating: _creatingPtySession,
-                                          error: _terminalError,
-                                          onSelectSession: (ptyId) {
-                                            setState(() {
-                                              _activePtyId = ptyId;
-                                            });
-                                          },
-                                          onCreateSession: _createPtySession,
-                                          onCloseSession: _closePtySession,
-                                          onRetry: () => _loadPtySessions(
-                                            epoch: _terminalEpoch,
-                                            profile: _profile!,
-                                          ),
-                                          onTitleChanged: _renamePtySession,
-                                          onSessionMissing:
-                                              _removeMissingPtySession,
-                                        ),
-                                ),
+                                          : null,
+                                      onShowSidePanel: compact
+                                          ? null
+                                          : () => _setDesktopSidePanelVisible(
+                                              true,
+                                            ),
+                                      onResizeSidePanel:
+                                          compact || !desktopSidePanelVisible
+                                          ? null
+                                          : (delta) {
+                                              _resizeDesktopSidePanel(
+                                                widthDelta: -delta,
+                                                totalWidth: totalWidth,
+                                                sidebarVisible:
+                                                    desktopSidebarVisible,
+                                                currentWidth:
+                                                    resolvedDesktopWidths
+                                                        .sidePanelWidth,
+                                              );
+                                            },
+                                      onFinishResizeSidePanel:
+                                          compact || !desktopSidePanelVisible
+                                          ? null
+                                          : _finishDesktopColumnResize,
+                                      onShareSession:
+                                          controller.selectedSession == null
+                                          ? null
+                                          : () => _shareSelectedSession(
+                                              controller,
+                                            ),
+                                      onUnshareSession:
+                                          controller.selectedSession == null
+                                          ? null
+                                          : () => _unshareSelectedSession(
+                                              controller,
+                                            ),
+                                      onSummarizeSession:
+                                          controller.selectedSession == null
+                                          ? null
+                                          : () => _summarizeSelectedSession(
+                                              controller,
+                                            ),
+                                      onToggleTerminal: _toggleTerminalPanel,
+                                      terminalPanelOpen: _terminalPanelOpen,
+                                      terminalPanel:
+                                          !_terminalPanelMounted ||
+                                              _ptyService == null
+                                          ? null
+                                          : PtyTerminalPanel(
+                                              profile: _profile!,
+                                              directory: _currentDirectory,
+                                              service: _ptyService!,
+                                              sessions: _ptySessions,
+                                              activeSessionId: _activePtyId,
+                                              loading: _loadingPtySessions,
+                                              creating: _creatingPtySession,
+                                              error: _terminalError,
+                                              onSelectSession: (ptyId) {
+                                                setState(() {
+                                                  _activePtyId = ptyId;
+                                                });
+                                              },
+                                              onCreateSession:
+                                                  _createPtySession,
+                                              onCloseSession: _closePtySession,
+                                              onRetry: () => _loadPtySessions(
+                                                epoch: _terminalEpoch,
+                                                profile: _profile!,
+                                              ),
+                                              onTitleChanged: _renamePtySession,
+                                              onSessionMissing:
+                                                  _removeMissingPtySession,
+                                            ),
+                                    ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                  ),
-                ],
+                      ),
+                    ],
+                  );
+                },
               ),
             ),
           );
@@ -7005,6 +7329,7 @@ class _SessionContextUsageRing extends StatelessWidget {
 
 class _WorkspaceSidebar extends StatefulWidget {
   const _WorkspaceSidebar({
+    required this.width,
     required this.currentDirectory,
     required this.currentSessionId,
     required this.project,
@@ -7023,6 +7348,7 @@ class _WorkspaceSidebar extends StatefulWidget {
     required this.onOpenSettings,
   });
 
+  final double width;
   final String currentDirectory;
   final String? currentSessionId;
   final ProjectTarget? project;
@@ -7150,7 +7476,7 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
     );
 
     return SizedBox(
-      width: density.sidebarWidth(340),
+      width: density.sidebarWidth(widget.width),
       child: Row(
         children: <Widget>[
           Container(
@@ -8631,6 +8957,7 @@ class _WorkspaceBody extends StatelessWidget {
     required this.activeWorkspaceLoading,
     required this.activeWorkspaceError,
     required this.sidePanelVisible,
+    required this.sidePanelWidth,
     required this.submittingPrompt,
     required this.interruptiblePrompt,
     required this.interruptingPrompt,
@@ -8666,6 +8993,8 @@ class _WorkspaceBody extends StatelessWidget {
     required this.onRemoveAttachment,
     required this.onTogglePermissionAutoAccept,
     this.onShowSidePanel,
+    this.onResizeSidePanel,
+    this.onFinishResizeSidePanel,
     this.inlineComposerBuilder,
     required this.onToggleTerminal,
     required this.terminalPanelOpen,
@@ -8682,6 +9011,7 @@ class _WorkspaceBody extends StatelessWidget {
   final bool activeWorkspaceLoading;
   final String? activeWorkspaceError;
   final bool sidePanelVisible;
+  final double sidePanelWidth;
   final bool submittingPrompt;
   final bool interruptiblePrompt;
   final bool interruptingPrompt;
@@ -8717,6 +9047,8 @@ class _WorkspaceBody extends StatelessWidget {
   final ValueChanged<String> onRemoveAttachment;
   final Future<void> Function() onTogglePermissionAutoAccept;
   final VoidCallback? onShowSidePanel;
+  final ValueChanged<double>? onResizeSidePanel;
+  final VoidCallback? onFinishResizeSidePanel;
   final Widget Function(
     _WorkspacePaneViewModel paneViewModel,
     bool selected,
@@ -8891,16 +9223,62 @@ class _WorkspaceBody extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
+              _DesktopResizeHandle(
+                key: const ValueKey<String>(
+                  'workspace-desktop-side-panel-resize-handle',
+                ),
+                onDragUpdate: onResizeSidePanel,
+                onDragEnd: onFinishResizeSidePanel,
+              ),
               Container(width: 1, color: Theme.of(context).dividerColor),
               SizedBox(
                 key: const ValueKey<String>('workspace-desktop-side-panel'),
-                width: density.sidePanelWidth(360),
+                width: density.sidePanelWidth(sidePanelWidth),
                 child: sidePanel,
               ),
             ],
           ),
         ),
       ],
+    );
+  }
+}
+
+class _DesktopResizeHandle extends StatelessWidget {
+  const _DesktopResizeHandle({
+    required this.onDragUpdate,
+    this.onDragEnd,
+    super.key,
+  });
+
+  final ValueChanged<double>? onDragUpdate;
+  final VoidCallback? onDragEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeColumn,
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onHorizontalDragUpdate: onDragUpdate == null
+            ? null
+            : (details) => onDragUpdate!(details.delta.dx),
+        onHorizontalDragEnd: onDragEnd == null ? null : (_) => onDragEnd!(),
+        child: SizedBox(
+          width: _WebParityWorkspaceScreenState._desktopResizeHandleWidth,
+          child: Center(
+            child: Container(
+              width: 2,
+              height: 52,
+              decoration: BoxDecoration(
+                color: surfaces.lineSoft.withValues(alpha: 0.82),
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

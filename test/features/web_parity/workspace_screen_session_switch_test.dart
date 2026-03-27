@@ -386,6 +386,127 @@ void main() {
   );
 
   testWidgets(
+    'desktop layout lets users resize side panels and restores widths across launches',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final firstAppController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              return _RecordingWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+            },
+      );
+      addTearDown(firstAppController.dispose);
+
+      final firstNavigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: firstAppController,
+          navigatorKey: firstNavigatorKey,
+          initialRoute: '/',
+        ),
+      );
+      firstNavigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+      );
+      await tester.pumpAndSettle();
+
+      final sidebarPane = find.byKey(
+        const ValueKey<String>('workspace-desktop-sidebar-pane'),
+      );
+      final sidePanel = find.byKey(
+        const ValueKey<String>('workspace-desktop-side-panel'),
+      );
+      final sessionDeck = find.byKey(
+        const ValueKey<String>('workspace-session-pane-deck'),
+      );
+
+      final initialSidebarWidth = tester.getSize(sidebarPane).width;
+      final initialSidePanelWidth = tester.getSize(sidePanel).width;
+      final initialSessionDeckWidth = tester.getSize(sessionDeck).width;
+
+      await tester.drag(
+        find.byKey(
+          const ValueKey<String>('workspace-desktop-sidebar-resize-handle'),
+        ),
+        const Offset(96, 0),
+      );
+      await tester.pumpAndSettle();
+
+      final resizedSidebarWidth = tester.getSize(sidebarPane).width;
+      final resizedSessionDeckWidth = tester.getSize(sessionDeck).width;
+      expect(resizedSidebarWidth, greaterThan(initialSidebarWidth + 40));
+      expect(resizedSessionDeckWidth, lessThan(initialSessionDeckWidth - 40));
+
+      await tester.drag(
+        find.byKey(
+          const ValueKey<String>('workspace-desktop-side-panel-resize-handle'),
+        ),
+        const Offset(-72, 0),
+      );
+      await tester.pumpAndSettle();
+
+      final resizedSidePanelWidth = tester.getSize(sidePanel).width;
+      expect(resizedSidePanelWidth, greaterThan(initialSidePanelWidth + 30));
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(milliseconds: 100));
+
+      final restoredAppController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              return _RecordingWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+            },
+      );
+      addTearDown(restoredAppController.dispose);
+
+      final restoredNavigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: restoredAppController,
+          navigatorKey: restoredNavigatorKey,
+          initialRoute: '/',
+        ),
+      );
+      restoredNavigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.getSize(sidebarPane).width,
+        closeTo(resizedSidebarWidth, 1),
+      );
+      expect(
+        tester.getSize(sidePanel).width,
+        closeTo(resizedSidePanelWidth, 1),
+      );
+    },
+  );
+
+  testWidgets(
     'desktop keyboard shortcuts toggle panels and focus the composer',
     (tester) async {
       tester.view.physicalSize = const Size(1600, 1000);
