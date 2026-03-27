@@ -10127,7 +10127,12 @@ class _WorkspaceProjectLoadingSkeleton extends StatelessWidget {
         SizedBox(height: AppSpacing.sm),
         _ShimmerBox(height: 14, widthFactor: 0.86, borderRadius: 8),
         SizedBox(height: AppSpacing.lg),
-        _ShimmerBox(height: 96, widthFactor: 1, borderRadius: 18),
+        _ShimmerBox(
+          height: 96,
+          widthFactor: 1,
+          borderRadius: 18,
+          style: _ShimmerBoxStyle.surface,
+        ),
       ],
     );
   }
@@ -10156,7 +10161,12 @@ class _PromptComposerLoadingPlaceholder extends StatelessWidget {
         children: <Widget>[
           _ShimmerBox(height: 16, widthFactor: 0.18, borderRadius: 8),
           SizedBox(height: AppSpacing.md),
-          _ShimmerBox(height: 44, widthFactor: 1, borderRadius: 14),
+          _ShimmerBox(
+            height: 44,
+            widthFactor: 1,
+            borderRadius: 14,
+            style: _ShimmerBoxStyle.surface,
+          ),
           SizedBox(height: AppSpacing.sm),
           Row(
             children: <Widget>[
@@ -15463,16 +15473,58 @@ double _shimmerHighlightWidth(double width) {
   return (width * 0.14).clamp(28.0, 64.0);
 }
 
+enum _ShimmerBoxStyle { line, surface }
+
+LinearGradient _shimmerSurfaceGradient(
+  Rect bounds,
+  double progress, {
+  Color highlightColor = Colors.white,
+}) {
+  final width = bounds.width <= 0 ? 1.0 : bounds.width;
+  final bandWidth = (width * 0.58).clamp(96.0, 240.0);
+  final start = ui.lerpDouble(-bandWidth, width, progress) ?? -bandWidth;
+  final end = start + bandWidth;
+  final safeWidth = width <= 0 ? 1.0 : width;
+  final left = (start / safeWidth).clamp(0.0, 1.0);
+  final right = (end / safeWidth).clamp(0.0, 1.0);
+  final center = ((start + end) / 2 / safeWidth).clamp(0.0, 1.0);
+  final innerLeft = (ui.lerpDouble(left, center, 0.42) ?? center).clamp(
+    0.0,
+    1.0,
+  );
+  final innerRight = (ui.lerpDouble(center, right, 0.42) ?? center).clamp(
+    0.0,
+    1.0,
+  );
+
+  return LinearGradient(
+    begin: Alignment.centerLeft,
+    end: Alignment.centerRight,
+    colors: <Color>[
+      Colors.transparent,
+      highlightColor.withValues(alpha: 0.04),
+      highlightColor.withValues(alpha: 0.1),
+      highlightColor.withValues(alpha: 0.28),
+      highlightColor.withValues(alpha: 0.1),
+      highlightColor.withValues(alpha: 0.04),
+      Colors.transparent,
+    ],
+    stops: <double>[0, left, innerLeft, center, innerRight, right, 1],
+  );
+}
+
 class _ShimmerBox extends StatefulWidget {
   const _ShimmerBox({
     required this.height,
     required this.widthFactor,
     required this.borderRadius,
+    this.style = _ShimmerBoxStyle.line,
   });
 
   final double height;
   final double widthFactor;
   final double borderRadius;
+  final _ShimmerBoxStyle style;
 
   @override
   State<_ShimmerBox> createState() => _ShimmerBoxState();
@@ -15482,7 +15534,12 @@ class _ShimmerBoxState extends State<_ShimmerBox>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 3000),
+    duration: Duration(
+      milliseconds: switch (widget.style) {
+        _ShimmerBoxStyle.line => 3000,
+        _ShimmerBoxStyle.surface => 1800,
+      },
+    ),
   )..repeat();
 
   @override
@@ -15530,10 +15587,17 @@ class _ShimmerBoxState extends State<_ShimmerBox>
                         bounds.width <= 0 ? 1 : bounds.width,
                         bounds.height <= 0 ? 1 : bounds.height,
                       );
-                      return _shimmerHighlightGradient(
-                        shimmerBounds,
-                        _controller.value,
-                      ).createShader(shimmerBounds);
+                      final gradient = switch (widget.style) {
+                        _ShimmerBoxStyle.line => _shimmerHighlightGradient(
+                          shimmerBounds,
+                          _controller.value,
+                        ),
+                        _ShimmerBoxStyle.surface => _shimmerSurfaceGradient(
+                          shimmerBounds,
+                          _controller.value,
+                        ),
+                      };
+                      return gradient.createShader(shimmerBounds);
                     },
                     child: shimmerChild,
                   );
