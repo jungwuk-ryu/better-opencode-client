@@ -40,131 +40,249 @@ enum AppThemePreset {
     AppThemePreset.remote => const AppThemePresetDefinition(
       label: 'Remote',
       summary: 'The current BOC default.',
-      background: Color(0xFF0D0E10),
-      text: Color(0xFFEAECEF),
-      primary: Color(0xFF39C8BA),
-      accent: Color(0xFF7ADCD3),
-      success: Color(0xFF67D98A),
-      warning: Color(0xFFE2BF76),
-      danger: Color(0xFFEF8A8A),
-      muted: Color(0xFF9BA2AA),
+      light: AppThemeToneDefinition(
+        background: Color(0xFFF5F8FA),
+        text: Color(0xFF162127),
+        primary: Color(0xFF138D84),
+        accent: Color(0xFF35B6AB),
+        success: Color(0xFF4A9D69),
+        warning: Color(0xFFC58B2F),
+        danger: Color(0xFFD76262),
+        muted: Color(0xFF67747D),
+      ),
+      dark: AppThemeToneDefinition(
+        background: Color(0xFF0D0E10),
+        text: Color(0xFFEAECEF),
+        primary: Color(0xFF39C8BA),
+        accent: Color(0xFF7ADCD3),
+        success: Color(0xFF67D98A),
+        warning: Color(0xFFE2BF76),
+        danger: Color(0xFFEF8A8A),
+        muted: Color(0xFF9BA2AA),
+      ),
     ),
     AppThemePreset.opencode => const AppThemePresetDefinition(
       label: 'OpenCode',
       summary: 'Warm terminals and violet accents.',
-      background: Color(0xFF0A0A0A),
-      text: Color(0xFFEEEEEE),
-      primary: Color(0xFFFAB283),
-      accent: Color(0xFF9D7CD8),
-      success: Color(0xFF7FD88F),
-      warning: Color(0xFFF5A742),
-      danger: Color(0xFFE06C75),
-      muted: Color(0xFF808080),
+      light: AppThemeToneDefinition(
+        background: Color(0xFFFFFFFF),
+        text: Color(0xFF1A1A1A),
+        primary: Color(0xFF3B7DD8),
+        accent: Color(0xFFD68C27),
+        success: Color(0xFF3D9A57),
+        warning: Color(0xFFD68C27),
+        danger: Color(0xFFD1383D),
+        muted: Color(0xFF8A8A8A),
+      ),
+      dark: AppThemeToneDefinition(
+        background: Color(0xFF0A0A0A),
+        text: Color(0xFFEEEEEE),
+        primary: Color(0xFFFAB283),
+        accent: Color(0xFF9D7CD8),
+        success: Color(0xFF7FD88F),
+        warning: Color(0xFFF5A742),
+        danger: Color(0xFFE06C75),
+        muted: Color(0xFF808080),
+      ),
     ),
     AppThemePreset.amoled => const AppThemePresetDefinition(
       label: 'AMOLED',
       summary: 'Pure black with neon contrast.',
-      background: Color(0xFF000000),
-      text: Color(0xFFFFFFFF),
-      primary: Color(0xFFB388FF),
-      accent: Color(0xFFFF4081),
-      success: Color(0xFF00FF88),
-      warning: Color(0xFFFFEA00),
-      danger: Color(0xFFFF1744),
-      muted: Color(0xFF777777),
+      light: AppThemeToneDefinition(
+        background: Color(0xFFF0F0F0),
+        text: Color(0xFF0A0A0A),
+        primary: Color(0xFF6200FF),
+        accent: Color(0xFFFF0080),
+        success: Color(0xFF00E676),
+        warning: Color(0xFFFFAB00),
+        danger: Color(0xFFFF1744),
+        muted: Color(0xFF757575),
+      ),
+      dark: AppThemeToneDefinition(
+        background: Color(0xFF000000),
+        text: Color(0xFFFFFFFF),
+        primary: Color(0xFFB388FF),
+        accent: Color(0xFFFF4081),
+        success: Color(0xFF00FF88),
+        warning: Color(0xFFFFEA00),
+        danger: Color(0xFFFF1744),
+        muted: Color(0xFF555555),
+      ),
     ),
     AppThemePreset.github => const AppThemePresetDefinition(
       label: 'GitHub',
       summary: 'Cool steel with code-hosting blues.',
-      background: Color(0xFF0D1117),
-      text: Color(0xFFC9D1D9),
-      primary: Color(0xFF58A6FF),
-      accent: Color(0xFF39C5CF),
-      success: Color(0xFF3FB950),
-      warning: Color(0xFFE3B341),
-      danger: Color(0xFFF85149),
-      muted: Color(0xFF8B949E),
+      light: AppThemeToneDefinition(
+        background: Color(0xFFFFFFFF),
+        text: Color(0xFF24292F),
+        primary: Color(0xFF0969DA),
+        accent: Color(0xFF1B7C83),
+        success: Color(0xFF1A7F37),
+        warning: Color(0xFF9A6700),
+        danger: Color(0xFFCF222E),
+        muted: Color(0xFF57606A),
+      ),
+      dark: AppThemeToneDefinition(
+        background: Color(0xFF0D1117),
+        text: Color(0xFFC9D1D9),
+        primary: Color(0xFF58A6FF),
+        accent: Color(0xFF39C5CF),
+        success: Color(0xFF3FB950),
+        warning: Color(0xFFE3B341),
+        danger: Color(0xFFF85149),
+        muted: Color(0xFF8B949E),
+      ),
     ),
     AppThemePreset.catppuccin => const AppThemePresetDefinition(
       label: 'Catppuccin',
       summary: 'Soft mauves and milk-glass text.',
-      background: Color(0xFF1E1E2E),
-      text: Color(0xFFCDD6F4),
-      primary: Color(0xFFB4BEFE),
-      accent: Color(0xFFF38BA8),
-      success: Color(0xFFA6D189),
-      warning: Color(0xFFF4B8E4),
-      danger: Color(0xFFF38BA8),
-      muted: Color(0xFF6C7086),
+      light: AppThemeToneDefinition(
+        background: Color(0xFFF5E0DC),
+        text: Color(0xFF4C4F69),
+        primary: Color(0xFF7287FD),
+        accent: Color(0xFFD20F39),
+        success: Color(0xFF40A02B),
+        warning: Color(0xFFDF8E1D),
+        danger: Color(0xFFD20F39),
+        muted: Color(0xFF6C7086),
+      ),
+      dark: AppThemeToneDefinition(
+        background: Color(0xFF1E1E2E),
+        text: Color(0xFFCDD6F4),
+        primary: Color(0xFFB4BEFE),
+        accent: Color(0xFFF38BA8),
+        success: Color(0xFFA6D189),
+        warning: Color(0xFFF4B8E4),
+        danger: Color(0xFFF38BA8),
+        muted: Color(0xFF6C7086),
+      ),
     ),
     AppThemePreset.nord => const AppThemePresetDefinition(
       label: 'Nord',
       summary: 'Arctic slate with frosted cyan.',
-      background: Color(0xFF2E3440),
-      text: Color(0xFFE5E9F0),
-      primary: Color(0xFF88C0D0),
-      accent: Color(0xFFD57780),
-      success: Color(0xFFA3BE8C),
-      warning: Color(0xFFD08770),
-      danger: Color(0xFFBF616A),
-      muted: Color(0xFF616E88),
+      light: AppThemeToneDefinition(
+        background: Color(0xFFECEFF4),
+        text: Color(0xFF2E3440),
+        primary: Color(0xFF5E81AC),
+        accent: Color(0xFFBF616A),
+        success: Color(0xFF8FBCBB),
+        warning: Color(0xFFD08770),
+        danger: Color(0xFFBF616A),
+        muted: Color(0xFF6B7282),
+      ),
+      dark: AppThemeToneDefinition(
+        background: Color(0xFF2E3440),
+        text: Color(0xFFE5E9F0),
+        primary: Color(0xFF88C0D0),
+        accent: Color(0xFFD57780),
+        success: Color(0xFFA3BE8C),
+        warning: Color(0xFFD08770),
+        danger: Color(0xFFBF616A),
+        muted: Color(0xFF616E88),
+      ),
     ),
     AppThemePreset.rosepine => const AppThemePresetDefinition(
       label: 'Rose Pine',
       summary: 'Dusky plum with soft rose light.',
-      background: Color(0xFF191724),
-      text: Color(0xFFE0DEF4),
-      primary: Color(0xFF9CCFD8),
-      accent: Color(0xFFEBBCBA),
-      success: Color(0xFF31748F),
-      warning: Color(0xFFF6C177),
-      danger: Color(0xFFEB6F92),
-      muted: Color(0xFF6E6A86),
+      light: AppThemeToneDefinition(
+        background: Color(0xFFFAF4ED),
+        text: Color(0xFF575279),
+        primary: Color(0xFF31748F),
+        accent: Color(0xFFD7827E),
+        success: Color(0xFF286983),
+        warning: Color(0xFFEA9D34),
+        danger: Color(0xFFB4637A),
+        muted: Color(0xFF9893A5),
+      ),
+      dark: AppThemeToneDefinition(
+        background: Color(0xFF191724),
+        text: Color(0xFFE0DEF4),
+        primary: Color(0xFF9CCFD8),
+        accent: Color(0xFFEBBCBA),
+        success: Color(0xFF31748F),
+        warning: Color(0xFFF6C177),
+        danger: Color(0xFFEB6F92),
+        muted: Color(0xFF6E6A86),
+      ),
     ),
     AppThemePreset.tokyonight => const AppThemePresetDefinition(
       label: 'Tokyonight',
       summary: 'Midnight indigo with bright neon edges.',
-      background: Color(0xFF1A1B26),
-      text: Color(0xFFC0CAF5),
-      primary: Color(0xFF7AA2F7),
-      accent: Color(0xFFFF9E64),
-      success: Color(0xFF9ECE6A),
-      warning: Color(0xFFE0AF68),
-      danger: Color(0xFFF7768E),
-      muted: Color(0xFF565F89),
+      light: AppThemeToneDefinition(
+        background: Color(0xFFE1E2E7),
+        text: Color(0xFF273153),
+        primary: Color(0xFF2E7DE9),
+        accent: Color(0xFFB15C00),
+        success: Color(0xFF587539),
+        warning: Color(0xFF8C6C3E),
+        danger: Color(0xFFC94060),
+        muted: Color(0xFF6B6F7A),
+      ),
+      dark: AppThemeToneDefinition(
+        background: Color(0xFF1A1B26),
+        text: Color(0xFFC0CAF5),
+        primary: Color(0xFF7AA2F7),
+        accent: Color(0xFFFF9E64),
+        success: Color(0xFF9ECE6A),
+        warning: Color(0xFFE0AF68),
+        danger: Color(0xFFF7768E),
+        muted: Color(0xFF565F89),
+      ),
     ),
     AppThemePreset.vercel => const AppThemePresetDefinition(
       label: 'Vercel',
       summary: 'True black with product-brand electric blue.',
-      background: Color(0xFF000000),
-      text: Color(0xFFEDEDED),
-      primary: Color(0xFF0070F3),
-      accent: Color(0xFF8E4EC6),
-      success: Color(0xFF46A758),
-      warning: Color(0xFFFFB224),
-      danger: Color(0xFFE5484D),
-      muted: Color(0xFF878787),
+      light: AppThemeToneDefinition(
+        background: Color(0xFFFFFFFF),
+        text: Color(0xFF171717),
+        primary: Color(0xFF0070F3),
+        accent: Color(0xFF8E4EC6),
+        success: Color(0xFF388E3C),
+        warning: Color(0xFFFF9500),
+        danger: Color(0xFFDC3545),
+        muted: Color(0xFF666666),
+      ),
+      dark: AppThemeToneDefinition(
+        background: Color(0xFF000000),
+        text: Color(0xFFEDEDED),
+        primary: Color(0xFF0070F3),
+        accent: Color(0xFF8E4EC6),
+        success: Color(0xFF46A758),
+        warning: Color(0xFFFFB224),
+        danger: Color(0xFFE5484D),
+        muted: Color(0xFF878787),
+      ),
     ),
     AppThemePreset.solarized => const AppThemePresetDefinition(
       label: 'Solarized',
       summary: 'Deep teal with classic amber-magenta notes.',
-      background: Color(0xFF002B36),
-      text: Color(0xFF93A1A1),
-      primary: Color(0xFF6C71C4),
-      accent: Color(0xFFD33682),
-      success: Color(0xFF859900),
-      warning: Color(0xFFB58900),
-      danger: Color(0xFFDC322F),
-      muted: Color(0xFF586E75),
+      light: AppThemeToneDefinition(
+        background: Color(0xFFFDF6E3),
+        text: Color(0xFF586E75),
+        primary: Color(0xFF268BD2),
+        accent: Color(0xFFD33682),
+        success: Color(0xFF859900),
+        warning: Color(0xFFB58900),
+        danger: Color(0xFFDC322F),
+        muted: Color(0xFF657B83),
+      ),
+      dark: AppThemeToneDefinition(
+        background: Color(0xFF002B36),
+        text: Color(0xFF93A1A1),
+        primary: Color(0xFF6C71C4),
+        accent: Color(0xFFD33682),
+        success: Color(0xFF859900),
+        warning: Color(0xFFB58900),
+        danger: Color(0xFFDC322F),
+        muted: Color(0xFF586E75),
+      ),
     ),
   };
 }
 
 @immutable
-class AppThemePresetDefinition {
-  const AppThemePresetDefinition({
-    required this.label,
-    required this.summary,
+class AppThemeToneDefinition {
+  const AppThemeToneDefinition({
     required this.background,
     required this.text,
     required this.primary,
@@ -175,8 +293,6 @@ class AppThemePresetDefinition {
     required this.muted,
   });
 
-  final String label;
-  final String summary;
   final Color background;
   final Color text;
   final Color primary;
@@ -187,126 +303,183 @@ class AppThemePresetDefinition {
   final Color muted;
 }
 
-final class AppTheme {
-  static final Map<AppThemePreset, ThemeData> _cache =
-      <AppThemePreset, ThemeData>{};
+@immutable
+class AppThemePresetDefinition {
+  const AppThemePresetDefinition({
+    required this.label,
+    required this.summary,
+    required this.light,
+    required this.dark,
+  });
 
-  static ThemeData dark([AppThemePreset preset = AppThemePreset.remote]) {
-    return _cache.putIfAbsent(preset, () => _buildTheme(preset.definition));
+  final String label;
+  final String summary;
+  final AppThemeToneDefinition light;
+  final AppThemeToneDefinition dark;
+
+  AppThemeToneDefinition tone(Brightness brightness) {
+    return brightness == Brightness.dark ? dark : light;
+  }
+}
+
+final class AppTheme {
+  static final Map<String, ThemeData> _cache = <String, ThemeData>{};
+
+  static ThemeData light([AppThemePreset preset = AppThemePreset.remote]) {
+    return _themeFor(preset, Brightness.light);
   }
 
-  static ThemeData theme(AppThemePreset preset) => dark(preset);
+  static ThemeData dark([AppThemePreset preset = AppThemePreset.remote]) {
+    return _themeFor(preset, Brightness.dark);
+  }
+
+  static ThemeData theme(
+    AppThemePreset preset, [
+    Brightness brightness = Brightness.dark,
+  ]) {
+    return _themeFor(preset, brightness);
+  }
 
   static AppThemePresetDefinition definition(AppThemePreset preset) =>
       preset.definition;
 
-  static ThemeData _buildTheme(AppThemePresetDefinition preset) {
-    final background = preset.background;
-    final text = preset.text;
-    final panel = _mix(background, text, 0.050);
-    final panelRaised = _mix(background, text, 0.082);
-    final panelMuted = _mix(background, text, 0.036);
-    final panelEmphasis = _mix(background, text, 0.116);
-    final line = _mix(background, text, 0.200);
-    final lineSoft = _mix(background, text, 0.125);
-    final accent = preset.primary;
-    final accentSoft = preset.accent;
-    final muted = preset.muted;
-    final success = preset.success;
-    final warning = preset.warning;
-    final danger = preset.danger;
+  static AppThemeToneDefinition colorsFor(
+    AppThemePreset preset,
+    Brightness brightness,
+  ) {
+    return preset.definition.tone(brightness);
+  }
 
-    final textTheme =
-        GoogleFonts.ibmPlexSansTextTheme(Typography.whiteMountainView)
-            .apply(bodyColor: text, displayColor: text)
-            .copyWith(
-              headlineMedium: GoogleFonts.ibmPlexSans(
-                fontSize: 34,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.9,
-                height: 1.05,
-                color: text,
-              ),
-              headlineSmall: GoogleFonts.ibmPlexSans(
-                fontSize: 28,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.7,
-                height: 1.1,
-                color: text,
-              ),
-              titleLarge: GoogleFonts.ibmPlexSans(
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.35,
-                height: 1.15,
-                color: text,
-              ),
-              titleMedium: GoogleFonts.ibmPlexSans(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                letterSpacing: -0.15,
-                height: 1.2,
-                color: text,
-              ),
-              titleSmall: GoogleFonts.ibmPlexSans(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                letterSpacing: -0.1,
-                height: 1.25,
-                color: text,
-              ),
-              bodyLarge: GoogleFonts.ibmPlexSans(
-                fontSize: 15,
-                fontWeight: FontWeight.w500,
-                height: 1.55,
-                color: text,
-              ),
-              bodyMedium: GoogleFonts.ibmPlexSans(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                height: 1.5,
-                color: text,
-              ),
-              bodySmall: GoogleFonts.ibmPlexSans(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                height: 1.45,
-                color: muted,
-              ),
-              labelLarge: GoogleFonts.ibmPlexSans(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.25,
-                height: 1.2,
-                color: text,
-              ),
-              labelMedium: GoogleFonts.ibmPlexSans(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.4,
-                height: 1.2,
-                color: muted,
-              ),
-            );
-
-    final colorScheme = ColorScheme.dark(
-      primary: accent,
-      secondary: accentSoft,
-      surface: panel,
-      onSurface: text,
-      onPrimary: _onColor(accent),
-      error: danger,
+  static ThemeData _themeFor(AppThemePreset preset, Brightness brightness) {
+    final cacheKey = '${preset.storageValue}:${brightness.name}';
+    return _cache.putIfAbsent(
+      cacheKey,
+      () => _buildTheme(preset.definition.tone(brightness), brightness),
     );
+  }
+
+  static ThemeData _buildTheme(
+    AppThemeToneDefinition tone,
+    Brightness brightness,
+  ) {
+    final isDark = brightness == Brightness.dark;
+    final background = tone.background;
+    final text = tone.text;
+    final panel = _mix(background, text, isDark ? 0.050 : 0.040);
+    final panelRaised = _mix(background, text, isDark ? 0.082 : 0.070);
+    final panelMuted = _mix(background, text, isDark ? 0.036 : 0.028);
+    final panelEmphasis = _mix(background, text, isDark ? 0.116 : 0.100);
+    final line = _mix(background, text, isDark ? 0.200 : 0.160);
+    final lineSoft = _mix(background, text, isDark ? 0.125 : 0.100);
+    final accent = tone.primary;
+    final accentSoft = tone.accent;
+    final muted = tone.muted;
+    final success = tone.success;
+    final warning = tone.warning;
+    final danger = tone.danger;
+
+    final baseTypography = isDark
+        ? Typography.whiteMountainView
+        : Typography.blackMountainView;
+    final textTheme = GoogleFonts.ibmPlexSansTextTheme(baseTypography)
+        .apply(bodyColor: text, displayColor: text)
+        .copyWith(
+          headlineMedium: GoogleFonts.ibmPlexSans(
+            fontSize: 34,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.9,
+            height: 1.05,
+            color: text,
+          ),
+          headlineSmall: GoogleFonts.ibmPlexSans(
+            fontSize: 28,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.7,
+            height: 1.1,
+            color: text,
+          ),
+          titleLarge: GoogleFonts.ibmPlexSans(
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.35,
+            height: 1.15,
+            color: text,
+          ),
+          titleMedium: GoogleFonts.ibmPlexSans(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            letterSpacing: -0.15,
+            height: 1.2,
+            color: text,
+          ),
+          titleSmall: GoogleFonts.ibmPlexSans(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            letterSpacing: -0.1,
+            height: 1.25,
+            color: text,
+          ),
+          bodyLarge: GoogleFonts.ibmPlexSans(
+            fontSize: 15,
+            fontWeight: FontWeight.w500,
+            height: 1.55,
+            color: text,
+          ),
+          bodyMedium: GoogleFonts.ibmPlexSans(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            height: 1.5,
+            color: text,
+          ),
+          bodySmall: GoogleFonts.ibmPlexSans(
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+            height: 1.45,
+            color: muted,
+          ),
+          labelLarge: GoogleFonts.ibmPlexSans(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.25,
+            height: 1.2,
+            color: text,
+          ),
+          labelMedium: GoogleFonts.ibmPlexSans(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.4,
+            height: 1.2,
+            color: muted,
+          ),
+        );
+
+    final colorScheme = isDark
+        ? ColorScheme.dark(
+            primary: accent,
+            secondary: accentSoft,
+            surface: panel,
+            onSurface: text,
+            onPrimary: _onColor(accent),
+            error: danger,
+          )
+        : ColorScheme.light(
+            primary: accent,
+            secondary: accentSoft,
+            surface: panel,
+            onSurface: text,
+            onPrimary: _onColor(accent),
+            error: danger,
+          );
 
     return ThemeData(
       useMaterial3: true,
-      brightness: Brightness.dark,
+      brightness: brightness,
       scaffoldBackgroundColor: background,
       canvasColor: background,
       colorScheme: colorScheme,
       textTheme: textTheme,
       cardTheme: CardThemeData(
-        color: panelRaised.withValues(alpha: 0.84),
+        color: panelRaised.withValues(alpha: isDark ? 0.84 : 0.96),
         elevation: 0,
         shadowColor: Colors.transparent,
         margin: EdgeInsets.zero,
@@ -317,10 +490,10 @@ final class AppTheme {
       ),
       dividerColor: lineSoft,
       chipTheme: ChipThemeData(
-        backgroundColor: panelMuted.withValues(alpha: 0.96),
+        backgroundColor: panelMuted.withValues(alpha: isDark ? 0.96 : 1),
         disabledColor: panelMuted,
-        selectedColor: accent.withValues(alpha: 0.16),
-        secondarySelectedColor: accent.withValues(alpha: 0.16),
+        selectedColor: accent.withValues(alpha: isDark ? 0.16 : 0.14),
+        secondarySelectedColor: accent.withValues(alpha: isDark ? 0.16 : 0.14),
         labelStyle: textTheme.labelMedium?.copyWith(color: text),
         side: BorderSide(color: lineSoft),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -344,7 +517,7 @@ final class AppTheme {
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: text,
-          backgroundColor: panelMuted.withValues(alpha: 0.4),
+          backgroundColor: panelMuted.withValues(alpha: isDark ? 0.4 : 0.9),
           side: BorderSide(color: lineSoft),
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
           textStyle: textTheme.labelLarge,
@@ -361,7 +534,7 @@ final class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: panelMuted.withValues(alpha: 0.88),
+        fillColor: panelMuted.withValues(alpha: isDark ? 0.88 : 0.98),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppSpacing.formFieldRadius),
           borderSide: BorderSide(color: lineSoft),
@@ -390,7 +563,7 @@ final class AppTheme {
         hintStyle: textTheme.bodyMedium?.copyWith(color: muted),
       ),
       listTileTheme: ListTileThemeData(
-        tileColor: panelMuted.withValues(alpha: 0.68),
+        tileColor: panelMuted.withValues(alpha: isDark ? 0.68 : 0.96),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppSpacing.md),
           side: BorderSide(color: lineSoft),
@@ -417,7 +590,7 @@ final class AppTheme {
       ),
       textSelectionTheme: TextSelectionThemeData(
         cursorColor: accent,
-        selectionColor: accent.withValues(alpha: 0.30),
+        selectionColor: accent.withValues(alpha: isDark ? 0.30 : 0.20),
       ),
       appBarTheme: AppBarTheme(
         backgroundColor: Colors.transparent,

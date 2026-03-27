@@ -182,6 +182,7 @@ void main() {
 
     expect(appController.busyFollowupMode, WorkspaceFollowupMode.queue);
     expect(appController.themePreset, AppThemePreset.remote);
+    expect(appController.colorSchemeMode, AppColorSchemeMode.system);
     final initialSidebarWidth = tester
         .getSize(
           find.byKey(const ValueKey<String>('workspace-desktop-sidebar-pane')),
@@ -236,6 +237,36 @@ void main() {
       appController.multiPaneComposerMode,
       WorkspaceMultiPaneComposerMode.perPane,
     );
+
+    await tester.dragUntilVisible(
+      find.byKey(const ValueKey<String>('workspace-settings-color-mode-row')),
+      settingsListView,
+      const Offset(0, -160),
+    );
+    await tester.pump();
+
+    final colorModeRow = find.byKey(
+      const ValueKey<String>('workspace-settings-color-mode-row'),
+    );
+    expect(colorModeRow, findsOneWidget);
+
+    await tester.tap(
+      find.descendant(of: colorModeRow, matching: find.text('Light')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    expect(appController.colorSchemeMode, AppColorSchemeMode.light);
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('workspace-settings-color-mode-cycle-button'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    expect(appController.colorSchemeMode, AppColorSchemeMode.dark);
 
     await tester.dragUntilVisible(
       find.byKey(

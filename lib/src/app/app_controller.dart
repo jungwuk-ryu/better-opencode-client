@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart' show ThemeData;
+import 'package:flutter/material.dart' show ThemeData, ThemeMode;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/connection/connection_models.dart';
@@ -64,6 +64,22 @@ enum WorkspaceMultiPaneComposerMode {
   }
 }
 
+enum AppColorSchemeMode {
+  system,
+  light,
+  dark;
+
+  String get storageValue => name;
+
+  static AppColorSchemeMode fromStorage(String? value) {
+    return switch (value?.trim().toLowerCase()) {
+      'light' => AppColorSchemeMode.light,
+      'dark' => AppColorSchemeMode.dark,
+      _ => AppColorSchemeMode.system,
+    };
+  }
+}
+
 class WebParityAppController extends ChangeNotifier {
   WebParityAppController({
     ServerProfileStore? profileStore,
@@ -96,6 +112,7 @@ class WebParityAppController extends ChangeNotifier {
   static const _multiPaneComposerModeKey =
       'web_parity.multi_pane_composer_mode';
   static const _themePresetKey = 'web_parity.theme_preset';
+  static const _themeSchemeKey = 'web_parity.theme_scheme';
   static const double defaultTextScaleFactor = 1.0;
   static const double textScaleBaselineMultiplier = 0.9;
   static const double minTextScaleFactor = 0.9;
@@ -127,6 +144,7 @@ class WebParityAppController extends ChangeNotifier {
   WorkspaceMultiPaneComposerMode _multiPaneComposerMode =
       WorkspaceMultiPaneComposerMode.shared;
   AppThemePreset _themePreset = AppThemePreset.remote;
+  AppColorSchemeMode _colorSchemeMode = AppColorSchemeMode.system;
   Set<String> _refreshingProfileKeys = const <String>{};
   final Map<String, WorkspaceController> _workspaceControllers =
       <String, WorkspaceController>{};
@@ -151,7 +169,15 @@ class WebParityAppController extends ChangeNotifier {
   WorkspaceMultiPaneComposerMode get multiPaneComposerMode =>
       _multiPaneComposerMode;
   AppThemePreset get themePreset => _themePreset;
-  ThemeData get themeData => AppTheme.theme(_themePreset);
+  AppColorSchemeMode get colorSchemeMode => _colorSchemeMode;
+  ThemeMode get themeMode => switch (_colorSchemeMode) {
+    AppColorSchemeMode.light => ThemeMode.light,
+    AppColorSchemeMode.dark => ThemeMode.dark,
+    AppColorSchemeMode.system => ThemeMode.system,
+  };
+  ThemeData get lightThemeData => AppTheme.light(_themePreset);
+  ThemeData get darkThemeData => AppTheme.dark(_themePreset);
+  ThemeData get themeData => darkThemeData;
   bool isRefreshingProfile(ServerProfile? profile) {
     return profile != null &&
         _refreshingProfileKeys.contains(profile.storageKey);
@@ -198,6 +224,9 @@ class WebParityAppController extends ChangeNotifier {
     final themePreset = AppThemePreset.fromStorage(
       prefs.getString(_themePresetKey),
     );
+    final colorSchemeMode = AppColorSchemeMode.fromStorage(
+      prefs.getString(_themeSchemeKey),
+    );
 
     ServerProfile? selectedProfile;
     if (selectedProfileId != null) {
@@ -224,6 +253,7 @@ class WebParityAppController extends ChangeNotifier {
     _layoutDensity = layoutDensity;
     _multiPaneComposerMode = multiPaneComposerMode;
     _themePreset = themePreset;
+    _colorSchemeMode = colorSchemeMode;
     _loading = false;
     notifyListeners();
   }
@@ -342,6 +372,28 @@ class WebParityAppController extends ChangeNotifier {
         ? 0
         : (currentIndex + direction + presets.length) % presets.length;
     await setThemePreset(presets[nextIndex]);
+  }
+
+  Future<void> setColorSchemeMode(AppColorSchemeMode value) async {
+    if (_colorSchemeMode == value) {
+      return;
+    }
+    _colorSchemeMode = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_themeSchemeKey, value.storageValue);
+  }
+
+  Future<void> cycleColorSchemeMode([int direction = 1]) async {
+    final modes = AppColorSchemeMode.values;
+    if (modes.isEmpty) {
+      return;
+    }
+    final currentIndex = modes.indexOf(_colorSchemeMode);
+    final nextIndex = currentIndex == -1
+        ? 0
+        : (currentIndex + direction + modes.length) % modes.length;
+    await setColorSchemeMode(modes[nextIndex]);
   }
 
   Future<void> refreshProbe(ServerProfile profile) async {

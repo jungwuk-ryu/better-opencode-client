@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart' show Brightness, ThemeMode;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:opencode_mobile_remote/src/app/app_controller.dart';
 import 'package:opencode_mobile_remote/src/core/connection/connection_models.dart';
@@ -191,6 +192,65 @@ void main() {
 
     await controller.cycleThemePreset(-1);
     expect(controller.themePreset, AppThemePreset.remote);
+  });
+
+  test(
+    'color scheme mode persists and maps to light and dark themes',
+    () async {
+      final controller = WebParityAppController(
+        profileStore: _FakeProfileStore(),
+        projectStore: _FakeProjectStore(),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+
+      expect(controller.colorSchemeMode, AppColorSchemeMode.system);
+      expect(controller.themeMode, ThemeMode.system);
+      expect(
+        AppTheme.colorsFor(AppThemePreset.remote, Brightness.light).background,
+        isNot(
+          AppTheme.colorsFor(AppThemePreset.remote, Brightness.dark).background,
+        ),
+      );
+
+      await controller.setColorSchemeMode(AppColorSchemeMode.dark);
+
+      expect(controller.colorSchemeMode, AppColorSchemeMode.dark);
+      expect(controller.themeMode, ThemeMode.dark);
+
+      final restored = WebParityAppController(
+        profileStore: _FakeProfileStore(),
+        projectStore: _FakeProjectStore(),
+      );
+      addTearDown(restored.dispose);
+
+      await restored.load();
+
+      expect(restored.colorSchemeMode, AppColorSchemeMode.dark);
+      expect(restored.themeMode, ThemeMode.dark);
+    },
+  );
+
+  test('color scheme cycling advances through the mode list', () async {
+    final controller = WebParityAppController(
+      profileStore: _FakeProfileStore(),
+      projectStore: _FakeProjectStore(),
+    );
+    addTearDown(controller.dispose);
+
+    await controller.load();
+
+    expect(controller.colorSchemeMode, AppColorSchemeMode.system);
+
+    await controller.cycleColorSchemeMode();
+    expect(controller.colorSchemeMode, AppColorSchemeMode.light);
+
+    await controller.cycleColorSchemeMode();
+    expect(controller.colorSchemeMode, AppColorSchemeMode.dark);
+
+    await controller.cycleColorSchemeMode(-1);
+    expect(controller.colorSchemeMode, AppColorSchemeMode.light);
   });
 }
 

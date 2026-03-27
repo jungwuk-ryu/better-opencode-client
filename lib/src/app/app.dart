@@ -44,7 +44,9 @@ class _OpenCodeRemoteAppState extends State<OpenCodeRemoteApp> {
             onGenerateTitle: (context) =>
                 AppLocalizations.of(context)!.appTitle,
             debugShowCheckedModeBanner: false,
-            theme: _appController.themeData,
+            theme: _appController.lightThemeData,
+            darkTheme: _appController.darkThemeData,
+            themeMode: _appController.themeMode,
             builder: (context, child) {
               final mediaQuery = MediaQuery.maybeOf(context);
               if (mediaQuery == null) {

@@ -6208,6 +6208,27 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                           },
                                         ),
                                         SizedBox(height: sectionGap),
+                                        _WorkspaceSettingsColorSchemeRow(
+                                          key: const ValueKey<String>(
+                                            'workspace-settings-color-mode-row',
+                                          ),
+                                          value: widget
+                                              .appController
+                                              .colorSchemeMode,
+                                          onChanged: (value) {
+                                            unawaited(
+                                              widget.appController
+                                                  .setColorSchemeMode(value),
+                                            );
+                                          },
+                                          onCycle: () {
+                                            unawaited(
+                                              widget.appController
+                                                  .cycleColorSchemeMode(),
+                                            );
+                                          },
+                                        ),
+                                        SizedBox(height: sectionGap),
                                         _WorkspaceSettingsLayoutDensityRow(
                                           key: const ValueKey<String>(
                                             'workspace-settings-layout-density-row',
@@ -6498,6 +6519,7 @@ class _WorkspaceSettingsThemeRow extends StatelessWidget {
     final surfaces = theme.extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
     final activeDefinition = AppTheme.definition(value);
+    final previewBrightness = theme.brightness;
     return Container(
       padding: EdgeInsets.all(density.inset(AppSpacing.md)),
       decoration: BoxDecoration(
@@ -6558,6 +6580,7 @@ class _WorkspaceSettingsThemeRow extends StatelessWidget {
                       ),
                       child: _WorkspaceThemePreviewCard(
                         preset: preset,
+                        brightness: previewBrightness,
                         selected: preset == value,
                         onPressed: () => onChanged(preset),
                       ),
@@ -6572,14 +6595,125 @@ class _WorkspaceSettingsThemeRow extends StatelessWidget {
   }
 }
 
+class _WorkspaceSettingsColorSchemeRow extends StatelessWidget {
+  const _WorkspaceSettingsColorSchemeRow({
+    required this.value,
+    required this.onChanged,
+    required this.onCycle,
+    super.key,
+  });
+
+  final AppColorSchemeMode value;
+  final ValueChanged<AppColorSchemeMode> onChanged;
+  final VoidCallback onCycle;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final density = _workspaceDensity(context);
+    final effectiveMode = switch (theme.brightness) {
+      Brightness.light => 'Light',
+      Brightness.dark => 'Dark',
+    };
+    final subtitle = switch (value) {
+      AppColorSchemeMode.system =>
+        'Follow the device setting. Currently $effectiveMode.',
+      AppColorSchemeMode.light => 'Always use the light palette.',
+      AppColorSchemeMode.dark => 'Always use the dark palette.',
+    };
+    return Container(
+      padding: EdgeInsets.all(density.inset(AppSpacing.md)),
+      decoration: BoxDecoration(
+        color: surfaces.panelMuted.withValues(alpha: 0.52),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      'Color mode',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xxs),
+                    Text(
+                      subtitle,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: surfaces.muted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(width: density.inset(AppSpacing.md)),
+              OutlinedButton.icon(
+                key: const ValueKey<String>(
+                  'workspace-settings-color-mode-cycle-button',
+                ),
+                onPressed: onCycle,
+                icon: const Icon(Icons.brightness_6_rounded),
+                label: const Text('Next mode'),
+              ),
+            ],
+          ),
+          SizedBox(height: density.inset(AppSpacing.md)),
+          SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<AppColorSchemeMode>(
+              key: const ValueKey<String>(
+                'workspace-settings-color-mode-segments',
+              ),
+              showSelectedIcon: false,
+              segments: const <ButtonSegment<AppColorSchemeMode>>[
+                ButtonSegment<AppColorSchemeMode>(
+                  value: AppColorSchemeMode.system,
+                  label: Text('System'),
+                  icon: Icon(Icons.settings_suggest_rounded),
+                ),
+                ButtonSegment<AppColorSchemeMode>(
+                  value: AppColorSchemeMode.light,
+                  label: Text('Light'),
+                  icon: Icon(Icons.light_mode_rounded),
+                ),
+                ButtonSegment<AppColorSchemeMode>(
+                  value: AppColorSchemeMode.dark,
+                  label: Text('Dark'),
+                  icon: Icon(Icons.dark_mode_rounded),
+                ),
+              ],
+              selected: <AppColorSchemeMode>{value},
+              onSelectionChanged: (selection) {
+                final next = selection.isEmpty ? value : selection.first;
+                onChanged(next);
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _WorkspaceThemePreviewCard extends StatelessWidget {
   const _WorkspaceThemePreviewCard({
     required this.preset,
+    required this.brightness,
     required this.selected,
     required this.onPressed,
   });
 
   final AppThemePreset preset;
+  final Brightness brightness;
   final bool selected;
   final VoidCallback onPressed;
 
@@ -6589,16 +6723,9 @@ class _WorkspaceThemePreviewCard extends StatelessWidget {
     final surfaces = theme.extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
     final definition = AppTheme.definition(preset);
-    final previewPanel = Color.lerp(
-      definition.background,
-      definition.text,
-      0.09,
-    )!;
-    final previewBorder = Color.lerp(
-      definition.background,
-      definition.text,
-      0.16,
-    )!;
+    final tone = AppTheme.colorsFor(preset, brightness);
+    final previewPanel = Color.lerp(tone.background, tone.text, 0.09)!;
+    final previewBorder = Color.lerp(tone.background, tone.text, 0.16)!;
     return Semantics(
       button: true,
       selected: selected,
@@ -6639,7 +6766,7 @@ class _WorkspaceThemePreviewCard extends StatelessWidget {
               Container(
                 height: 80,
                 decoration: BoxDecoration(
-                  color: definition.background,
+                  color: tone.background,
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(color: previewBorder),
                 ),
@@ -6651,7 +6778,7 @@ class _WorkspaceThemePreviewCard extends StatelessWidget {
                       height: 10,
                       width: 58,
                       decoration: BoxDecoration(
-                        color: definition.primary,
+                        color: tone.primary,
                         borderRadius: BorderRadius.circular(999),
                       ),
                     ),
@@ -6669,23 +6796,19 @@ class _WorkspaceThemePreviewCard extends StatelessWidget {
                         ),
                         child: Row(
                           children: <Widget>[
-                            _WorkspaceThemePreviewDot(color: definition.accent),
+                            _WorkspaceThemePreviewDot(color: tone.accent),
                             const SizedBox(width: 4),
                             Expanded(
                               child: Container(
                                 height: 6,
                                 decoration: BoxDecoration(
-                                  color: definition.text.withValues(
-                                    alpha: 0.86,
-                                  ),
+                                  color: tone.text.withValues(alpha: 0.86),
                                   borderRadius: BorderRadius.circular(999),
                                 ),
                               ),
                             ),
                             const SizedBox(width: 4),
-                            _WorkspaceThemePreviewDot(
-                              color: definition.success,
-                            ),
+                            _WorkspaceThemePreviewDot(color: tone.success),
                           ],
                         ),
                       ),
