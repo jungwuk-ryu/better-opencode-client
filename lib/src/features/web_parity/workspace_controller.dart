@@ -631,6 +631,23 @@ class WorkspaceController extends ChangeNotifier {
     return _statuses[selectedSessionId];
   }
 
+  bool sessionBusyForSession(String? sessionId) {
+    final normalizedSessionId = sessionId?.trim();
+    if (normalizedSessionId == null || normalizedSessionId.isEmpty) {
+      return false;
+    }
+    if (sendingQueuedPromptIdForSession(normalizedSessionId) != null) {
+      return true;
+    }
+    if (submittingPrompt && selectedSessionId == normalizedSessionId) {
+      return true;
+    }
+    final status = normalizedSessionId == selectedSessionId
+        ? selectedStatus
+        : statuses[normalizedSessionId];
+    return _isActiveStatus(status);
+  }
+
   bool get selectedSessionInterruptible {
     final selectedSessionId = _selectedSessionId;
     if (selectedSessionId == null || selectedSessionId.isEmpty) {

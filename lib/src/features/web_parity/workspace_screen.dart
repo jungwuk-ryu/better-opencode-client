@@ -9490,8 +9490,7 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
     final sessionId = pane.sessionId?.trim();
     final session = _sessionById(controller.sessions, sessionId);
     final timelineState = controller.timelineStateForSession(sessionId);
-    final status = sessionId == null ? null : controller.statuses[sessionId];
-    final busy = _isActiveSessionStatus(status);
+    final busy = controller.sessionBusyForSession(sessionId);
     final title = _sessionHeaderTitle(session, project);
     final projectLabel = (() {
       final label = project?.label.trim();
@@ -9851,6 +9850,7 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                                 storageScopeKey: timelineScopeKey,
                                 pageStorageKeyValue: timelinePageStorageKey,
                                 currentSessionId: sessionId,
+                                working: busy,
                                 loading: timelineState.loading,
                                 showingCachedMessages:
                                     timelineState.showingCachedMessages,
@@ -10867,6 +10867,7 @@ class _MessageTimeline extends StatefulWidget {
     required this.storageScopeKey,
     required this.pageStorageKeyValue,
     required this.currentSessionId,
+    required this.working,
     required this.loading,
     required this.showingCachedMessages,
     required this.error,
@@ -10892,6 +10893,7 @@ class _MessageTimeline extends StatefulWidget {
   final String storageScopeKey;
   final String pageStorageKeyValue;
   final String? currentSessionId;
+  final bool working;
   final bool loading;
   final bool showingCachedMessages;
   final String? error;
@@ -11155,8 +11157,18 @@ class _MessageTimelineState extends State<_MessageTimeline> {
   }
 
   int _contentSignature() {
-    return _timelineContentSignature(widget.messages);
+    return Object.hash(
+      _timelineContentSignature(widget.messages),
+      _showThinkingPlaceholder,
+    );
   }
+
+  bool get _showThinkingPlaceholder =>
+      widget.working &&
+      !_hasRenderableActiveAssistantMessage(
+        widget.messages,
+        showProgressDetails: widget.timelineProgressDetailsVisible,
+      );
 
   void _beginBottomLock(String scopeKey) {
     _bottomLockScopeKey = scopeKey;
@@ -11292,6 +11304,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final theme = Theme.of(context);
     final density = _workspaceDensity(context);
+    final showThinkingPlaceholder = _showThinkingPlaceholder;
     _scheduleLoadOlderCheck();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
@@ -11332,7 +11345,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
         ),
       );
     }
-    if (widget.messages.isEmpty) {
+    if (widget.messages.isEmpty && !showThinkingPlaceholder) {
       return Center(
         child: Text(
           'No messages yet.',
@@ -11373,8 +11386,10 @@ class _MessageTimelineState extends State<_MessageTimeline> {
               builder: (context) {
                 final visibleMessages = _visibleMessages;
                 final hasHiddenMessages = _hiddenMessageCount > 0;
-                final itemCount =
+                final placeholderIndex =
                     visibleMessages.length + (hasHiddenMessages ? 1 : 0);
+                final itemCount =
+                    placeholderIndex + (showThinkingPlaceholder ? 1 : 0);
                 final normalizedSearchTerms = _searchActive
                     ? _normalizedSearchTerms(widget.searchQuery)
                     : const <String>[];
@@ -11399,6 +11414,27 @@ class _MessageTimelineState extends State<_MessageTimeline> {
                   itemCount: itemCount,
                   cacheExtent: _searchActive ? 200000 : 1600,
                   itemBuilder: (context, index) {
+                    if (showThinkingPlaceholder && index == placeholderIndex) {
+                      return Center(
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxWidth: density.maxContentWidth(860),
+                          ),
+                          child: Padding(
+                            padding: EdgeInsets.only(
+                              top: visibleMessages.isEmpty
+                                  ? 0
+                                  : (widget.compact
+                                        ? density.inset(AppSpacing.sm)
+                                        : density.inset(AppSpacing.md)),
+                            ),
+                            child: _TimelineThinkingPlaceholder(
+                              compact: widget.compact,
+                            ),
+                          ),
+                        ),
+                      );
+                    }
                     if (hasHiddenMessages && index == 0) {
                       return KeyedSubtree(
                         key: _loadOlderItemKey,
@@ -11722,6 +11758,77 @@ class _TimelineStatusCard extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _TimelineThinkingPlaceholder extends StatelessWidget {
+  const _TimelineThinkingPlaceholder({required this.compact});
+
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final density = _workspaceDensity(context);
+    final titleStyle = theme.textTheme.titleSmall?.copyWith(
+      fontWeight: FontWeight.w700,
+    );
+    final summaryStyle =
+        (compact ? theme.textTheme.labelMedium : theme.textTheme.bodySmall)
+            ?.copyWith(color: surfaces.muted, height: 1.45);
+    return Container(
+      key: const ValueKey<String>('timeline-thinking-placeholder'),
+      padding: EdgeInsets.all(
+        density.inset(compact ? AppSpacing.sm : AppSpacing.md),
+      ),
+      decoration: BoxDecoration(
+        color: surfaces.panelRaised.withValues(alpha: 0.94),
+        borderRadius: BorderRadius.circular(compact ? 16 : 18),
+        border: Border.all(
+          color: theme.colorScheme.primary.withValues(alpha: 0.22),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Icon(
+              Icons.more_horiz_rounded,
+              size: compact ? 18 : 20,
+              color: theme.colorScheme.primary,
+            ),
+          ),
+          SizedBox(width: compact ? AppSpacing.xs : AppSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                _ShimmeringRichText(
+                  key: const ValueKey<String>(
+                    'timeline-thinking-placeholder-title',
+                  ),
+                  active: true,
+                  text: TextSpan(text: 'Thinking', style: titleStyle),
+                ),
+                SizedBox(height: compact ? AppSpacing.xxs : AppSpacing.xs),
+                _ShimmeringRichText(
+                  key: const ValueKey<String>(
+                    'timeline-thinking-placeholder-summary',
+                  ),
+                  active: true,
+                  text: TextSpan(
+                    text: 'The agent is preparing a response.',
+                    style: summaryStyle,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -18514,6 +18621,24 @@ String _formatTimelineMessageStamp(BuildContext context, ChatMessage message) {
 
 bool _messageIsActive(ChatMessage message) {
   return message.info.role == 'assistant' && message.info.completedAt == null;
+}
+
+bool _hasRenderableActiveAssistantMessage(
+  List<ChatMessage> messages, {
+  required bool showProgressDetails,
+}) {
+  for (final message in messages) {
+    if (!_messageIsActive(message)) {
+      continue;
+    }
+    if (_orderedTimelineParts(
+      message,
+      showProgressDetails: showProgressDetails,
+    ).isNotEmpty) {
+      return true;
+    }
+  }
+  return false;
 }
 
 List<ChatPart> _orderedTimelineParts(

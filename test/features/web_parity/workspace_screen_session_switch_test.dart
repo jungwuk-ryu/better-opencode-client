@@ -658,6 +658,98 @@ void main() {
   );
 
   testWidgets(
+    'timeline shows thinking placeholder immediately after desktop prompt submit',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      late _ThinkingPlaceholderWorkspaceController controllerInstance;
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              controllerInstance = _ThinkingPlaceholderWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+              return controllerInstance;
+            },
+      );
+      addTearDown(appController.dispose);
+
+      final navigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          navigatorKey: navigatorKey,
+          initialRoute: '/',
+          platform: TargetPlatform.macOS,
+        ),
+      );
+      navigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey<String>('timeline-thinking-placeholder')),
+        findsNothing,
+      );
+
+      final textField = find.byKey(
+        const ValueKey<String>('composer-text-field'),
+      );
+      await tester.tap(textField);
+      await tester.pump();
+      await tester.enterText(textField, 'Tell me what is next');
+      await tester.pump();
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(controllerInstance.submittedPrompts, <String>[
+        'Tell me what is next',
+      ]);
+      expect(
+        find.byKey(const ValueKey<String>('timeline-thinking-placeholder')),
+        findsOneWidget,
+      );
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget.key is ValueKey<String> &&
+              (widget.key! as ValueKey<String>).value.startsWith(
+                'workspace-session-pane-busy-indicator-',
+              ),
+        ),
+        findsOneWidget,
+      );
+
+      controllerInstance.beginAssistantResponse();
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey<String>('timeline-thinking-placeholder')),
+        findsNothing,
+      );
+      expect(
+        find.textContaining('Thinking through the task', findRichText: true),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
     'desktop composer recalls submitted prompt history per session and across launches',
     (tester) async {
       tester.view.physicalSize = const Size(1600, 1000);
@@ -2962,6 +3054,100 @@ class _SubmittingRecordingWorkspaceController
   }) async {
     submittedPrompts.add(prompt.trim());
     return selectedSessionId;
+  }
+}
+
+class _ThinkingPlaceholderWorkspaceController
+    extends _SubmittingRecordingWorkspaceController {
+  _ThinkingPlaceholderWorkspaceController({
+    required super.profile,
+    required super.directory,
+    super.initialSessionId,
+  }) {
+    final sessionId = initialSessionId ?? 'ses_1';
+    _timelineMessages = _messageListFor(sessionId)
+        .map(
+          (message) => message.info.role == 'assistant'
+              ? message.copyWith(
+                  info: message.info.copyWith(
+                    completedAt: DateTime.fromMillisecondsSinceEpoch(
+                      1710000001000,
+                    ),
+                  ),
+                )
+              : message,
+        )
+        .toList(growable: false);
+  }
+
+  late List<ChatMessage> _timelineMessages;
+  bool _busy = false;
+
+  @override
+  List<ChatMessage> get messages => _timelineMessages;
+
+  @override
+  WorkspaceSessionTimelineState timelineStateForSession(String? sessionId) {
+    final normalized = sessionId?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return const WorkspaceSessionTimelineState.empty();
+    }
+    final messages = normalized == selectedSessionId
+        ? _timelineMessages
+        : _messageListFor(normalized);
+    return WorkspaceSessionTimelineState(
+      sessionId: normalized,
+      messages: messages,
+      orderedMessages: messages,
+      loading: false,
+      showingCachedMessages: false,
+    );
+  }
+
+  @override
+  bool sessionBusyForSession(String? sessionId) {
+    return _busy && sessionId?.trim() == selectedSessionId;
+  }
+
+  @override
+  Future<String?> submitPrompt(
+    String prompt, {
+    List<PromptAttachment> attachments = const <PromptAttachment>[],
+    WorkspacePromptDispatchMode? mode,
+  }) async {
+    final sessionId = await super.submitPrompt(
+      prompt,
+      attachments: attachments,
+      mode: mode,
+    );
+    _busy = true;
+    notifyListeners();
+    return sessionId;
+  }
+
+  void beginAssistantResponse() {
+    final sessionId = selectedSessionId;
+    if (sessionId == null || sessionId.isEmpty) {
+      return;
+    }
+    _timelineMessages = <ChatMessage>[
+      ..._timelineMessages,
+      ChatMessage(
+        info: ChatMessageInfo(
+          id: 'msg_reasoning_$sessionId',
+          role: 'assistant',
+          sessionId: sessionId,
+        ),
+        parts: const <ChatPart>[
+          ChatPart(
+            id: 'part_reasoning',
+            type: 'reasoning',
+            text: 'Thinking through the task',
+          ),
+        ],
+      ),
+    ];
+    notifyListeners();
   }
 }
 
