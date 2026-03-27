@@ -1676,6 +1676,124 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     }
   }
 
+  Future<void> _showAgentShortcutPicker(WorkspaceController controller) async {
+    final agents = controller.composerAgents;
+    if (agents.isEmpty) {
+      return;
+    }
+    final selection = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => _SearchableSelectionSheet<_AgentChoice>(
+        title: 'Select Agent',
+        searchHint: 'Search agents',
+        items: agents
+            .map(
+              (agent) => _AgentChoice(
+                value: agent.name,
+                title: agent.name,
+                subtitle: agent.description,
+              ),
+            )
+            .toList(growable: false),
+        selectedValue: controller.selectedAgentName,
+        matchesQuery: (item, query) {
+          final q = query.toLowerCase();
+          return item.title.toLowerCase().contains(q) ||
+              (item.subtitle?.toLowerCase().contains(q) ?? false);
+        },
+        onSelected: (item) => Navigator.of(context).pop(item.value),
+        titleBuilder: (item) => item.title,
+        subtitleBuilder: (item) => item.subtitle,
+        valueOf: (item) => item.value,
+      ),
+    );
+    if (selection != null) {
+      controller.selectAgent(selection);
+    }
+  }
+
+  Future<void> _showReasoningShortcutPicker(
+    WorkspaceController controller,
+  ) async {
+    final options = <_ReasoningChoice>[
+      const _ReasoningChoice(
+        value: _PromptComposer._defaultReasoningSentinel,
+        label: 'Default',
+      ),
+      ...controller.availableReasoningValues.map(
+        (value) =>
+            _ReasoningChoice(value: value, label: _reasoningLabel(value)),
+      ),
+    ];
+    if (options.length <= 1) {
+      return;
+    }
+    final selection = await showModalBottomSheet<String?>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _SearchableSelectionSheet<_ReasoningChoice>(
+        title: 'Reasoning',
+        searchHint: 'Search variants',
+        items: options,
+        selectedValue:
+            controller.selectedReasoning ??
+            _PromptComposer._defaultReasoningSentinel,
+        matchesQuery: (item, query) {
+          final q = query.toLowerCase();
+          return item.label.toLowerCase().contains(q) ||
+              (item.value?.toLowerCase().contains(q) ?? false);
+        },
+        onSelected: (item) => Navigator.of(context).pop(item.value),
+        titleBuilder: (item) => item.label,
+        subtitleBuilder: (item) => item.value,
+        valueOf: (item) => item.value,
+      ),
+    );
+    if (selection == null) {
+      return;
+    }
+    controller.selectReasoning(
+      selection == _PromptComposer._defaultReasoningSentinel ? null : selection,
+    );
+  }
+
+  Future<void> _persistAndSelectProjectTarget(
+    ProjectTarget target, {
+    required bool compact,
+  }) async {
+    final profile = _profile;
+    if (profile == null) {
+      return;
+    }
+    await AppScope.of(
+      context,
+    ).persistProjectUpdate(profile: profile, target: target);
+    if (!mounted) {
+      return;
+    }
+    await _selectProjectInPlace(target, compact: compact);
+  }
+
+  void _primeActiveComposerWithSlashCommand(String trigger) {
+    final normalizedTrigger = trigger.trim();
+    if (normalizedTrigger.isEmpty) {
+      return;
+    }
+    final scopeKey = _resolvedActiveComposerScopeKey(_controller);
+    final text = '/$normalizedTrigger ';
+    setState(() {
+      _updateComposerScopeState(scopeKey, draft: text);
+      _promptController.value = TextEditingValue(
+        text: text,
+        selection: TextSelection.collapsed(offset: text.length),
+        composing: TextRange.empty,
+      );
+      _requestPromptComposerFocusForScope(scopeKey);
+    });
+  }
+
   Future<void> _openProjectPickerShortcut() async {
     final profile = _profile;
     if (profile == null) {
@@ -1697,13 +1815,601 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     if (target == null || !mounted) {
       return;
     }
-    await AppScope.of(
-      context,
-    ).persistProjectUpdate(profile: profile, target: target);
+    await _persistAndSelectProjectTarget(
+      target,
+      compact: _isCompactLayout(context),
+    );
+  }
+
+  List<_WorkspaceCommandPaletteCommand> _buildCommandPaletteCommands(
+    WebParityAppController appController,
+    WorkspaceController controller, {
+    required bool compact,
+  }) {
+    final commands = <_WorkspaceCommandPaletteCommand>[
+      _WorkspaceCommandPaletteCommand(
+        id: 'navigation.home',
+        title: 'Back Home',
+        category: 'Navigation',
+        description: 'Return to the server and project home screen.',
+        onSelected: () async {
+          Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+        },
+      ),
+      _WorkspaceCommandPaletteCommand(
+        id: 'composer.focus',
+        title: 'Focus Composer',
+        category: 'View',
+        description: 'Jump straight to the active prompt input.',
+        shortcut: 'ctrl+l',
+        onSelected: () async {
+          _requestPromptComposerFocus();
+        },
+      ),
+      _WorkspaceCommandPaletteCommand(
+        id: _chatSearchVisible ? 'chat-search.close' : 'chat-search.open',
+        title: _chatSearchVisible ? 'Close Chat Search' : 'Search Chat',
+        category: 'View',
+        description: _chatSearchVisible
+            ? 'Hide the in-session search bar.'
+            : 'Search messages in the active session.',
+        onSelected: () async {
+          if (_chatSearchVisible) {
+            _closeChatSearch();
+          } else {
+            _openChatSearch();
+          }
+        },
+      ),
+      _WorkspaceCommandPaletteCommand(
+        id: 'project.open',
+        title: 'Open Project',
+        category: 'Project',
+        description: 'Choose another project on this server.',
+        shortcut: 'mod+o',
+        onSelected: () async {
+          await _openProjectPickerShortcut();
+        },
+      ),
+      _WorkspaceCommandPaletteCommand(
+        id: 'settings.open',
+        title: 'Open Settings',
+        category: 'Settings',
+        description:
+            'Show workspace appearance, layout, and shortcut settings.',
+        shortcut: 'mod+comma',
+        onSelected: () async {
+          await _openWorkspaceSettingsSheet(appController, controller);
+        },
+      ),
+      _WorkspaceCommandPaletteCommand(
+        id: 'sidebar.toggle',
+        title: 'Toggle Sessions Panel',
+        category: 'Panels',
+        description: 'Collapse or reveal the sessions sidebar.',
+        shortcut: 'mod+b',
+        onSelected: () async {
+          _toggleSessionsSurface(compact: compact);
+        },
+      ),
+      _WorkspaceCommandPaletteCommand(
+        id: 'panel.review',
+        title: 'Toggle Review Panel',
+        category: 'Panels',
+        description: 'Open or hide the review side panel.',
+        shortcut: 'mod+shift+r',
+        onSelected: () async {
+          _toggleSideTab(controller, WorkspaceSideTab.review, compact: compact);
+        },
+      ),
+      _WorkspaceCommandPaletteCommand(
+        id: 'panel.files',
+        title: 'Toggle Files Panel',
+        category: 'Panels',
+        description: 'Open or hide the files side panel.',
+        shortcut: 'mod+backslash',
+        onSelected: () async {
+          _toggleSideTab(controller, WorkspaceSideTab.files, compact: compact);
+        },
+      ),
+      _WorkspaceCommandPaletteCommand(
+        id: 'panel.context',
+        title: 'Open Context Panel',
+        category: 'Panels',
+        description: 'Inspect context usage and token breakdown.',
+        onSelected: () async {
+          _toggleSideTab(
+            controller,
+            WorkspaceSideTab.context,
+            compact: compact,
+          );
+        },
+      ),
+      _WorkspaceCommandPaletteCommand(
+        id: _terminalPanelOpen ? 'terminal.hide' : 'terminal.show',
+        title: _terminalPanelOpen ? 'Hide Terminal' : 'Show Terminal',
+        category: 'Terminal',
+        description: _terminalPanelOpen
+            ? 'Collapse the terminal drawer.'
+            : 'Open the terminal drawer for this project.',
+        shortcut: 'ctrl+backquote',
+        onSelected: () async {
+          await _toggleTerminalPanel();
+        },
+      ),
+      _WorkspaceCommandPaletteCommand(
+        id: 'terminal.new',
+        title: 'New Terminal Session',
+        category: 'Terminal',
+        description: 'Create a fresh terminal tab for this project.',
+        shortcut: 'ctrl+alt+t',
+        onSelected: () async {
+          await _createPtySession();
+        },
+      ),
+      _WorkspaceCommandPaletteCommand(
+        id: 'session.new',
+        title: 'New Session',
+        category: 'Session',
+        description: 'Create a fresh chat session in this project.',
+        shortcut: 'mod+shift+s',
+        onSelected: () async {
+          await _createNewSession(controller);
+        },
+      ),
+      _WorkspaceCommandPaletteCommand(
+        id: 'session.previous',
+        title: 'Previous Session',
+        category: 'Session',
+        description: 'Move to the previous visible session.',
+        shortcut: 'alt+arrowup',
+        onSelected: () async {
+          await _navigateSessionByOffset(controller, -1, compact: compact);
+        },
+      ),
+      _WorkspaceCommandPaletteCommand(
+        id: 'session.next',
+        title: 'Next Session',
+        category: 'Session',
+        description: 'Move to the next visible session.',
+        shortcut: 'alt+arrowdown',
+        onSelected: () async {
+          await _navigateSessionByOffset(controller, 1, compact: compact);
+        },
+      ),
+      _WorkspaceCommandPaletteCommand(
+        id: 'project.previous',
+        title: 'Previous Project',
+        category: 'Project',
+        description: 'Move to the previous project in the sidebar rail.',
+        shortcut: 'mod+alt+arrowup',
+        onSelected: () async {
+          await _navigateProjectByOffset(controller, -1, compact: compact);
+        },
+      ),
+      _WorkspaceCommandPaletteCommand(
+        id: 'project.next',
+        title: 'Next Project',
+        category: 'Project',
+        description: 'Move to the next project in the sidebar rail.',
+        shortcut: 'mod+alt+arrowdown',
+        onSelected: () async {
+          await _navigateProjectByOffset(controller, 1, compact: compact);
+        },
+      ),
+      _WorkspaceCommandPaletteCommand(
+        id: 'attachments.pick',
+        title: 'Attach Files',
+        category: 'Composer',
+        description: 'Pick files and add them to the active prompt.',
+        shortcut: 'mod+u',
+        onSelected: () async {
+          await _pickComposerAttachments();
+        },
+      ),
+      _WorkspaceCommandPaletteCommand(
+        id: 'permissions.toggle',
+        title: 'Toggle Permission Auto-Accept',
+        category: 'Composer',
+        description:
+            'Enable or disable permission auto-accept for the active session.',
+        onSelected: () async {
+          await _toggleSelectedPermissionAutoAccept();
+        },
+      ),
+      _WorkspaceCommandPaletteCommand(
+        id: 'model.choose',
+        title: 'Choose Model',
+        category: 'Model',
+        description: 'Open the grouped model picker.',
+        shortcut: 'mod+quote',
+        onSelected: () async {
+          await _showModelShortcutPicker(controller);
+        },
+      ),
+      _WorkspaceCommandPaletteCommand(
+        id: 'agent.choose',
+        title: 'Choose Agent',
+        category: 'Agent',
+        description: 'Open the agent picker for the active composer.',
+        onSelected: () async {
+          await _showAgentShortcutPicker(controller);
+        },
+      ),
+      _WorkspaceCommandPaletteCommand(
+        id: 'agent.previous',
+        title: 'Previous Agent',
+        category: 'Agent',
+        description: 'Cycle backward through available agents.',
+        shortcut: 'mod+shift+period',
+        onSelected: () async {
+          _cycleSelectedAgent(controller, -1);
+        },
+      ),
+      _WorkspaceCommandPaletteCommand(
+        id: 'agent.next',
+        title: 'Next Agent',
+        category: 'Agent',
+        description: 'Cycle forward through available agents.',
+        shortcut: 'mod+period',
+        onSelected: () async {
+          _cycleSelectedAgent(controller, 1);
+        },
+      ),
+      _WorkspaceCommandPaletteCommand(
+        id: 'reasoning.choose',
+        title: 'Choose Reasoning',
+        category: 'Reasoning',
+        description: 'Open the reasoning depth picker.',
+        onSelected: () async {
+          await _showReasoningShortcutPicker(controller);
+        },
+      ),
+      _WorkspaceCommandPaletteCommand(
+        id: 'reasoning.cycle',
+        title: 'Cycle Reasoning Depth',
+        category: 'Reasoning',
+        description: 'Rotate through the available reasoning options.',
+        shortcut: 'mod+shift+d',
+        onSelected: () async {
+          _cycleSelectedReasoning(controller);
+        },
+      ),
+      _WorkspaceCommandPaletteCommand(
+        id: 'theme.cycle',
+        title: 'Cycle Theme',
+        category: 'Theme',
+        description: 'Rotate through the installed theme presets.',
+        onSelected: () async {
+          await appController.cycleThemePreset();
+        },
+      ),
+      _WorkspaceCommandPaletteCommand(
+        id: 'theme.color-mode.cycle',
+        title: 'Cycle Color Mode',
+        category: 'Theme',
+        description: 'Rotate between system, light, and dark color modes.',
+        onSelected: () async {
+          await appController.cycleColorSchemeMode();
+        },
+      ),
+    ];
+
+    if (!compact && _desktopSessionPanes.length < _maxDesktopSessionPanes) {
+      commands.add(
+        _WorkspaceCommandPaletteCommand(
+          id: 'pane.split',
+          title: 'Split Session Pane',
+          category: 'View',
+          description: 'Open another session pane in the desktop layout.',
+          onSelected: () async {
+            _splitDesktopSessionPane(controller);
+          },
+        ),
+      );
+    }
+
+    if (_canInterruptWithShortcut(controller)) {
+      commands.add(
+        _WorkspaceCommandPaletteCommand(
+          id: 'session.interrupt',
+          title: 'Interrupt Active Session',
+          category: 'Session',
+          description: 'Stop the active model response.',
+          shortcut: 'escape',
+          onSelected: () async {
+            await _interruptSelectedSession();
+          },
+        ),
+      );
+    }
+
+    final selectedSession = controller.selectedSession;
+    if (selectedSession != null) {
+      commands.addAll(<_WorkspaceCommandPaletteCommand>[
+        _WorkspaceCommandPaletteCommand(
+          id: 'session.rename',
+          title: 'Rename Session',
+          category: 'Session',
+          description:
+              'Rename "${_sessionHeaderTitle(selectedSession, controller.project)}".',
+          onSelected: () async {
+            await _renameSelectedSession(controller);
+          },
+        ),
+        _WorkspaceCommandPaletteCommand(
+          id: 'session.fork',
+          title: 'Fork Session',
+          category: 'Session',
+          description: 'Create a branched copy of the current session.',
+          onSelected: () async {
+            await _forkSelectedSession(controller);
+          },
+        ),
+        _WorkspaceCommandPaletteCommand(
+          id: 'session.share',
+          title: selectedSession.shareUrl?.trim().isNotEmpty == true
+              ? 'Copy Share Link'
+              : 'Share Session',
+          category: 'Session',
+          description: selectedSession.shareUrl?.trim().isNotEmpty == true
+              ? 'Copy the existing share link for this session.'
+              : 'Create and copy a share link for this session.',
+          onSelected: () async {
+            if (selectedSession.shareUrl?.trim().isNotEmpty == true) {
+              await Clipboard.setData(
+                ClipboardData(text: selectedSession.shareUrl!.trim()),
+              );
+              if (!mounted) {
+                return;
+              }
+              _showSnackBar(
+                'Share link copied to clipboard.',
+                tone: AppSnackBarTone.success,
+              );
+              return;
+            }
+            await _shareSelectedSession(controller);
+          },
+        ),
+        if (selectedSession.shareUrl?.trim().isNotEmpty == true)
+          _WorkspaceCommandPaletteCommand(
+            id: 'session.unshare',
+            title: 'Unshare Session',
+            category: 'Session',
+            description: 'Remove the current share link.',
+            onSelected: () async {
+              await _unshareSelectedSession(controller);
+            },
+          ),
+        _WorkspaceCommandPaletteCommand(
+          id: 'session.compact',
+          title: 'Compact Session',
+          category: 'Session',
+          description: 'Summarize the current session to reduce context size.',
+          onSelected: () async {
+            await _summarizeSelectedSession(controller);
+          },
+        ),
+        _WorkspaceCommandPaletteCommand(
+          id: 'session.delete',
+          title: 'Delete Session',
+          category: 'Session',
+          description: 'Delete the current session after confirmation.',
+          onSelected: () async {
+            await _deleteSelectedSession(controller);
+          },
+        ),
+      ]);
+    }
+
+    for (final project in controller.availableProjects) {
+      final isCurrentProject = project.directory == _currentDirectory;
+      commands.add(
+        _WorkspaceCommandPaletteCommand(
+          id: 'project.open.${project.directory}',
+          title: 'Open ${project.title}',
+          category: 'Project',
+          description: isCurrentProject
+              ? '${project.directory} • Current project'
+              : project.directory,
+          searchTerms: <String>[
+            project.title,
+            project.directory,
+            project.branch ?? '',
+            project.source ?? '',
+          ],
+          onSelected: () async {
+            await _persistAndSelectProjectTarget(project, compact: compact);
+          },
+        ),
+      );
+    }
+
+    for (final session in controller.visibleSessions) {
+      final sessionTitle = _sessionHeaderTitle(session, controller.project);
+      final isCurrentSession = session.id == controller.selectedSessionId;
+      commands.add(
+        _WorkspaceCommandPaletteCommand(
+          id: 'session.open.${session.id}',
+          title: 'Open $sessionTitle',
+          category: 'Session',
+          description: isCurrentSession
+              ? 'Current session'
+              : 'Switch to session ${session.id}',
+          searchTerms: <String>[session.id, session.title],
+          onSelected: () async {
+            await _selectSessionInPlace(
+              controller,
+              session.id,
+              compact: compact,
+            );
+          },
+        ),
+      );
+    }
+
+    for (final model in controller.composerModels) {
+      final isCurrentModel = model.key == controller.selectedModel?.key;
+      commands.add(
+        _WorkspaceCommandPaletteCommand(
+          id: 'model.set.${model.key}',
+          title: 'Use ${model.name}',
+          category: 'Model',
+          description: isCurrentModel
+              ? '${model.providerName} • Current model'
+              : '${model.providerName} • ${model.modelId}',
+          searchTerms: <String>[
+            model.key,
+            model.providerId,
+            model.providerName,
+            model.modelId,
+            model.name,
+          ],
+          onSelected: () async {
+            controller.selectModel(model.key);
+          },
+        ),
+      );
+    }
+
+    for (final agent in controller.composerAgents) {
+      final isCurrentAgent = agent.name == controller.selectedAgent?.name;
+      commands.add(
+        _WorkspaceCommandPaletteCommand(
+          id: 'agent.set.${agent.name}',
+          title: 'Use ${agent.name}',
+          category: 'Agent',
+          description: isCurrentAgent
+              ? '${agent.description ?? agent.mode} • Current agent'
+              : agent.description ?? 'Mode: ${agent.mode}',
+          searchTerms: <String>[
+            agent.name,
+            agent.mode,
+            agent.description ?? '',
+            agent.modelProviderId ?? '',
+            agent.modelId ?? '',
+            agent.variant ?? '',
+          ],
+          onSelected: () async {
+            controller.selectAgent(agent.name);
+          },
+        ),
+      );
+    }
+
+    for (final reasoning in <String?>[
+      null,
+      ...controller.availableReasoningValues,
+    ]) {
+      final label = _reasoningLabel(reasoning);
+      final isCurrentReasoning = reasoning == controller.selectedReasoning;
+      commands.add(
+        _WorkspaceCommandPaletteCommand(
+          id: 'reasoning.set.${reasoning ?? 'default'}',
+          title: 'Use $label Reasoning',
+          category: 'Reasoning',
+          description: isCurrentReasoning
+              ? '${reasoning ?? 'Default'} • Current selection'
+              : reasoning ?? 'Use the model default reasoning depth.',
+          searchTerms: <String>[label, reasoning ?? 'default'],
+          onSelected: () async {
+            controller.selectReasoning(reasoning);
+          },
+        ),
+      );
+    }
+
+    for (final preset in AppThemePreset.values) {
+      final definition = AppTheme.definition(preset);
+      commands.add(
+        _WorkspaceCommandPaletteCommand(
+          id: 'theme.set.${preset.storageValue}',
+          title: 'Switch to ${definition.label}',
+          category: 'Theme',
+          description: appController.themePreset == preset
+              ? '${definition.summary} • Current theme'
+              : definition.summary,
+          searchTerms: <String>[
+            definition.label,
+            definition.summary,
+            preset.storageValue,
+          ],
+          onSelected: () async {
+            await appController.setThemePreset(preset);
+          },
+        ),
+      );
+    }
+
+    for (final mode in AppColorSchemeMode.values) {
+      final label = switch (mode) {
+        AppColorSchemeMode.system => 'System',
+        AppColorSchemeMode.light => 'Light',
+        AppColorSchemeMode.dark => 'Dark',
+      };
+      commands.add(
+        _WorkspaceCommandPaletteCommand(
+          id: 'theme.color-mode.${mode.storageValue}',
+          title: 'Use $label Color Mode',
+          category: 'Theme',
+          description: appController.colorSchemeMode == mode
+              ? '$label palette selection • Current mode'
+              : 'Switch the app to $label color mode.',
+          searchTerms: <String>[label, mode.storageValue, 'theme scheme'],
+          onSelected: () async {
+            await appController.setColorSchemeMode(mode);
+          },
+        ),
+      );
+    }
+
+    for (final command in controller.composerCommands) {
+      commands.add(
+        _WorkspaceCommandPaletteCommand(
+          id: 'command.${command.name}',
+          title: '/${command.name}',
+          category: 'Commands',
+          description: command.description?.trim().isNotEmpty == true
+              ? command.description!.trim()
+              : 'Insert /${command.name} into the composer.',
+          searchTerms: <String>[
+            command.name,
+            command.source ?? '',
+            ...command.hints,
+          ],
+          onSelected: () async {
+            _primeActiveComposerWithSlashCommand(command.name);
+          },
+        ),
+      );
+    }
+
+    return List<_WorkspaceCommandPaletteCommand>.unmodifiable(commands);
+  }
+
+  Future<void> _openCommandPalette(WorkspaceController controller) async {
+    final appController = AppScope.of(context);
+    final command = await showDialog<_WorkspaceCommandPaletteCommand>(
+      context: context,
+      barrierDismissible: true,
+      barrierColor: Colors.black.withValues(alpha: 0.42),
+      builder: (context) => _WorkspaceCommandPaletteSheet(
+        commands: _buildCommandPaletteCommands(
+          appController,
+          controller,
+          compact: _isCompactLayout(this.context),
+        ),
+      ),
+    );
+    if (command == null || !mounted) {
+      return;
+    }
+    await Future<void>.delayed(Duration.zero);
     if (!mounted) {
       return;
     }
-    await _selectProjectInPlace(target, compact: _isCompactLayout(context));
+    await command.onSelected();
   }
 
   KeyEventResult _handleWorkspaceShortcutKeyEvent(
@@ -1719,6 +2425,14 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     }
     final compact = _isCompactLayout(context);
 
+    if (_matchesWorkspaceShortcut(
+      event,
+      key: LogicalKeyboardKey.keyK,
+      mod: true,
+    )) {
+      unawaited(_openCommandPalette(controller));
+      return KeyEventResult.handled;
+    }
     if (_matchesWorkspaceShortcut(
       event,
       key: LogicalKeyboardKey.keyL,
@@ -4163,6 +4877,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                               chatSearchStatusText: chatSearch.statusText,
                               chatSearchNavigationEnabled:
                                   chatSearch.hasMatches,
+                              onOpenCommandPalette: () {
+                                unawaited(_openCommandPalette(controller));
+                              },
                               onOpenChatSearch: _openChatSearch,
                               onCloseChatSearch: _closeChatSearch,
                               onChatSearchChanged: _handleChatSearchChanged,
@@ -4556,6 +5273,7 @@ class _WorkspaceTopBar extends StatelessWidget {
     required this.chatSearchFocusNode,
     required this.chatSearchStatusText,
     required this.chatSearchNavigationEnabled,
+    required this.onOpenCommandPalette,
     required this.onOpenChatSearch,
     required this.onCloseChatSearch,
     required this.onChatSearchChanged,
@@ -4596,6 +5314,7 @@ class _WorkspaceTopBar extends StatelessWidget {
   final FocusNode chatSearchFocusNode;
   final String chatSearchStatusText;
   final bool chatSearchNavigationEnabled;
+  final VoidCallback onOpenCommandPalette;
   final VoidCallback onOpenChatSearch;
   final VoidCallback onCloseChatSearch;
   final ValueChanged<String> onChatSearchChanged;
@@ -4860,6 +5579,16 @@ class _WorkspaceTopBar extends StatelessWidget {
                       ),
                     ),
                   IconButton(
+                    key: const ValueKey<String>(
+                      'workspace-command-palette-button',
+                    ),
+                    onPressed: onOpenCommandPalette,
+                    icon: const Icon(Icons.apps_rounded, size: 18),
+                    tooltip:
+                        'Command palette (${_formatWorkspaceShortcutLabel('mod+k')})',
+                    splashRadius: 18,
+                  ),
+                  IconButton(
                     key: const ValueKey<String>('workspace-chat-search-button'),
                     onPressed: onOpenChatSearch,
                     icon: const Icon(Icons.search_rounded, size: 18),
@@ -4947,6 +5676,15 @@ class _WorkspaceTopBar extends StatelessWidget {
                         ),
                       ),
                     SizedBox(width: density.inset(AppSpacing.xs, min: 4)),
+                    IconButton(
+                      key: const ValueKey<String>(
+                        'workspace-command-palette-button',
+                      ),
+                      onPressed: onOpenCommandPalette,
+                      icon: const Icon(Icons.apps_rounded),
+                      tooltip:
+                          'Command palette (${_formatWorkspaceShortcutLabel('mod+k')})',
+                    ),
                     IconButton(
                       key: const ValueKey<String>(
                         'workspace-chat-search-button',
@@ -7160,6 +7898,12 @@ class _WorkspaceShortcutSpec {
 const List<_WorkspaceShortcutSpec> _workspaceKeyboardShortcuts =
     <_WorkspaceShortcutSpec>[
       _WorkspaceShortcutSpec(
+        title: 'Open command palette',
+        description:
+            'Search and run workspace, theme, model, and custom commands.',
+        shortcut: 'mod+k',
+      ),
+      _WorkspaceShortcutSpec(
         title: 'Open project',
         description: 'Bring up the server project picker.',
         shortcut: 'mod+o',
@@ -7417,6 +8161,462 @@ class _WorkspaceShortcutRow extends StatelessWidget {
       ),
     );
   }
+}
+
+class _WorkspaceCommandPaletteCommand {
+  _WorkspaceCommandPaletteCommand({
+    required this.id,
+    required this.title,
+    required this.category,
+    required this.onSelected,
+    this.description,
+    this.shortcut,
+    this.searchTerms = const <String>[],
+  });
+
+  final String id;
+  final String title;
+  final String category;
+  final String? description;
+  final String? shortcut;
+  final List<String> searchTerms;
+  final Future<void> Function() onSelected;
+}
+
+class _WorkspaceCommandPaletteSheet extends StatefulWidget {
+  const _WorkspaceCommandPaletteSheet({required this.commands});
+
+  final List<_WorkspaceCommandPaletteCommand> commands;
+
+  @override
+  State<_WorkspaceCommandPaletteSheet> createState() =>
+      _WorkspaceCommandPaletteSheetState();
+}
+
+class _WorkspaceCommandPaletteSheetState
+    extends State<_WorkspaceCommandPaletteSheet> {
+  late final TextEditingController _queryController = TextEditingController()
+    ..addListener(_handleQueryChanged);
+  late final FocusNode _queryFocusNode = FocusNode();
+  int _highlightedIndex = 0;
+
+  @override
+  void dispose() {
+    _queryController
+      ..removeListener(_handleQueryChanged)
+      ..dispose();
+    _queryFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _handleQueryChanged() {
+    setState(() {
+      _highlightedIndex = 0;
+    });
+  }
+
+  List<_WorkspaceCommandPaletteCommand> get _filteredCommands {
+    final query = _queryController.text.trim().toLowerCase();
+    if (query.isEmpty) {
+      return widget.commands;
+    }
+    final tokens = query
+        .split(RegExp(r'\s+'))
+        .where((token) => token.trim().isNotEmpty)
+        .toList(growable: false);
+    final matches = widget.commands.indexed
+        .where((entry) {
+          final searchable = _workspaceCommandSearchableText(
+            entry.$2,
+          ).toLowerCase();
+          return tokens.every(searchable.contains);
+        })
+        .toList(growable: false);
+    matches.sort((left, right) {
+      final leftScore = _workspaceCommandMatchScore(left.$2, query, tokens);
+      final rightScore = _workspaceCommandMatchScore(right.$2, query, tokens);
+      if (leftScore != rightScore) {
+        return leftScore.compareTo(rightScore);
+      }
+      return left.$1.compareTo(right.$1);
+    });
+    return matches.map((entry) => entry.$2).toList(growable: false);
+  }
+
+  int _resolvedHighlightedIndex(int length) {
+    if (length <= 0) {
+      return 0;
+    }
+    return _highlightedIndex.clamp(0, length - 1);
+  }
+
+  void _moveHighlight(int delta) {
+    final filtered = _filteredCommands;
+    if (filtered.isEmpty) {
+      return;
+    }
+    setState(() {
+      _highlightedIndex =
+          (_resolvedHighlightedIndex(filtered.length) +
+              delta +
+              filtered.length) %
+          filtered.length;
+    });
+  }
+
+  void _selectCommand(_WorkspaceCommandPaletteCommand command) {
+    Navigator.of(context).pop(command);
+  }
+
+  void _submitHighlighted() {
+    final filtered = _filteredCommands;
+    if (filtered.isEmpty) {
+      return;
+    }
+    _selectCommand(filtered[_resolvedHighlightedIndex(filtered.length)]);
+  }
+
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) {
+      return KeyEventResult.ignored;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.escape) {
+      Navigator.of(context).maybePop();
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.enter ||
+        event.logicalKey == LogicalKeyboardKey.numpadEnter) {
+      _submitHighlighted();
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowDown ||
+        (event.logicalKey == LogicalKeyboardKey.tab &&
+            !HardwareKeyboard.instance.isShiftPressed)) {
+      _moveHighlight(1);
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowUp ||
+        (event.logicalKey == LogicalKeyboardKey.tab &&
+            HardwareKeyboard.instance.isShiftPressed)) {
+      _moveHighlight(-1);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final filtered = _filteredCommands;
+    final highlightedIndex = _resolvedHighlightedIndex(filtered.length);
+    final mediaQuery = MediaQuery.of(context);
+    return Dialog(
+      insetPadding: EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.xl,
+        AppSpacing.lg,
+        AppSpacing.lg + mediaQuery.viewInsets.bottom,
+      ),
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      child: Focus(
+        autofocus: true,
+        onKeyEvent: _handleKeyEvent,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 760,
+              maxHeight: math.min(mediaQuery.size.height * 0.76, 640),
+            ),
+            child: Material(
+              key: const ValueKey<String>('workspace-command-palette-sheet'),
+              color: surfaces.panel,
+              borderRadius: BorderRadius.circular(28),
+              child: Container(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(28),
+                  border: Border.all(color: surfaces.lineSoft),
+                  boxShadow: <BoxShadow>[
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.24),
+                      blurRadius: 28,
+                      offset: const Offset(0, 18),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      'Command Palette',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xxs),
+                    Text(
+                      'Search workspace actions, themes, models, agents, and custom commands.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: surfaces.muted,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    TextField(
+                      key: const ValueKey<String>(
+                        'workspace-command-palette-field',
+                      ),
+                      controller: _queryController,
+                      focusNode: _queryFocusNode,
+                      autofocus: true,
+                      textInputAction: TextInputAction.search,
+                      onSubmitted: (_) => _submitHighlighted(),
+                      decoration: const InputDecoration(
+                        hintText: 'Type a command or search',
+                        prefixIcon: Icon(Icons.search_rounded),
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(
+                      'Enter runs the highlighted command. Tab or arrow keys move the selection.',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: surfaces.muted,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    Expanded(
+                      child: filtered.isEmpty
+                          ? Center(
+                              child: Column(
+                                key: const ValueKey<String>(
+                                  'workspace-command-palette-empty-state',
+                                ),
+                                mainAxisSize: MainAxisSize.min,
+                                children: <Widget>[
+                                  Icon(
+                                    Icons.search_off_rounded,
+                                    color: surfaces.muted,
+                                  ),
+                                  const SizedBox(height: AppSpacing.sm),
+                                  Text(
+                                    'No matching commands',
+                                    style: theme.textTheme.titleSmall,
+                                  ),
+                                  const SizedBox(height: AppSpacing.xxs),
+                                  Text(
+                                    'Try a project name, session title, theme, model, or slash command.',
+                                    textAlign: TextAlign.center,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: surfaces.muted,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : ListView.separated(
+                              itemCount: filtered.length,
+                              separatorBuilder: (_, _) =>
+                                  const SizedBox(height: AppSpacing.xs),
+                              itemBuilder: (context, index) {
+                                final command = filtered[index];
+                                final highlighted = index == highlightedIndex;
+                                return _WorkspaceCommandPaletteTile(
+                                  key: ValueKey<String>(
+                                    'workspace-command-palette-option-${command.id}',
+                                  ),
+                                  command: command,
+                                  highlighted: highlighted,
+                                  onTap: () => _selectCommand(command),
+                                  onHover: (hovering) {
+                                    if (!hovering) {
+                                      return;
+                                    }
+                                    setState(() {
+                                      _highlightedIndex = index;
+                                    });
+                                  },
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WorkspaceCommandPaletteTile extends StatelessWidget {
+  const _WorkspaceCommandPaletteTile({
+    required this.command,
+    required this.highlighted,
+    required this.onTap,
+    required this.onHover,
+    super.key,
+  });
+
+  final _WorkspaceCommandPaletteCommand command;
+  final bool highlighted;
+  final VoidCallback onTap;
+  final ValueChanged<bool> onHover;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final shortcut = command.shortcut?.trim();
+    return MouseRegion(
+      onEnter: (_) => onHover(true),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm,
+          ),
+          decoration: BoxDecoration(
+            color: highlighted
+                ? theme.colorScheme.primary.withValues(alpha: 0.12)
+                : surfaces.panelRaised,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: highlighted
+                  ? theme.colorScheme.primary.withValues(alpha: 0.36)
+                  : surfaces.lineSoft,
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.sm,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: surfaces.panel,
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: surfaces.lineSoft),
+                      ),
+                      child: Text(
+                        command.category,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: surfaces.muted,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      command.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    if (command.description?.trim().isNotEmpty ==
+                        true) ...<Widget>[
+                      const SizedBox(height: 2),
+                      Text(
+                        command.description!,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: surfaces.muted,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (shortcut != null && shortcut.isNotEmpty) ...<Widget>[
+                const SizedBox(width: AppSpacing.md),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: surfaces.panel,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: surfaces.lineSoft),
+                  ),
+                  child: Text(
+                    _formatWorkspaceShortcutLabel(shortcut),
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+String _workspaceCommandSearchableText(
+  _WorkspaceCommandPaletteCommand command,
+) {
+  return <String>[
+    command.title,
+    command.category,
+    command.description ?? '',
+    command.shortcut ?? '',
+    ...command.searchTerms,
+  ].join(' ');
+}
+
+int _workspaceCommandMatchScore(
+  _WorkspaceCommandPaletteCommand command,
+  String query,
+  List<String> tokens,
+) {
+  final title = command.title.toLowerCase();
+  final category = command.category.toLowerCase();
+  final description = command.description?.toLowerCase() ?? '';
+  final shortcut = command.shortcut?.toLowerCase() ?? '';
+  var score = 0;
+  if (title == query) {
+    score -= 320;
+  }
+  if (title.startsWith(query)) {
+    score -= 200;
+  }
+  if (category.startsWith(query)) {
+    score -= 90;
+  }
+  if (shortcut.contains(query)) {
+    score -= 80;
+  }
+  if (description.contains(query)) {
+    score -= 40;
+  }
+  for (final token in tokens) {
+    if (title.startsWith(token)) {
+      score -= 32;
+    } else if (title.contains(token)) {
+      score -= 18;
+    } else if (category.contains(token)) {
+      score -= 12;
+    }
+  }
+  return score;
 }
 
 class _WorkspaceSettingsMetaRow extends StatelessWidget {

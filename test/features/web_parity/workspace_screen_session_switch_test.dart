@@ -9,6 +9,7 @@ import 'package:opencode_mobile_remote/src/app/app_controller.dart';
 import 'package:opencode_mobile_remote/src/app/app_routes.dart';
 import 'package:opencode_mobile_remote/src/app/app_scope.dart';
 import 'package:opencode_mobile_remote/src/core/connection/connection_models.dart';
+import 'package:opencode_mobile_remote/src/design_system/app_theme.dart';
 import 'package:opencode_mobile_remote/src/features/chat/chat_models.dart';
 import 'package:opencode_mobile_remote/src/features/chat/prompt_attachment_models.dart';
 import 'package:opencode_mobile_remote/src/features/projects/project_catalog_service.dart';
@@ -956,6 +957,177 @@ void main() {
     );
     expect(find.text('OpenCode-style desktop shortcuts'), findsOneWidget);
   });
+
+  testWidgets(
+    'command palette opens from the keyboard shortcut and runs commands',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              return _RecordingWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+            },
+      );
+      addTearDown(appController.dispose);
+
+      final navigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          navigatorKey: navigatorKey,
+          initialRoute: '/',
+        ),
+      );
+      navigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+      );
+      await tester.pumpAndSettle();
+
+      await _sendShortcut(tester, <LogicalKeyboardKey>[
+        LogicalKeyboardKey.controlLeft,
+        LogicalKeyboardKey.keyK,
+      ]);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 220));
+
+      expect(
+        find.byKey(const ValueKey<String>('workspace-command-palette-sheet')),
+        findsOneWidget,
+      );
+
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('workspace-command-palette-field')),
+        'settings',
+      );
+      await tester.pump();
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>(
+            'workspace-command-palette-option-settings.open',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 260));
+
+      expect(
+        find.byKey(const ValueKey<String>('workspace-command-palette-sheet')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('workspace-settings-sheet')),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'command palette button exposes dynamic theme and session commands',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final createdControllers = <_RecordingWorkspaceController>[];
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              final controller = _RecordingWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+              createdControllers.add(controller);
+              return controller;
+            },
+      );
+      addTearDown(appController.dispose);
+
+      final navigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          navigatorKey: navigatorKey,
+          initialRoute: '/',
+        ),
+      );
+      navigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('workspace-command-palette-button')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 220));
+
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('workspace-command-palette-field')),
+        'github',
+      );
+      await tester.pump();
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>(
+            'workspace-command-palette-option-theme.set.github',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(appController.themePreset, AppThemePreset.github);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('workspace-command-palette-button')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 220));
+
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('workspace-command-palette-field')),
+        'session two',
+      );
+      await tester.pump();
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>(
+            'workspace-command-palette-option-session.open.ses_2',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(createdControllers.single.selectedSessionId, 'ses_2');
+      expect(find.text('hello from two'), findsOneWidget);
+    },
+  );
 
   testWidgets('keyboard shortcut opens the project picker sheet', (
     tester,
