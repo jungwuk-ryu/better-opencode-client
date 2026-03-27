@@ -325,6 +325,37 @@ void main() {
   });
 
   test(
+    'sends explicit icon clear signals when removing a project image',
+    () async {
+      final service = ProjectCatalogService();
+      final profile = ServerProfile(
+        id: '1',
+        label: 'demo',
+        baseUrl: baseUri.toString(),
+      );
+
+      final target = await service.updateProject(
+        profile: profile,
+        project: const ProjectTarget(
+          id: 'project-1',
+          directory: '/workspace/demo',
+          label: 'Demo',
+        ),
+        icon: const ProjectIconInfo(url: '', override: '', color: 'mint'),
+      );
+
+      expect(target.icon?.effectiveImage, isNull);
+      expect(target.icon?.color, 'mint');
+      expect(lastPatchPayload?['icon'], <String, Object?>{
+        'url': '',
+        'override': '',
+        'color': 'mint',
+      });
+      service.dispose();
+    },
+  );
+
+  test(
     'evicts older directory suggestions from the autocomplete cache',
     () async {
       final service = ProjectCatalogService(directoryListCacheSize: 2);

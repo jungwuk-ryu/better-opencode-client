@@ -323,14 +323,20 @@ class ProjectCatalogService {
       return null;
     }
     final payload = <String, Object?>{};
-    final effectiveImage = _trimToNull(icon.effectiveImage);
-    if (effectiveImage != null) {
-      payload['url'] = effectiveImage;
+    final url = _trimToNull(icon.url);
+    if (url != null) {
+      payload['url'] = url;
+    } else if (icon.url != null) {
+      payload['url'] = '';
     }
+
     final override = _trimToNull(icon.override);
     if (override != null) {
       payload['override'] = override;
+    } else if (icon.override != null) {
+      payload['override'] = '';
     }
+
     final color = _trimToNull(icon.color);
     if (color != null) {
       payload['color'] = color;

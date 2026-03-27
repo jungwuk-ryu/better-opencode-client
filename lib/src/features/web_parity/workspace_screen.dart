@@ -3277,11 +3277,18 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     final savedName = normalizedName.isEmpty || normalizedName == folderName
         ? null
         : normalizedName;
-    final nextIcon =
+    var nextIcon =
         draft.icon?.effectiveImage == null &&
             (draft.icon?.color?.trim().isEmpty ?? true)
         ? null
         : draft.icon;
+    final clearedExistingIconImage =
+        project.icon?.effectiveImage != null &&
+        nextIcon != null &&
+        nextIcon.effectiveImage == null;
+    if (clearedExistingIconImage) {
+      nextIcon = nextIcon.copyWith(url: '', override: '');
+    }
     final nextCommands = draft.startup.trim().isEmpty
         ? null
         : ProjectCommandsInfo(start: draft.startup.trim());
@@ -6728,7 +6735,12 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
     super.didUpdateWidget(oldWidget);
     if (!_sameProjectOrder(oldWidget.projects, widget.projects)) {
       _orderedProjects = List<ProjectTarget>.unmodifiable(widget.projects);
+      return;
     }
+    _orderedProjects = _mergedProjectsByExistingOrder(
+      existingOrder: _orderedProjects,
+      latestProjects: widget.projects,
+    );
   }
 
   bool _sameProjectOrder(List<ProjectTarget> left, List<ProjectTarget> right) {
@@ -6744,6 +6756,26 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
       }
     }
     return true;
+  }
+
+  List<ProjectTarget> _mergedProjectsByExistingOrder({
+    required List<ProjectTarget> existingOrder,
+    required List<ProjectTarget> latestProjects,
+  }) {
+    final latestByDirectory = <String, ProjectTarget>{
+      for (final project in latestProjects) project.directory: project,
+    };
+    final next = existingOrder
+        .where((project) => latestByDirectory.containsKey(project.directory))
+        .map((project) => latestByDirectory[project.directory] ?? project)
+        .toList(growable: true);
+    final seenDirectories = next.map((project) => project.directory).toSet();
+    for (final project in latestProjects) {
+      if (seenDirectories.add(project.directory)) {
+        next.add(project);
+      }
+    }
+    return List<ProjectTarget>.unmodifiable(next);
   }
 
   Future<void> _handleProjectReorder(int oldIndex, int newIndex) async {

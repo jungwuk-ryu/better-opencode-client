@@ -401,6 +401,81 @@ void main() {
     );
   });
 
+  testWidgets('project avatars update when thumbnails are added and removed', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    const demoIconDataUrl =
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Z9QAAAABJRU5ErkJggg==';
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    late _EditableSidebarWorkspaceController controllerInstance;
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            controllerInstance = _EditableSidebarWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+            return controllerInstance;
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    final demoTile = find.byKey(
+      const ValueKey<String>('workspace-project-/workspace/demo'),
+    );
+    Finder demoImage() =>
+        find.descendant(of: demoTile, matching: find.byType(Image));
+
+    expect(demoImage(), findsNothing);
+
+    final demoProject = controllerInstance.availableProjects.firstWhere(
+      (project) => project.directory == '/workspace/demo',
+    );
+    controllerInstance.applyProjectTargetUpdate(
+      demoProject.copyWith(
+        icon: const ProjectIconInfo(
+          url: demoIconDataUrl,
+          override: demoIconDataUrl,
+          color: 'mint',
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(demoImage(), findsOneWidget);
+
+    controllerInstance.applyProjectTargetUpdate(
+      demoProject.copyWith(icon: const ProjectIconInfo(color: 'mint')),
+    );
+    await tester.pump();
+
+    expect(demoImage(), findsNothing);
+  });
+
   testWidgets('project tiles expose the project name as a tooltip', (
     tester,
   ) async {
