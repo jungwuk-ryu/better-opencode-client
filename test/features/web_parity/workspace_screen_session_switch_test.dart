@@ -15,6 +15,7 @@ import 'package:opencode_mobile_remote/src/features/chat/prompt_attachment_model
 import 'package:opencode_mobile_remote/src/features/projects/project_catalog_service.dart';
 import 'package:opencode_mobile_remote/src/features/projects/project_models.dart';
 import 'package:opencode_mobile_remote/src/features/requests/request_models.dart';
+import 'package:opencode_mobile_remote/src/features/settings/integration_status_service.dart';
 import 'package:opencode_mobile_remote/src/features/terminal/pty_models.dart';
 import 'package:opencode_mobile_remote/src/features/terminal/pty_service.dart';
 import 'package:opencode_mobile_remote/src/features/tools/todo_models.dart';
@@ -1290,6 +1291,163 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(pickerCalls, 1);
+  });
+
+  testWidgets('keyboard shortcut opens MCP picker and toggles a server', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final integrationStatusService = _FakeIntegrationStatusService();
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _RecordingWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+    addTearDown(integrationStatusService.dispose);
+
+    final navigatorKey = GlobalKey<NavigatorState>();
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        navigatorKey: navigatorKey,
+        initialRoute: '/',
+        integrationStatusService: integrationStatusService,
+      ),
+    );
+    navigatorKey.currentState!.pushNamed(
+      buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+    );
+    await tester.pumpAndSettle();
+
+    await _sendShortcut(tester, <LogicalKeyboardKey>[
+      LogicalKeyboardKey.controlLeft,
+      LogicalKeyboardKey.semicolon,
+    ]);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    expect(
+      find.byKey(const ValueKey<String>('workspace-mcp-picker-sheet')),
+      findsOneWidget,
+    );
+    expect(integrationStatusService.fetchCalls, 1);
+
+    expect(
+      tester
+          .widget<Switch>(
+            find.byKey(
+              const ValueKey<String>('workspace-mcp-picker-switch-github'),
+            ),
+          )
+          .value,
+      isTrue,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('workspace-mcp-picker-option-github')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(integrationStatusService.disconnectCalls, <String>['github']);
+    expect(
+      tester
+          .widget<Switch>(
+            find.byKey(
+              const ValueKey<String>('workspace-mcp-picker-switch-github'),
+            ),
+          )
+          .value,
+      isFalse,
+    );
+  });
+
+  testWidgets('/mcp slash command opens the MCP picker and starts auth', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final integrationStatusService = _FakeIntegrationStatusService();
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _RecordingWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+    addTearDown(integrationStatusService.dispose);
+
+    final navigatorKey = GlobalKey<NavigatorState>();
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        navigatorKey: navigatorKey,
+        initialRoute: '/',
+        integrationStatusService: integrationStatusService,
+      ),
+    );
+    navigatorKey.currentState!.pushNamed(
+      buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('composer-text-field')),
+      '/mcp',
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey<String>('composer-slash-option-builtin.mcp')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('composer-slash-option-builtin.mcp')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('workspace-mcp-picker-sheet')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('workspace-mcp-picker-auth-docs')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(integrationStatusService.authCalls, <String>['docs']);
   });
 
   testWidgets(
@@ -2794,6 +2952,7 @@ class _WorkspaceRouteHarness extends StatelessWidget {
     this.navigatorObservers = const <NavigatorObserver>[],
     this.projectCatalogService,
     this.attachmentPicker,
+    this.integrationStatusService,
     this.platform,
   });
 
@@ -2803,6 +2962,7 @@ class _WorkspaceRouteHarness extends StatelessWidget {
   final List<NavigatorObserver> navigatorObservers;
   final ProjectCatalogService? projectCatalogService;
   final Future<List<PromptAttachment>> Function()? attachmentPicker;
+  final IntegrationStatusService? integrationStatusService;
   final TargetPlatform? platform;
 
   @override
@@ -2832,6 +2992,7 @@ class _WorkspaceRouteHarness extends StatelessWidget {
                         ptyServiceFactory: _FakePtyService.new,
                         attachmentPicker: attachmentPicker,
                         projectCatalogService: projectCatalogService,
+                        integrationStatusService: integrationStatusService,
                       ),
                   };
                 },
@@ -2883,6 +3044,67 @@ class _ShortcutProjectCatalogService extends ProjectCatalogService {
       ),
       vcsInfo: const VcsInfo(branch: 'main'),
     );
+  }
+}
+
+class _FakeIntegrationStatusService extends IntegrationStatusService {
+  _FakeIntegrationStatusService()
+    : _mcpDetails = <String, McpIntegrationStatus>{
+        'github': const McpIntegrationStatus(status: 'connected'),
+        'docs': const McpIntegrationStatus(status: 'needs_auth'),
+        'broken': const McpIntegrationStatus(
+          status: 'failed',
+          error: 'Timed out while probing the MCP server.',
+        ),
+      },
+      super(client: MockClient((request) async => http.Response('{}', 200)));
+
+  final Map<String, McpIntegrationStatus> _mcpDetails;
+  int fetchCalls = 0;
+  final List<String> connectCalls = <String>[];
+  final List<String> disconnectCalls = <String>[];
+  final List<String> authCalls = <String>[];
+
+  @override
+  Future<Map<String, McpIntegrationStatus>> fetchMcpDetails({
+    required ServerProfile profile,
+    required ProjectTarget project,
+  }) async {
+    fetchCalls += 1;
+    return Map<String, McpIntegrationStatus>.unmodifiable(
+      Map<String, McpIntegrationStatus>.from(_mcpDetails),
+    );
+  }
+
+  @override
+  Future<void> connectMcp({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String name,
+  }) async {
+    connectCalls.add(name);
+    _mcpDetails[name] = const McpIntegrationStatus(status: 'connected');
+  }
+
+  @override
+  Future<void> disconnectMcp({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String name,
+  }) async {
+    disconnectCalls.add(name);
+    _mcpDetails[name] = const McpIntegrationStatus(status: 'disabled');
+  }
+
+  @override
+  Future<String?> startMcpAuth({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String name,
+  }) async {
+    authCalls.add(name);
+    _mcpDetails[name] = const McpIntegrationStatus(status: 'disabled');
+    return 'https://mcp.example/$name';
   }
 }
 

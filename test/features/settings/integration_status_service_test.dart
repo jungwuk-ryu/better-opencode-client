@@ -9,11 +9,14 @@ import 'package:opencode_mobile_remote/src/features/settings/integration_status_
 void main() {
   late HttpServer server;
   late Uri baseUri;
+  late List<String> requestLog;
 
   setUp(() async {
+    requestLog = <String>[];
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     baseUri = Uri.parse('http://${server.address.address}:${server.port}');
     server.listen((request) async {
+      requestLog.add('${request.method} ${request.uri.path}');
       Object? body;
       if (request.uri.path == '/provider/auth') {
         body = {
@@ -25,6 +28,10 @@ void main() {
         body = {
           'github': {'status': 'connected'},
           'docs': {'status': 'needs_auth'},
+          'broken': {
+            'status': 'failed',
+            'error': 'Timed out while probing the MCP server.',
+          },
         };
       }
       if (request.uri.path == '/lsp') {
@@ -53,6 +60,13 @@ void main() {
       if (request.method == 'POST' && request.uri.path == '/mcp/github/auth') {
         body = {'authorizationUrl': 'https://mcp.example/auth'};
       }
+      if (request.method == 'POST' && request.uri.path == '/mcp/docs/connect') {
+        body = true;
+      }
+      if (request.method == 'POST' &&
+          request.uri.path == '/mcp/github/disconnect') {
+        body = true;
+      }
       if (body == null) {
         request.response.statusCode = 404;
       } else {
@@ -80,6 +94,7 @@ void main() {
 
     expect(snapshot.providerAuth['openai']?.first, 'api_key');
     expect(snapshot.mcpStatus['github'], 'connected');
+    expect(snapshot.mcpDetails['broken']?.error, contains('Timed out'));
     expect(snapshot.lspStatus['typescript'], 'connected');
     expect(snapshot.formatterStatus['prettier'], isTrue);
     service.dispose();
@@ -110,6 +125,27 @@ void main() {
       ),
       'https://mcp.example/auth',
     );
+    service.dispose();
+  });
+
+  test('connects and disconnects MCP servers', () async {
+    final service = IntegrationStatusService();
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'mock',
+      baseUrl: baseUri.toString(),
+    );
+    const project = ProjectTarget(directory: '/workspace/demo', label: 'Demo');
+
+    await service.connectMcp(profile: profile, project: project, name: 'docs');
+    await service.disconnectMcp(
+      profile: profile,
+      project: project,
+      name: 'github',
+    );
+
+    expect(requestLog, contains('POST /mcp/docs/connect'));
+    expect(requestLog, contains('POST /mcp/github/disconnect'));
     service.dispose();
   });
 }

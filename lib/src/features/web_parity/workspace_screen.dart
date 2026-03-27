@@ -29,6 +29,7 @@ import '../projects/project_models.dart';
 import '../requests/request_models.dart';
 import '../settings/agent_service.dart';
 import '../settings/config_service.dart';
+import '../settings/integration_status_service.dart';
 import '../terminal/pty_models.dart';
 import '../terminal/pty_service.dart';
 import '../terminal/pty_terminal_panel.dart';
@@ -178,6 +179,7 @@ class WebParityWorkspaceScreen extends StatefulWidget {
     this.ptyServiceFactory,
     this.attachmentPicker,
     this.projectCatalogService,
+    this.integrationStatusService,
     super.key,
   });
 
@@ -186,6 +188,7 @@ class WebParityWorkspaceScreen extends StatefulWidget {
   final PtyService Function()? ptyServiceFactory;
   final Future<List<PromptAttachment>> Function()? attachmentPicker;
   final ProjectCatalogService? projectCatalogService;
+  final IntegrationStatusService? integrationStatusService;
 
   @override
   State<WebParityWorkspaceScreen> createState() =>
@@ -281,6 +284,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   _WorkspaceProjectLoadingShellState? _projectLoadingShellState;
   late final ProjectCatalogService _projectCatalogService;
   late final bool _ownsProjectCatalogService;
+  late IntegrationStatusService _integrationStatusService;
+  late bool _ownsIntegrationStatusService;
 
   @override
   void initState() {
@@ -295,6 +300,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     _projectCatalogService =
         widget.projectCatalogService ?? ProjectCatalogService();
     _ownsProjectCatalogService = widget.projectCatalogService == null;
+    _integrationStatusService =
+        widget.integrationStatusService ?? IntegrationStatusService();
+    _ownsIntegrationStatusService = widget.integrationStatusService == null;
   }
 
   String get _currentDirectory => _activeDirectory;
@@ -1263,6 +1271,14 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   @override
   void didUpdateWidget(covariant WebParityWorkspaceScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.integrationStatusService != widget.integrationStatusService) {
+      if (_ownsIntegrationStatusService) {
+        _integrationStatusService.dispose();
+      }
+      _integrationStatusService =
+          widget.integrationStatusService ?? IntegrationStatusService();
+      _ownsIntegrationStatusService = widget.integrationStatusService == null;
+    }
     if (oldWidget.directory == widget.directory &&
         oldWidget.sessionId == widget.sessionId) {
       return;
@@ -1303,6 +1319,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     _ptyService?.dispose();
     if (_ownsProjectCatalogService) {
       _projectCatalogService.dispose();
+    }
+    if (_ownsIntegrationStatusService) {
+      _integrationStatusService.dispose();
     }
     super.dispose();
   }
@@ -1821,6 +1840,32 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     );
   }
 
+  Future<void> _openMcpPicker(WorkspaceController controller) async {
+    final profile = _profile;
+    final project = controller.project;
+    if (profile == null || project == null) {
+      _showSnackBar(
+        'Wait for the workspace project to finish loading before managing MCPs.',
+        tone: AppSnackBarTone.info,
+      );
+      return;
+    }
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => FractionallySizedBox(
+        heightFactor: 0.78,
+        child: _WorkspaceMcpPickerSheet(
+          profile: profile,
+          project: project,
+          service: _integrationStatusService,
+        ),
+      ),
+    );
+  }
+
   List<_WorkspaceCommandPaletteCommand> _buildCommandPaletteCommands(
     WebParityAppController appController,
     WorkspaceController controller, {
@@ -1880,6 +1925,16 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         shortcut: 'mod+comma',
         onSelected: () async {
           await _openWorkspaceSettingsSheet(appController, controller);
+        },
+      ),
+      _WorkspaceCommandPaletteCommand(
+        id: 'mcp.toggle',
+        title: 'Toggle MCPs',
+        category: 'MCP',
+        description: 'Connect, disconnect, and authenticate MCP servers.',
+        shortcut: 'mod+;',
+        onSelected: () async {
+          await _openMcpPicker(controller);
         },
       ),
       _WorkspaceCommandPaletteCommand(
@@ -2455,6 +2510,14 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       mod: true,
     )) {
       unawaited(_openProjectPickerShortcut());
+      return KeyEventResult.handled;
+    }
+    if (_matchesWorkspaceShortcut(
+      event,
+      key: LogicalKeyboardKey.semicolon,
+      mod: true,
+    )) {
+      unawaited(_openMcpPicker(controller));
       return KeyEventResult.handled;
     }
     if (_matchesWorkspaceShortcut(
@@ -4554,6 +4617,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
           : null,
       submittedDraftEpoch: _submittedDraftEpochForScope(scopeKey),
       recentSubmittedDraft: _recentSubmittedDraftForScope(scopeKey),
+      onOpenMcpPicker: () => _openMcpPicker(controller),
       onToggleTerminal: _toggleTerminalPanel,
       onSelectSideTab: (tab) {
         unawaited(() async {
@@ -4880,6 +4944,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                               onOpenCommandPalette: () {
                                 unawaited(_openCommandPalette(controller));
                               },
+                              onOpenMcpPicker: () {
+                                unawaited(_openMcpPicker(controller));
+                              },
                               onOpenChatSearch: _openChatSearch,
                               onCloseChatSearch: _closeChatSearch,
                               onChatSearchChanged: _handleChatSearchChanged,
@@ -5082,6 +5149,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                           _removeComposerAttachment,
                                       onTogglePermissionAutoAccept:
                                           _toggleSelectedPermissionAutoAccept,
+                                      onOpenMcpPicker: () =>
+                                          _openMcpPicker(controller),
                                       inlineComposerBuilder: usePerPaneComposer
                                           ? (
                                               paneViewModel,
@@ -5274,6 +5343,7 @@ class _WorkspaceTopBar extends StatelessWidget {
     required this.chatSearchStatusText,
     required this.chatSearchNavigationEnabled,
     required this.onOpenCommandPalette,
+    required this.onOpenMcpPicker,
     required this.onOpenChatSearch,
     required this.onCloseChatSearch,
     required this.onChatSearchChanged,
@@ -5315,6 +5385,7 @@ class _WorkspaceTopBar extends StatelessWidget {
   final String chatSearchStatusText;
   final bool chatSearchNavigationEnabled;
   final VoidCallback onOpenCommandPalette;
+  final VoidCallback onOpenMcpPicker;
   final VoidCallback onOpenChatSearch;
   final VoidCallback onCloseChatSearch;
   final ValueChanged<String> onChatSearchChanged;
@@ -5434,6 +5505,12 @@ class _WorkspaceTopBar extends StatelessWidget {
         ),
       ],
       <_SessionOverflowMenuAction>[
+        _SessionOverflowMenuAction(
+          id: 'mcp',
+          label: 'Toggle MCPs',
+          icon: Icons.extension_rounded,
+          onSelected: onOpenMcpPicker,
+        ),
         _SessionOverflowMenuAction(
           id: 'rename',
           label: 'Rename Session',
@@ -5589,6 +5666,14 @@ class _WorkspaceTopBar extends StatelessWidget {
                     splashRadius: 18,
                   ),
                   IconButton(
+                    key: const ValueKey<String>('workspace-mcp-picker-button'),
+                    onPressed: onOpenMcpPicker,
+                    icon: const Icon(Icons.extension_rounded, size: 18),
+                    tooltip:
+                        'Toggle MCPs (${_formatWorkspaceShortcutLabel('mod+;')})',
+                    splashRadius: 18,
+                  ),
+                  IconButton(
                     key: const ValueKey<String>('workspace-chat-search-button'),
                     onPressed: onOpenChatSearch,
                     icon: const Icon(Icons.search_rounded, size: 18),
@@ -5684,6 +5769,15 @@ class _WorkspaceTopBar extends StatelessWidget {
                       icon: const Icon(Icons.apps_rounded),
                       tooltip:
                           'Command palette (${_formatWorkspaceShortcutLabel('mod+k')})',
+                    ),
+                    IconButton(
+                      key: const ValueKey<String>(
+                        'workspace-mcp-picker-button',
+                      ),
+                      onPressed: onOpenMcpPicker,
+                      icon: const Icon(Icons.extension_rounded),
+                      tooltip:
+                          'Toggle MCPs (${_formatWorkspaceShortcutLabel('mod+;')})',
                     ),
                     IconButton(
                       key: const ValueKey<String>(
@@ -7914,6 +8008,11 @@ const List<_WorkspaceShortcutSpec> _workspaceKeyboardShortcuts =
         shortcut: 'mod+comma',
       ),
       _WorkspaceShortcutSpec(
+        title: 'Toggle MCPs',
+        description: 'Open the session MCP picker and connect integrations.',
+        shortcut: 'mod+;',
+      ),
+      _WorkspaceShortcutSpec(
         title: 'Toggle sessions panel',
         description: 'Collapse or reveal the left sessions sidebar.',
         shortcut: 'mod+b',
@@ -8617,6 +8716,681 @@ int _workspaceCommandMatchScore(
     }
   }
   return score;
+}
+
+class _WorkspaceMcpPickerSheet extends StatefulWidget {
+  const _WorkspaceMcpPickerSheet({
+    required this.profile,
+    required this.project,
+    required this.service,
+  });
+
+  final ServerProfile profile;
+  final ProjectTarget project;
+  final IntegrationStatusService service;
+
+  @override
+  State<_WorkspaceMcpPickerSheet> createState() =>
+      _WorkspaceMcpPickerSheetState();
+}
+
+class _WorkspaceMcpPickerSheetState extends State<_WorkspaceMcpPickerSheet> {
+  late final TextEditingController _queryController = TextEditingController()
+    ..addListener(_handleQueryChanged);
+  late final FocusNode _queryFocusNode = FocusNode();
+  Map<String, McpIntegrationStatus> _mcpDetails =
+      const <String, McpIntegrationStatus>{};
+  bool _loading = true;
+  String? _errorMessage;
+  String? _pendingToggleName;
+  String? _pendingAuthName;
+  String? _lastAuthUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadMcpDetails());
+  }
+
+  @override
+  void dispose() {
+    _queryController
+      ..removeListener(_handleQueryChanged)
+      ..dispose();
+    _queryFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _handleQueryChanged() {
+    if (!mounted) {
+      return;
+    }
+    setState(() {});
+  }
+
+  List<MapEntry<String, McpIntegrationStatus>> get _filteredEntries {
+    final entries = _mcpDetails.entries.toList(growable: false)
+      ..sort(
+        (left, right) =>
+            left.key.toLowerCase().compareTo(right.key.toLowerCase()),
+      );
+    final query = _queryController.text.trim().toLowerCase();
+    if (query.isEmpty) {
+      return entries;
+    }
+    final tokens = query
+        .split(RegExp(r'\s+'))
+        .where((token) => token.trim().isNotEmpty)
+        .toList(growable: false);
+    return entries
+        .where((entry) {
+          final searchable = _workspaceMcpSearchableText(
+            entry.key,
+            entry.value,
+          ).toLowerCase();
+          return tokens.every(searchable.contains);
+        })
+        .toList(growable: false);
+  }
+
+  Future<void> _loadMcpDetails({bool showLoading = true}) async {
+    if (showLoading && mounted) {
+      setState(() {
+        _loading = true;
+        _errorMessage = null;
+      });
+    }
+    try {
+      final details = await widget.service.fetchMcpDetails(
+        profile: widget.profile,
+        project: widget.project,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _mcpDetails = details;
+        _loading = false;
+        _errorMessage = null;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _loading = false;
+        _errorMessage = _formatWorkspaceMcpError(error);
+      });
+    }
+  }
+
+  Future<void> _toggleMcp(String name) async {
+    final detail = _mcpDetails[name];
+    if (detail == null) {
+      return;
+    }
+    setState(() {
+      _pendingToggleName = name;
+      _errorMessage = null;
+    });
+    try {
+      if (detail.connected) {
+        await widget.service.disconnectMcp(
+          profile: widget.profile,
+          project: widget.project,
+          name: name,
+        );
+      } else {
+        await widget.service.connectMcp(
+          profile: widget.profile,
+          project: widget.project,
+          name: name,
+        );
+      }
+      await _loadMcpDetails(showLoading: false);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _errorMessage = _formatWorkspaceMcpError(error);
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _pendingToggleName = null;
+        });
+      }
+    }
+  }
+
+  Future<void> _startAuth(String name) async {
+    setState(() {
+      _pendingAuthName = name;
+      _errorMessage = null;
+    });
+    try {
+      final url = await widget.service.startMcpAuth(
+        profile: widget.profile,
+        project: widget.project,
+        name: name,
+      );
+      final normalizedUrl = url?.trim();
+      if (!mounted) {
+        return;
+      }
+      if (normalizedUrl != null && normalizedUrl.isNotEmpty) {
+        var copiedToClipboard = false;
+        try {
+          await Clipboard.setData(ClipboardData(text: normalizedUrl));
+          copiedToClipboard = true;
+        } catch (_) {
+          copiedToClipboard = false;
+        }
+        if (!mounted) {
+          return;
+        }
+        showAppSnackBar(
+          context,
+          message: copiedToClipboard
+              ? 'MCP auth URL copied for $name.'
+              : 'MCP auth URL is ready for $name.',
+          tone: copiedToClipboard
+              ? AppSnackBarTone.success
+              : AppSnackBarTone.info,
+        );
+      } else {
+        showAppSnackBar(
+          context,
+          message: 'No MCP auth URL was returned for $name.',
+          tone: AppSnackBarTone.info,
+        );
+      }
+      setState(() {
+        _lastAuthUrl = normalizedUrl;
+      });
+      await _loadMcpDetails(showLoading: false);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _errorMessage = _formatWorkspaceMcpError(error);
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _pendingAuthName = null;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final mediaQuery = MediaQuery.of(context);
+    final filtered = _filteredEntries;
+    final enabledCount = _mcpDetails.values
+        .where((item) => item.connected)
+        .length;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.md,
+        AppSpacing.lg,
+        AppSpacing.lg + mediaQuery.viewInsets.bottom,
+      ),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 760,
+            maxHeight: math.min(mediaQuery.size.height * 0.86, 760),
+          ),
+          child: Material(
+            key: const ValueKey<String>('workspace-mcp-picker-sheet'),
+            color: surfaces.panel,
+            borderRadius: BorderRadius.circular(28),
+            child: Container(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(28),
+                border: Border.all(color: surfaces.lineSoft),
+                boxShadow: <BoxShadow>[
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.24),
+                    blurRadius: 28,
+                    offset: const Offset(0, 18),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Text(
+                              'MCPs',
+                              style: theme.textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.xxs),
+                            Text(
+                              '$enabledCount of ${_mcpDetails.length} enabled in this workspace.',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: surfaces.muted,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        key: const ValueKey<String>(
+                          'workspace-mcp-picker-refresh-button',
+                        ),
+                        tooltip: 'Refresh MCP status',
+                        onPressed: _loading ? null : () => _loadMcpDetails(),
+                        icon: const Icon(Icons.refresh_rounded),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  TextField(
+                    key: const ValueKey<String>('workspace-mcp-picker-field'),
+                    controller: _queryController,
+                    focusNode: _queryFocusNode,
+                    autofocus: true,
+                    textInputAction: TextInputAction.search,
+                    decoration: const InputDecoration(
+                      hintText: 'Search MCP servers',
+                      prefixIcon: Icon(Icons.search_rounded),
+                      isDense: true,
+                    ),
+                  ),
+                  if ((_errorMessage ?? '').trim().isNotEmpty) ...<Widget>[
+                    const SizedBox(height: AppSpacing.sm),
+                    _WorkspaceMcpFeedbackCard(
+                      icon: Icons.error_outline_rounded,
+                      message: _errorMessage!,
+                      toneColor: theme.colorScheme.error,
+                    ),
+                  ],
+                  if ((_lastAuthUrl ?? '').trim().isNotEmpty) ...<Widget>[
+                    const SizedBox(height: AppSpacing.sm),
+                    _WorkspaceMcpFeedbackCard(
+                      icon: Icons.link_rounded,
+                      message: _lastAuthUrl!,
+                      toneColor: theme.colorScheme.primary,
+                      actionLabel: 'Copy URL',
+                      onAction: () async {
+                        await Clipboard.setData(
+                          ClipboardData(text: _lastAuthUrl!.trim()),
+                        );
+                        if (!context.mounted) {
+                          return;
+                        }
+                        showAppSnackBar(
+                          context,
+                          message: 'Authorization URL copied.',
+                          tone: AppSnackBarTone.success,
+                        );
+                      },
+                    ),
+                  ],
+                  const SizedBox(height: AppSpacing.md),
+                  Expanded(
+                    child: _loading
+                        ? Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                const CircularProgressIndicator(),
+                                const SizedBox(height: AppSpacing.md),
+                                Text(
+                                  'Loading MCP status...',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: surfaces.muted,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : _mcpDetails.isEmpty
+                        ? _WorkspaceMcpEmptyState(
+                            icon: Icons.extension_off_rounded,
+                            title: 'No MCPs configured',
+                            body:
+                                'This workspace does not expose any MCP servers yet.',
+                          )
+                        : filtered.isEmpty
+                        ? _WorkspaceMcpEmptyState(
+                            icon: Icons.search_off_rounded,
+                            title: 'No MCPs match this search',
+                            body:
+                                'Try a server name or status like connected or needs auth.',
+                          )
+                        : ListView.separated(
+                            itemCount: filtered.length,
+                            separatorBuilder: (_, _) =>
+                                const SizedBox(height: AppSpacing.xs),
+                            itemBuilder: (context, index) {
+                              final entry = filtered[index];
+                              final name = entry.key;
+                              final detail = entry.value;
+                              final togglePending = _pendingToggleName == name;
+                              final authPending = _pendingAuthName == name;
+                              return _WorkspaceMcpPickerTile(
+                                key: ValueKey<String>(
+                                  'workspace-mcp-picker-option-$name',
+                                ),
+                                name: name,
+                                detail: detail,
+                                togglePending: togglePending,
+                                authPending: authPending,
+                                onTap: () => _toggleMcp(name),
+                                onStartAuth: detail.needsAuth
+                                    ? () => _startAuth(name)
+                                    : null,
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WorkspaceMcpPickerTile extends StatelessWidget {
+  const _WorkspaceMcpPickerTile({
+    required this.name,
+    required this.detail,
+    required this.togglePending,
+    required this.authPending,
+    required this.onTap,
+    this.onStartAuth,
+    super.key,
+  });
+
+  final String name;
+  final McpIntegrationStatus detail;
+  final bool togglePending;
+  final bool authPending;
+  final VoidCallback onTap;
+  final VoidCallback? onStartAuth;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final statusMeta = _workspaceMcpStatusMeta(theme, detail.status);
+    final busy = togglePending || authPending;
+    return InkWell(
+      onTap: busy ? null : onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Ink(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.sm,
+        ),
+        decoration: BoxDecoration(
+          color: surfaces.panelRaised,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: surfaces.lineSoft),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Wrap(
+                    spacing: AppSpacing.xs,
+                    runSpacing: AppSpacing.xs,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: <Widget>[
+                      Text(
+                        name,
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.sm,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: statusMeta.color.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: statusMeta.color.withValues(alpha: 0.28),
+                          ),
+                        ),
+                        child: Text(
+                          statusMeta.label,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: statusMeta.color,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      if (togglePending || authPending)
+                        Text(
+                          togglePending ? 'Updating...' : 'Starting auth...',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: surfaces.muted,
+                          ),
+                        ),
+                    ],
+                  ),
+                  if ((detail.error ?? '').trim().isNotEmpty) ...<Widget>[
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      detail.error!,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.error,
+                      ),
+                    ),
+                  ],
+                  if (onStartAuth != null) ...<Widget>[
+                    const SizedBox(height: AppSpacing.xs),
+                    TextButton.icon(
+                      key: ValueKey<String>('workspace-mcp-picker-auth-$name'),
+                      onPressed: busy ? null : onStartAuth,
+                      icon: Icon(
+                        authPending
+                            ? Icons.hourglass_top_rounded
+                            : Icons.open_in_new_rounded,
+                        size: 16,
+                      ),
+                      label: Text(
+                        authPending ? 'Starting auth...' : 'Start auth',
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Switch.adaptive(
+              key: ValueKey<String>('workspace-mcp-picker-switch-$name'),
+              value: detail.connected,
+              onChanged: busy ? null : (_) => onTap(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WorkspaceMcpFeedbackCard extends StatelessWidget {
+  const _WorkspaceMcpFeedbackCard({
+    required this.icon,
+    required this.message,
+    required this.toneColor,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  final IconData icon;
+  final String message;
+  final Color toneColor;
+  final String? actionLabel;
+  final Future<void> Function()? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: toneColor.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: toneColor.withValues(alpha: 0.22)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Icon(icon, size: 18, color: toneColor),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(
+              message,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurface,
+                height: 1.4,
+              ),
+            ),
+          ),
+          if (onAction != null && (actionLabel ?? '').trim().isNotEmpty)
+            TextButton(
+              onPressed: () {
+                unawaited(onAction!.call());
+              },
+              child: Text(actionLabel!),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WorkspaceMcpEmptyState extends StatelessWidget {
+  const _WorkspaceMcpEmptyState({
+    required this.icon,
+    required this.title,
+    required this.body,
+  });
+
+  final IconData icon;
+  final String title;
+  final String body;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(icon, color: surfaces.muted),
+          const SizedBox(height: AppSpacing.sm),
+          Text(title, style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            body,
+            textAlign: TextAlign.center,
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WorkspaceMcpStatusMeta {
+  const _WorkspaceMcpStatusMeta({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+}
+
+String _workspaceMcpSearchableText(String name, McpIntegrationStatus detail) {
+  return <String>[
+    name,
+    detail.status,
+    _workspaceMcpStatusLabel(detail.status),
+    detail.error ?? '',
+  ].join(' ');
+}
+
+String _workspaceMcpStatusLabel(String status) {
+  return switch (status.trim().toLowerCase()) {
+    'connected' => 'connected',
+    'failed' => 'failed',
+    'needs_auth' => 'needs auth',
+    'disabled' => 'disabled',
+    'unknown' => 'unknown',
+    final other => other.replaceAll('_', ' '),
+  };
+}
+
+_WorkspaceMcpStatusMeta _workspaceMcpStatusMeta(
+  ThemeData theme,
+  String status,
+) {
+  return switch (status.trim().toLowerCase()) {
+    'connected' => _WorkspaceMcpStatusMeta(
+      label: 'connected',
+      color: Colors.teal.shade400,
+    ),
+    'failed' => _WorkspaceMcpStatusMeta(
+      label: 'failed',
+      color: theme.colorScheme.error,
+    ),
+    'needs_auth' => _WorkspaceMcpStatusMeta(
+      label: 'needs auth',
+      color: Colors.amber.shade700,
+    ),
+    'disabled' => _WorkspaceMcpStatusMeta(
+      label: 'disabled',
+      color: Colors.blueGrey.shade400,
+    ),
+    _ => _WorkspaceMcpStatusMeta(
+      label: _workspaceMcpStatusLabel(status),
+      color: theme.colorScheme.secondary,
+    ),
+  };
+}
+
+String _formatWorkspaceMcpError(Object error) {
+  final message = error.toString().trim();
+  if (message.startsWith('StateError: ')) {
+    return message.substring('StateError: '.length);
+  }
+  if (message.startsWith('Exception: ')) {
+    return message.substring('Exception: '.length);
+  }
+  return message;
 }
 
 class _WorkspaceSettingsMetaRow extends StatelessWidget {
@@ -10589,6 +11363,7 @@ class _WorkspaceBody extends StatelessWidget {
     required this.onPickAttachments,
     required this.onRemoveAttachment,
     required this.onTogglePermissionAutoAccept,
+    required this.onOpenMcpPicker,
     this.onShowSidePanel,
     this.onResizeSidePanel,
     this.onFinishResizeSidePanel,
@@ -10643,6 +11418,7 @@ class _WorkspaceBody extends StatelessWidget {
   final Future<void> Function() onPickAttachments;
   final ValueChanged<String> onRemoveAttachment;
   final Future<void> Function() onTogglePermissionAutoAccept;
+  final Future<void> Function() onOpenMcpPicker;
   final VoidCallback? onShowSidePanel;
   final ValueChanged<double>? onResizeSidePanel;
   final VoidCallback? onFinishResizeSidePanel;
@@ -10772,6 +11548,7 @@ class _WorkspaceBody extends StatelessWidget {
             onSummarizeSession: onSummarizeSession,
             submittedDraftEpoch: submittedDraftEpoch,
             recentSubmittedDraft: recentSubmittedDraft,
+            onOpenMcpPicker: onOpenMcpPicker,
             onToggleTerminal: onToggleTerminal,
             onSelectSideTab: (tab) {
               if (!compact && !sidePanelVisible) {
@@ -13467,6 +14244,7 @@ class _PromptComposer extends StatefulWidget {
     required this.onEditQueuedPrompt,
     required this.onDeleteQueuedPrompt,
     required this.onSendQueuedPromptNow,
+    required this.onOpenMcpPicker,
     required this.onToggleTerminal,
     required this.onSelectSideTab,
     required this.onSubmit,
@@ -13514,6 +14292,7 @@ class _PromptComposer extends StatefulWidget {
   final Future<void> Function(String queuedPromptId) onEditQueuedPrompt;
   final Future<void> Function(String queuedPromptId) onDeleteQueuedPrompt;
   final Future<void> Function(String queuedPromptId) onSendQueuedPromptNow;
+  final Future<void> Function() onOpenMcpPicker;
   final Future<void> Function() onToggleTerminal;
   final ValueChanged<WorkspaceSideTab> onSelectSideTab;
   final Future<void> Function(WorkspacePromptDispatchMode? mode) onSubmit;
@@ -13900,6 +14679,14 @@ class _PromptComposerState extends State<_PromptComposer> {
         action: _ComposerBuiltinSlashAction.permissionAutoAccept,
       ),
       const _ComposerSlashCommand(
+        id: 'builtin.mcp',
+        trigger: 'mcp',
+        title: 'Toggle MCPs',
+        description: 'Connect or disconnect MCP servers for this session',
+        type: _ComposerSlashCommandType.builtin,
+        action: _ComposerBuiltinSlashAction.mcpPicker,
+      ),
+      const _ComposerSlashCommand(
         id: 'builtin.terminal',
         trigger: 'terminal',
         title: 'Open terminal',
@@ -14111,6 +14898,9 @@ class _PromptComposerState extends State<_PromptComposer> {
         break;
       case _ComposerBuiltinSlashAction.permissionAutoAccept:
         await widget.onTogglePermissionAutoAccept();
+        break;
+      case _ComposerBuiltinSlashAction.mcpPicker:
+        await widget.onOpenMcpPicker();
         break;
       case _ComposerBuiltinSlashAction.terminal:
         await widget.onToggleTerminal();
@@ -14749,6 +15539,7 @@ enum _ComposerBuiltinSlashAction {
   agentPicker,
   reasoningPicker,
   permissionAutoAccept,
+  mcpPicker,
   terminal,
   reviewTab,
   filesTab,

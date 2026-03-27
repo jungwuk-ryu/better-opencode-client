@@ -6,18 +6,32 @@ import '../../core/connection/connection_models.dart';
 import '../../core/network/request_headers.dart';
 import '../projects/project_models.dart';
 
+class McpIntegrationStatus {
+  const McpIntegrationStatus({required this.status, this.error});
+
+  final String status;
+  final String? error;
+
+  bool get connected => status == 'connected';
+  bool get needsAuth => status == 'needs_auth';
+}
+
 class IntegrationStatusSnapshot {
   const IntegrationStatusSnapshot({
     required this.providerAuth,
-    required this.mcpStatus,
+    required this.mcpDetails,
     required this.lspStatus,
     required this.formatterStatus,
   });
 
   final Map<String, List<String>> providerAuth;
-  final Map<String, String> mcpStatus;
+  final Map<String, McpIntegrationStatus> mcpDetails;
   final Map<String, String> lspStatus;
   final Map<String, bool> formatterStatus;
+
+  Map<String, String> get mcpStatus => <String, String>{
+    for (final entry in mcpDetails.entries) entry.key: entry.value.status,
+  };
 }
 
 class IntegrationStatusService {
@@ -35,10 +49,9 @@ class IntegrationStatusService {
       project: project,
       path: '/provider/auth',
     );
-    final mcpBody = await _getJson(
+    final mcpDetails = await fetchMcpDetails(
       profile: profile,
       project: project,
-      path: '/mcp',
     );
     final lspBody = await _getJson(
       profile: profile,
@@ -58,17 +71,6 @@ class IntegrationStatusService {
         providerAuth[entry.key.toString()] = value is List
             ? value.map((item) => item.toString()).toList(growable: false)
             : const <String>[];
-      }
-    }
-
-    final mcpStatus = <String, String>{};
-    if (mcpBody is Map) {
-      for (final entry in mcpBody.entries) {
-        final value = entry.value;
-        if (value is Map) {
-          mcpStatus[entry.key.toString()] =
-              value['status']?.toString() ?? 'unknown';
-        }
       }
     }
 
@@ -96,10 +98,22 @@ class IntegrationStatusService {
 
     return IntegrationStatusSnapshot(
       providerAuth: providerAuth,
-      mcpStatus: mcpStatus,
+      mcpDetails: mcpDetails,
       lspStatus: lspStatus,
       formatterStatus: formatterStatus,
     );
+  }
+
+  Future<Map<String, McpIntegrationStatus>> fetchMcpDetails({
+    required ServerProfile profile,
+    required ProjectTarget project,
+  }) async {
+    final mcpBody = await _getJson(
+      profile: profile,
+      project: project,
+      path: '/mcp',
+    );
+    return _parseMcpDetails(mcpBody);
   }
 
   Future<String?> startProviderAuth({
@@ -135,6 +149,50 @@ class IntegrationStatusService {
       return null;
     }
     return result['authorizationUrl']?.toString();
+  }
+
+  Future<void> connectMcp({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String name,
+  }) async {
+    await _postJson(
+      profile: profile,
+      project: project,
+      path: '/mcp/$name/connect',
+      body: const <String, Object?>{},
+    );
+  }
+
+  Future<void> disconnectMcp({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String name,
+  }) async {
+    await _postJson(
+      profile: profile,
+      project: project,
+      path: '/mcp/$name/disconnect',
+      body: const <String, Object?>{},
+    );
+  }
+
+  Map<String, McpIntegrationStatus> _parseMcpDetails(Object? body) {
+    final mcpDetails = <String, McpIntegrationStatus>{};
+    if (body is! Map) {
+      return mcpDetails;
+    }
+    for (final entry in body.entries) {
+      final value = entry.value;
+      if (value is! Map) {
+        continue;
+      }
+      mcpDetails[entry.key.toString()] = McpIntegrationStatus(
+        status: value['status']?.toString() ?? 'unknown',
+        error: value['error']?.toString(),
+      );
+    }
+    return mcpDetails;
   }
 
   Future<Object?> _getJson({

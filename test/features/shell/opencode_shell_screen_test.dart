@@ -2702,7 +2702,9 @@ IntegrationStatusSnapshot _integrationSnapshot(String providerId) {
     providerAuth: <String, List<String>>{
       providerId: const <String>['oauth'],
     },
-    mcpStatus: const <String, String>{'demo-mcp': 'connected'},
+    mcpDetails: const <String, McpIntegrationStatus>{
+      'demo-mcp': McpIntegrationStatus(status: 'connected'),
+    },
     lspStatus: const <String, String>{'dart': 'ready'},
     formatterStatus: const <String, bool>{'dart': true},
   );
@@ -2711,7 +2713,7 @@ IntegrationStatusSnapshot _integrationSnapshot(String providerId) {
 IntegrationStatusSnapshot _emptyIntegrationSnapshot() {
   return const IntegrationStatusSnapshot(
     providerAuth: <String, List<String>>{},
-    mcpStatus: <String, String>{},
+    mcpDetails: <String, McpIntegrationStatus>{},
     lspStatus: <String, String>{},
     formatterStatus: <String, bool>{},
   );
