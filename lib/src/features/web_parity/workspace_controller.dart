@@ -307,6 +307,7 @@ class WorkspaceController extends ChangeNotifier {
   FileBrowserBundle? _fileBundle;
   Set<String> _expandedFileDirectories = <String>{};
   Set<String> _loadedFileDirectories = <String>{};
+  ReviewSessionDiffBundle? _reviewBundle;
   String? _selectedReviewPath;
   FileDiffSummary? _reviewDiff;
   List<TodoItem> _todos = const <TodoItem>[];
@@ -430,6 +431,8 @@ class WorkspaceController extends ChangeNotifier {
   FileBrowserBundle? get fileBundle => _fileBundle;
   Set<String> get expandedFileDirectories =>
       UnmodifiableSetView<String>(_expandedFileDirectories);
+  List<FileStatusSummary> get reviewStatuses =>
+      _reviewBundle?.statuses ?? const <FileStatusSummary>[];
   String? get selectedReviewPath => _selectedReviewPath;
   FileDiffSummary? get reviewDiff => _reviewDiff;
   List<TodoItem> get todos => _todos;
@@ -855,6 +858,7 @@ class WorkspaceController extends ChangeNotifier {
     _loadedFileDirectories = <String>{};
     _loadingReviewDiff = false;
     _reviewDiffError = null;
+    _reviewBundle = null;
     _selectedReviewPath = null;
     _reviewDiff = null;
     _replaceSelectedSessionTodos(const <TodoItem>[]);
@@ -955,6 +959,8 @@ class WorkspaceController extends ChangeNotifier {
     _replaceSelectedSessionTodos(const <TodoItem>[]);
     _loadingReviewDiff = false;
     _reviewDiffError = null;
+    _reviewBundle = null;
+    _selectedReviewPath = null;
     _reviewDiff = null;
     _notify();
 
@@ -1021,18 +1027,27 @@ class WorkspaceController extends ChangeNotifier {
   }
 
   Future<void> selectReviewFile(String path) async {
-    final project = _project;
     final trimmed = path.trim();
-    if (project == null || trimmed.isEmpty) {
+    if (trimmed.isEmpty) {
       return;
     }
+    final bundle = _reviewBundle;
+    final cachedDiff = bundle?.diffForPath(trimmed);
     if (_selectedReviewPath == trimmed &&
-        _reviewDiff != null &&
+        cachedDiff != null &&
         _reviewDiffError == null &&
         !_loadingReviewDiff) {
       return;
     }
-    await _loadReviewDiff(path: trimmed, project: project);
+    if (cachedDiff != null) {
+      _selectedReviewPath = trimmed;
+      _reviewDiff = cachedDiff;
+      _reviewDiffError = null;
+      _loadingReviewDiff = false;
+      _notify();
+      return;
+    }
+    await _loadSelectedSessionReview(pathHint: trimmed);
   }
 
   Future<void> selectFile(String path) async {
@@ -1160,13 +1175,45 @@ class WorkspaceController extends ChangeNotifier {
     }
   }
 
-  Future<void> _loadReviewDiff({
-    required String path,
-    required ProjectTarget project,
-  }) async {
+  String? _resolveReviewPathSelection(
+    List<FileStatusSummary> statuses, {
+    String? preferredPath,
+  }) {
+    final trimmedPreferred = preferredPath?.trim();
+    if (trimmedPreferred != null && trimmedPreferred.isNotEmpty) {
+      for (final status in statuses) {
+        if (status.path == trimmedPreferred) {
+          return status.path;
+        }
+      }
+    }
+    if (statuses.isEmpty) {
+      return null;
+    }
+    return statuses.first.path;
+  }
+
+  void _applyReviewBundle(
+    ReviewSessionDiffBundle bundle, {
+    String? preferredPath,
+  }) {
+    _reviewBundle = bundle;
+    final resolvedPath = _resolveReviewPathSelection(
+      bundle.statuses,
+      preferredPath: preferredPath ?? _selectedReviewPath,
+    );
+    _selectedReviewPath = resolvedPath;
+    _reviewDiff = resolvedPath == null
+        ? null
+        : bundle.diffForPath(resolvedPath);
+    _reviewDiffError = null;
+  }
+
+  Future<void> _loadSelectedSessionReview({String? pathHint}) async {
     final sessionId = _selectedSessionId;
     if (sessionId == null || sessionId.isEmpty) {
-      _selectedReviewPath = path;
+      _reviewBundle = null;
+      _selectedReviewPath = pathHint;
       _reviewDiff = null;
       _reviewDiffError = 'Select a session to review its diff.';
       _loadingReviewDiff = false;
@@ -1174,56 +1221,38 @@ class WorkspaceController extends ChangeNotifier {
       return;
     }
 
-    FileStatusSummary? status;
-    for (final item in _fileBundle?.statuses ?? const <FileStatusSummary>[]) {
-      if (item.path == path) {
-        status = item;
-        break;
-      }
-    }
-    if (status == null) {
-      _selectedReviewPath = path;
-      _reviewDiff = null;
-      _reviewDiffError = 'Could not find diff metadata for this file.';
-      _loadingReviewDiff = false;
-      _notify();
-      return;
-    }
-
     final revision = ++_reviewDiffRevision;
-    _selectedReviewPath = path;
-    _reviewDiff = null;
+    _selectedReviewPath = pathHint ?? _selectedReviewPath;
     _reviewDiffError = null;
     _loadingReviewDiff = true;
     _notify();
 
     try {
-      final diff = await _reviewDiffService.fetchDiff(
+      final bundle = await _reviewDiffService.fetchSessionDiffs(
         profile: profile,
-        project: project,
         sessionId: sessionId,
-        status: status,
       );
       if (_disposed ||
           revision != _reviewDiffRevision ||
-          _selectedReviewPath != path) {
+          _selectedSessionId != sessionId) {
         return;
       }
-      _reviewDiff = diff;
-      _reviewDiffError = null;
+      _applyReviewBundle(bundle, preferredPath: pathHint);
     } catch (error) {
       if (_disposed ||
           revision != _reviewDiffRevision ||
-          _selectedReviewPath != path) {
+          _selectedSessionId != sessionId) {
         return;
       }
+      _reviewBundle = null;
+      _selectedReviewPath = pathHint;
       _reviewDiff = null;
       _reviewDiffError =
-          'Couldn\'t load the diff for this file.\n${error.toString().trim()}';
+          'Couldn\'t load the review diff.\n${error.toString().trim()}';
     } finally {
       if (!_disposed &&
           revision == _reviewDiffRevision &&
-          _selectedReviewPath == path) {
+          _selectedSessionId == sessionId) {
         _loadingReviewDiff = false;
         _notify();
       }
@@ -3007,8 +3036,8 @@ class WorkspaceController extends ChangeNotifier {
       _expandedFileDirectories = _fileBundle?.selectedPath == null
           ? <String>{}
           : _ancestorDirectories(_fileBundle!.selectedPath!);
-      final statuses = _fileBundle?.statuses ?? const <FileStatusSummary>[];
-      _selectedReviewPath = statuses.isEmpty ? null : statuses.first.path;
+      _reviewBundle = null;
+      _selectedReviewPath = null;
       _reviewDiff = null;
       _reviewDiffError = null;
       _loadingReviewDiff = false;
@@ -3018,24 +3047,24 @@ class WorkspaceController extends ChangeNotifier {
       _loadingFileDirectoryPath = null;
       _expandedFileDirectories = <String>{};
       _loadedFileDirectories = <String>{};
+      _reviewBundle = null;
       _selectedReviewPath = null;
       _reviewDiff = null;
       _reviewDiffError = null;
       _loadingReviewDiff = false;
     }
     await _loadSessionPanels();
-    final selectedReviewPath = _selectedReviewPath;
-    if (_fileBundle != null &&
-        selectedReviewPath != null &&
-        _selectedSessionId != null) {
-      unawaited(_loadReviewDiff(path: selectedReviewPath, project: project));
-    }
   }
 
   Future<void> _loadSessionPanels() async {
     final project = _project;
     final sessionId = _selectedSessionId;
     if (project == null) {
+      _reviewBundle = null;
+      _selectedReviewPath = null;
+      _reviewDiff = null;
+      _reviewDiffError = null;
+      _loadingReviewDiff = false;
       _replaceSelectedSessionTodos(const <TodoItem>[]);
       _pendingRequests = const PendingRequestBundle(
         questions: <QuestionRequestSummary>[],
@@ -3045,18 +3074,46 @@ class WorkspaceController extends ChangeNotifier {
     }
 
     if (sessionId == null || sessionId.isEmpty) {
+      _reviewBundle = null;
+      _selectedReviewPath = null;
+      _reviewDiff = null;
+      _reviewDiffError = null;
+      _loadingReviewDiff = false;
       _replaceSelectedSessionTodos(const <TodoItem>[]);
     } else {
+      final todoFuture = _todoService
+          .fetchTodos(profile: profile, project: project, sessionId: sessionId)
+          .then<Object?>((value) => value)
+          .catchError((_) => const <TodoItem>[]);
+      final reviewFuture = _reviewDiffService
+          .fetchSessionDiffs(profile: profile, sessionId: sessionId)
+          .then<Object?>((value) => value)
+          .catchError((_) => null);
+      _loadingReviewDiff = true;
       try {
+        final results = await Future.wait<Object?>(<Future<Object?>>[
+          todoFuture,
+          reviewFuture,
+        ]);
+        if (_disposed || _selectedSessionId != sessionId) {
+          return;
+        }
         _replaceSelectedSessionTodos(
-          await _todoService.fetchTodos(
-            profile: profile,
-            project: project,
-            sessionId: sessionId,
-          ),
+          (results[0] as List<TodoItem>?) ?? const <TodoItem>[],
         );
-      } catch (_) {
-        _replaceSelectedSessionTodos(const <TodoItem>[]);
+        final reviewBundle = results[1] as ReviewSessionDiffBundle?;
+        if (reviewBundle == null) {
+          _reviewBundle = null;
+          _selectedReviewPath = null;
+          _reviewDiff = null;
+          _reviewDiffError = 'Couldn\'t load the review diff.';
+        } else {
+          _applyReviewBundle(reviewBundle);
+        }
+      } finally {
+        if (!_disposed && _selectedSessionId == sessionId) {
+          _loadingReviewDiff = false;
+        }
       }
     }
 
@@ -3131,6 +3188,14 @@ class WorkspaceController extends ChangeNotifier {
       _maybeFlushQueuedPrompts(
         sessionId: event.properties['sessionID']?.toString(),
       );
+    } else if (type == 'session.diff') {
+      final sessionId = event.properties['sessionID']?.toString();
+      if (sessionId == _selectedSessionId) {
+        _applyReviewBundle(
+          ReviewSessionDiffBundle.fromPayload(event.properties['diff']),
+        );
+        _loadingReviewDiff = false;
+      }
     } else if (type == 'message.updated') {
       final infoJson = event.properties['info'] as Map?;
       _applyWatchedSessionTimelineEvent(

@@ -263,6 +263,61 @@ void main() {
     );
   });
 
+  testWidgets(
+    'review panel renders session diff entries instead of generic file status entries',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              return _FilesWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+            },
+      );
+      addTearDown(appController.dispose);
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          initialRoute: buildWorkspaceRoute(
+            '/workspace/demo',
+            sessionId: 'ses_1',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Review'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey<String>('review-status-README.md')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('review-status-lib/main.dart')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('review-status-pubspec.yaml')),
+        findsNothing,
+      );
+    },
+  );
+
   testWidgets('side panel renders the redesigned tab switcher controls', (
     tester,
   ) async {
@@ -380,7 +435,7 @@ void main() {
       findsOneWidget,
     );
 
-    await tester.tap(find.text('Split'));
+    await tester.tap(find.byIcon(Icons.view_week_rounded));
     await tester.pumpAndSettle();
 
     expect(
@@ -391,7 +446,7 @@ void main() {
     expect(find.text('After'), findsOneWidget);
     expect(find.text('void main() {'), findsOneWidget);
 
-    await tester.tap(find.text('Unified'));
+    await tester.tap(find.byIcon(Icons.view_stream_rounded));
     await tester.pumpAndSettle();
 
     expect(
@@ -564,6 +619,7 @@ class _FilesWorkspaceController extends WorkspaceController {
   Set<String> _expandedDirectories = <String>{};
   String? _selectedReviewPath;
   FileDiffSummary? _reviewDiff;
+  List<FileStatusSummary> _reviewStatuses = const <FileStatusSummary>[];
 
   @override
   bool get loading => _loading;
@@ -608,6 +664,9 @@ class _FilesWorkspaceController extends WorkspaceController {
 
   @override
   FileDiffSummary? get reviewDiff => _reviewDiff;
+
+  @override
+  List<FileStatusSummary> get reviewStatuses => _reviewStatuses;
 
   @override
   bool get loadingReviewDiff => false;
@@ -665,6 +724,12 @@ class _FilesWorkspaceController extends WorkspaceController {
           added: 22,
           removed: 0,
         ),
+        FileStatusSummary(
+          path: 'pubspec.yaml',
+          status: 'modified',
+          added: 1,
+          removed: 1,
+        ),
       ],
       preview: const FileContentSummary(
         type: 'text',
@@ -672,6 +737,20 @@ class _FilesWorkspaceController extends WorkspaceController {
       ),
       selectedPath: 'README.md',
     );
+    _reviewStatuses = const <FileStatusSummary>[
+      FileStatusSummary(
+        path: 'README.md',
+        status: 'modified',
+        added: 4,
+        removed: 1,
+      ),
+      FileStatusSummary(
+        path: 'lib/main.dart',
+        status: 'added',
+        added: 22,
+        removed: 0,
+      ),
+    ];
     _selectedReviewPath = 'README.md';
     _reviewDiff = const FileDiffSummary(
       path: 'README.md',

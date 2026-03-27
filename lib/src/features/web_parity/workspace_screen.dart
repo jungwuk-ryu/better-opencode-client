@@ -8706,7 +8706,7 @@ class _WorkspaceBody extends StatelessWidget {
 }
 
 String _compactSideLabel(WorkspaceController controller) {
-  final reviewCount = controller.fileBundle?.statuses.length ?? 0;
+  final reviewCount = controller.reviewStatuses.length;
   return switch (controller.sideTab) {
     WorkspaceSideTab.review when reviewCount > 0 =>
       '$reviewCount Files Changed',
@@ -18477,7 +18477,7 @@ class _SidePanel extends StatelessWidget {
     final bundle = controller.fileBundle;
     final density = _workspaceDensity(context);
     final panelPadding = density.inset(AppSpacing.md, min: AppSpacing.sm);
-    final reviewCount = bundle?.statuses.length ?? 0;
+    final reviewCount = controller.reviewStatuses.length;
     final fileCount = bundle?.nodes.length ?? 0;
     final contextUsage = controller.sessionContextMetrics.context?.usagePercent;
     final messageCount = controller.messages.length;
@@ -18518,9 +18518,7 @@ class _SidePanel extends StatelessWidget {
         Expanded(
           child: switch (tab) {
             WorkspaceSideTab.review => _ReviewPanel(
-              statuses:
-                  controller.fileBundle?.statuses ??
-                  const <FileStatusSummary>[],
+              statuses: controller.reviewStatuses,
               selectedPath: controller.selectedReviewPath,
               diff: controller.reviewDiff,
               loadingDiff: controller.loadingReviewDiff,
@@ -18853,6 +18851,20 @@ class _ReviewPanelState extends State<_ReviewPanel> {
     final surfaces = theme.extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
     if (widget.statuses.isEmpty) {
+      if (widget.loadingDiff) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      if (widget.diffError != null) {
+        return Center(
+          child: Text(
+            widget.diffError!,
+            textAlign: TextAlign.center,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
+          ),
+        );
+      }
       return Center(
         child: Text(
           'No file changes yet.',

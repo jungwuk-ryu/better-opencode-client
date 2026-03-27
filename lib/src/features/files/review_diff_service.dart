@@ -15,16 +15,15 @@ class ReviewDiffService {
   final http.Client _client;
   final bool _ownsClient;
 
-  Future<FileDiffSummary> fetchDiff({
+  Future<ReviewSessionDiffBundle> fetchSessionDiffs({
     required ServerProfile profile,
-    required ProjectTarget project,
     required String sessionId,
-    required FileStatusSummary status,
+    String? messageId,
   }) async {
     final uri = _buildUri(
       profile: profile,
-      project: project,
       sessionId: sessionId,
+      messageId: messageId,
     );
     final response = await _client.get(
       uri,
@@ -39,30 +38,24 @@ class ReviewDiffService {
     final decoded = response.body.trim().isEmpty
         ? null
         : jsonDecode(response.body);
-    final diffs = decoded is List
-        ? decoded
-              .whereType<Map>()
-              .map(
-                (item) =>
-                    _ReviewSnapshotDiff.fromJson(item.cast<String, Object?>()),
-              )
-              .toList(growable: false)
-        : const <_ReviewSnapshotDiff>[];
+    return ReviewSessionDiffBundle.fromPayload(decoded);
+  }
 
-    final match = _findMatchingDiff(diffs, status.path);
+  Future<FileDiffSummary> fetchDiff({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String sessionId,
+    required FileStatusSummary status,
+  }) async {
+    final bundle = await fetchSessionDiffs(
+      profile: profile,
+      sessionId: sessionId,
+    );
+    final match = bundle.diffForPath(status.path);
     if (match == null) {
       return FileDiffSummary(path: status.path, content: '');
     }
-
-    return FileDiffSummary(
-      path: status.path,
-      content: buildReviewUnifiedDiff(
-        path: match.file,
-        status: match.status ?? status.status,
-        before: match.before,
-        after: match.after,
-      ),
-    );
+    return match;
   }
 
   void dispose() {
@@ -74,8 +67,8 @@ class ReviewDiffService {
 
 Uri _buildUri({
   required ServerProfile profile,
-  required ProjectTarget project,
   required String sessionId,
+  String? messageId,
 }) {
   final baseUri = profile.uriOrNull;
   if (baseUri == null) {
@@ -92,8 +85,82 @@ Uri _buildUri({
       .replace(path: basePath)
       .resolve('session/$sessionId/diff')
       .replace(
-        queryParameters: <String, String>{'directory': project.directory},
+        queryParameters: () {
+          final normalizedMessageId = messageId?.trim();
+          if (normalizedMessageId == null || normalizedMessageId.isEmpty) {
+            return null;
+          }
+          return <String, String>{'messageID': normalizedMessageId};
+        }(),
       );
+}
+
+List<_ReviewSnapshotDiff> _decodeReviewSnapshotDiffs(Object? payload) {
+  final list = switch (payload) {
+    final List value => value,
+    final Map value when value['data'] is List => value['data'] as List,
+    _ => const <Object?>[],
+  };
+  return list
+      .whereType<Map>()
+      .map((item) => _ReviewSnapshotDiff.fromJson(item.cast<String, Object?>()))
+      .toList(growable: false);
+}
+
+class ReviewSessionDiffBundle {
+  const ReviewSessionDiffBundle({required this.entries});
+
+  final List<ReviewSessionDiffEntry> entries;
+
+  factory ReviewSessionDiffBundle.fromPayload(Object? payload) {
+    final diffs = _decodeReviewSnapshotDiffs(payload);
+    return ReviewSessionDiffBundle(
+      entries: diffs
+          .map(
+            (diff) => ReviewSessionDiffEntry(
+              status: FileStatusSummary(
+                path: diff.file,
+                status: diff.status ?? 'modified',
+                added: diff.additions,
+                removed: diff.deletions,
+              ),
+              diff: FileDiffSummary(
+                path: diff.file,
+                content: buildReviewUnifiedDiff(
+                  path: diff.file,
+                  status: diff.status ?? 'modified',
+                  before: diff.before,
+                  after: diff.after,
+                ),
+              ),
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+
+  List<FileStatusSummary> get statuses =>
+      entries.map((entry) => entry.status).toList(growable: false);
+
+  FileDiffSummary? diffForPath(String path) {
+    final normalizedTarget = _normalizeDiffPath(path);
+    for (final entry in entries) {
+      final normalized = _normalizeDiffPath(entry.status.path);
+      if (normalized == normalizedTarget ||
+          normalized.endsWith('/$normalizedTarget') ||
+          normalizedTarget.endsWith('/$normalized')) {
+        return entry.diff;
+      }
+    }
+    return null;
+  }
+}
+
+class ReviewSessionDiffEntry {
+  const ReviewSessionDiffEntry({required this.status, required this.diff});
+
+  final FileStatusSummary status;
+  final FileDiffSummary diff;
 }
 
 String buildReviewUnifiedDiff({
@@ -117,22 +184,6 @@ String buildReviewUnifiedDiff({
   ];
 
   return lines.join('\n').trimRight();
-}
-
-_ReviewSnapshotDiff? _findMatchingDiff(
-  List<_ReviewSnapshotDiff> diffs,
-  String path,
-) {
-  final normalizedTarget = _normalizeDiffPath(path);
-  for (final diff in diffs) {
-    final normalized = _normalizeDiffPath(diff.file);
-    if (normalized == normalizedTarget ||
-        normalized.endsWith('/$normalizedTarget') ||
-        normalizedTarget.endsWith('/$normalized')) {
-      return diff;
-    }
-  }
-  return null;
 }
 
 String _normalizeDiffPath(String value) {

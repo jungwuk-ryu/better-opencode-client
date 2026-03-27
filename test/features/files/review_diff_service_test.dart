@@ -52,7 +52,7 @@ void main() {
 
     expect(
       requestedUri.toString(),
-      'https://example.com/api/session/ses_1/diff?directory=%2Fworkspace%2Fdemo',
+      'https://example.com/api/session/ses_1/diff',
     );
     expect(requestedHeaders['authorization'], isNotEmpty);
     expect(diff.path, 'README.md');
@@ -102,6 +102,63 @@ void main() {
     expect(diff.path, 'README.md');
     expect(diff.content, isEmpty);
   });
+
+  test(
+    'fetches the session review bundle without mixing in file status data',
+    () async {
+      final client = MockClient((request) async {
+        expect(
+          request.url.toString(),
+          'http://localhost:4096/session/ses_1/diff',
+        );
+        return http.Response(
+          jsonEncode(<Map<String, Object?>>[
+            <String, Object?>{
+              'file': 'README.md',
+              'before': 'old\n',
+              'after': 'new\n',
+              'additions': 1,
+              'deletions': 1,
+              'status': 'modified',
+            },
+            <String, Object?>{
+              'file': 'lib/main.dart',
+              'before': '',
+              'after': 'void main() {}\n',
+              'additions': 1,
+              'deletions': 0,
+              'status': 'added',
+            },
+          ]),
+          200,
+          headers: <String, String>{'content-type': 'application/json'},
+        );
+      });
+      final service = ReviewDiffService(client: client);
+
+      final bundle = await service.fetchSessionDiffs(
+        profile: const ServerProfile(
+          id: 'server',
+          label: 'Mock',
+          baseUrl: 'http://localhost:4096',
+        ),
+        sessionId: 'ses_1',
+      );
+
+      expect(bundle.statuses.map((item) => item.path), <String>[
+        'README.md',
+        'lib/main.dart',
+      ]);
+      expect(bundle.statuses.map((item) => item.status), <String>[
+        'modified',
+        'added',
+      ]);
+      expect(
+        bundle.diffForPath('lib/main.dart')?.content,
+        contains('diff --git a/lib/main.dart b/lib/main.dart'),
+      );
+    },
+  );
 
   test('builds a unified diff for added files', () {
     final diff = buildReviewUnifiedDiff(
