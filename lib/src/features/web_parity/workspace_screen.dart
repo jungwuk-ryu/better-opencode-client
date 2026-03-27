@@ -10753,6 +10753,9 @@ class _MessageTimelineState extends State<_MessageTimeline> {
                 final hasHiddenMessages = _hiddenMessageCount > 0;
                 final itemCount =
                     visibleMessages.length + (hasHiddenMessages ? 1 : 0);
+                final normalizedSearchTerms = _searchActive
+                    ? _normalizedSearchTerms(widget.searchQuery)
+                    : const <String>[];
 
                 return ListView.builder(
                   controller: _scrollController,
@@ -10829,6 +10832,9 @@ class _MessageTimelineState extends State<_MessageTimeline> {
                                   currentSessionId: widget.currentSessionId,
                                   message: message,
                                   compact: widget.compact,
+                                  searchTerms: matched
+                                      ? normalizedSearchTerms
+                                      : const <String>[],
                                   searchMatched: matched,
                                   searchActive: activeMatch,
                                   sessions: widget.sessions,
@@ -13721,6 +13727,7 @@ class _TimelineMessage extends StatefulWidget {
     required this.currentSessionId,
     required this.message,
     required this.compact,
+    required this.searchTerms,
     required this.searchMatched,
     required this.searchActive,
     required this.sessions,
@@ -13736,6 +13743,7 @@ class _TimelineMessage extends StatefulWidget {
   final String? currentSessionId;
   final ChatMessage message;
   final bool compact;
+  final List<String> searchTerms;
   final bool searchMatched;
   final bool searchActive;
   final List<SessionSummary> sessions;
@@ -13809,6 +13817,7 @@ class _TimelineMessageState extends State<_TimelineMessage> {
         text: _cachedUserText,
         compact: widget.compact,
         attachments: _cachedAttachments,
+        searchTerms: widget.searchTerms,
         searchMatched: widget.searchMatched,
         searchActive: widget.searchActive,
         configSnapshot: widget.configSnapshot,
@@ -13851,7 +13860,11 @@ class _TimelineMessageState extends State<_TimelineMessage> {
             padding: EdgeInsets.only(
               bottom: widget.compact ? AppSpacing.sm : AppSpacing.md,
             ),
-            child: _TimelineExploredContextPart(parts: contextParts),
+            child: _TimelineExploredContextPart(
+              parts: contextParts,
+              searchTerms: widget.searchTerms,
+              searchActive: widget.searchActive,
+            ),
           ),
         );
         continue;
@@ -13867,6 +13880,8 @@ class _TimelineMessageState extends State<_TimelineMessage> {
             sessions: widget.sessions,
             shellToolDefaultExpanded: widget.shellToolDefaultExpanded,
             textStreamingActive: messageIsActive,
+            searchTerms: widget.searchTerms,
+            searchActive: widget.searchActive,
             shimmerActive: _activityPartShimmerActive(
               part,
               messageIsActive: messageIsActive,
@@ -13946,6 +13961,7 @@ class _UserTimelineMessage extends StatefulWidget {
     required this.text,
     required this.compact,
     required this.attachments,
+    required this.searchTerms,
     required this.searchMatched,
     required this.searchActive,
     required this.configSnapshot,
@@ -13958,6 +13974,7 @@ class _UserTimelineMessage extends StatefulWidget {
   final String text;
   final bool compact;
   final List<ChatPart> attachments;
+  final List<String> searchTerms;
   final bool searchMatched;
   final bool searchActive;
   final ConfigSnapshot? configSnapshot;
@@ -14206,6 +14223,8 @@ class _UserTimelineMessageState extends State<_UserTimelineMessage> {
                         _UserMessageAttachmentGrid(
                           compact: widget.compact,
                           attachments: widget.attachments,
+                          searchTerms: widget.searchTerms,
+                          searchActive: widget.searchActive,
                         ),
                       if (widget.attachments.isNotEmpty && hasText)
                         SizedBox(
@@ -14213,7 +14232,12 @@ class _UserTimelineMessageState extends State<_UserTimelineMessage> {
                               ? AppSpacing.sm
                               : AppSpacing.md,
                         ),
-                      if (hasText) _InlineCodeText(text: widget.text),
+                      if (hasText)
+                        _InlineCodeText(
+                          text: widget.text,
+                          searchTerms: widget.searchTerms,
+                          searchActive: widget.searchActive,
+                        ),
                     ],
                   ),
                 ),
@@ -14421,6 +14445,8 @@ class _TimelinePart extends StatelessWidget {
     required this.sessions,
     required this.shellToolDefaultExpanded,
     required this.textStreamingActive,
+    required this.searchTerms,
+    required this.searchActive,
     required this.shimmerActive,
     required this.onOpenSession,
   });
@@ -14430,6 +14456,8 @@ class _TimelinePart extends StatelessWidget {
   final List<SessionSummary> sessions;
   final bool shellToolDefaultExpanded;
   final bool textStreamingActive;
+  final List<String> searchTerms;
+  final bool searchActive;
   final bool shimmerActive;
   final ValueChanged<String> onOpenSession;
 
@@ -14445,6 +14473,8 @@ class _TimelinePart extends StatelessWidget {
         partId: part.id,
         text: body,
         animate: _shouldAnimateStreamingText(part, textStreamingActive),
+        searchTerms: searchTerms,
+        searchActive: searchActive,
       );
     }
     if (part.type == 'compaction') {
@@ -14472,6 +14502,8 @@ class _TimelinePart extends StatelessWidget {
         body: _shellToolBody(part),
         shimmerActive: shimmerActive,
         defaultExpanded: shellToolDefaultExpanded,
+        searchTerms: searchTerms,
+        searchActive: searchActive,
       );
     }
     if (_isToolLikePart(part)) {
@@ -14482,6 +14514,8 @@ class _TimelinePart extends StatelessWidget {
         summary: linkedSession?.label ?? _partSummary(part, body),
         body: body,
         shimmerActive: shimmerActive,
+        searchTerms: searchTerms,
+        searchActive: searchActive,
         summaryTapKey: linkedSession == null
             ? null
             : ValueKey<String>('timeline-activity-link-${part.id}'),
@@ -14490,7 +14524,11 @@ class _TimelinePart extends StatelessWidget {
             : () => onOpenSession(linkedSession.sessionId),
       );
     }
-    return _StructuredTextBlock(text: body);
+    return _StructuredTextBlock(
+      text: body,
+      searchTerms: searchTerms,
+      searchActive: searchActive,
+    );
   }
 }
 
@@ -14533,10 +14571,14 @@ class _UserMessageAttachmentGrid extends StatelessWidget {
   const _UserMessageAttachmentGrid({
     required this.attachments,
     required this.compact,
+    this.searchTerms = const <String>[],
+    this.searchActive = false,
   });
 
   final List<ChatPart> attachments;
   final bool compact;
+  final List<String> searchTerms;
+  final bool searchActive;
 
   @override
   Widget build(BuildContext context) {
@@ -14545,7 +14587,12 @@ class _UserMessageAttachmentGrid extends StatelessWidget {
       runSpacing: compact ? AppSpacing.xs : AppSpacing.sm,
       children: attachments
           .map(
-            (part) => _UserMessageAttachmentTile(part: part, compact: compact),
+            (part) => _UserMessageAttachmentTile(
+              part: part,
+              compact: compact,
+              searchTerms: searchTerms,
+              searchActive: searchActive,
+            ),
           )
           .toList(growable: false),
     );
@@ -14553,10 +14600,17 @@ class _UserMessageAttachmentGrid extends StatelessWidget {
 }
 
 class _UserMessageAttachmentTile extends StatelessWidget {
-  const _UserMessageAttachmentTile({required this.part, this.compact = false});
+  const _UserMessageAttachmentTile({
+    required this.part,
+    this.compact = false,
+    this.searchTerms = const <String>[],
+    this.searchActive = false,
+  });
 
   final ChatPart part;
   final bool compact;
+  final List<String> searchTerms;
+  final bool searchActive;
 
   @override
   Widget build(BuildContext context) {
@@ -14597,13 +14651,25 @@ class _UserMessageAttachmentTile extends StatelessWidget {
           else
             _AttachmentIcon(mime: mime),
           SizedBox(height: compact ? AppSpacing.xs : AppSpacing.sm),
-          Text(
-            filename,
+          Text.rich(
+            TextSpan(
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+              children: _buildSearchHighlightedTextSpans(
+                text: filename,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                terms: searchTerms,
+                highlightColor: _searchTextHighlightColor(
+                  context,
+                  active: searchActive,
+                ),
+              ),
+            ),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 2),
           Text(
@@ -14653,6 +14719,8 @@ class _ShellTimelinePart extends StatefulWidget {
     required this.body,
     required this.shimmerActive,
     required this.defaultExpanded,
+    this.searchTerms = const <String>[],
+    this.searchActive = false,
     super.key,
   });
 
@@ -14662,6 +14730,8 @@ class _ShellTimelinePart extends StatefulWidget {
   final String body;
   final bool shimmerActive;
   final bool defaultExpanded;
+  final List<String> searchTerms;
+  final bool searchActive;
 
   @override
   State<_ShellTimelinePart> createState() => _ShellTimelinePartState();
@@ -14753,12 +14823,33 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
                             'timeline-shell-shimmer-${widget.partId}',
                           ),
                           active: pending,
-                          text: TextSpan(text: widget.title, style: titleStyle),
+                          text: TextSpan(
+                            style: titleStyle,
+                            children: _buildSearchHighlightedTextSpans(
+                              text: widget.title,
+                              style: titleStyle,
+                              terms: widget.searchTerms,
+                              highlightColor: _searchTextHighlightColor(
+                                context,
+                                active: widget.searchActive,
+                              ),
+                            ),
+                          ),
                         ),
                         if (hasSubtitle)
-                          Text(
-                            subtitle,
-                            style: subtitleStyle,
+                          Text.rich(
+                            TextSpan(
+                              style: subtitleStyle,
+                              children: _buildSearchHighlightedTextSpans(
+                                text: subtitle,
+                                style: subtitleStyle,
+                                terms: widget.searchTerms,
+                                highlightColor: _searchTextHighlightColor(
+                                  context,
+                                  active: widget.searchActive,
+                                ),
+                              ),
+                            ),
                             overflow: TextOverflow.ellipsis,
                           ),
                       ],
@@ -14799,15 +14890,30 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
                         SingleChildScrollView(
                           scrollDirection: Axis.horizontal,
                           padding: _timelineShellBodyPadding,
-                          child: Text(
-                            widget.body,
+                          child: Text.rich(
+                            TextSpan(
+                              style: GoogleFonts.ibmPlexMono(
+                                fontSize: 14,
+                                height: 1.5,
+                                color: theme.colorScheme.onSurface,
+                              ),
+                              children: _buildSearchHighlightedTextSpans(
+                                text: widget.body,
+                                style: GoogleFonts.ibmPlexMono(
+                                  fontSize: 14,
+                                  height: 1.5,
+                                  color: theme.colorScheme.onSurface,
+                                ),
+                                terms: widget.searchTerms,
+                                highlightColor: _searchTextHighlightColor(
+                                  context,
+                                  active: widget.searchActive,
+                                  code: true,
+                                ),
+                              ),
+                            ),
                             key: ValueKey<String>(
                               'timeline-shell-body-${widget.partId}',
-                            ),
-                            style: GoogleFonts.ibmPlexMono(
-                              fontSize: 14,
-                              height: 1.5,
-                              color: theme.colorScheme.onSurface,
                             ),
                           ),
                         ),
@@ -14857,6 +14963,8 @@ class _TimelineActivityPart extends StatefulWidget {
     required this.summary,
     required this.body,
     required this.shimmerActive,
+    this.searchTerms = const <String>[],
+    this.searchActive = false,
     this.summaryTapKey,
     this.onSummaryTap,
     this.shimmerKey,
@@ -14867,6 +14975,8 @@ class _TimelineActivityPart extends StatefulWidget {
   final String summary;
   final String body;
   final bool shimmerActive;
+  final List<String> searchTerms;
+  final bool searchActive;
   final Key? summaryTapKey;
   final VoidCallback? onSummaryTap;
   final Key? shimmerKey;
@@ -14924,10 +15034,27 @@ class _TimelineActivityPartState extends State<_TimelineActivityPart> {
           key: widget.shimmerKey,
           active: widget.shimmerActive,
           text: TextSpan(
+            style: titleStyle,
             children: <InlineSpan>[
-              TextSpan(text: widget.title, style: titleStyle),
+              ..._buildSearchHighlightedTextSpans(
+                text: widget.title,
+                style: titleStyle,
+                terms: widget.searchTerms,
+                highlightColor: _searchTextHighlightColor(
+                  context,
+                  active: widget.searchActive,
+                ),
+              ),
               if (widget.summary.isNotEmpty)
-                TextSpan(text: ' ${widget.summary}', style: summaryStyle),
+                ..._buildSearchHighlightedTextSpans(
+                  text: ' ${widget.summary}',
+                  style: summaryStyle,
+                  terms: widget.searchTerms,
+                  highlightColor: _searchTextHighlightColor(
+                    context,
+                    active: widget.searchActive,
+                  ),
+                ),
             ],
           ),
         );
@@ -14945,7 +15072,20 @@ class _TimelineActivityPartState extends State<_TimelineActivityPart> {
             borderRadius: BorderRadius.circular(10),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
-              child: Text(widget.summary, style: summaryLinkStyle),
+              child: Text.rich(
+                TextSpan(
+                  style: summaryLinkStyle,
+                  children: _buildSearchHighlightedTextSpans(
+                    text: widget.summary,
+                    style: summaryLinkStyle,
+                    terms: widget.searchTerms,
+                    highlightColor: _searchTextHighlightColor(
+                      context,
+                      active: widget.searchActive,
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
         ],
@@ -15021,7 +15161,11 @@ class _TimelineActivityPartState extends State<_TimelineActivityPart> {
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(color: surfaces.lineSoft),
                     ),
-                    child: _StructuredTextBlock(text: widget.body),
+                    child: _StructuredTextBlock(
+                      text: widget.body,
+                      searchTerms: widget.searchTerms,
+                      searchActive: widget.searchActive,
+                    ),
                   ),
           ),
         ),
@@ -15031,9 +15175,15 @@ class _TimelineActivityPartState extends State<_TimelineActivityPart> {
 }
 
 class _TimelineExploredContextPart extends StatefulWidget {
-  const _TimelineExploredContextPart({required this.parts});
+  const _TimelineExploredContextPart({
+    required this.parts,
+    this.searchTerms = const <String>[],
+    this.searchActive = false,
+  });
 
   final List<ChatPart> parts;
+  final List<String> searchTerms;
+  final bool searchActive;
 
   @override
   State<_TimelineExploredContextPart> createState() =>
@@ -15082,10 +15232,18 @@ class _TimelineExploredContextPartState
                       ),
                       active: pending,
                       text: TextSpan(
-                        text: summaryText.isEmpty
-                            ? label
-                            : '$label $summaryText',
                         style: titleStyle,
+                        children: _buildSearchHighlightedTextSpans(
+                          text: summaryText.isEmpty
+                              ? label
+                              : '$label $summaryText',
+                          style: titleStyle,
+                          terms: widget.searchTerms,
+                          highlightColor: _searchTextHighlightColor(
+                            context,
+                            active: widget.searchActive,
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -15117,12 +15275,22 @@ class _TimelineExploredContextPartState
                               padding: const EdgeInsets.only(
                                 bottom: AppSpacing.sm,
                               ),
-                              child: Text(
-                                _contextToolDetailLine(part),
+                              child: Text.rich(
+                                TextSpan(
+                                  style: detailStyle,
+                                  children: _buildSearchHighlightedTextSpans(
+                                    text: _contextToolDetailLine(part),
+                                    style: detailStyle,
+                                    terms: widget.searchTerms,
+                                    highlightColor: _searchTextHighlightColor(
+                                      context,
+                                      active: widget.searchActive,
+                                    ),
+                                  ),
+                                ),
                                 key: ValueKey<String>(
                                   'timeline-explored-context-detail-${part.id}',
                                 ),
-                                style: detailStyle,
                               ),
                             ),
                           )
@@ -15497,10 +15665,187 @@ List<_InlineCodeSegment> _parseInlineCodeSegments(String text) {
   return resolved;
 }
 
+class _SearchHighlightRange {
+  const _SearchHighlightRange({required this.start, required this.end});
+
+  final int start;
+  final int end;
+}
+
+int _searchTermsSignature(List<String> terms) {
+  if (terms.isEmpty) {
+    return 0;
+  }
+  return Object.hash(terms.length, Object.hashAll(terms));
+}
+
+Color _searchTextHighlightColor(
+  BuildContext context, {
+  required bool active,
+  bool code = false,
+}) {
+  final accent = Theme.of(context).colorScheme.primary;
+  return accent.withValues(
+    alpha: active ? (code ? 0.34 : 0.28) : (code ? 0.24 : 0.18),
+  );
+}
+
+List<_SearchHighlightRange> _searchHighlightRanges(
+  String text,
+  List<String> terms,
+) {
+  if (text.isEmpty || terms.isEmpty) {
+    return const <_SearchHighlightRange>[];
+  }
+  final normalizedText = text.toLowerCase();
+  final ranges = <_SearchHighlightRange>[];
+  for (final term in terms) {
+    final normalizedTerm = term.trim().toLowerCase();
+    if (normalizedTerm.isEmpty) {
+      continue;
+    }
+    var searchIndex = 0;
+    while (searchIndex < normalizedText.length) {
+      final matchIndex = normalizedText.indexOf(normalizedTerm, searchIndex);
+      if (matchIndex < 0) {
+        break;
+      }
+      ranges.add(
+        _SearchHighlightRange(
+          start: matchIndex,
+          end: matchIndex + normalizedTerm.length,
+        ),
+      );
+      searchIndex = matchIndex + normalizedTerm.length;
+    }
+  }
+  if (ranges.isEmpty) {
+    return const <_SearchHighlightRange>[];
+  }
+  ranges.sort((left, right) => left.start.compareTo(right.start));
+  final merged = <_SearchHighlightRange>[ranges.first];
+  for (var index = 1; index < ranges.length; index += 1) {
+    final current = ranges[index];
+    final last = merged.last;
+    if (current.start <= last.end) {
+      merged[merged.length - 1] = _SearchHighlightRange(
+        start: last.start,
+        end: math.max(last.end, current.end),
+      );
+      continue;
+    }
+    merged.add(current);
+  }
+  return List<_SearchHighlightRange>.unmodifiable(merged);
+}
+
+List<InlineSpan> _buildSearchHighlightedTextSpans({
+  required String text,
+  required TextStyle? style,
+  required List<String> terms,
+  required Color highlightColor,
+}) {
+  if (text.isEmpty) {
+    return const <InlineSpan>[TextSpan(text: '')];
+  }
+  final ranges = _searchHighlightRanges(text, terms);
+  if (ranges.isEmpty) {
+    return <InlineSpan>[TextSpan(text: text, style: style)];
+  }
+  final spans = <InlineSpan>[];
+  var cursor = 0;
+  for (final range in ranges) {
+    if (range.start > cursor) {
+      spans.add(
+        TextSpan(text: text.substring(cursor, range.start), style: style),
+      );
+    }
+    spans.add(
+      TextSpan(
+        text: text.substring(range.start, range.end),
+        style: (style ?? const TextStyle()).copyWith(
+          backgroundColor: highlightColor,
+        ),
+      ),
+    );
+    cursor = range.end;
+  }
+  if (cursor < text.length) {
+    spans.add(TextSpan(text: text.substring(cursor), style: style));
+  }
+  return spans;
+}
+
+List<InlineSpan> _highlightInlineSpansForSearch({
+  required List<InlineSpan> spans,
+  required List<String> terms,
+  required Color highlightColor,
+  TextStyle? inheritedStyle,
+}) {
+  if (terms.isEmpty) {
+    return spans;
+  }
+  final highlighted = <InlineSpan>[];
+  for (final span in spans) {
+    if (span is! TextSpan) {
+      highlighted.add(span);
+      continue;
+    }
+    highlighted.addAll(
+      _highlightTextSpanForSearch(
+        span,
+        terms: terms,
+        highlightColor: highlightColor,
+        inheritedStyle: inheritedStyle,
+      ),
+    );
+  }
+  return highlighted;
+}
+
+List<InlineSpan> _highlightTextSpanForSearch(
+  TextSpan span, {
+  required List<String> terms,
+  required Color highlightColor,
+  TextStyle? inheritedStyle,
+}) {
+  final effectiveStyle = inheritedStyle?.merge(span.style) ?? span.style;
+  final highlighted = <InlineSpan>[];
+  final text = span.text;
+  if (text != null && text.isNotEmpty) {
+    highlighted.addAll(
+      _buildSearchHighlightedTextSpans(
+        text: text,
+        style: effectiveStyle,
+        terms: terms,
+        highlightColor: highlightColor,
+      ),
+    );
+  }
+  final children = span.children;
+  if (children != null && children.isNotEmpty) {
+    highlighted.addAll(
+      _highlightInlineSpansForSearch(
+        spans: children,
+        terms: terms,
+        highlightColor: highlightColor,
+        inheritedStyle: effectiveStyle,
+      ),
+    );
+  }
+  return highlighted;
+}
+
 class _StructuredTextBlock extends StatelessWidget {
-  const _StructuredTextBlock({required this.text});
+  const _StructuredTextBlock({
+    required this.text,
+    this.searchTerms = const <String>[],
+    this.searchActive = false,
+  });
 
   final String text;
+  final List<String> searchTerms;
+  final bool searchActive;
 
   @override
   Widget build(BuildContext context) {
@@ -15515,9 +15860,16 @@ class _StructuredTextBlock extends StatelessWidget {
               child: switch (block) {
                 _StructuredParagraphData(:final text) => _ParagraphBlock(
                   text: text,
+                  searchTerms: searchTerms,
+                  searchActive: searchActive,
                 ),
                 _StructuredCodeFenceData(:final code, :final language) =>
-                  _StructuredCodeFenceBlock(language: language, code: code),
+                  _StructuredCodeFenceBlock(
+                    language: language,
+                    code: code,
+                    searchTerms: searchTerms,
+                    searchActive: searchActive,
+                  ),
               },
             ),
           )
@@ -15527,10 +15879,17 @@ class _StructuredTextBlock extends StatelessWidget {
 }
 
 class _StructuredCodeFenceBlock extends StatefulWidget {
-  const _StructuredCodeFenceBlock({required this.code, this.language});
+  const _StructuredCodeFenceBlock({
+    required this.code,
+    this.language,
+    this.searchTerms = const <String>[],
+    this.searchActive = false,
+  });
 
   final String code;
   final String? language;
+  final List<String> searchTerms;
+  final bool searchActive;
 
   @override
   State<_StructuredCodeFenceBlock> createState() =>
@@ -15544,6 +15903,8 @@ class _StructuredCodeFenceBlockState extends State<_StructuredCodeFenceBlock> {
   String? _cachedHighlightLanguage;
   bool? _cachedHighlightEnabled;
   int? _cachedHighlightThemeSignature;
+  int? _cachedSearchTermsSignature;
+  bool? _cachedSearchActive;
   List<InlineSpan>? _cachedHighlightedSpans;
 
   @override
@@ -15604,22 +15965,37 @@ class _StructuredCodeFenceBlockState extends State<_StructuredCodeFenceBlock> {
         highlightEnabled &&
         syntaxLanguage != _FilePreviewSyntaxLanguage.plainText;
     final themeSignature = _syntaxThemeSignature(theme, surfaces);
+    final searchTermsSignature = _searchTermsSignature(widget.searchTerms);
+    final searchHighlightColor = _searchTextHighlightColor(
+      context,
+      active: widget.searchActive,
+      code: true,
+    );
     List<InlineSpan>? highlightedSpans;
     if (canHighlight) {
       if (_cachedHighlightedSpans == null ||
           _cachedHighlightCode != widget.code ||
           _cachedHighlightLanguage != language ||
           _cachedHighlightEnabled != highlightEnabled ||
-          _cachedHighlightThemeSignature != themeSignature) {
-        _cachedHighlightedSpans = _buildHighlightedCodeBlockSpans(
+          _cachedHighlightThemeSignature != themeSignature ||
+          _cachedSearchTermsSignature != searchTermsSignature ||
+          _cachedSearchActive != widget.searchActive) {
+        final syntaxSpans = _buildHighlightedCodeBlockSpans(
           code: widget.code,
           language: language,
           syntaxTheme: syntaxTheme,
+        );
+        _cachedHighlightedSpans = _highlightInlineSpansForSearch(
+          spans: syntaxSpans,
+          terms: widget.searchTerms,
+          highlightColor: searchHighlightColor,
         );
         _cachedHighlightCode = widget.code;
         _cachedHighlightLanguage = language;
         _cachedHighlightEnabled = highlightEnabled;
         _cachedHighlightThemeSignature = themeSignature;
+        _cachedSearchTermsSignature = searchTermsSignature;
+        _cachedSearchActive = widget.searchActive;
       }
       highlightedSpans = _cachedHighlightedSpans;
     }
@@ -15680,20 +16056,27 @@ class _StructuredCodeFenceBlockState extends State<_StructuredCodeFenceBlock> {
             scrollDirection: Axis.horizontal,
             child: canHighlight
                 ? SelectableText.rich(
-                    key: ValueKey<String>(
-                      'timeline-code-content-highlighted-$languageKey',
-                    ),
                     TextSpan(
                       style: syntaxTheme.base,
                       children: highlightedSpans,
                     ),
+                    key: ValueKey<String>(
+                      'timeline-code-content-highlighted-$languageKey',
+                    ),
                   )
-                : SelectableText(
+                : SelectableText.rich(
+                    TextSpan(
+                      style: syntaxTheme.base,
+                      children: _buildSearchHighlightedTextSpans(
+                        text: widget.code,
+                        style: syntaxTheme.base,
+                        terms: widget.searchTerms,
+                        highlightColor: searchHighlightColor,
+                      ),
+                    ),
                     key: ValueKey<String>(
                       'timeline-code-content-plain-$languageKey',
                     ),
-                    widget.code,
-                    style: syntaxTheme.base,
                   ),
           ),
         ],
@@ -15707,12 +16090,16 @@ class _StreamingTextPart extends StatefulWidget {
     required this.partId,
     required this.text,
     required this.animate,
+    this.searchTerms = const <String>[],
+    this.searchActive = false,
     super.key,
   });
 
   final String partId;
   final String text;
   final bool animate;
+  final List<String> searchTerms;
+  final bool searchActive;
 
   @override
   State<_StreamingTextPart> createState() => _StreamingTextPartState();
@@ -15815,17 +16202,32 @@ class _StreamingTextPartState extends State<_StreamingTextPart> {
   @override
   Widget build(BuildContext context) {
     if (!widget.animate || widget.text.trim().isEmpty) {
-      return _StructuredTextBlock(text: widget.text);
+      return _StructuredTextBlock(
+        text: widget.text,
+        searchTerms: widget.searchTerms,
+        searchActive: widget.searchActive,
+      );
     }
 
     final theme = Theme.of(context);
     final baseStyle = theme.textTheme.bodyLarge?.copyWith(height: 1.8);
+    final searchHighlightColor = _searchTextHighlightColor(
+      context,
+      active: widget.searchActive,
+    );
     final transparentStyle = (baseStyle ?? const TextStyle()).copyWith(
       color: Colors.transparent,
     );
     final spans = <InlineSpan>[];
     if (_sequence.leadingWhitespace.isNotEmpty) {
-      spans.add(TextSpan(text: _sequence.leadingWhitespace));
+      spans.addAll(
+        _buildSearchHighlightedTextSpans(
+          text: _sequence.leadingWhitespace,
+          style: baseStyle,
+          terms: widget.searchTerms,
+          highlightColor: searchHighlightColor,
+        ),
+      );
     }
     for (var index = 0; index < _visibleChunkCount; index += 1) {
       final chunk = _sequence.chunks[index];
@@ -15855,12 +16257,19 @@ class _StreamingTextPartState extends State<_StreamingTextPart> {
                   }
                 });
               },
-              child: Text(
-                chunk.text,
+              child: Text.rich(
+                TextSpan(
+                  style: baseStyle,
+                  children: _buildSearchHighlightedTextSpans(
+                    text: chunk.text,
+                    style: baseStyle,
+                    terms: widget.searchTerms,
+                    highlightColor: searchHighlightColor,
+                  ),
+                ),
                 key: ValueKey<String>(
                   'streaming-text-chunk-${widget.partId}-$index',
                 ),
-                style: baseStyle,
               ),
               builder: (context, value, child) {
                 return Opacity(opacity: value, child: child);
@@ -15869,7 +16278,14 @@ class _StreamingTextPartState extends State<_StreamingTextPart> {
           ),
         );
       } else {
-        spans.add(TextSpan(text: chunk.text));
+        spans.addAll(
+          _buildSearchHighlightedTextSpans(
+            text: chunk.text,
+            style: baseStyle,
+            terms: widget.searchTerms,
+            highlightColor: searchHighlightColor,
+          ),
+        );
       }
     }
     for (
@@ -15920,9 +16336,15 @@ _StreamingWordSequence _tokenizeStreamingWords(String text) {
 }
 
 class _ParagraphBlock extends StatelessWidget {
-  const _ParagraphBlock({required this.text});
+  const _ParagraphBlock({
+    required this.text,
+    this.searchTerms = const <String>[],
+    this.searchActive = false,
+  });
 
   final String text;
+  final List<String> searchTerms;
+  final bool searchActive;
 
   @override
   Widget build(BuildContext context) {
@@ -15933,7 +16355,11 @@ class _ParagraphBlock extends StatelessWidget {
           .map(
             (paragraph) => Padding(
               padding: const EdgeInsets.only(bottom: AppSpacing.md),
-              child: _InlineCodeText(text: paragraph),
+              child: _InlineCodeText(
+                text: paragraph,
+                searchTerms: searchTerms,
+                searchActive: searchActive,
+              ),
             ),
           )
           .toList(growable: false),
@@ -15942,9 +16368,15 @@ class _ParagraphBlock extends StatelessWidget {
 }
 
 class _InlineCodeText extends StatelessWidget {
-  const _InlineCodeText({required this.text});
+  const _InlineCodeText({
+    required this.text,
+    this.searchTerms = const <String>[],
+    this.searchActive = false,
+  });
 
   final String text;
+  final List<String> searchTerms;
+  final bool searchActive;
 
   @override
   Widget build(BuildContext context) {
@@ -15957,10 +16389,21 @@ class _InlineCodeText extends StatelessWidget {
       fontWeight: FontWeight.w600,
       height: 1.8,
     );
+    final searchHighlightColor = _searchTextHighlightColor(
+      context,
+      active: searchActive,
+    );
     final spans = <InlineSpan>[];
     for (final segment in _parseInlineCodeSegments(text)) {
       if (!segment.code) {
-        spans.add(TextSpan(text: segment.text));
+        spans.addAll(
+          _buildSearchHighlightedTextSpans(
+            text: segment.text,
+            style: baseStyle,
+            terms: searchTerms,
+            highlightColor: searchHighlightColor,
+          ),
+        );
         continue;
       }
       spans.add(
@@ -15977,7 +16420,21 @@ class _InlineCodeText extends StatelessWidget {
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: surfaces.lineSoft),
             ),
-            child: Text(segment.text, style: codeStyle),
+            child: Text.rich(
+              TextSpan(
+                style: codeStyle,
+                children: _buildSearchHighlightedTextSpans(
+                  text: segment.text,
+                  style: codeStyle,
+                  terms: searchTerms,
+                  highlightColor: _searchTextHighlightColor(
+                    context,
+                    active: searchActive,
+                    code: true,
+                  ),
+                ),
+              ),
+            ),
           ),
         ),
       );

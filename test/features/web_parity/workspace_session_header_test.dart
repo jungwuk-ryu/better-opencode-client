@@ -492,6 +492,78 @@ void main() {
     },
   );
 
+  testWidgets('chat search highlights matching text inside the message body', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1480, 960);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _LargeSearchWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('workspace-chat-search-button')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('workspace-chat-search-field')),
+      'needle',
+    );
+    await tester.pump();
+    for (var index = 0; index < 5; index += 1) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    final richTextWidgets = tester
+        .widgetList<RichText>(
+          find.descendant(
+            of: find.byKey(
+              const ValueKey<String>('timeline-user-message-msg_user_4'),
+            ),
+            matching: find.byType(RichText),
+          ),
+        )
+        .toList(growable: false);
+
+    expect(
+      richTextWidgets.any(
+        (widget) => _inlineSpanContainsHighlightedText(widget.text, 'Needle'),
+      ),
+      isTrue,
+    );
+  });
+
   testWidgets('hiding the terminal panel keeps the PTY connection alive', (
     tester,
   ) async {
@@ -977,6 +1049,27 @@ class _TrackingPtyService extends PtyService {
     }
     super.dispose();
   }
+}
+
+bool _inlineSpanContainsHighlightedText(InlineSpan span, String needle) {
+  if (span is! TextSpan) {
+    return false;
+  }
+  final text = span.text ?? '';
+  if (text.toLowerCase().contains(needle.toLowerCase()) &&
+      span.style?.backgroundColor != null) {
+    return true;
+  }
+  final children = span.children;
+  if (children == null || children.isEmpty) {
+    return false;
+  }
+  for (final child in children) {
+    if (_inlineSpanContainsHighlightedText(child, needle)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 class _FakeWebSocketChannel implements WebSocketChannel {
