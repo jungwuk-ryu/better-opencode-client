@@ -104,6 +104,44 @@ class WorkspaceSessionTimelineState {
   }
 }
 
+class WorkspaceSessionHoverPreviewMessage {
+  const WorkspaceSessionHoverPreviewMessage({
+    required this.messageId,
+    required this.label,
+    this.createdAt,
+  });
+
+  final String messageId;
+  final String label;
+  final DateTime? createdAt;
+
+  @override
+  bool operator ==(Object other) {
+    return other is WorkspaceSessionHoverPreviewMessage &&
+        other.messageId == messageId &&
+        other.label == label &&
+        other.createdAt == createdAt;
+  }
+
+  @override
+  int get hashCode => Object.hash(messageId, label, createdAt);
+}
+
+class WorkspaceSessionHoverPreviewState {
+  const WorkspaceSessionHoverPreviewState({
+    this.summary,
+    this.messages = const <WorkspaceSessionHoverPreviewMessage>[],
+    this.loading = false,
+  });
+
+  final String? summary;
+  final List<WorkspaceSessionHoverPreviewMessage> messages;
+  final bool loading;
+
+  bool get hasContent =>
+      (summary?.trim().isNotEmpty ?? false) || messages.isNotEmpty;
+}
+
 class WorkspaceQueuedPrompt {
   const WorkspaceQueuedPrompt({
     required this.id,
@@ -453,6 +491,13 @@ class WorkspaceController extends ChangeNotifier {
       const <String, String>{};
   Map<String, int> _activeChildSessionCachedPreviewVersionById =
       const <String, int>{};
+  Map<String, String> _sessionHoverPreviewSummaryById =
+      const <String, String>{};
+  Map<String, List<WorkspaceSessionHoverPreviewMessage>>
+  _sessionHoverPreviewMessagesById =
+      const <String, List<WorkspaceSessionHoverPreviewMessage>>{};
+  Map<String, int> _sessionHoverPreviewVersionById = const <String, int>{};
+  Set<String> _sessionHoverPreviewLoadingIds = const <String>{};
   int _activeChildSessionPreviewLoadSignature = 0;
   int _activeChildSessionPreviewLoadToken = 0;
   Set<String> _watchedSessionIds = const <String>{};
@@ -496,6 +541,35 @@ class WorkspaceController extends ChangeNotifier {
   Map<String, SessionStatusSummary> get statuses => _statuses;
   String? get selectedSessionId => _selectedSessionId;
   List<ChatMessage> get messages => _messages;
+  WorkspaceSessionHoverPreviewState sessionHoverPreviewForSession(
+    String? sessionId,
+  ) {
+    final normalized = sessionId?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return const WorkspaceSessionHoverPreviewState();
+    }
+    final liveMessages = _sessionHoverPreviewLiveMessages(normalized);
+    final liveSummary = liveMessages == null
+        ? null
+        : _sessionActivityPreviewText(liveMessages);
+    final livePreviewMessages = liveMessages == null
+        ? null
+        : _sessionHoverPreviewMessagesFromChatMessages(liveMessages);
+    return WorkspaceSessionHoverPreviewState(
+      summary: _firstNonEmptyText(<String?>[
+        liveSummary,
+        _sessionHoverPreviewSummaryById[normalized],
+        _statusActivityPreviewText(_statuses[normalized]),
+        _genericActiveStatusPreviewText(_statuses[normalized]),
+      ]),
+      messages:
+          livePreviewMessages ??
+          _sessionHoverPreviewMessagesById[normalized] ??
+          const <WorkspaceSessionHoverPreviewMessage>[],
+      loading: _sessionHoverPreviewLoadingIds.contains(normalized),
+    );
+  }
+
   List<ChatMessage> get orderedMessages {
     _ensureDerivedMessageState();
     return _orderedMessagesCache;
@@ -966,6 +1040,7 @@ class WorkspaceController extends ChangeNotifier {
     _loading = true;
     _error = null;
     _actionNotice = null;
+    _resetSessionHoverPreviewState();
     _notify();
 
     try {
@@ -1069,6 +1144,7 @@ class WorkspaceController extends ChangeNotifier {
     );
     _fileBundle = null;
     _actionNotice = null;
+    _resetSessionHoverPreviewState();
     _notify();
 
     await _projectStore.recordRecentProject(project);
@@ -1239,6 +1315,86 @@ class WorkspaceController extends ChangeNotifier {
       return;
     }
     await _loadWatchedSessionTimeline(normalized);
+  }
+
+  Future<void> prefetchSessionHoverPreview(String? sessionId) async {
+    final normalized = sessionId?.trim();
+    final project = _project;
+    if (normalized == null ||
+        normalized.isEmpty ||
+        project == null ||
+        _sessionHoverPreviewLoadingIds.contains(normalized)) {
+      return;
+    }
+    final session = _sessionById(normalized);
+    if (session == null || session.archivedAt != null) {
+      return;
+    }
+
+    final liveMessages = _sessionHoverPreviewLiveMessages(normalized);
+    if (liveMessages != null && liveMessages.isNotEmpty) {
+      _setSessionHoverPreviewFromMessages(
+        normalized,
+        liveMessages,
+        version: session.updatedAt.millisecondsSinceEpoch,
+      );
+      return;
+    }
+
+    final cachedVersion = _sessionHoverPreviewVersionById[normalized];
+    final hasFreshPreview =
+        cachedVersion == session.updatedAt.millisecondsSinceEpoch &&
+        (_sessionHoverPreviewSummaryById.containsKey(normalized) ||
+            _sessionHoverPreviewMessagesById.containsKey(normalized));
+    if (hasFreshPreview) {
+      return;
+    }
+
+    _setSessionHoverPreviewLoading(normalized, true);
+    final expectedDirectory = project.directory;
+    try {
+      final cachedMessages = await _loadCachedSessionMessages(
+        project: project,
+        sessionId: normalized,
+      );
+      if (_disposed || _project?.directory != expectedDirectory) {
+        return;
+      }
+      if (cachedMessages != null && cachedMessages.isNotEmpty) {
+        _setSessionHoverPreviewFromMessages(normalized, cachedMessages);
+      }
+
+      final fetchedMessages = await _chatService.fetchMessages(
+        profile: profile,
+        project: project,
+        sessionId: normalized,
+      );
+      if (_disposed || _project?.directory != expectedDirectory) {
+        return;
+      }
+      await _persistSessionMessagesCache(
+        project: project,
+        sessionId: normalized,
+        messages: fetchedMessages,
+      );
+      if (_disposed || _project?.directory != expectedDirectory) {
+        return;
+      }
+      final latestVersion =
+          _sessionById(normalized)?.updatedAt.millisecondsSinceEpoch ??
+          session.updatedAt.millisecondsSinceEpoch;
+      _setSessionHoverPreviewFromMessages(
+        normalized,
+        fetchedMessages,
+        version: latestVersion,
+      );
+    } catch (_) {
+      // Keep any cached hover preview content visible when network refresh fails.
+    } finally {
+      if (!_disposed && _project?.directory == expectedDirectory) {
+        _setSessionHoverPreviewLoading(normalized, false);
+      }
+    }
   }
 
   Future<void> initializeGitRepository() async {
@@ -5101,6 +5257,155 @@ class WorkspaceController extends ChangeNotifier {
     _queuedSessionMessagesCacheProject = null;
     _queuedSessionMessagesCacheSessionId = null;
     _queuedSessionMessagesCacheMessages = null;
+  }
+
+  List<ChatMessage>? _sessionHoverPreviewLiveMessages(String sessionId) {
+    if (sessionId == _selectedSessionId && _messages.isNotEmpty) {
+      return _messages;
+    }
+    final watched = _watchedSessionTimelineById[sessionId];
+    if (watched != null && watched.messages.isNotEmpty) {
+      return watched.messages;
+    }
+    return null;
+  }
+
+  void _setSessionHoverPreviewLoading(String sessionId, bool loading) {
+    final contains = _sessionHoverPreviewLoadingIds.contains(sessionId);
+    if (loading == contains) {
+      return;
+    }
+    final next = Set<String>.from(_sessionHoverPreviewLoadingIds);
+    if (loading) {
+      next.add(sessionId);
+    } else {
+      next.remove(sessionId);
+    }
+    _sessionHoverPreviewLoadingIds = Set<String>.unmodifiable(next);
+    _notify();
+  }
+
+  void _setSessionHoverPreviewFromMessages(
+    String sessionId,
+    List<ChatMessage> messages, {
+    int? version,
+  }) {
+    final nextSummary = _sessionActivityPreviewText(messages);
+    final nextMessages = _sessionHoverPreviewMessagesFromChatMessages(messages);
+    final currentSummary = _sessionHoverPreviewSummaryById[sessionId];
+    final currentMessages =
+        _sessionHoverPreviewMessagesById[sessionId] ??
+        const <WorkspaceSessionHoverPreviewMessage>[];
+    final currentVersion = _sessionHoverPreviewVersionById[sessionId];
+    final sameMessages = listEquals(currentMessages, nextMessages);
+    final sameVersion = version == null || currentVersion == version;
+    if (currentSummary == nextSummary && sameMessages && sameVersion) {
+      return;
+    }
+
+    final nextSummaryById = Map<String, String>.from(
+      _sessionHoverPreviewSummaryById,
+    );
+    if (nextSummary == null || nextSummary.isEmpty) {
+      nextSummaryById.remove(sessionId);
+    } else {
+      nextSummaryById[sessionId] = nextSummary;
+    }
+
+    final nextMessagesById =
+        Map<String, List<WorkspaceSessionHoverPreviewMessage>>.from(
+          _sessionHoverPreviewMessagesById,
+        );
+    if (nextMessages.isEmpty) {
+      nextMessagesById.remove(sessionId);
+    } else {
+      nextMessagesById[sessionId] = nextMessages;
+    }
+
+    final nextVersionById = Map<String, int>.from(
+      _sessionHoverPreviewVersionById,
+    );
+    if (version == null) {
+      nextVersionById.remove(sessionId);
+    } else {
+      nextVersionById[sessionId] = version;
+    }
+
+    _sessionHoverPreviewSummaryById = Map<String, String>.unmodifiable(
+      nextSummaryById,
+    );
+    _sessionHoverPreviewMessagesById =
+        Map<String, List<WorkspaceSessionHoverPreviewMessage>>.unmodifiable(
+          nextMessagesById,
+        );
+    _sessionHoverPreviewVersionById = Map<String, int>.unmodifiable(
+      nextVersionById,
+    );
+    _notify();
+  }
+
+  void _resetSessionHoverPreviewState() {
+    _sessionHoverPreviewSummaryById = const <String, String>{};
+    _sessionHoverPreviewMessagesById =
+        const <String, List<WorkspaceSessionHoverPreviewMessage>>{};
+    _sessionHoverPreviewVersionById = const <String, int>{};
+    _sessionHoverPreviewLoadingIds = const <String>{};
+  }
+
+  List<WorkspaceSessionHoverPreviewMessage>
+  _sessionHoverPreviewMessagesFromChatMessages(List<ChatMessage> messages) {
+    final items = <WorkspaceSessionHoverPreviewMessage>[];
+    final seenMessageIds = <String>{};
+    for (var index = messages.length - 1; index >= 0; index -= 1) {
+      final message = messages[index];
+      if (message.info.role != 'user') {
+        continue;
+      }
+      final messageId = message.info.id.trim();
+      if (messageId.isEmpty || !seenMessageIds.add(messageId)) {
+        continue;
+      }
+      final label = _sessionHoverPreviewMessageLabel(message);
+      if (label == null) {
+        continue;
+      }
+      items.add(
+        WorkspaceSessionHoverPreviewMessage(
+          messageId: messageId,
+          label: label,
+          createdAt: message.info.createdAt,
+        ),
+      );
+      if (items.length >= 4) {
+        break;
+      }
+    }
+    return List<WorkspaceSessionHoverPreviewMessage>.unmodifiable(items);
+  }
+
+  String? _sessionHoverPreviewMessageLabel(ChatMessage message) {
+    final text = _firstNonEmptyText(
+      message.parts
+          .where((part) => part.type.trim().toLowerCase() == 'text')
+          .map((part) => part.text),
+    );
+    final textPreview = _previewSnippet(text);
+    if (textPreview != null) {
+      return textPreview;
+    }
+
+    final filenames = message.parts
+        .map((part) => part.filename?.trim() ?? '')
+        .where((filename) => filename.isNotEmpty)
+        .toList(growable: false);
+    if (filenames.length == 1) {
+      return _previewSnippet('Attachment: ${filenames.first}');
+    }
+    if (filenames.length > 1) {
+      return '${filenames.length} attachments';
+    }
+    return _previewSnippet(_messageActivityPreviewText(message)) ??
+        'Open this prompt';
   }
 
   void _applyActiveChildLivePreviewPartEvent(Map<String, Object?> properties) {

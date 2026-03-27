@@ -1527,6 +1527,111 @@ void main() {
     );
   });
 
+  test('controller prefetches sidebar hover previews for sessions', () async {
+    final eventStreamService = _ControlledEventStreamService();
+    final fetchCounts = <String, int>{};
+    final chatService = _FakeChatService(
+      bundle: ChatSessionBundle(
+        sessions: <SessionSummary>[
+          _session(
+            id: 'ses_2',
+            title: 'Hover target',
+            createdAt: 1710000002000,
+            updatedAt: 1710000007000,
+          ),
+          _session(
+            id: 'ses_1',
+            title: 'Selected session',
+            createdAt: 1710000001000,
+            updatedAt: 1710000005000,
+          ),
+        ],
+        statuses: const <String, SessionStatusSummary>{
+          'ses_1': SessionStatusSummary(type: 'idle'),
+          'ses_2': SessionStatusSummary(type: 'idle'),
+        },
+        messages: const <ChatMessage>[],
+        selectedSessionId: 'ses_1',
+      ),
+      fetchMessagesHandler:
+          ({
+            required ServerProfile profile,
+            required ProjectTarget project,
+            required String sessionId,
+          }) async {
+            fetchCounts[sessionId] = (fetchCounts[sessionId] ?? 0) + 1;
+            if (sessionId != 'ses_2') {
+              return const <ChatMessage>[];
+            }
+            return <ChatMessage>[
+              _message(
+                id: 'msg_user_older',
+                sessionId: sessionId,
+                text: 'Audit sidebar hover parity',
+                createdAt: 1710000003000,
+                role: 'user',
+              ),
+              _message(
+                id: 'msg_assistant_older',
+                sessionId: sessionId,
+                text: 'Preparing the hover preview scaffold',
+                createdAt: 1710000003500,
+              ),
+              _message(
+                id: 'msg_user_newer',
+                sessionId: sessionId,
+                text: 'Fix the flaky iOS snapshot test',
+                createdAt: 1710000004000,
+                role: 'user',
+              ),
+              _message(
+                id: 'msg_assistant_newer',
+                sessionId: sessionId,
+                text: 'Review diff is ready',
+                createdAt: 1710000004500,
+              ),
+            ];
+          },
+    );
+    final controller = _buildController(
+      profile: profile,
+      project: project,
+      eventStreamService: eventStreamService,
+      chatService: chatService,
+      initialSessions: <SessionSummary>[
+        _session(
+          id: 'ses_2',
+          title: 'Hover target',
+          createdAt: 1710000002000,
+          updatedAt: 1710000007000,
+        ),
+        _session(
+          id: 'ses_1',
+          title: 'Selected session',
+          createdAt: 1710000001000,
+          updatedAt: 1710000005000,
+        ),
+      ],
+      initialSelectedSessionId: 'ses_1',
+    );
+    addTearDown(controller.dispose);
+
+    await controller.load();
+    await controller.prefetchSessionHoverPreview('ses_2');
+
+    final preview = controller.sessionHoverPreviewForSession('ses_2');
+    expect(fetchCounts['ses_2'], 1);
+    expect(preview.loading, isFalse);
+    expect(preview.summary, 'Review diff is ready');
+    expect(preview.messages.map((item) => item.label), <String>[
+      'Fix the flaky iOS snapshot test',
+      'Audit sidebar hover parity',
+    ]);
+
+    await controller.prefetchSessionHoverPreview('ses_2');
+    expect(fetchCounts['ses_2'], 1);
+  });
+
   test(
     'controller updates active child previews from live part events without selecting the child session',
     () async {

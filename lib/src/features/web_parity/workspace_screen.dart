@@ -145,6 +145,14 @@ String? _normalizePaneSessionId(String? sessionId) {
   return normalized;
 }
 
+String _workspaceScopedSessionKey({
+  required String directory,
+  String? sessionId,
+}) {
+  final normalizedSessionId = sessionId?.trim();
+  return '$directory::${normalizedSessionId == null || normalizedSessionId.isEmpty ? 'new' : normalizedSessionId}';
+}
+
 class _ResolvedChatSearchState {
   const _ResolvedChatSearchState({
     required this.query,
@@ -279,6 +287,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       const <_WorkspaceSessionPaneSpec>[];
   String? _activeDesktopSessionPaneId;
   int _timelineJumpEpoch = 0;
+  Map<String, String> _focusedTimelineMessageIdByScope =
+      const <String, String>{};
+  Map<String, int> _focusedTimelineMessageRevisionByScope =
+      const <String, int>{};
   Map<WorkspaceController, Set<String>> _pendingWatchedSessionIdsByController =
       const <WorkspaceController, Set<String>>{};
   Map<WorkspaceController, Set<String>> _syncedWatchedSessionIdsByController =
@@ -331,8 +343,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       _promptSubmitInFlightScopeKeys.contains(_activeComposerScopeKey);
 
   String _composerScopeKey({required String directory, String? sessionId}) {
-    final normalizedSessionId = sessionId?.trim();
-    return '$directory::${normalizedSessionId == null || normalizedSessionId.isEmpty ? 'new' : normalizedSessionId}';
+    return _workspaceScopedSessionKey(
+      directory: directory,
+      sessionId: sessionId,
+    );
   }
 
   String _resolvedActiveComposerScopeKey(WorkspaceController? controller) {
@@ -345,6 +359,50 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
 
   bool _isActiveComposerScope(String scopeKey) {
     return scopeKey == _resolvedActiveComposerScopeKey(_controller);
+  }
+
+  String _timelineFocusScopeKey({
+    required String directory,
+    String? sessionId,
+  }) {
+    return _composerScopeKey(directory: directory, sessionId: sessionId);
+  }
+
+  String? _focusedTimelineMessageIdForScope(String scopeKey) {
+    return _focusedTimelineMessageIdByScope[scopeKey];
+  }
+
+  int _focusedTimelineMessageRevisionForScope(String scopeKey) {
+    return _focusedTimelineMessageRevisionByScope[scopeKey] ?? 0;
+  }
+
+  void _requestTimelineMessageFocus({
+    required String directory,
+    required String? sessionId,
+    required String messageId,
+  }) {
+    final normalizedMessageId = messageId.trim();
+    if (normalizedMessageId.isEmpty) {
+      return;
+    }
+    final scopeKey = _timelineFocusScopeKey(
+      directory: directory,
+      sessionId: sessionId,
+    );
+    setState(() {
+      _focusedTimelineMessageIdByScope = Map<String, String>.unmodifiable(
+        <String, String>{
+          ..._focusedTimelineMessageIdByScope,
+          scopeKey: normalizedMessageId,
+        },
+      );
+      _focusedTimelineMessageRevisionByScope = Map<String, int>.unmodifiable(
+        <String, int>{
+          ..._focusedTimelineMessageRevisionByScope,
+          scopeKey: (_focusedTimelineMessageRevisionByScope[scopeKey] ?? 0) + 1,
+        },
+      );
+    });
   }
 
   TextEditingController _composerControllerForScope(String scopeKey) {
@@ -4503,6 +4561,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     WorkspaceController controller,
     String sessionId, {
     required bool compact,
+    String? focusMessageId,
   }) async {
     if (!compact && _selectedSessionVisibleOutsideActivePane(controller)) {
       controller.preserveSelectedSessionTimelineForWatch();
@@ -4520,6 +4579,17 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       }
     }
     await controller.selectSession(sessionId);
+    if (!mounted) {
+      return;
+    }
+    final targetMessageId = focusMessageId?.trim();
+    if (targetMessageId != null && targetMessageId.isNotEmpty) {
+      _requestTimelineMessageFocus(
+        directory: controller.directory,
+        sessionId: sessionId,
+        messageId: targetMessageId,
+      );
+    }
   }
 
   bool _selectedSessionVisibleOutsideActivePane(
@@ -5040,6 +5110,20 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                           ),
                         );
                       },
+                      hoverPreviewStateForSession:
+                          controller.sessionHoverPreviewForSession,
+                      onPrefetchSessionHoverPreview:
+                          controller.prefetchSessionHoverPreview,
+                      onFocusSessionMessage: (sessionId, messageId) {
+                        unawaited(
+                          _selectSessionInPlace(
+                            controller,
+                            sessionId,
+                            compact: compact,
+                            focusMessageId: messageId,
+                          ),
+                        );
+                      },
                       onNewSession: () => _createNewSession(controller),
                       onOpenSettings: () => _openWorkspaceSettingsSheet(
                         appController,
@@ -5088,6 +5172,20 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                           controller,
                           sessionId,
                           compact: compact,
+                        ),
+                      );
+                    },
+                    hoverPreviewStateForSession:
+                        controller.sessionHoverPreviewForSession,
+                    onPrefetchSessionHoverPreview:
+                        controller.prefetchSessionHoverPreview,
+                    onFocusSessionMessage: (sessionId, messageId) {
+                      unawaited(
+                        _selectSessionInPlace(
+                          controller,
+                          sessionId,
+                          compact: compact,
+                          focusMessageId: messageId,
                         ),
                       );
                     },
@@ -5317,6 +5415,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                           chatSearch.activeMessageId,
                                       chatSearchRevision: chatSearch.revision,
                                       timelineJumpEpoch: _timelineJumpEpoch,
+                                      focusedTimelineMessageIdForScope:
+                                          _focusedTimelineMessageIdForScope,
+                                      focusedTimelineMessageRevisionForScope:
+                                          _focusedTimelineMessageRevisionForScope,
                                       onForkMessage: (message) =>
                                           _forkMessageIntoSession(
                                             controller,
@@ -10150,6 +10252,9 @@ class _WorkspaceSidebar extends StatefulWidget {
     required this.onRemoveProject,
     required this.onReorderProjects,
     required this.onSelectSession,
+    required this.hoverPreviewStateForSession,
+    required this.onPrefetchSessionHoverPreview,
+    required this.onFocusSessionMessage,
     required this.onNewSession,
     required this.onOpenSettings,
   });
@@ -10169,6 +10274,10 @@ class _WorkspaceSidebar extends StatefulWidget {
   final ValueChanged<ProjectTarget> onRemoveProject;
   final Future<void> Function(List<ProjectTarget> projects) onReorderProjects;
   final ValueChanged<String> onSelectSession;
+  final WorkspaceSessionHoverPreviewState Function(String sessionId)
+  hoverPreviewStateForSession;
+  final Future<void> Function(String sessionId) onPrefetchSessionHoverPreview;
+  final void Function(String sessionId, String messageId) onFocusSessionMessage;
   final VoidCallback onNewSession;
   final VoidCallback onOpenSettings;
 
@@ -10260,6 +10369,12 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final hoverPreviewEnabled = switch (theme.platform) {
+      TargetPlatform.macOS ||
+      TargetPlatform.windows ||
+      TargetPlatform.linux => true,
+      _ => false,
+    };
     final density = _workspaceDensity(context);
     final railWidth = density.sidebarRailWidth(72);
     final panelPadding = density.inset(AppSpacing.md, min: AppSpacing.xs);
@@ -10478,10 +10593,27 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
                                 ),
                                 entry: entry,
                                 project: currentProject,
+                                hoverPreviewState: widget
+                                    .hoverPreviewStateForSession(
+                                      entry.session.id,
+                                    ),
                                 selected: widget.showSubsessions
                                     ? entry.session.id ==
                                           widget.currentSessionId
                                     : entry.rootId == rootSelectedSessionId,
+                                hoverPreviewEnabled: hoverPreviewEnabled,
+                                onHoverPreviewRequested: () {
+                                  unawaited(
+                                    widget.onPrefetchSessionHoverPreview(
+                                      entry.session.id,
+                                    ),
+                                  );
+                                },
+                                onFocusPreviewMessage: (messageId) =>
+                                    widget.onFocusSessionMessage(
+                                      entry.session.id,
+                                      messageId,
+                                    ),
                                 onTap: () =>
                                     widget.onSelectSession(entry.session.id),
                               );
@@ -10724,103 +10856,345 @@ class _SidebarSessionEntry {
   final bool active;
 }
 
-class _SidebarSessionTreeRow extends StatelessWidget {
+class _SidebarSessionTreeRow extends StatefulWidget {
   const _SidebarSessionTreeRow({
     required this.entry,
     required this.project,
+    required this.hoverPreviewState,
     required this.selected,
+    required this.hoverPreviewEnabled,
+    required this.onHoverPreviewRequested,
+    required this.onFocusPreviewMessage,
     required this.onTap,
     super.key,
   });
 
   final _SidebarSessionEntry entry;
   final ProjectTarget? project;
+  final WorkspaceSessionHoverPreviewState hoverPreviewState;
   final bool selected;
+  final bool hoverPreviewEnabled;
+  final VoidCallback onHoverPreviewRequested;
+  final ValueChanged<String> onFocusPreviewMessage;
+  final VoidCallback onTap;
+
+  @override
+  State<_SidebarSessionTreeRow> createState() => _SidebarSessionTreeRowState();
+}
+
+class _SidebarSessionTreeRowState extends State<_SidebarSessionTreeRow> {
+  Timer? _hoverPrefetchTimer;
+  bool _hovering = false;
+
+  @override
+  void dispose() {
+    _hoverPrefetchTimer?.cancel();
+    super.dispose();
+  }
+
+  void _handleHoverChanged(bool hovering) {
+    if (!widget.hoverPreviewEnabled) {
+      return;
+    }
+    if (!hovering) {
+      _hoverPrefetchTimer?.cancel();
+      if (_hovering) {
+        setState(() {
+          _hovering = false;
+        });
+      }
+      return;
+    }
+    _hoverPrefetchTimer?.cancel();
+    if (!_hovering) {
+      setState(() {
+        _hovering = true;
+      });
+    }
+    _hoverPrefetchTimer = Timer(const Duration(milliseconds: 180), () {
+      if (!mounted || !_hovering) {
+        return;
+      }
+      widget.onHoverPreviewRequested();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final title = widget.entry.session.title.trim().isEmpty
+        ? 'Untitled session'
+        : widget.entry.session.title.trim();
+    final active = widget.entry.active;
+    final isRoot = widget.entry.depth == 0;
+    final indent = widget.entry.depth * 18.0;
+    final previewVisible =
+        widget.hoverPreviewEnabled &&
+        _hovering &&
+        (widget.hoverPreviewState.loading ||
+            widget.hoverPreviewState.hasContent);
+
+    return MouseRegion(
+      onEnter: (_) => _handleHoverChanged(true),
+      onExit: (_) => _handleHoverChanged(false),
+      child: Padding(
+        padding: EdgeInsets.only(left: indent),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: widget.onTap,
+                child: Ink(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm,
+                    vertical: AppSpacing.sm,
+                  ),
+                  decoration: BoxDecoration(
+                    color: widget.selected
+                        ? theme.colorScheme.primary.withValues(alpha: 0.12)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Row(
+                    children: <Widget>[
+                      SizedBox(
+                        width: 22,
+                        child: Center(
+                          child: isRoot
+                              ? (widget.project != null
+                                    ? _ProjectAvatar(
+                                        project: widget.project!,
+                                        size: 16,
+                                        fontSize: 10,
+                                        rounded: 5,
+                                      )
+                                    : Container(
+                                        width: 6,
+                                        height: 6,
+                                        decoration: BoxDecoration(
+                                          color: theme.colorScheme.primary,
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ))
+                              : Container(
+                                  width: 10,
+                                  height: 2,
+                                  decoration: BoxDecoration(
+                                    color: surfaces.muted,
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                ),
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(
+                        child: _ShimmeringRichText(
+                          key: ValueKey<String>(
+                            'sidebar-session-shimmer-${widget.entry.session.id}',
+                          ),
+                          active: active,
+                          text: TextSpan(
+                            text: title,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: isRoot
+                                  ? FontWeight.w600
+                                  : FontWeight.w500,
+                              color: widget.selected
+                                  ? theme.colorScheme.onSurface
+                                  : theme.colorScheme.onSurface.withValues(
+                                      alpha: isRoot ? 0.96 : 0.9,
+                                    ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 180),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              child: !previewVisible
+                  ? const SizedBox.shrink()
+                  : Padding(
+                      key: ValueKey<String>(
+                        'sidebar-session-hover-preview-wrap-${widget.entry.session.id}',
+                      ),
+                      padding: const EdgeInsets.only(
+                        left: 30,
+                        top: AppSpacing.xxs,
+                      ),
+                      child: _SidebarSessionHoverPreviewPanel(
+                        session: widget.entry.session,
+                        state: widget.hoverPreviewState,
+                        onFocusMessage: widget.onFocusPreviewMessage,
+                      ),
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SidebarSessionHoverPreviewPanel extends StatelessWidget {
+  const _SidebarSessionHoverPreviewPanel({
+    required this.session,
+    required this.state,
+    required this.onFocusMessage,
+  });
+
+  final SessionSummary session;
+  final WorkspaceSessionHoverPreviewState state;
+  final ValueChanged<String> onFocusMessage;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final summary = state.summary?.trim();
+
+    return Container(
+      key: ValueKey<String>('sidebar-session-hover-preview-${session.id}'),
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: surfaces.panel.withValues(alpha: 0.96),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: surfaces.lineSoft),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.12),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(Icons.forum_rounded, size: 16, color: surfaces.muted),
+              const SizedBox(width: AppSpacing.xxs),
+              Expanded(
+                child: Text(
+                  'Recent prompts',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              if (state.loading)
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+            ],
+          ),
+          if (summary != null && summary.isNotEmpty) ...<Widget>[
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              summary,
+              key: ValueKey<String>(
+                'sidebar-session-hover-summary-${session.id}',
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: surfaces.muted,
+                height: 1.3,
+              ),
+            ),
+          ],
+          if (state.messages.isNotEmpty) ...<Widget>[
+            const SizedBox(height: AppSpacing.sm),
+            ...state.messages.map(
+              (message) => Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                child: _SidebarSessionHoverPreviewMessageButton(
+                  sessionId: session.id,
+                  message: message,
+                  onTap: () => onFocusMessage(message.messageId),
+                ),
+              ),
+            ),
+          ] else if (!state.loading) ...<Widget>[
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              'Hover to load the latest prompts for this session.',
+              style: theme.textTheme.bodySmall?.copyWith(color: surfaces.muted),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _SidebarSessionHoverPreviewMessageButton extends StatelessWidget {
+  const _SidebarSessionHoverPreviewMessageButton({
+    required this.sessionId,
+    required this.message,
+    required this.onTap,
+  });
+
+  final String sessionId;
+  final WorkspaceSessionHoverPreviewMessage message;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
-    final title = entry.session.title.trim().isEmpty
-        ? 'Untitled session'
-        : entry.session.title.trim();
-    final active = entry.active;
-    final isRoot = entry.depth == 0;
-    final indent = entry.depth * 18.0;
-
-    return Padding(
-      padding: EdgeInsets.only(left: indent),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: onTap,
-          child: Ink(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.sm,
-              vertical: AppSpacing.sm,
-            ),
-            decoration: BoxDecoration(
-              color: selected
-                  ? theme.colorScheme.primary.withValues(alpha: 0.12)
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Row(
-              children: <Widget>[
-                SizedBox(
-                  width: 22,
-                  child: Center(
-                    child: isRoot
-                        ? (project != null
-                              ? _ProjectAvatar(
-                                  project: project!,
-                                  size: 16,
-                                  fontSize: 10,
-                                  rounded: 5,
-                                )
-                              : Container(
-                                  width: 6,
-                                  height: 6,
-                                  decoration: BoxDecoration(
-                                    color: theme.colorScheme.primary,
-                                    shape: BoxShape.circle,
-                                  ),
-                                ))
-                        : Container(
-                            width: 10,
-                            height: 2,
-                            decoration: BoxDecoration(
-                              color: surfaces.muted,
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                          ),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        key: ValueKey<String>(
+          'sidebar-session-hover-message-$sessionId-${message.messageId}',
+        ),
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Ink(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.sm,
+            vertical: AppSpacing.xs,
+          ),
+          decoration: BoxDecoration(
+            color: surfaces.panelRaised.withValues(alpha: 0.78),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: surfaces.lineSoft),
+          ),
+          child: Row(
+            children: <Widget>[
+              Icon(
+                Icons.subdirectory_arrow_right_rounded,
+                size: 16,
+                color: surfaces.muted,
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Expanded(
+                child: Text(
+                  message.label,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    height: 1.25,
                   ),
                 ),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: _ShimmeringRichText(
-                    key: ValueKey<String>(
-                      'sidebar-session-shimmer-${entry.session.id}',
-                    ),
-                    active: active,
-                    text: TextSpan(
-                      text: title,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: isRoot ? FontWeight.w600 : FontWeight.w500,
-                        color: selected
-                            ? theme.colorScheme.onSurface
-                            : theme.colorScheme.onSurface.withValues(
-                                alpha: isRoot ? 0.96 : 0.9,
-                              ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -11783,6 +12157,8 @@ class _WorkspaceBody extends StatelessWidget {
     required this.chatSearchActiveMessageId,
     required this.chatSearchRevision,
     required this.timelineJumpEpoch,
+    required this.focusedTimelineMessageIdForScope,
+    required this.focusedTimelineMessageRevisionForScope,
     required this.onForkMessage,
     required this.onRevertMessage,
     required this.onCompactPaneChanged,
@@ -11839,6 +12215,8 @@ class _WorkspaceBody extends StatelessWidget {
   final String? chatSearchActiveMessageId;
   final int chatSearchRevision;
   final int timelineJumpEpoch;
+  final String? Function(String scopeKey) focusedTimelineMessageIdForScope;
+  final int Function(String scopeKey) focusedTimelineMessageRevisionForScope;
   final Future<void> Function(ChatMessage message) onForkMessage;
   final Future<void> Function(ChatMessage message) onRevertMessage;
   final ValueChanged<_CompactWorkspacePane> onCompactPaneChanged;
@@ -11903,6 +12281,10 @@ class _WorkspaceBody extends StatelessWidget {
               chatSearchActiveMessageId: chatSearchActiveMessageId,
               chatSearchRevision: chatSearchRevision,
               timelineJumpEpoch: timelineJumpEpoch,
+              focusedTimelineMessageIdForScope:
+                  focusedTimelineMessageIdForScope,
+              focusedTimelineMessageRevisionForScope:
+                  focusedTimelineMessageRevisionForScope,
               onSelectPane: onSelectSessionPane,
               onClosePane: onCloseSessionPane,
               onForkMessage: onForkMessage,
@@ -12161,6 +12543,8 @@ class _WorkspaceSessionPaneDeck extends StatelessWidget {
     required this.chatSearchActiveMessageId,
     required this.chatSearchRevision,
     required this.timelineJumpEpoch,
+    required this.focusedTimelineMessageIdForScope,
+    required this.focusedTimelineMessageRevisionForScope,
     required this.onSelectPane,
     required this.onClosePane,
     required this.onForkMessage,
@@ -12180,6 +12564,8 @@ class _WorkspaceSessionPaneDeck extends StatelessWidget {
   final String? chatSearchActiveMessageId;
   final int chatSearchRevision;
   final int timelineJumpEpoch;
+  final String? Function(String scopeKey) focusedTimelineMessageIdForScope;
+  final int Function(String scopeKey) focusedTimelineMessageRevisionForScope;
   final Future<void> Function(String paneId) onSelectPane;
   final ValueChanged<String> onClosePane;
   final Future<void> Function(ChatMessage message) onForkMessage;
@@ -12229,6 +12615,10 @@ class _WorkspaceSessionPaneDeck extends StatelessWidget {
                 chatSearchActiveMessageId: chatSearchActiveMessageId,
                 chatSearchRevision: chatSearchRevision,
                 timelineJumpEpoch: timelineJumpEpoch,
+                focusedTimelineMessageIdForScope:
+                    focusedTimelineMessageIdForScope,
+                focusedTimelineMessageRevisionForScope:
+                    focusedTimelineMessageRevisionForScope,
                 onSelectPane: onSelectPane,
                 onClosePane: onClosePane,
                 onForkMessage: onForkMessage,
@@ -12260,6 +12650,8 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
     required this.chatSearchActiveMessageId,
     required this.chatSearchRevision,
     required this.timelineJumpEpoch,
+    required this.focusedTimelineMessageIdForScope,
+    required this.focusedTimelineMessageRevisionForScope,
     required this.onSelectPane,
     required this.onClosePane,
     required this.onForkMessage,
@@ -12281,6 +12673,8 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
   final String? chatSearchActiveMessageId;
   final int chatSearchRevision;
   final int timelineJumpEpoch;
+  final String? Function(String scopeKey) focusedTimelineMessageIdForScope;
+  final int Function(String scopeKey) focusedTimelineMessageRevisionForScope;
   final Future<void> Function(String paneId) onSelectPane;
   final ValueChanged<String> onClosePane;
   final Future<void> Function(ChatMessage message) onForkMessage;
@@ -12330,6 +12724,10 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
     final normalizedSessionId = sessionId == null || sessionId.isEmpty
         ? 'new'
         : sessionId;
+    final sessionFocusScopeKey = _workspaceScopedSessionKey(
+      directory: pane.directory,
+      sessionId: sessionId,
+    );
     final timelineScopeKey =
         '${pane.id}::${pane.directory}::$normalizedSessionId';
     final timelinePageStorageKey = searchScoped
@@ -12699,6 +13097,14 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                                 searchRevision: searchScoped
                                     ? chatSearchRevision
                                     : 0,
+                                focusedMessageId:
+                                    focusedTimelineMessageIdForScope(
+                                      sessionFocusScopeKey,
+                                    ),
+                                focusedMessageRevision:
+                                    focusedTimelineMessageRevisionForScope(
+                                      sessionFocusScopeKey,
+                                    ),
                                 onForkMessage: handleForkMessage,
                                 onRevertMessage: handleRevertMessage,
                                 onOpenSession: handleOpenSession,
@@ -13706,6 +14112,8 @@ class _MessageTimeline extends StatefulWidget {
     required this.matchingMessageIds,
     required this.activeMatchMessageId,
     required this.searchRevision,
+    required this.focusedMessageId,
+    required this.focusedMessageRevision,
     required this.onForkMessage,
     required this.onRevertMessage,
     required this.onOpenSession,
@@ -13735,6 +14143,8 @@ class _MessageTimeline extends StatefulWidget {
   final Set<String> matchingMessageIds;
   final String? activeMatchMessageId;
   final int searchRevision;
+  final String? focusedMessageId;
+  final int focusedMessageRevision;
   final Future<void> Function(ChatMessage message) onForkMessage;
   final Future<void> Function(ChatMessage message) onRevertMessage;
   final ValueChanged<String> onOpenSession;
@@ -13816,6 +14226,9 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     final searchChanged =
         oldWidget.activeMatchMessageId != widget.activeMatchMessageId ||
         oldWidget.searchRevision != widget.searchRevision;
+    final focusedMessageChanged =
+        oldWidget.focusedMessageId != widget.focusedMessageId ||
+        oldWidget.focusedMessageRevision != widget.focusedMessageRevision;
     final messageIds = widget.messages
         .map((message) => message.info.id)
         .toSet();
@@ -13858,6 +14271,13 @@ class _MessageTimelineState extends State<_MessageTimeline> {
               becameNonEmpty ||
               messagesShrank)) {
         _revealSearchMatch(widget.activeMatchMessageId!);
+      } else if (widget.focusedMessageId != null &&
+          widget.focusedMessageId!.isNotEmpty &&
+          (focusedMessageChanged ||
+              sessionChanged ||
+              becameNonEmpty ||
+              messagesShrank)) {
+        _revealSearchMatch(widget.focusedMessageId!);
       } else {
         _syncTimelinePosition(
           forceBottom: _lastJumpToBottomEpoch != widget.jumpToBottomEpoch,

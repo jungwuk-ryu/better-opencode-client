@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -91,6 +92,87 @@ void main() {
       find.byKey(const ValueKey<String>('sidebar-session-shimmer-ses_1')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('sidebar shows a hover preview for recent session prompts', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    late _SidebarHoverPreviewWorkspaceController controllerInstance;
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            controllerInstance = _SidebarHoverPreviewWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+            return controllerInstance;
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+        platform: TargetPlatform.macOS,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    final targetRow = find.byKey(
+      const ValueKey<String>('workspace-session-entry-ses_2-0'),
+    );
+    expect(targetRow, findsOneWidget);
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer();
+    await mouse.moveTo(tester.getCenter(targetRow));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    expect(controllerInstance.hoverPrefetchCalls, 1);
+    expect(
+      find.byKey(const ValueKey<String>('sidebar-session-hover-preview-ses_2')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        const ValueKey<String>(
+          'sidebar-session-hover-message-ses_2-msg_hover_newer',
+        ),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>(
+          'sidebar-session-hover-message-ses_2-msg_hover_newer',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    expect(controllerInstance.selectSessionCalls, contains('ses_2'));
+    expect(find.text('Another root session'), findsAtLeastNWidgets(1));
   });
 
   testWidgets('sidebar settings opens a real workspace settings sheet', (
@@ -666,18 +748,20 @@ class _WorkspaceRouteHarness extends StatelessWidget {
     required this.controller,
     required this.initialRoute,
     this.projectCatalogService,
+    this.platform = TargetPlatform.macOS,
   });
 
   final WebParityAppController controller;
   final String initialRoute;
   final ProjectCatalogService? projectCatalogService;
+  final TargetPlatform platform;
 
   @override
   Widget build(BuildContext context) {
     return AppScope(
       controller: controller,
       child: MaterialApp(
-        theme: controller.themeData,
+        theme: controller.themeData.copyWith(platform: platform),
         initialRoute: initialRoute,
         onGenerateRoute: (settings) {
           final route = AppRouteData.parse(settings.name);
@@ -897,6 +981,90 @@ class _SidebarWorkspaceController extends WorkspaceController {
   Future<void> load() async {
     _loading = false;
     _selectedSessionId = initialSessionId ?? 'ses_1';
+    notifyListeners();
+  }
+}
+
+class _SidebarHoverPreviewWorkspaceController
+    extends _SidebarWorkspaceController {
+  _SidebarHoverPreviewWorkspaceController({
+    required super.profile,
+    required super.directory,
+    super.initialSessionId,
+  });
+
+  int hoverPrefetchCalls = 0;
+  final List<String> selectSessionCalls = <String>[];
+  Map<String, WorkspaceSessionHoverPreviewState> _previewBySessionId =
+      const <String, WorkspaceSessionHoverPreviewState>{};
+
+  @override
+  bool get loading => _loading;
+
+  @override
+  String? get selectedSessionId => _selectedSessionId;
+
+  @override
+  SessionSummary? get selectedSession {
+    final selectedSessionId = _selectedSessionId;
+    if (selectedSessionId == null) {
+      return null;
+    }
+    return sessions.firstWhere((session) => session.id == selectedSessionId);
+  }
+
+  @override
+  Future<void> load() async {
+    _loading = false;
+    _selectedSessionId = initialSessionId ?? 'ses_1';
+    notifyListeners();
+  }
+
+  @override
+  Future<void> selectSession(String? sessionId) async {
+    final normalized = sessionId?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return;
+    }
+    selectSessionCalls.add(normalized);
+    _selectedSessionId = normalized;
+    notifyListeners();
+  }
+
+  @override
+  WorkspaceSessionHoverPreviewState sessionHoverPreviewForSession(
+    String? sessionId,
+  ) {
+    return _previewBySessionId[sessionId] ??
+        const WorkspaceSessionHoverPreviewState();
+  }
+
+  @override
+  Future<void> prefetchSessionHoverPreview(String? sessionId) async {
+    final normalized = sessionId?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return;
+    }
+    hoverPrefetchCalls += 1;
+    if (normalized != 'ses_2') {
+      return;
+    }
+    _previewBySessionId = <String, WorkspaceSessionHoverPreviewState>{
+      ..._previewBySessionId,
+      normalized: const WorkspaceSessionHoverPreviewState(
+        summary: 'Review diff is ready',
+        messages: <WorkspaceSessionHoverPreviewMessage>[
+          WorkspaceSessionHoverPreviewMessage(
+            messageId: 'msg_hover_newer',
+            label: 'Fix the flaky iOS snapshot test',
+          ),
+          WorkspaceSessionHoverPreviewMessage(
+            messageId: 'msg_hover_older',
+            label: 'Audit sidebar hover parity',
+          ),
+        ],
+      ),
+    };
     notifyListeners();
   }
 }
