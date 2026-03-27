@@ -12,10 +12,12 @@ void main() {
   late Uri baseUri;
   Map<String, Object?>? lastPromptBody;
   Map<String, Object?>? lastCommandBody;
+  Map<String, String>? lastMessagesQuery;
 
   setUp(() async {
     lastPromptBody = null;
     lastCommandBody = null;
+    lastMessagesQuery = null;
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     baseUri = Uri.parse('http://${server.address.address}:${server.port}');
     server.listen((request) async {
@@ -32,6 +34,13 @@ void main() {
           request.method == 'POST' &&
           decodedBody is Map) {
         lastCommandBody = decodedBody.cast<String, Object?>();
+      }
+      if (request.uri.path == '/session/ses_page/message' &&
+          request.method == 'GET') {
+        lastMessagesQuery = request.uri.queryParameters;
+        if (request.uri.queryParameters['before'] == null) {
+          request.response.headers.set('x-next-cursor', 'cursor_older_page');
+        }
       }
       final body = switch (request.uri.path) {
         '/session' when request.method == 'POST' => {
@@ -130,6 +139,32 @@ void main() {
             ],
           },
         ],
+        '/session/ses_page/message' =>
+          request.uri.queryParameters['before'] == null
+              ? [
+                  {
+                    'info': {'id': 'msg_page_2', 'role': 'assistant'},
+                    'parts': [
+                      {
+                        'id': 'prt_page_2',
+                        'type': 'text',
+                        'text': 'newer page',
+                      },
+                    ],
+                  },
+                ]
+              : [
+                  {
+                    'info': {'id': 'msg_page_1', 'role': 'assistant'},
+                    'parts': [
+                      {
+                        'id': 'prt_page_1',
+                        'type': 'text',
+                        'text': 'older page',
+                      },
+                    ],
+                  },
+                ],
         _ => null,
       };
       if (body == null) {
@@ -193,6 +228,47 @@ void main() {
 
     expect(messages, hasLength(1));
     expect(messages.single.parts.single.text, 'kept message');
+    service.dispose();
+  });
+
+  test('fetches a paged session history cursor window', () async {
+    final service = ChatService();
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'mock',
+      baseUrl: baseUri.toString(),
+    );
+    const project = ProjectTarget(directory: '/workspace/demo', label: 'Demo');
+
+    final firstPage = await service.fetchMessagesPage(
+      profile: profile,
+      project: project,
+      sessionId: 'ses_page',
+      limit: 25,
+    );
+
+    expect(firstPage.messages.single.info.id, 'msg_page_2');
+    expect(firstPage.nextCursor, 'cursor_older_page');
+    expect(lastMessagesQuery, <String, String>{
+      'directory': '/workspace/demo',
+      'limit': '25',
+    });
+
+    final olderPage = await service.fetchMessagesPage(
+      profile: profile,
+      project: project,
+      sessionId: 'ses_page',
+      limit: 25,
+      before: 'cursor_older_page',
+    );
+
+    expect(olderPage.messages.single.info.id, 'msg_page_1');
+    expect(olderPage.nextCursor, isNull);
+    expect(lastMessagesQuery, <String, String>{
+      'directory': '/workspace/demo',
+      'limit': '25',
+      'before': 'cursor_older_page',
+    });
     service.dispose();
   });
 

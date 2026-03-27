@@ -12366,6 +12366,10 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
       await controller.refreshTimelineSession(sessionId);
     }
 
+    Future<void> handleLoadMoreHistory() async {
+      await controller.loadMoreTimelineSessionHistory(sessionId);
+    }
+
     Future<void> handleForkMessage(ChatMessage message) async {
       if (!selected) {
         await handleFocus();
@@ -12669,6 +12673,8 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                                 loading: timelineState.loading,
                                 showingCachedMessages:
                                     timelineState.showingCachedMessages,
+                                historyMore: timelineState.historyMore,
+                                historyLoading: timelineState.historyLoading,
                                 error: timelineState.error,
                                 messages: timelineState.orderedMessages,
                                 compact: compact,
@@ -12697,6 +12703,7 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                                 onRevertMessage: handleRevertMessage,
                                 onOpenSession: handleOpenSession,
                                 onRetry: handleRetry,
+                                onLoadMore: handleLoadMoreHistory,
                                 jumpToBottomEpoch: searchScoped
                                     ? timelineJumpEpoch
                                     : 0,
@@ -13685,6 +13692,8 @@ class _MessageTimeline extends StatefulWidget {
     required this.working,
     required this.loading,
     required this.showingCachedMessages,
+    required this.historyMore,
+    required this.historyLoading,
     required this.error,
     required this.messages,
     required this.compact,
@@ -13701,6 +13710,7 @@ class _MessageTimeline extends StatefulWidget {
     required this.onRevertMessage,
     required this.onOpenSession,
     required this.onRetry,
+    required this.onLoadMore,
     required this.jumpToBottomEpoch,
     super.key,
   });
@@ -13711,6 +13721,8 @@ class _MessageTimeline extends StatefulWidget {
   final bool working;
   final bool loading;
   final bool showingCachedMessages;
+  final bool historyMore;
+  final bool historyLoading;
   final String? error;
   final List<ChatMessage> messages;
   final bool compact;
@@ -13727,6 +13739,7 @@ class _MessageTimeline extends StatefulWidget {
   final Future<void> Function(ChatMessage message) onRevertMessage;
   final ValueChanged<String> onOpenSession;
   final Future<void> Function() onRetry;
+  final Future<void> Function() onLoadMore;
   final int jumpToBottomEpoch;
 
   @override
@@ -13758,6 +13771,9 @@ class _MessageTimelineState extends State<_MessageTimeline> {
   int _bottomLockAttempts = 0;
   bool _bottomLockScheduled = false;
   String? _bottomLockScopeKey;
+  double? _olderHistoryPreservedPixels;
+  double? _olderHistoryPreservedExtent;
+  bool _awaitingOlderHistoryInsert = false;
   final Map<String, GlobalKey> _messageItemKeys = <String, GlobalKey>{};
 
   List<ChatMessage> get _visibleMessages => widget.messages.sublist(
@@ -13766,6 +13782,8 @@ class _MessageTimelineState extends State<_MessageTimeline> {
 
   int get _hiddenMessageCount =>
       _visibleStartIndex.clamp(0, widget.messages.length);
+
+  bool get _hasMoreHistory => _hiddenMessageCount > 0 || widget.historyMore;
 
   bool get _searchActive => widget.searchQuery.trim().isNotEmpty;
 
@@ -13807,15 +13825,31 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     if (sessionChanged || becameNonEmpty || messagesShrank) {
       _visibleStartIndex = _initialVisibleStart(widget.messages.length);
       _loadingOlder = false;
+      _clearOlderHistoryPreservation();
     }
 
     if (_visibleStartIndex > widget.messages.length) {
       _visibleStartIndex = _initialVisibleStart(widget.messages.length);
     }
 
+    final olderHistoryInserted =
+        _awaitingOlderHistoryInsert &&
+        widget.messages.length > oldWidget.messages.length;
+    final olderHistoryFinishedWithoutGrowth =
+        _awaitingOlderHistoryInsert &&
+        oldWidget.historyLoading &&
+        !widget.historyLoading &&
+        widget.messages.length == oldWidget.messages.length;
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
         return;
+      }
+      if (olderHistoryInserted) {
+        _restoreOlderHistoryScroll();
+        unawaited(_handleScroll());
+      } else if (olderHistoryFinishedWithoutGrowth) {
+        _clearOlderHistoryPreservation();
       }
       if (widget.activeMatchMessageId != null &&
           widget.activeMatchMessageId!.isNotEmpty &&
@@ -13849,6 +13883,50 @@ class _MessageTimelineState extends State<_MessageTimeline> {
       messageId,
       () => GlobalKey(debugLabel: 'timeline-message-$messageId'),
     );
+  }
+
+  void _beginOlderHistoryPreservation() {
+    if (!_scrollController.hasClients) {
+      _clearOlderHistoryPreservation();
+      return;
+    }
+    final position = _scrollController.position;
+    if (!position.hasContentDimensions || !position.hasPixels) {
+      _clearOlderHistoryPreservation();
+      return;
+    }
+    _olderHistoryPreservedPixels = position.pixels;
+    _olderHistoryPreservedExtent = position.maxScrollExtent;
+    _awaitingOlderHistoryInsert = true;
+  }
+
+  void _clearOlderHistoryPreservation() {
+    _olderHistoryPreservedPixels = null;
+    _olderHistoryPreservedExtent = null;
+    _awaitingOlderHistoryInsert = false;
+  }
+
+  void _restoreOlderHistoryScroll() {
+    if (!_awaitingOlderHistoryInsert || !_scrollController.hasClients) {
+      _clearOlderHistoryPreservation();
+      return;
+    }
+    final beforePixels = _olderHistoryPreservedPixels;
+    final beforeExtent = _olderHistoryPreservedExtent;
+    _clearOlderHistoryPreservation();
+    if (beforePixels == null || beforeExtent == null) {
+      return;
+    }
+    final position = _scrollController.position;
+    if (!position.hasContentDimensions) {
+      return;
+    }
+    final delta = position.maxScrollExtent - beforeExtent;
+    final target = (beforePixels + delta).clamp(0.0, position.maxScrollExtent);
+    if ((target - position.pixels).abs() > 1) {
+      _scrollController.jumpTo(target);
+    }
+    _wasNearBottom = false;
   }
 
   void _revealSearchMatch(String messageId) {
@@ -13906,7 +13984,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
             (position.maxScrollExtent - position.pixels) <= 120;
       }
     }
-    if (_loadingOlder || _hiddenMessageCount == 0) {
+    if (_loadingOlder || widget.historyLoading || !_hasMoreHistory) {
       return;
     }
     if (!_scrollController.hasClients) {
@@ -13921,7 +13999,10 @@ class _MessageTimelineState extends State<_MessageTimeline> {
   }
 
   void _scheduleLoadOlderCheck() {
-    if (_loadOlderCheckScheduled || _loadingOlder || _hiddenMessageCount == 0) {
+    if (_loadOlderCheckScheduled ||
+        _loadingOlder ||
+        widget.historyLoading ||
+        !_hasMoreHistory) {
       return;
     }
     _loadOlderCheckScheduled = true;
@@ -13935,10 +14016,23 @@ class _MessageTimelineState extends State<_MessageTimeline> {
   }
 
   Future<void> _loadOlderMessages() async {
-    if (_loadingOlder || _hiddenMessageCount == 0 || !mounted) {
+    if (_loadingOlder ||
+        widget.historyLoading ||
+        !_hasMoreHistory ||
+        !mounted) {
       return;
     }
     if (!_scrollController.hasClients) {
+      return;
+    }
+    if (_hiddenMessageCount == 0) {
+      _beginOlderHistoryPreservation();
+      try {
+        await widget.onLoadMore();
+      } catch (_) {
+        _clearOlderHistoryPreservation();
+        rethrow;
+      }
       return;
     }
     final nextStart = math.max(0, _visibleStartIndex - _windowGrowthSize);
@@ -13946,6 +14040,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
       return;
     }
 
+    _beginOlderHistoryPreservation();
     setState(() {
       _loadingOlder = true;
       _visibleStartIndex = nextStart;
@@ -13955,6 +14050,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
       if (!mounted) {
         return;
       }
+      _restoreOlderHistoryScroll();
       if (!_scrollController.hasClients) {
         setState(() {
           _loadingOlder = false;
@@ -14200,9 +14296,12 @@ class _MessageTimelineState extends State<_MessageTimeline> {
             child: Builder(
               builder: (context) {
                 final visibleMessages = _visibleMessages;
-                final hasHiddenMessages = _hiddenMessageCount > 0;
+                final showLoadOlderIndicator =
+                    _hiddenMessageCount > 0 ||
+                    widget.historyMore ||
+                    widget.historyLoading;
                 final placeholderIndex =
-                    visibleMessages.length + (hasHiddenMessages ? 1 : 0);
+                    visibleMessages.length + (showLoadOlderIndicator ? 1 : 0);
                 final itemCount =
                     placeholderIndex + (showThinkingPlaceholder ? 1 : 0);
                 final normalizedSearchTerms = _searchActive
@@ -14250,7 +14349,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
                         ),
                       );
                     }
-                    if (hasHiddenMessages && index == 0) {
+                    if (showLoadOlderIndicator && index == 0) {
                       return KeyedSubtree(
                         key: _loadOlderItemKey,
                         child: Center(
@@ -14266,8 +14365,11 @@ class _MessageTimelineState extends State<_MessageTimeline> {
                               ),
                               child: _TimelineLoadOlderIndicator(
                                 hiddenCount: _hiddenMessageCount,
-                                loading: _loadingOlder,
+                                loading: _loadingOlder || widget.historyLoading,
+                                serverMore: widget.historyMore,
                                 compact: widget.compact,
+                                onPressed: () =>
+                                    unawaited(_loadOlderMessages()),
                               ),
                             ),
                           ),
@@ -14275,7 +14377,8 @@ class _MessageTimelineState extends State<_MessageTimeline> {
                       );
                     }
 
-                    final messageIndex = index - (hasHiddenMessages ? 1 : 0);
+                    final messageIndex =
+                        index - (showLoadOlderIndicator ? 1 : 0);
                     final message = visibleMessages[messageIndex];
                     final isLast = messageIndex == visibleMessages.length - 1;
                     final matched = widget.matchingMessageIds.contains(
@@ -14342,12 +14445,16 @@ class _TimelineLoadOlderIndicator extends StatelessWidget {
   const _TimelineLoadOlderIndicator({
     required this.hiddenCount,
     required this.loading,
+    required this.serverMore,
     required this.compact,
+    this.onPressed,
   });
 
   final int hiddenCount;
   final bool loading;
+  final bool serverMore;
   final bool compact;
+  final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
@@ -14356,53 +14463,65 @@ class _TimelineLoadOlderIndicator extends StatelessWidget {
     final density = _workspaceDensity(context);
     final label = loading
         ? 'Loading earlier messages...'
-        : '$hiddenCount earlier messages';
-    final hint = loading ? null : 'Scroll up to load more';
+        : hiddenCount > 0
+        ? '$hiddenCount earlier messages'
+        : serverMore
+        ? 'Earlier messages available'
+        : 'Load earlier messages';
+    final hint = loading ? null : 'Scroll up or tap to load more';
+    final content = Container(
+      key: const ValueKey<String>('timeline-load-older-indicator'),
+      padding: EdgeInsets.symmetric(
+        horizontal: density.inset(compact ? AppSpacing.sm : AppSpacing.md),
+        vertical: density.inset(compact ? AppSpacing.xs : AppSpacing.sm),
+      ),
+      decoration: BoxDecoration(
+        color: surfaces.panelMuted.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(compact ? 12 : 14),
+        border: Border.all(color: surfaces.lineSoft),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (loading) ...<Widget>[
+            const SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(width: AppSpacing.xs),
+          ] else
+            Icon(Icons.expand_less_rounded, size: 16, color: surfaces.muted),
+          Text(
+            label,
+            style:
+                (compact
+                        ? theme.textTheme.labelMedium
+                        : theme.textTheme.bodySmall)
+                    ?.copyWith(fontWeight: FontWeight.w600),
+          ),
+          if (hint != null) ...<Widget>[
+            const SizedBox(width: AppSpacing.xs),
+            Text(
+              hint,
+              style: theme.textTheme.bodySmall?.copyWith(color: surfaces.muted),
+            ),
+          ],
+        ],
+      ),
+    );
     return Align(
       alignment: Alignment.center,
-      child: Container(
-        key: const ValueKey<String>('timeline-load-older-indicator'),
-        padding: EdgeInsets.symmetric(
-          horizontal: density.inset(compact ? AppSpacing.sm : AppSpacing.md),
-          vertical: density.inset(compact ? AppSpacing.xs : AppSpacing.sm),
-        ),
-        decoration: BoxDecoration(
-          color: surfaces.panelMuted.withValues(alpha: 0.92),
-          borderRadius: BorderRadius.circular(compact ? 12 : 14),
-          border: Border.all(color: surfaces.lineSoft),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            if (loading) ...<Widget>[
-              const SizedBox(
-                width: 14,
-                height: 14,
-                child: CircularProgressIndicator(strokeWidth: 2),
+      child: onPressed == null || loading
+          ? content
+          : Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(compact ? 12 : 14),
+                onTap: onPressed,
+                child: content,
               ),
-              const SizedBox(width: AppSpacing.xs),
-            ] else
-              Icon(Icons.expand_less_rounded, size: 16, color: surfaces.muted),
-            Text(
-              label,
-              style:
-                  (compact
-                          ? theme.textTheme.labelMedium
-                          : theme.textTheme.bodySmall)
-                      ?.copyWith(fontWeight: FontWeight.w600),
             ),
-            if (hint != null) ...<Widget>[
-              const SizedBox(width: AppSpacing.xs),
-              Text(
-                hint,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: surfaces.muted,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
     );
   }
 }

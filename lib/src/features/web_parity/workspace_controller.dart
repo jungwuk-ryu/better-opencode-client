@@ -56,6 +56,8 @@ class WorkspaceSessionTimelineState {
     required this.orderedMessages,
     required this.loading,
     required this.showingCachedMessages,
+    this.historyMore = false,
+    this.historyLoading = false,
     this.error,
   });
 
@@ -64,6 +66,8 @@ class WorkspaceSessionTimelineState {
       orderedMessages = const <ChatMessage>[],
       loading = false,
       showingCachedMessages = false,
+      historyMore = false,
+      historyLoading = false,
       error = null;
 
   final String? sessionId;
@@ -71,6 +75,8 @@ class WorkspaceSessionTimelineState {
   final List<ChatMessage> orderedMessages;
   final bool loading;
   final bool showingCachedMessages;
+  final bool historyMore;
+  final bool historyLoading;
   final String? error;
 
   WorkspaceSessionTimelineState copyWith({
@@ -79,6 +85,8 @@ class WorkspaceSessionTimelineState {
     List<ChatMessage>? orderedMessages,
     bool? loading,
     bool? showingCachedMessages,
+    bool? historyMore,
+    bool? historyLoading,
     String? error,
     bool clearError = false,
   }) {
@@ -89,6 +97,8 @@ class WorkspaceSessionTimelineState {
       loading: loading ?? this.loading,
       showingCachedMessages:
           showingCachedMessages ?? this.showingCachedMessages,
+      historyMore: historyMore ?? this.historyMore,
+      historyLoading: historyLoading ?? this.historyLoading,
       error: clearError ? null : (error ?? this.error),
     );
   }
@@ -282,6 +292,8 @@ class WorkspaceComposerModelOption {
 }
 
 class WorkspaceController extends ChangeNotifier {
+  static const int _sessionHistoryPageSize = ChatService.sessionHistoryPageSize;
+
   WorkspaceController({
     required this.profile,
     required this.directory,
@@ -363,6 +375,8 @@ class WorkspaceController extends ChangeNotifier {
   bool _loading = true;
   bool _sessionLoading = false;
   bool _showingCachedSessionMessages = false;
+  bool _selectedSessionHistoryMore = false;
+  bool _selectedSessionHistoryLoading = false;
   bool _submittingPrompt = false;
   bool _interruptingSession = false;
   bool _runningTerminal = false;
@@ -407,11 +421,13 @@ class WorkspaceController extends ChangeNotifier {
   String? _selectedReasoning;
   String? _serverDefaultModelKey;
   String? _serverDefaultReasoning;
+  String? _selectedSessionHistoryCursor;
   final Map<String, List<ChatMessage>> _optimisticMessagesBySessionKey =
       <String, List<ChatMessage>>{};
   int _optimisticMessageSequence = 0;
   int _promptRefreshRevision = 0;
   int _sessionLoadRevision = 0;
+  int _selectedSessionHistoryLoadRevision = 0;
   int _reviewDiffRevision = 0;
   List<ChatMessage>? _derivedMessagesRef;
   ConfigSnapshot? _derivedConfigSnapshotRef;
@@ -442,6 +458,10 @@ class WorkspaceController extends ChangeNotifier {
   Map<String, WorkspaceSessionTimelineState> _watchedSessionTimelineById =
       const <String, WorkspaceSessionTimelineState>{};
   Map<String, int> _watchedSessionLoadRevisionById = const <String, int>{};
+  Map<String, int> _watchedSessionHistoryLoadRevisionById =
+      const <String, int>{};
+  Map<String, String?> _watchedSessionHistoryCursorById =
+      const <String, String?>{};
   Map<String, List<WorkspaceQueuedPrompt>> _queuedPromptsBySessionId =
       const <String, List<WorkspaceQueuedPrompt>>{};
   Map<String, String> _queuedPromptFailureBySessionId =
@@ -813,6 +833,8 @@ class WorkspaceController extends ChangeNotifier {
         orderedMessages: orderedMessages,
         loading: _sessionLoading,
         showingCachedMessages: _showingCachedSessionMessages,
+        historyMore: _selectedSessionHistoryMore,
+        historyLoading: _selectedSessionHistoryLoading,
         error: _sessionLoadError,
       );
     }
@@ -843,9 +865,17 @@ class WorkspaceController extends ChangeNotifier {
       final nextLoadRevisionById = Map<String, int>.from(
         _watchedSessionLoadRevisionById,
       );
+      final nextHistoryLoadRevisionById = Map<String, int>.from(
+        _watchedSessionHistoryLoadRevisionById,
+      );
+      final nextHistoryCursorById = Map<String, String?>.from(
+        _watchedSessionHistoryCursorById,
+      );
       for (final sessionId in removed) {
         changed = nextTimelineById.remove(sessionId) != null || changed;
         nextLoadRevisionById.remove(sessionId);
+        nextHistoryLoadRevisionById.remove(sessionId);
+        nextHistoryCursorById.remove(sessionId);
       }
       _watchedSessionTimelineById =
           Map<String, WorkspaceSessionTimelineState>.unmodifiable(
@@ -853,6 +883,12 @@ class WorkspaceController extends ChangeNotifier {
           );
       _watchedSessionLoadRevisionById = Map<String, int>.unmodifiable(
         nextLoadRevisionById,
+      );
+      _watchedSessionHistoryLoadRevisionById = Map<String, int>.unmodifiable(
+        nextHistoryLoadRevisionById,
+      );
+      _watchedSessionHistoryCursorById = Map<String, String?>.unmodifiable(
+        nextHistoryCursorById,
       );
     }
 
@@ -991,6 +1027,7 @@ class WorkspaceController extends ChangeNotifier {
         _messages = const <ChatMessage>[];
         _sessionLoading = false;
         _showingCachedSessionMessages = false;
+        _resetSelectedSessionHistoryState();
         _sessionLoadError = null;
         _applyDefaultComposerSelection();
         _notify();
@@ -1013,6 +1050,7 @@ class WorkspaceController extends ChangeNotifier {
     _messages = const <ChatMessage>[];
     _sessionLoading = false;
     _showingCachedSessionMessages = false;
+    _resetSelectedSessionHistoryState();
     _sessionLoadError = null;
     _loadingFileDirectoryPath = null;
     _expandedFileDirectories = <String>{};
@@ -1092,12 +1130,16 @@ class WorkspaceController extends ChangeNotifier {
       return;
     }
     _cacheSelectedTimelineForWatchedSession(previousSessionId);
+    final promotedWatchedHistoryCursor = nextSessionId == null
+        ? null
+        : _watchedSessionHistoryCursorById[nextSessionId];
     final promotedWatchedTimeline = nextSessionId == null
         ? null
         : _takeWatchedSessionTimeline(nextSessionId);
     final canReuseWatchedTimeline =
         promotedWatchedTimeline != null &&
         !promotedWatchedTimeline.loading &&
+        !promotedWatchedTimeline.historyLoading &&
         promotedWatchedTimeline.error == null;
 
     _selectedSessionId = nextSessionId;
@@ -1106,6 +1148,9 @@ class WorkspaceController extends ChangeNotifier {
       _sessionLoading = false;
       _showingCachedSessionMessages =
           promotedWatchedTimeline.showingCachedMessages;
+      _selectedSessionHistoryMore = promotedWatchedTimeline.historyMore;
+      _selectedSessionHistoryLoading = false;
+      _selectedSessionHistoryCursor = promotedWatchedHistoryCursor;
       _sessionLoadError = null;
       if (_messages.isEmpty) {
         _applyDefaultComposerSelection();
@@ -1116,6 +1161,9 @@ class WorkspaceController extends ChangeNotifier {
       _messages = const <ChatMessage>[];
       _sessionLoading = false;
       _showingCachedSessionMessages = false;
+      _selectedSessionHistoryMore = false;
+      _selectedSessionHistoryLoading = false;
+      _selectedSessionHistoryCursor = null;
       _sessionLoadError = null;
     }
     _replaceSelectedSessionTodos(const <TodoItem>[]);
@@ -1129,6 +1177,9 @@ class WorkspaceController extends ChangeNotifier {
     if (nextSessionId == null) {
       _sessionLoading = false;
       _showingCachedSessionMessages = false;
+      _selectedSessionHistoryMore = false;
+      _selectedSessionHistoryLoading = false;
+      _selectedSessionHistoryCursor = null;
       _sessionLoadError = null;
       _applyDefaultComposerSelection();
       _notify();
@@ -1186,6 +1237,21 @@ class WorkspaceController extends ChangeNotifier {
       return;
     }
     await _loadWatchedSessionTimeline(normalized);
+  }
+
+  Future<void> loadMoreTimelineSessionHistory(String? sessionId) async {
+    final normalized = sessionId?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return;
+    }
+    if (normalized == _selectedSessionId) {
+      await _loadMoreSelectedSessionHistory(normalized);
+      return;
+    }
+    if (!_watchedSessionIds.contains(normalized)) {
+      return;
+    }
+    await _loadMoreWatchedSessionHistory(normalized);
   }
 
   Future<void> selectReviewFile(String path) async {
@@ -1432,6 +1498,9 @@ class WorkspaceController extends ChangeNotifier {
     _sessionLoading = true;
     _sessionLoadError = null;
     _showingCachedSessionMessages = false;
+    _selectedSessionHistoryCursor = null;
+    _selectedSessionHistoryMore = false;
+    _selectedSessionHistoryLoading = false;
     _replaceSelectedSessionTodos(const <TodoItem>[]);
     final cachedMessages = await _loadCachedSessionMessages(
       project: project,
@@ -1458,10 +1527,11 @@ class WorkspaceController extends ChangeNotifier {
     }
 
     try {
-      final messages = await _chatService.fetchMessages(
+      final page = await _chatService.fetchMessagesPage(
         profile: profile,
         project: project,
         sessionId: sessionId,
+        limit: _sessionHistoryPageSize,
       );
       if (_isStaleSessionLoad(revision, sessionId)) {
         return;
@@ -1470,8 +1540,10 @@ class WorkspaceController extends ChangeNotifier {
       _messages = _mergeSessionMessages(
         project: project,
         sessionId: sessionId,
-        serverMessages: messages,
+        serverMessages: page.messages,
       );
+      _selectedSessionHistoryCursor = page.nextCursor;
+      _selectedSessionHistoryMore = page.hasMore;
       _showingCachedSessionMessages = false;
       if (_messages.isEmpty) {
         _applyDefaultComposerSelection();
@@ -1482,7 +1554,7 @@ class WorkspaceController extends ChangeNotifier {
         _persistSessionMessagesCache(
           project: project,
           sessionId: sessionId,
-          messages: messages,
+          messages: page.messages,
           immediate: true,
         ),
       );
@@ -1532,6 +1604,12 @@ class WorkspaceController extends ChangeNotifier {
     return 'The server may be offline or responding too slowly.\n$detail';
   }
 
+  void _resetSelectedSessionHistoryState() {
+    _selectedSessionHistoryCursor = null;
+    _selectedSessionHistoryMore = false;
+    _selectedSessionHistoryLoading = false;
+  }
+
   void _seedWatchedSessionTimeline(String sessionId) {
     if (_watchedSessionTimelineById.containsKey(sessionId)) {
       return;
@@ -1570,10 +1648,13 @@ class WorkspaceController extends ChangeNotifier {
         orderedMessages: orderedMessages,
         loading: false,
         showingCachedMessages: _showingCachedSessionMessages,
+        historyMore: _selectedSessionHistoryMore,
+        historyLoading: _selectedSessionHistoryLoading,
         error: _sessionLoadError,
       ),
       requireWatched: requireWatched,
     );
+    _setWatchedSessionHistoryCursor(normalized, _selectedSessionHistoryCursor);
   }
 
   void _setWatchedSessionTimeline(
@@ -1581,6 +1662,16 @@ class WorkspaceController extends ChangeNotifier {
     WorkspaceSessionTimelineState state,
   ) {
     _setSessionTimelineState(sessionId, state);
+  }
+
+  void _setWatchedSessionHistoryCursor(String sessionId, String? cursor) {
+    final next = Map<String, String?>.from(_watchedSessionHistoryCursorById);
+    if (cursor == null || cursor.isEmpty) {
+      next.remove(sessionId);
+    } else {
+      next[sessionId] = cursor;
+    }
+    _watchedSessionHistoryCursorById = Map<String, String?>.unmodifiable(next);
   }
 
   void _setSessionTimelineState(
@@ -1597,6 +1688,8 @@ class WorkspaceController extends ChangeNotifier {
         identical(current.orderedMessages, state.orderedMessages) &&
         current.loading == state.loading &&
         current.showingCachedMessages == state.showingCachedMessages &&
+        current.historyMore == state.historyMore &&
+        current.historyLoading == state.historyLoading &&
         current.error == state.error) {
       return;
     }
@@ -1625,6 +1718,18 @@ class WorkspaceController extends ChangeNotifier {
     _watchedSessionLoadRevisionById = Map<String, int>.unmodifiable(
       nextLoadRevisionById,
     );
+    final nextHistoryLoadRevisionById = Map<String, int>.from(
+      _watchedSessionHistoryLoadRevisionById,
+    )..remove(sessionId);
+    _watchedSessionHistoryLoadRevisionById = Map<String, int>.unmodifiable(
+      nextHistoryLoadRevisionById,
+    );
+    final nextHistoryCursorById = Map<String, String?>.from(
+      _watchedSessionHistoryCursorById,
+    )..remove(sessionId);
+    _watchedSessionHistoryCursorById = Map<String, String?>.unmodifiable(
+      nextHistoryCursorById,
+    );
     return current;
   }
 
@@ -1633,6 +1738,8 @@ class WorkspaceController extends ChangeNotifier {
     required List<ChatMessage> messages,
     required bool loading,
     required bool showingCachedMessages,
+    bool historyMore = false,
+    bool historyLoading = false,
     String? error,
   }) {
     final ordered =
@@ -1645,6 +1752,8 @@ class WorkspaceController extends ChangeNotifier {
       orderedMessages: ordered,
       loading: loading,
       showingCachedMessages: showingCachedMessages,
+      historyMore: historyMore,
+      historyLoading: historyLoading,
       error: error,
     );
   }
@@ -1653,6 +1762,19 @@ class WorkspaceController extends ChangeNotifier {
     return _disposed ||
         !_watchedSessionIds.contains(sessionId) ||
         revision != _watchedSessionLoadRevisionById[sessionId] ||
+        _selectedSessionId == sessionId;
+  }
+
+  bool _isStaleSelectedSessionHistoryLoad(int revision, String sessionId) {
+    return _disposed ||
+        revision != _selectedSessionHistoryLoadRevision ||
+        _selectedSessionId != sessionId;
+  }
+
+  bool _isStaleWatchedSessionHistoryLoad(int revision, String sessionId) {
+    return _disposed ||
+        !_watchedSessionIds.contains(sessionId) ||
+        revision != _watchedSessionHistoryLoadRevisionById[sessionId] ||
         _selectedSessionId == sessionId;
   }
 
@@ -1676,6 +1798,8 @@ class WorkspaceController extends ChangeNotifier {
         messages: current?.messages ?? const <ChatMessage>[],
         loading: true,
         showingCachedMessages: current?.showingCachedMessages ?? false,
+        historyMore: current?.historyMore ?? false,
+        historyLoading: false,
         error: null,
       ),
     );
@@ -1700,6 +1824,8 @@ class WorkspaceController extends ChangeNotifier {
           ),
           loading: true,
           showingCachedMessages: cachedMessages.isNotEmpty,
+          historyMore: false,
+          historyLoading: false,
           error: null,
         ),
       );
@@ -1707,14 +1833,16 @@ class WorkspaceController extends ChangeNotifier {
     }
 
     try {
-      final messages = await _chatService.fetchMessages(
+      final page = await _chatService.fetchMessagesPage(
         profile: profile,
         project: project,
         sessionId: sessionId,
+        limit: _sessionHistoryPageSize,
       );
       if (_isStaleWatchedSessionLoad(revision, sessionId)) {
         return;
       }
+      _setWatchedSessionHistoryCursor(sessionId, page.nextCursor);
       _setWatchedSessionTimeline(
         sessionId,
         _buildTimelineState(
@@ -1722,10 +1850,12 @@ class WorkspaceController extends ChangeNotifier {
           messages: _mergeSessionMessages(
             project: project,
             sessionId: sessionId,
-            serverMessages: messages,
+            serverMessages: page.messages,
           ),
           loading: false,
           showingCachedMessages: false,
+          historyMore: page.hasMore,
+          historyLoading: false,
           error: null,
         ),
       );
@@ -1733,7 +1863,7 @@ class WorkspaceController extends ChangeNotifier {
         _saveSessionMessagesCache(
           project: project,
           sessionId: sessionId,
-          messages: messages,
+          messages: page.messages,
         ),
       );
       _notify();
@@ -1749,6 +1879,166 @@ class WorkspaceController extends ChangeNotifier {
           messages: currentState?.messages ?? const <ChatMessage>[],
           loading: false,
           showingCachedMessages: currentState?.showingCachedMessages ?? false,
+          historyMore: currentState?.historyMore ?? false,
+          historyLoading: false,
+          error: _describeSessionLoadError(error),
+        ),
+      );
+      _notify();
+    }
+  }
+
+  Future<void> _loadMoreSelectedSessionHistory(String sessionId) async {
+    final project = _project;
+    final cursor = _selectedSessionHistoryCursor;
+    if (project == null ||
+        sessionId.isEmpty ||
+        _selectedSessionId != sessionId ||
+        !_selectedSessionHistoryMore ||
+        _selectedSessionHistoryLoading ||
+        cursor == null ||
+        cursor.isEmpty) {
+      return;
+    }
+    final revision = ++_selectedSessionHistoryLoadRevision;
+    _selectedSessionHistoryLoading = true;
+    _notify();
+
+    try {
+      final page = await _chatService.fetchMessagesPage(
+        profile: profile,
+        project: project,
+        sessionId: sessionId,
+        limit: _sessionHistoryPageSize,
+        before: cursor,
+      );
+      if (_isStaleSelectedSessionHistoryLoad(revision, sessionId)) {
+        return;
+      }
+
+      final currentServerMessages = _stripOptimisticMessages(
+        project: project,
+        sessionId: sessionId,
+        messages: _messages,
+      );
+      final mergedServerMessages = _prependSessionHistoryMessages(
+        olderMessages: page.messages,
+        currentMessages: currentServerMessages,
+      );
+      _messages = _mergeSessionMessages(
+        project: project,
+        sessionId: sessionId,
+        serverMessages: mergedServerMessages,
+      );
+      _selectedSessionHistoryCursor = page.nextCursor;
+      _selectedSessionHistoryMore = page.hasMore;
+      _selectedSessionHistoryLoading = false;
+      _sessionLoadError = null;
+      _showingCachedSessionMessages = false;
+      unawaited(
+        _persistSessionMessagesCache(
+          project: project,
+          sessionId: sessionId,
+          messages: mergedServerMessages,
+          immediate: true,
+        ),
+      );
+      _notify();
+    } catch (error) {
+      if (_isStaleSelectedSessionHistoryLoad(revision, sessionId)) {
+        return;
+      }
+      _selectedSessionHistoryLoading = false;
+      _sessionLoadError = _describeSessionLoadError(error);
+      _notify();
+    }
+  }
+
+  Future<void> _loadMoreWatchedSessionHistory(String sessionId) async {
+    final project = _project;
+    final currentState = _watchedSessionTimelineById[sessionId];
+    final cursor = _watchedSessionHistoryCursorById[sessionId];
+    if (project == null ||
+        sessionId.isEmpty ||
+        !_watchedSessionIds.contains(sessionId) ||
+        currentState == null ||
+        !currentState.historyMore ||
+        currentState.historyLoading ||
+        cursor == null ||
+        cursor.isEmpty) {
+      return;
+    }
+    final revision =
+        (_watchedSessionHistoryLoadRevisionById[sessionId] ?? 0) + 1;
+    _watchedSessionHistoryLoadRevisionById = Map<String, int>.unmodifiable(
+      <String, int>{
+        ..._watchedSessionHistoryLoadRevisionById,
+        sessionId: revision,
+      },
+    );
+    _setWatchedSessionTimeline(
+      sessionId,
+      currentState.copyWith(historyLoading: true, clearError: true),
+    );
+    _notify();
+
+    try {
+      final page = await _chatService.fetchMessagesPage(
+        profile: profile,
+        project: project,
+        sessionId: sessionId,
+        limit: _sessionHistoryPageSize,
+        before: cursor,
+      );
+      if (_isStaleWatchedSessionHistoryLoad(revision, sessionId)) {
+        return;
+      }
+      final latestState =
+          _watchedSessionTimelineById[sessionId] ?? currentState;
+      final currentServerMessages = _stripOptimisticMessages(
+        project: project,
+        sessionId: sessionId,
+        messages: latestState.messages,
+      );
+      final mergedServerMessages = _prependSessionHistoryMessages(
+        olderMessages: page.messages,
+        currentMessages: currentServerMessages,
+      );
+      _setWatchedSessionHistoryCursor(sessionId, page.nextCursor);
+      _setWatchedSessionTimeline(
+        sessionId,
+        _buildTimelineState(
+          sessionId: sessionId,
+          messages: _mergeSessionMessages(
+            project: project,
+            sessionId: sessionId,
+            serverMessages: mergedServerMessages,
+          ),
+          loading: latestState.loading,
+          showingCachedMessages: false,
+          historyMore: page.hasMore,
+          historyLoading: false,
+          error: null,
+        ),
+      );
+      unawaited(
+        _saveSessionMessagesCache(
+          project: project,
+          sessionId: sessionId,
+          messages: mergedServerMessages,
+        ),
+      );
+      _notify();
+    } catch (error) {
+      if (_isStaleWatchedSessionHistoryLoad(revision, sessionId)) {
+        return;
+      }
+      final latestState =
+          _watchedSessionTimelineById[sessionId] ?? currentState;
+      _setWatchedSessionTimeline(
+        sessionId,
+        latestState.copyWith(
+          historyLoading: false,
           error: _describeSessionLoadError(error),
         ),
       );
@@ -1796,6 +2086,8 @@ class WorkspaceController extends ChangeNotifier {
         messages: nextMessages,
         loading: false,
         showingCachedMessages: false,
+        historyMore: currentState.historyMore,
+        historyLoading: currentState.historyLoading,
         error: null,
       ),
     );
@@ -1965,29 +2257,43 @@ class WorkspaceController extends ChangeNotifier {
     required String sessionId,
     required int revision,
   }) async {
-    List<ChatMessage>? messages;
+    ChatMessagePage? page;
     try {
-      messages = await _chatService.fetchMessages(
+      page = await _chatService.fetchMessagesPage(
         profile: profile,
         project: project,
         sessionId: sessionId,
+        limit: _sessionHistoryPageSize,
       );
     } catch (_) {
-      messages = null;
+      page = null;
     }
 
     if (_disposed || revision != _promptRefreshRevision) {
       return;
     }
 
-    if (messages != null) {
-      final mergedMessages = _mergeSessionMessages(
-        project: project,
-        sessionId: sessionId,
-        serverMessages: messages,
-      );
+    if (page != null) {
       if (_selectedSessionId == sessionId) {
-        _messages = mergedMessages;
+        final currentServerMessages = _stripOptimisticMessages(
+          project: project,
+          sessionId: sessionId,
+          messages: _messages,
+        );
+        final mergedServerMessages = _mergeLatestSessionMessages(
+          currentMessages: currentServerMessages,
+          latestMessages: page.messages,
+        );
+        _messages = _mergeSessionMessages(
+          project: project,
+          sessionId: sessionId,
+          serverMessages: mergedServerMessages,
+        );
+        if (currentServerMessages.length <= page.messages.length) {
+          _selectedSessionHistoryCursor = page.nextCursor;
+          _selectedSessionHistoryMore = page.hasMore;
+        }
+        _selectedSessionHistoryLoading = false;
         _sessionLoading = false;
         _showingCachedSessionMessages = false;
         _sessionLoadError = null;
@@ -1996,18 +2302,43 @@ class WorkspaceController extends ChangeNotifier {
           _persistSessionMessagesCache(
             project: project,
             sessionId: sessionId,
-            messages: messages,
+            messages: mergedServerMessages,
             immediate: true,
           ),
         );
       } else if (_watchedSessionIds.contains(sessionId)) {
+        final currentState =
+            _watchedSessionTimelineById[sessionId] ??
+            WorkspaceSessionTimelineState.empty(sessionId: sessionId);
+        final currentServerMessages = _stripOptimisticMessages(
+          project: project,
+          sessionId: sessionId,
+          messages: currentState.messages,
+        );
+        final mergedServerMessages = _mergeLatestSessionMessages(
+          currentMessages: currentServerMessages,
+          latestMessages: page.messages,
+        );
+        final shouldReplaceHistoryCursor =
+            currentServerMessages.length <= page.messages.length;
+        if (shouldReplaceHistoryCursor) {
+          _setWatchedSessionHistoryCursor(sessionId, page.nextCursor);
+        }
         _setWatchedSessionTimeline(
           sessionId,
           _buildTimelineState(
             sessionId: sessionId,
-            messages: mergedMessages,
+            messages: _mergeSessionMessages(
+              project: project,
+              sessionId: sessionId,
+              serverMessages: mergedServerMessages,
+            ),
             loading: false,
             showingCachedMessages: false,
+            historyMore: shouldReplaceHistoryCursor
+                ? page.hasMore
+                : currentState.historyMore,
+            historyLoading: false,
             error: null,
           ),
         );
@@ -2015,7 +2346,7 @@ class WorkspaceController extends ChangeNotifier {
           _saveSessionMessagesCache(
             project: project,
             sessionId: sessionId,
-            messages: messages,
+            messages: mergedServerMessages,
           ),
         );
       }
@@ -2400,6 +2731,7 @@ class WorkspaceController extends ChangeNotifier {
     _messages = const <ChatMessage>[];
     _sessionLoading = false;
     _showingCachedSessionMessages = false;
+    _resetSelectedSessionHistoryState();
     _sessionLoadError = null;
     _replaceSelectedSessionTodos(const <TodoItem>[]);
     _statuses = <String, SessionStatusSummary>{
@@ -2547,6 +2879,7 @@ class WorkspaceController extends ChangeNotifier {
     _selectedSessionId = updated.id;
     _messages = const <ChatMessage>[];
     _showingCachedSessionMessages = false;
+    _resetSelectedSessionHistoryState();
     _sessionLoadError = null;
     await _loadSelectedSessionMessages(
       project: project,
@@ -2673,6 +3006,7 @@ class WorkspaceController extends ChangeNotifier {
       _messages = const <ChatMessage>[];
       _sessionLoading = false;
       _showingCachedSessionMessages = false;
+      _resetSelectedSessionHistoryState();
       _sessionLoadError = null;
       for (final removedSessionId in removedSessionIds) {
         await _cacheStore.remove(
@@ -2687,6 +3021,7 @@ class WorkspaceController extends ChangeNotifier {
     } else {
       _messages = const <ChatMessage>[];
       _showingCachedSessionMessages = false;
+      _resetSelectedSessionHistoryState();
       for (final removedSessionId in removedSessionIds) {
         await _cacheStore.remove(
           _sessionMessagesCacheKey(project, removedSessionId),
@@ -2721,18 +3056,38 @@ class WorkspaceController extends ChangeNotifier {
         command: command.trim(),
       );
       try {
-        _messages = await _chatService.fetchMessages(
+        final page = await _chatService.fetchMessagesPage(
           profile: profile,
           project: project,
           sessionId: sessionId,
+          limit: _sessionHistoryPageSize,
         );
+        final currentServerMessages = _stripOptimisticMessages(
+          project: project,
+          sessionId: sessionId,
+          messages: _messages,
+        );
+        final mergedServerMessages = _mergeLatestSessionMessages(
+          currentMessages: currentServerMessages,
+          latestMessages: page.messages,
+        );
+        _messages = _mergeSessionMessages(
+          project: project,
+          sessionId: sessionId,
+          serverMessages: mergedServerMessages,
+        );
+        if (currentServerMessages.length <= page.messages.length) {
+          _selectedSessionHistoryCursor = page.nextCursor;
+          _selectedSessionHistoryMore = page.hasMore;
+        }
+        _selectedSessionHistoryLoading = false;
         _showingCachedSessionMessages = false;
         _sessionLoadError = null;
         unawaited(
           _saveSessionMessagesCache(
             project: project,
             sessionId: sessionId,
-            messages: _messages,
+            messages: mergedServerMessages,
           ),
         );
       } catch (error) {
@@ -3539,6 +3894,18 @@ class WorkspaceController extends ChangeNotifier {
         _watchedSessionLoadRevisionById = Map<String, int>.unmodifiable(
           nextLoadRevisionById,
         );
+        final nextHistoryLoadRevisionById = Map<String, int>.from(
+          _watchedSessionHistoryLoadRevisionById,
+        )..remove(removedSessionId);
+        _watchedSessionHistoryLoadRevisionById = Map<String, int>.unmodifiable(
+          nextHistoryLoadRevisionById,
+        );
+        final nextHistoryCursorById = Map<String, String?>.from(
+          _watchedSessionHistoryCursorById,
+        )..remove(removedSessionId);
+        _watchedSessionHistoryCursorById = Map<String, String?>.unmodifiable(
+          nextHistoryCursorById,
+        );
       }
       _removeActiveChildPreviewState(removedSessionId);
       _clearQueuedPromptStateForSession(removedSessionId);
@@ -4264,6 +4631,8 @@ class WorkspaceController extends ChangeNotifier {
           ),
           loading: currentState.loading,
           showingCachedMessages: currentState.showingCachedMessages,
+          historyMore: currentState.historyMore,
+          historyLoading: currentState.historyLoading,
           error: currentState.error,
         ),
       );
@@ -4320,6 +4689,8 @@ class WorkspaceController extends ChangeNotifier {
           ),
           loading: currentState.loading,
           showingCachedMessages: currentState.showingCachedMessages,
+          historyMore: currentState.historyMore,
+          historyLoading: currentState.historyLoading,
           error: currentState.error,
         ),
       );
@@ -4347,6 +4718,43 @@ class WorkspaceController extends ChangeNotifier {
     }
     _optimisticMessagesBySessionKey[key] = unresolved;
     return <ChatMessage>[...serverMessages, ...unresolved];
+  }
+
+  List<ChatMessage> _prependSessionHistoryMessages({
+    required List<ChatMessage> olderMessages,
+    required List<ChatMessage> currentMessages,
+  }) {
+    if (olderMessages.isEmpty) {
+      return currentMessages;
+    }
+    if (currentMessages.isEmpty) {
+      return olderMessages;
+    }
+    final seen = currentMessages.map((message) => message.info.id).toSet();
+    final prepended = olderMessages
+        .where((message) => seen.add(message.info.id))
+        .toList(growable: false);
+    if (prepended.isEmpty) {
+      return currentMessages;
+    }
+    return <ChatMessage>[...prepended, ...currentMessages];
+  }
+
+  List<ChatMessage> _mergeLatestSessionMessages({
+    required List<ChatMessage> currentMessages,
+    required List<ChatMessage> latestMessages,
+  }) {
+    if (currentMessages.isEmpty) {
+      return latestMessages;
+    }
+    if (latestMessages.isEmpty) {
+      return currentMessages;
+    }
+    final latestIds = latestMessages.map((message) => message.info.id).toSet();
+    final retained = currentMessages
+        .where((message) => !latestIds.contains(message.info.id))
+        .toList(growable: false);
+    return <ChatMessage>[...retained, ...latestMessages];
   }
 
   List<ChatMessage> _stripOptimisticMessages({

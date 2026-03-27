@@ -396,3 +396,12 @@ class ChatSessionBundle {
     );
   }
 }
+
+class ChatMessagePage {
+  const ChatMessagePage({required this.messages, this.nextCursor});
+
+  final List<ChatMessage> messages;
+  final String? nextCursor;
+
+  bool get hasMore => nextCursor != null && nextCursor!.isNotEmpty;
+}

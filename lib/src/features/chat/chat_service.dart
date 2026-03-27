@@ -11,6 +11,8 @@ import 'prompt_attachment_models.dart';
 class ChatService {
   ChatService({http.Client? client}) : _client = client ?? http.Client();
 
+  static const int sessionHistoryPageSize = 100;
+
   final http.Client _client;
 
   Future<SessionSummary> createSession({
@@ -323,27 +325,59 @@ class ChatService {
     required ProjectTarget project,
     required String sessionId,
   }) async {
+    final page = await fetchMessagesPage(
+      profile: profile,
+      project: project,
+      sessionId: sessionId,
+      limit: sessionHistoryPageSize,
+    );
+    return page.messages;
+  }
+
+  Future<ChatMessagePage> fetchMessagesPage({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String sessionId,
+    required int limit,
+    String? before,
+  }) async {
     final baseUri = profile.uriOrNull;
     if (baseUri == null) {
       throw const FormatException('Invalid server profile URL.');
     }
 
     final headers = buildRequestHeaders(profile, accept: 'application/json');
+    final query = <String, String>{
+      'directory': project.directory,
+      'limit': '$limit',
+    };
+    final trimmedBefore = before?.trim();
+    if (trimmedBefore != null && trimmedBefore.isNotEmpty) {
+      query['before'] = trimmedBefore;
+    }
 
-    final messagesBody = await _getJson(
+    final response = await _getResponse(
       baseUri,
       '/session/$sessionId/message',
       headers: headers,
-      query: <String, String>{'directory': project.directory, 'limit': '100'},
+      query: query,
     );
-
+    final messagesBody = response.body.trim().isEmpty
+        ? null
+        : jsonDecode(response.body);
     return messagesBody is List
-        ? messagesBody
-              .whereType<Map>()
-              .map((item) => _safeParseMessage(item.cast<String, Object?>()))
-              .whereType<ChatMessage>()
-              .toList(growable: false)
-        : const <ChatMessage>[];
+        ? ChatMessagePage(
+            messages: messagesBody
+                .whereType<Map>()
+                .map((item) => _safeParseMessage(item.cast<String, Object?>()))
+                .whereType<ChatMessage>()
+                .toList(growable: false),
+            nextCursor: response.headers['x-next-cursor'],
+          )
+        : ChatMessagePage(
+            nextCursor: response.headers['x-next-cursor'],
+            messages: const <ChatMessage>[],
+          );
   }
 
   SessionSummary? _safeParseSession(Map<String, Object?> json) {
@@ -376,6 +410,24 @@ class ChatService {
     required Map<String, String> headers,
     Map<String, String>? query,
   }) async {
+    final response = await _getResponse(
+      baseUri,
+      path,
+      headers: headers,
+      query: query,
+    );
+    if (response.body.trim().isEmpty) {
+      return null;
+    }
+    return jsonDecode(response.body);
+  }
+
+  Future<http.Response> _getResponse(
+    Uri baseUri,
+    String path, {
+    required Map<String, String> headers,
+    Map<String, String>? query,
+  }) async {
     final basePath = switch (baseUri.path) {
       '' => '/',
       final value when value.endsWith('/') => value,
@@ -391,10 +443,7 @@ class ChatService {
         'Request failed for $uri with status ${response.statusCode}.',
       );
     }
-    if (response.body.trim().isEmpty) {
-      return null;
-    }
-    return jsonDecode(response.body);
+    return response;
   }
 
   void dispose() {

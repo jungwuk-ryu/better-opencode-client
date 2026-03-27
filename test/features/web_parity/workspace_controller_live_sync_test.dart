@@ -372,6 +372,251 @@ void main() {
     },
   );
 
+  test(
+    'controller backfills older history for the selected session from the server',
+    () async {
+      final requests = <({String sessionId, int limit, String? before})>[];
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_1',
+              title: 'Initial session',
+              createdAt: 1710000001000,
+              updatedAt: 1710000005000,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{
+            'ses_1': SessionStatusSummary(type: 'idle'),
+          },
+          messages: const <ChatMessage>[],
+          selectedSessionId: 'ses_1',
+        ),
+        fetchMessagesPageHandler:
+            ({
+              required profile,
+              required project,
+              required sessionId,
+              required limit,
+              before,
+            }) async {
+              requests.add((
+                sessionId: sessionId,
+                limit: limit,
+                before: before,
+              ));
+              return switch (before) {
+                null => ChatMessagePage(
+                  messages: <ChatMessage>[
+                    _message(
+                      id: 'msg_3',
+                      sessionId: sessionId,
+                      text: 'newer 3',
+                      createdAt: 1710000003000,
+                    ),
+                    _message(
+                      id: 'msg_4',
+                      sessionId: sessionId,
+                      text: 'newer 4',
+                      createdAt: 1710000004000,
+                    ),
+                  ],
+                  nextCursor: 'cursor_older_1',
+                ),
+                'cursor_older_1' => ChatMessagePage(
+                  messages: <ChatMessage>[
+                    _message(
+                      id: 'msg_1',
+                      sessionId: sessionId,
+                      text: 'older 1',
+                      createdAt: 1710000001000,
+                    ),
+                    _message(
+                      id: 'msg_2',
+                      sessionId: sessionId,
+                      text: 'older 2',
+                      createdAt: 1710000002000,
+                    ),
+                  ],
+                ),
+                _ => throw StateError('unexpected cursor: $before'),
+              };
+            },
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: _ControlledEventStreamService(),
+        chatService: chatService,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+
+      expect(controller.messages.map((message) => message.info.id), <String>[
+        'msg_3',
+        'msg_4',
+      ]);
+      expect(controller.timelineStateForSession('ses_1').historyMore, isTrue);
+
+      await controller.loadMoreTimelineSessionHistory('ses_1');
+
+      expect(requests, <({String sessionId, int limit, String? before})>[
+        (
+          sessionId: 'ses_1',
+          limit: ChatService.sessionHistoryPageSize,
+          before: null,
+        ),
+        (
+          sessionId: 'ses_1',
+          limit: ChatService.sessionHistoryPageSize,
+          before: 'cursor_older_1',
+        ),
+      ]);
+      expect(controller.messages.map((message) => message.info.id), <String>[
+        'msg_1',
+        'msg_2',
+        'msg_3',
+        'msg_4',
+      ]);
+      expect(controller.timelineStateForSession('ses_1').historyMore, isFalse);
+      expect(
+        controller.timelineStateForSession('ses_1').historyLoading,
+        isFalse,
+      );
+    },
+  );
+
+  test(
+    'controller backfills older history for watched session timelines',
+    () async {
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_2',
+              title: 'Watched session',
+              createdAt: 1710000007000,
+              updatedAt: 1710000007000,
+            ),
+            _session(
+              id: 'ses_1',
+              title: 'Initial session',
+              createdAt: 1710000001000,
+              updatedAt: 1710000005000,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{
+            'ses_1': SessionStatusSummary(type: 'idle'),
+            'ses_2': SessionStatusSummary(type: 'idle'),
+          },
+          messages: const <ChatMessage>[],
+          selectedSessionId: 'ses_1',
+        ),
+        fetchMessagesPageHandler:
+            ({
+              required profile,
+              required project,
+              required sessionId,
+              required limit,
+              before,
+            }) async {
+              if (sessionId == 'ses_1') {
+                return ChatMessagePage(
+                  messages: <ChatMessage>[
+                    _message(
+                      id: 'msg_selected',
+                      sessionId: sessionId,
+                      text: 'selected',
+                      createdAt: 1710000001000,
+                    ),
+                  ],
+                );
+              }
+              return switch (before) {
+                null => ChatMessagePage(
+                  messages: <ChatMessage>[
+                    _message(
+                      id: 'msg_watch_3',
+                      sessionId: sessionId,
+                      text: 'watch newer 3',
+                      createdAt: 1710000003000,
+                    ),
+                    _message(
+                      id: 'msg_watch_4',
+                      sessionId: sessionId,
+                      text: 'watch newer 4',
+                      createdAt: 1710000004000,
+                    ),
+                  ],
+                  nextCursor: 'cursor_watch_1',
+                ),
+                'cursor_watch_1' => ChatMessagePage(
+                  messages: <ChatMessage>[
+                    _message(
+                      id: 'msg_watch_1',
+                      sessionId: sessionId,
+                      text: 'watch older 1',
+                      createdAt: 1710000001000,
+                    ),
+                    _message(
+                      id: 'msg_watch_2',
+                      sessionId: sessionId,
+                      text: 'watch older 2',
+                      createdAt: 1710000002000,
+                    ),
+                  ],
+                ),
+                _ => throw StateError('unexpected cursor: $before'),
+              };
+            },
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: _ControlledEventStreamService(),
+        chatService: chatService,
+        initialSessions: <SessionSummary>[
+          _session(
+            id: 'ses_2',
+            title: 'Watched session',
+            createdAt: 1710000007000,
+            updatedAt: 1710000007000,
+          ),
+          _session(
+            id: 'ses_1',
+            title: 'Initial session',
+            createdAt: 1710000001000,
+            updatedAt: 1710000005000,
+          ),
+        ],
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+      controller.updateWatchedSessionIds(const <String?>['ses_2']);
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.timelineStateForSession('ses_2').historyMore, isTrue);
+
+      await controller.loadMoreTimelineSessionHistory('ses_2');
+
+      expect(
+        controller
+            .timelineStateForSession('ses_2')
+            .messages
+            .map((message) => message.info.id),
+        <String>['msg_watch_1', 'msg_watch_2', 'msg_watch_3', 'msg_watch_4'],
+      );
+      expect(controller.timelineStateForSession('ses_2').historyMore, isFalse);
+      expect(
+        controller.timelineStateForSession('ses_2').historyLoading,
+        isFalse,
+      );
+    },
+  );
+
   test('controller interrupts the selected busy session', () async {
     final eventStreamService = _ControlledEventStreamService();
     final sessionActionService = _RecordingSessionActionService();
@@ -1364,6 +1609,33 @@ SessionSummary _session({
   );
 }
 
+ChatMessage _message({
+  required String id,
+  required String sessionId,
+  required String text,
+  required int createdAt,
+  String role = 'assistant',
+}) {
+  return ChatMessage(
+    info: ChatMessageInfo(
+      id: id,
+      role: role,
+      sessionId: sessionId,
+      createdAt: DateTime.fromMillisecondsSinceEpoch(createdAt),
+      completedAt: DateTime.fromMillisecondsSinceEpoch(createdAt),
+    ),
+    parts: <ChatPart>[
+      ChatPart(
+        id: 'part_$id',
+        type: 'text',
+        text: text,
+        messageId: id,
+        sessionId: sessionId,
+      ),
+    ],
+  );
+}
+
 class _ControlledEventStreamService extends EventStreamService {
   final Map<String, void Function(EventEnvelope event)> _onEventByScopeKey =
       <String, void Function(EventEnvelope event)>{};
@@ -1512,6 +1784,7 @@ class _FakeChatService extends ChatService {
   _FakeChatService({
     required this.bundle,
     this.fetchMessagesHandler,
+    this.fetchMessagesPageHandler,
     this.sendMessageHandler,
     this.sendMessageAsyncHandler,
   });
@@ -1523,6 +1796,14 @@ class _FakeChatService extends ChatService {
     required String sessionId,
   })?
   fetchMessagesHandler;
+  final Future<ChatMessagePage> Function({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String sessionId,
+    required int limit,
+    String? before,
+  })?
+  fetchMessagesPageHandler;
   final Future<ChatMessage> Function({
     required ServerProfile profile,
     required ProjectTarget project,
@@ -1570,6 +1851,37 @@ class _FakeChatService extends ChatService {
       return handler(profile: profile, project: project, sessionId: sessionId);
     }
     return const <ChatMessage>[];
+  }
+
+  @override
+  Future<ChatMessagePage> fetchMessagesPage({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String sessionId,
+    required int limit,
+    String? before,
+  }) async {
+    final pageHandler = fetchMessagesPageHandler;
+    if (pageHandler != null) {
+      return pageHandler(
+        profile: profile,
+        project: project,
+        sessionId: sessionId,
+        limit: limit,
+        before: before,
+      );
+    }
+    final handler = fetchMessagesHandler;
+    if (handler != null) {
+      return ChatMessagePage(
+        messages: await handler(
+          profile: profile,
+          project: project,
+          sessionId: sessionId,
+        ),
+      );
+    }
+    return const ChatMessagePage(messages: <ChatMessage>[]);
   }
 
   @override
