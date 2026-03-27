@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import '../../l10n/app_localizations.dart';
-import '../design_system/app_theme.dart';
 import '../features/web_parity/web_home_screen.dart';
 import '../features/web_parity/workspace_screen.dart';
 import '../i18n/locale_controller.dart';
@@ -45,7 +44,7 @@ class _OpenCodeRemoteAppState extends State<OpenCodeRemoteApp> {
             onGenerateTitle: (context) =>
                 AppLocalizations.of(context)!.appTitle,
             debugShowCheckedModeBanner: false,
-            theme: AppTheme.dark(),
+            theme: _appController.themeData,
             builder: (context, child) {
               final mediaQuery = MediaQuery.maybeOf(context);
               if (mediaQuery == null) {

@@ -9,7 +9,6 @@ import 'package:opencode_mobile_remote/src/app/app_controller.dart';
 import 'package:opencode_mobile_remote/src/app/app_routes.dart';
 import 'package:opencode_mobile_remote/src/app/app_scope.dart';
 import 'package:opencode_mobile_remote/src/core/connection/connection_models.dart';
-import 'package:opencode_mobile_remote/src/design_system/app_theme.dart';
 import 'package:opencode_mobile_remote/src/features/chat/chat_models.dart';
 import 'package:opencode_mobile_remote/src/features/chat/prompt_attachment_models.dart';
 import 'package:opencode_mobile_remote/src/features/projects/project_catalog_service.dart';
@@ -2638,28 +2637,33 @@ class _WorkspaceRouteHarness extends StatelessWidget {
   Widget build(BuildContext context) {
     return AppScope(
       controller: controller,
-      child: MaterialApp(
-        navigatorKey: navigatorKey,
-        navigatorObservers: navigatorObservers,
-        theme: AppTheme.dark().copyWith(platform: platform),
-        initialRoute: initialRoute,
-        onGenerateRoute: (settings) {
-          final route = AppRouteData.parse(settings.name);
-          return MaterialPageRoute<void>(
-            settings: settings,
-            builder: (context) {
-              return switch (route) {
-                HomeRouteData() => const SizedBox.shrink(),
-                WorkspaceRouteData(:final directory, :final sessionId) =>
-                  WebParityWorkspaceScreen(
-                    key: ValueKey<String>('workspace-$directory'),
-                    directory: directory,
-                    sessionId: sessionId,
-                    ptyServiceFactory: _FakePtyService.new,
-                    attachmentPicker: attachmentPicker,
-                    projectCatalogService: projectCatalogService,
-                  ),
-              };
+      child: AnimatedBuilder(
+        animation: controller,
+        builder: (context, child) {
+          return MaterialApp(
+            navigatorKey: navigatorKey,
+            navigatorObservers: navigatorObservers,
+            theme: controller.themeData.copyWith(platform: platform),
+            initialRoute: initialRoute,
+            onGenerateRoute: (settings) {
+              final route = AppRouteData.parse(settings.name);
+              return MaterialPageRoute<void>(
+                settings: settings,
+                builder: (context) {
+                  return switch (route) {
+                    HomeRouteData() => const SizedBox.shrink(),
+                    WorkspaceRouteData(:final directory, :final sessionId) =>
+                      WebParityWorkspaceScreen(
+                        key: ValueKey<String>('workspace-$directory'),
+                        directory: directory,
+                        sessionId: sessionId,
+                        ptyServiceFactory: _FakePtyService.new,
+                        attachmentPicker: attachmentPicker,
+                        projectCatalogService: projectCatalogService,
+                      ),
+                  };
+                },
+              );
             },
           );
         },

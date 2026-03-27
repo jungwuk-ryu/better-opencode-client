@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:opencode_mobile_remote/src/app/app_controller.dart';
 import 'package:opencode_mobile_remote/src/core/connection/connection_models.dart';
 import 'package:opencode_mobile_remote/src/core/persistence/server_profile_store.dart';
+import 'package:opencode_mobile_remote/src/design_system/app_theme.dart';
 import 'package:opencode_mobile_remote/src/features/projects/project_models.dart';
 import 'package:opencode_mobile_remote/src/features/projects/project_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -146,6 +147,50 @@ void main() {
       restored.multiPaneComposerMode,
       WorkspaceMultiPaneComposerMode.perPane,
     );
+  });
+
+  test('theme preset persists across controller loads', () async {
+    final controller = WebParityAppController(
+      profileStore: _FakeProfileStore(),
+      projectStore: _FakeProjectStore(),
+    );
+    addTearDown(controller.dispose);
+
+    await controller.load();
+
+    expect(controller.themePreset, AppThemePreset.remote);
+
+    await controller.setThemePreset(AppThemePreset.github);
+
+    expect(controller.themePreset, AppThemePreset.github);
+
+    final restored = WebParityAppController(
+      profileStore: _FakeProfileStore(),
+      projectStore: _FakeProjectStore(),
+    );
+    addTearDown(restored.dispose);
+
+    await restored.load();
+
+    expect(restored.themePreset, AppThemePreset.github);
+  });
+
+  test('theme cycling advances through the preset list', () async {
+    final controller = WebParityAppController(
+      profileStore: _FakeProfileStore(),
+      projectStore: _FakeProjectStore(),
+    );
+    addTearDown(controller.dispose);
+
+    await controller.load();
+
+    expect(controller.themePreset, AppThemePreset.remote);
+
+    await controller.cycleThemePreset();
+    expect(controller.themePreset, AppThemePreset.opencode);
+
+    await controller.cycleThemePreset(-1);
+    expect(controller.themePreset, AppThemePreset.remote);
   });
 }
 

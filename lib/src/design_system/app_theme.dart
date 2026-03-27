@@ -3,22 +3,218 @@ import 'package:google_fonts/google_fonts.dart';
 
 import 'app_spacing.dart';
 
+enum AppThemePreset {
+  remote,
+  opencode,
+  amoled,
+  github,
+  catppuccin,
+  nord,
+  rosepine,
+  tokyonight,
+  vercel,
+  solarized;
+
+  String get storageValue => name;
+
+  static AppThemePreset fromStorage(String? value) {
+    final normalized = value?.trim().toLowerCase().replaceAll(
+      RegExp(r'[\s_-]+'),
+      '',
+    );
+    return switch (normalized) {
+      'opencode' => AppThemePreset.opencode,
+      'amoled' => AppThemePreset.amoled,
+      'github' => AppThemePreset.github,
+      'catppuccin' => AppThemePreset.catppuccin,
+      'nord' => AppThemePreset.nord,
+      'rosepine' => AppThemePreset.rosepine,
+      'tokyonight' => AppThemePreset.tokyonight,
+      'vercel' => AppThemePreset.vercel,
+      'solarized' => AppThemePreset.solarized,
+      _ => AppThemePreset.remote,
+    };
+  }
+
+  AppThemePresetDefinition get definition => switch (this) {
+    AppThemePreset.remote => const AppThemePresetDefinition(
+      label: 'Remote',
+      summary: 'The current BOC default.',
+      background: Color(0xFF0D0E10),
+      text: Color(0xFFEAECEF),
+      primary: Color(0xFF39C8BA),
+      accent: Color(0xFF7ADCD3),
+      success: Color(0xFF67D98A),
+      warning: Color(0xFFE2BF76),
+      danger: Color(0xFFEF8A8A),
+      muted: Color(0xFF9BA2AA),
+    ),
+    AppThemePreset.opencode => const AppThemePresetDefinition(
+      label: 'OpenCode',
+      summary: 'Warm terminals and violet accents.',
+      background: Color(0xFF0A0A0A),
+      text: Color(0xFFEEEEEE),
+      primary: Color(0xFFFAB283),
+      accent: Color(0xFF9D7CD8),
+      success: Color(0xFF7FD88F),
+      warning: Color(0xFFF5A742),
+      danger: Color(0xFFE06C75),
+      muted: Color(0xFF808080),
+    ),
+    AppThemePreset.amoled => const AppThemePresetDefinition(
+      label: 'AMOLED',
+      summary: 'Pure black with neon contrast.',
+      background: Color(0xFF000000),
+      text: Color(0xFFFFFFFF),
+      primary: Color(0xFFB388FF),
+      accent: Color(0xFFFF4081),
+      success: Color(0xFF00FF88),
+      warning: Color(0xFFFFEA00),
+      danger: Color(0xFFFF1744),
+      muted: Color(0xFF777777),
+    ),
+    AppThemePreset.github => const AppThemePresetDefinition(
+      label: 'GitHub',
+      summary: 'Cool steel with code-hosting blues.',
+      background: Color(0xFF0D1117),
+      text: Color(0xFFC9D1D9),
+      primary: Color(0xFF58A6FF),
+      accent: Color(0xFF39C5CF),
+      success: Color(0xFF3FB950),
+      warning: Color(0xFFE3B341),
+      danger: Color(0xFFF85149),
+      muted: Color(0xFF8B949E),
+    ),
+    AppThemePreset.catppuccin => const AppThemePresetDefinition(
+      label: 'Catppuccin',
+      summary: 'Soft mauves and milk-glass text.',
+      background: Color(0xFF1E1E2E),
+      text: Color(0xFFCDD6F4),
+      primary: Color(0xFFB4BEFE),
+      accent: Color(0xFFF38BA8),
+      success: Color(0xFFA6D189),
+      warning: Color(0xFFF4B8E4),
+      danger: Color(0xFFF38BA8),
+      muted: Color(0xFF6C7086),
+    ),
+    AppThemePreset.nord => const AppThemePresetDefinition(
+      label: 'Nord',
+      summary: 'Arctic slate with frosted cyan.',
+      background: Color(0xFF2E3440),
+      text: Color(0xFFE5E9F0),
+      primary: Color(0xFF88C0D0),
+      accent: Color(0xFFD57780),
+      success: Color(0xFFA3BE8C),
+      warning: Color(0xFFD08770),
+      danger: Color(0xFFBF616A),
+      muted: Color(0xFF616E88),
+    ),
+    AppThemePreset.rosepine => const AppThemePresetDefinition(
+      label: 'Rose Pine',
+      summary: 'Dusky plum with soft rose light.',
+      background: Color(0xFF191724),
+      text: Color(0xFFE0DEF4),
+      primary: Color(0xFF9CCFD8),
+      accent: Color(0xFFEBBCBA),
+      success: Color(0xFF31748F),
+      warning: Color(0xFFF6C177),
+      danger: Color(0xFFEB6F92),
+      muted: Color(0xFF6E6A86),
+    ),
+    AppThemePreset.tokyonight => const AppThemePresetDefinition(
+      label: 'Tokyonight',
+      summary: 'Midnight indigo with bright neon edges.',
+      background: Color(0xFF1A1B26),
+      text: Color(0xFFC0CAF5),
+      primary: Color(0xFF7AA2F7),
+      accent: Color(0xFFFF9E64),
+      success: Color(0xFF9ECE6A),
+      warning: Color(0xFFE0AF68),
+      danger: Color(0xFFF7768E),
+      muted: Color(0xFF565F89),
+    ),
+    AppThemePreset.vercel => const AppThemePresetDefinition(
+      label: 'Vercel',
+      summary: 'True black with product-brand electric blue.',
+      background: Color(0xFF000000),
+      text: Color(0xFFEDEDED),
+      primary: Color(0xFF0070F3),
+      accent: Color(0xFF8E4EC6),
+      success: Color(0xFF46A758),
+      warning: Color(0xFFFFB224),
+      danger: Color(0xFFE5484D),
+      muted: Color(0xFF878787),
+    ),
+    AppThemePreset.solarized => const AppThemePresetDefinition(
+      label: 'Solarized',
+      summary: 'Deep teal with classic amber-magenta notes.',
+      background: Color(0xFF002B36),
+      text: Color(0xFF93A1A1),
+      primary: Color(0xFF6C71C4),
+      accent: Color(0xFFD33682),
+      success: Color(0xFF859900),
+      warning: Color(0xFFB58900),
+      danger: Color(0xFFDC322F),
+      muted: Color(0xFF586E75),
+    ),
+  };
+}
+
+@immutable
+class AppThemePresetDefinition {
+  const AppThemePresetDefinition({
+    required this.label,
+    required this.summary,
+    required this.background,
+    required this.text,
+    required this.primary,
+    required this.accent,
+    required this.success,
+    required this.warning,
+    required this.danger,
+    required this.muted,
+  });
+
+  final String label;
+  final String summary;
+  final Color background;
+  final Color text;
+  final Color primary;
+  final Color accent;
+  final Color success;
+  final Color warning;
+  final Color danger;
+  final Color muted;
+}
+
 final class AppTheme {
-  static ThemeData dark() {
-    const background = Color(0xFF0D0E10);
-    const panel = Color(0xFF111315);
-    const panelRaised = Color(0xFF15181B);
-    const panelMuted = Color(0xFF101214);
-    const panelEmphasis = Color(0xFF181B1E);
-    const line = Color(0xFF30343A);
-    const lineSoft = Color(0xFF23272C);
-    const accent = Color(0xFF39C8BA);
-    const accentSoft = Color(0xFF7ADCD3);
-    const text = Color(0xFFEAECEF);
-    const muted = Color(0xFF9BA2AA);
-    const success = Color(0xFF67D98A);
-    const warning = Color(0xFFE2BF76);
-    const danger = Color(0xFFEF8A8A);
+  static final Map<AppThemePreset, ThemeData> _cache =
+      <AppThemePreset, ThemeData>{};
+
+  static ThemeData dark([AppThemePreset preset = AppThemePreset.remote]) {
+    return _cache.putIfAbsent(preset, () => _buildTheme(preset.definition));
+  }
+
+  static ThemeData theme(AppThemePreset preset) => dark(preset);
+
+  static AppThemePresetDefinition definition(AppThemePreset preset) =>
+      preset.definition;
+
+  static ThemeData _buildTheme(AppThemePresetDefinition preset) {
+    final background = preset.background;
+    final text = preset.text;
+    final panel = _mix(background, text, 0.050);
+    final panelRaised = _mix(background, text, 0.082);
+    final panelMuted = _mix(background, text, 0.036);
+    final panelEmphasis = _mix(background, text, 0.116);
+    final line = _mix(background, text, 0.200);
+    final lineSoft = _mix(background, text, 0.125);
+    final accent = preset.primary;
+    final accentSoft = preset.accent;
+    final muted = preset.muted;
+    final success = preset.success;
+    final warning = preset.warning;
+    final danger = preset.danger;
 
     final textTheme =
         GoogleFonts.ibmPlexSansTextTheme(Typography.whiteMountainView)
@@ -93,12 +289,12 @@ final class AppTheme {
               ),
             );
 
-    final colorScheme = const ColorScheme.dark(
+    final colorScheme = ColorScheme.dark(
       primary: accent,
+      secondary: accentSoft,
       surface: panel,
       onSurface: text,
-      secondary: accentSoft,
-      onPrimary: background,
+      onPrimary: _onColor(accent),
       error: danger,
     );
 
@@ -106,16 +302,17 @@ final class AppTheme {
       useMaterial3: true,
       brightness: Brightness.dark,
       scaffoldBackgroundColor: background,
+      canvasColor: background,
       colorScheme: colorScheme,
       textTheme: textTheme,
       cardTheme: CardThemeData(
-        color: panelRaised.withValues(alpha: 0.82),
+        color: panelRaised.withValues(alpha: 0.84),
         elevation: 0,
         shadowColor: Colors.transparent,
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
-          side: const BorderSide(color: lineSoft),
+          side: BorderSide(color: lineSoft),
         ),
       ),
       dividerColor: lineSoft,
@@ -125,7 +322,7 @@ final class AppTheme {
         selectedColor: accent.withValues(alpha: 0.16),
         secondarySelectedColor: accent.withValues(alpha: 0.16),
         labelStyle: textTheme.labelMedium?.copyWith(color: text),
-        side: const BorderSide(color: lineSoft),
+        side: BorderSide(color: lineSoft),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppSpacing.md),
@@ -134,7 +331,7 @@ final class AppTheme {
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: accent,
-          foregroundColor: background,
+          foregroundColor: _onColor(accent),
           elevation: 0,
           shadowColor: Colors.transparent,
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
@@ -148,7 +345,7 @@ final class AppTheme {
         style: OutlinedButton.styleFrom(
           foregroundColor: text,
           backgroundColor: panelMuted.withValues(alpha: 0.4),
-          side: const BorderSide(color: lineSoft),
+          side: BorderSide(color: lineSoft),
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
           textStyle: textTheme.labelLarge,
           shape: RoundedRectangleBorder(
@@ -167,23 +364,23 @@ final class AppTheme {
         fillColor: panelMuted.withValues(alpha: 0.88),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppSpacing.formFieldRadius),
-          borderSide: const BorderSide(color: lineSoft),
+          borderSide: BorderSide(color: lineSoft),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppSpacing.formFieldRadius),
-          borderSide: const BorderSide(color: lineSoft),
+          borderSide: BorderSide(color: lineSoft),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppSpacing.formFieldRadius),
-          borderSide: const BorderSide(color: accent),
+          borderSide: BorderSide(color: accent),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppSpacing.formFieldRadius),
-          borderSide: const BorderSide(color: danger),
+          borderSide: BorderSide(color: danger),
         ),
         focusedErrorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppSpacing.formFieldRadius),
-          borderSide: const BorderSide(color: danger),
+          borderSide: BorderSide(color: danger),
         ),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 18,
@@ -196,7 +393,7 @@ final class AppTheme {
         tileColor: panelMuted.withValues(alpha: 0.68),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppSpacing.md),
-          side: const BorderSide(color: lineSoft),
+          side: BorderSide(color: lineSoft),
         ),
         iconColor: accentSoft,
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -218,9 +415,9 @@ final class AppTheme {
         actionTextColor: accentSoft,
         disabledActionTextColor: muted,
       ),
-      textSelectionTheme: const TextSelectionThemeData(
+      textSelectionTheme: TextSelectionThemeData(
         cursorColor: accent,
-        selectionColor: Color(0x553A78A9),
+        selectionColor: accent.withValues(alpha: 0.30),
       ),
       appBarTheme: AppBarTheme(
         backgroundColor: Colors.transparent,
@@ -231,7 +428,7 @@ final class AppTheme {
           fontWeight: FontWeight.w700,
         ),
       ),
-      extensions: const [
+      extensions: <ThemeExtension<dynamic>>[
         AppSurfaces(
           background: background,
           panel: panel,
@@ -248,6 +445,16 @@ final class AppTheme {
         ),
       ],
     );
+  }
+
+  static Color _mix(Color from, Color to, double amount) {
+    return Color.lerp(from, to, amount) ?? from;
+  }
+
+  static Color _onColor(Color fill) {
+    return ThemeData.estimateBrightnessForColor(fill) == Brightness.dark
+        ? Colors.white
+        : Colors.black;
   }
 }
 

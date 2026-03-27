@@ -6188,6 +6188,26 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                   child: _WorkspaceSettingsCard(
                                     child: Column(
                                       children: <Widget>[
+                                        _WorkspaceSettingsThemeRow(
+                                          key: const ValueKey<String>(
+                                            'workspace-settings-theme-row',
+                                          ),
+                                          value:
+                                              widget.appController.themePreset,
+                                          onChanged: (value) {
+                                            unawaited(
+                                              widget.appController
+                                                  .setThemePreset(value),
+                                            );
+                                          },
+                                          onCycle: () {
+                                            unawaited(
+                                              widget.appController
+                                                  .cycleThemePreset(),
+                                            );
+                                          },
+                                        ),
+                                        SizedBox(height: sectionGap),
                                         _WorkspaceSettingsLayoutDensityRow(
                                           key: const ValueKey<String>(
                                             'workspace-settings-layout-density-row',
@@ -6456,6 +6476,260 @@ class _WorkspaceSettingsFollowupModeRow extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _WorkspaceSettingsThemeRow extends StatelessWidget {
+  const _WorkspaceSettingsThemeRow({
+    required this.value,
+    required this.onChanged,
+    required this.onCycle,
+    super.key,
+  });
+
+  final AppThemePreset value;
+  final ValueChanged<AppThemePreset> onChanged;
+  final VoidCallback onCycle;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final density = _workspaceDensity(context);
+    final activeDefinition = AppTheme.definition(value);
+    return Container(
+      padding: EdgeInsets.all(density.inset(AppSpacing.md)),
+      decoration: BoxDecoration(
+        color: surfaces.panelMuted.withValues(alpha: 0.52),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      'Theme',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xxs),
+                    Text(
+                      'Choose the global app theme. ${activeDefinition.label} is active now.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: surfaces.muted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(width: density.inset(AppSpacing.md)),
+              OutlinedButton.icon(
+                key: const ValueKey<String>(
+                  'workspace-settings-theme-cycle-button',
+                ),
+                onPressed: onCycle,
+                icon: const Icon(Icons.palette_outlined),
+                label: const Text('Next theme'),
+              ),
+            ],
+          ),
+          SizedBox(height: density.inset(AppSpacing.md)),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: AppThemePreset.values.indexed
+                  .map((entry) {
+                    final index = entry.$1;
+                    final preset = entry.$2;
+                    return Padding(
+                      padding: EdgeInsets.only(
+                        right: index == AppThemePreset.values.length - 1
+                            ? 0
+                            : density.inset(AppSpacing.sm),
+                      ),
+                      child: _WorkspaceThemePreviewCard(
+                        preset: preset,
+                        selected: preset == value,
+                        onPressed: () => onChanged(preset),
+                      ),
+                    );
+                  })
+                  .toList(growable: false),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WorkspaceThemePreviewCard extends StatelessWidget {
+  const _WorkspaceThemePreviewCard({
+    required this.preset,
+    required this.selected,
+    required this.onPressed,
+  });
+
+  final AppThemePreset preset;
+  final bool selected;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final density = _workspaceDensity(context);
+    final definition = AppTheme.definition(preset);
+    final previewPanel = Color.lerp(
+      definition.background,
+      definition.text,
+      0.09,
+    )!;
+    final previewBorder = Color.lerp(
+      definition.background,
+      definition.text,
+      0.16,
+    )!;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: 'Switch theme to ${definition.label}',
+      child: InkWell(
+        key: ValueKey<String>(
+          'workspace-settings-theme-option-${preset.storageValue}',
+        ),
+        borderRadius: BorderRadius.circular(18),
+        onTap: onPressed,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          width: 168,
+          height: 194,
+          padding: EdgeInsets.all(density.inset(AppSpacing.sm)),
+          decoration: BoxDecoration(
+            color: selected
+                ? surfaces.panelEmphasis.withValues(alpha: 0.92)
+                : surfaces.panel,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: selected ? theme.colorScheme.primary : surfaces.lineSoft,
+              width: selected ? 1.6 : 1,
+            ),
+            boxShadow: selected
+                ? <BoxShadow>[
+                    BoxShadow(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.16),
+                      blurRadius: 16,
+                      offset: const Offset(0, 10),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Container(
+                height: 80,
+                decoration: BoxDecoration(
+                  color: definition.background,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: previewBorder),
+                ),
+                padding: const EdgeInsets.all(10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Container(
+                      height: 10,
+                      width: 58,
+                      decoration: BoxDecoration(
+                        color: definition.primary,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: previewPanel,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: previewBorder),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 5,
+                        ),
+                        child: Row(
+                          children: <Widget>[
+                            _WorkspaceThemePreviewDot(color: definition.accent),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Container(
+                                height: 6,
+                                decoration: BoxDecoration(
+                                  color: definition.text.withValues(
+                                    alpha: 0.86,
+                                  ),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            _WorkspaceThemePreviewDot(
+                              color: definition.success,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(height: density.inset(AppSpacing.xs)),
+              Text(
+                definition.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.xxs),
+              Text(
+                definition.summary,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: surfaces.muted,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WorkspaceThemePreviewDot extends StatelessWidget {
+  const _WorkspaceThemePreviewDot({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 8,
+      width: 8,
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
     );
   }
 }

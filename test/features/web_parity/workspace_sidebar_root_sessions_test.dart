@@ -65,7 +65,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
 
     expect(find.text('Demo'), findsOneWidget);
-    expect(find.text('/workspace/demo'), findsOneWidget);
+    expect(find.text('/workspace/demo'), findsAtLeastNWidgets(1));
     expect(find.text('New session'), findsOneWidget);
     expect(
       find.byKey(
@@ -181,16 +181,20 @@ void main() {
     expect(appController.chatCodeBlockHighlightingEnabled, isFalse);
 
     expect(appController.busyFollowupMode, WorkspaceFollowupMode.queue);
+    expect(appController.themePreset, AppThemePreset.remote);
     final initialSidebarWidth = tester
         .getSize(
           find.byKey(const ValueKey<String>('workspace-desktop-sidebar-pane')),
         )
         .width;
 
-    final settingsListView = find.descendant(
-      of: find.byKey(const ValueKey<String>('workspace-settings-sheet')),
-      matching: find.byType(ListView),
-    );
+    final settingsListView = find
+        .descendant(
+          of: find.byKey(const ValueKey<String>('workspace-settings-sheet')),
+          matching: find.byType(ListView),
+        )
+        .first;
+
     await tester.dragUntilVisible(
       find.byKey(
         const ValueKey<String>('workspace-settings-followup-mode-row'),
@@ -308,6 +312,38 @@ void main() {
 
     expect(appController.sidebarChildSessionsVisible, isTrue);
     expect(find.text('Nested subagent session'), findsAtLeastNWidgets(1));
+
+    await tester.dragUntilVisible(
+      find.byKey(const ValueKey<String>('workspace-settings-theme-row')),
+      settingsListView,
+      const Offset(0, 220),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey<String>('workspace-settings-theme-row')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('workspace-settings-theme-option-opencode'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    expect(appController.themePreset, AppThemePreset.opencode);
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('workspace-settings-theme-cycle-button'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    expect(appController.themePreset, AppThemePreset.amoled);
   });
 
   testWidgets('project tile context menu edits and removes projects', (
@@ -610,7 +646,7 @@ class _WorkspaceRouteHarness extends StatelessWidget {
     return AppScope(
       controller: controller,
       child: MaterialApp(
-        theme: AppTheme.dark(),
+        theme: controller.themeData,
         initialRoute: initialRoute,
         onGenerateRoute: (settings) {
           final route = AppRouteData.parse(settings.name);

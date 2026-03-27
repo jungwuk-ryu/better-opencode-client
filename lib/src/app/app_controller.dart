@@ -2,12 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart' show ThemeData;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/connection/connection_models.dart';
 import '../core/network/opencode_server_probe.dart';
 import '../core/persistence/server_profile_store.dart';
 import '../core/persistence/stale_cache_store.dart';
+import '../design_system/app_theme.dart';
 import '../features/projects/project_models.dart';
 import '../features/projects/project_store.dart';
 import '../features/web_parity/workspace_controller.dart';
@@ -93,6 +95,7 @@ class WebParityAppController extends ChangeNotifier {
   static const _layoutDensityKey = 'web_parity.layout_density';
   static const _multiPaneComposerModeKey =
       'web_parity.multi_pane_composer_mode';
+  static const _themePresetKey = 'web_parity.theme_preset';
   static const double defaultTextScaleFactor = 1.0;
   static const double textScaleBaselineMultiplier = 0.9;
   static const double minTextScaleFactor = 0.9;
@@ -123,6 +126,7 @@ class WebParityAppController extends ChangeNotifier {
   WorkspaceLayoutDensity _layoutDensity = WorkspaceLayoutDensity.normal;
   WorkspaceMultiPaneComposerMode _multiPaneComposerMode =
       WorkspaceMultiPaneComposerMode.shared;
+  AppThemePreset _themePreset = AppThemePreset.remote;
   Set<String> _refreshingProfileKeys = const <String>{};
   final Map<String, WorkspaceController> _workspaceControllers =
       <String, WorkspaceController>{};
@@ -146,6 +150,8 @@ class WebParityAppController extends ChangeNotifier {
   WorkspaceLayoutDensity get layoutDensity => _layoutDensity;
   WorkspaceMultiPaneComposerMode get multiPaneComposerMode =>
       _multiPaneComposerMode;
+  AppThemePreset get themePreset => _themePreset;
+  ThemeData get themeData => AppTheme.theme(_themePreset);
   bool isRefreshingProfile(ServerProfile? profile) {
     return profile != null &&
         _refreshingProfileKeys.contains(profile.storageKey);
@@ -189,6 +195,9 @@ class WebParityAppController extends ChangeNotifier {
     final multiPaneComposerMode = WorkspaceMultiPaneComposerMode.fromStorage(
       prefs.getString(_multiPaneComposerModeKey),
     );
+    final themePreset = AppThemePreset.fromStorage(
+      prefs.getString(_themePresetKey),
+    );
 
     ServerProfile? selectedProfile;
     if (selectedProfileId != null) {
@@ -214,6 +223,7 @@ class WebParityAppController extends ChangeNotifier {
     _textScaleFactor = textScaleFactor;
     _layoutDensity = layoutDensity;
     _multiPaneComposerMode = multiPaneComposerMode;
+    _themePreset = themePreset;
     _loading = false;
     notifyListeners();
   }
@@ -310,6 +320,28 @@ class WebParityAppController extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_multiPaneComposerModeKey, value.storageValue);
+  }
+
+  Future<void> setThemePreset(AppThemePreset value) async {
+    if (_themePreset == value) {
+      return;
+    }
+    _themePreset = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_themePresetKey, value.storageValue);
+  }
+
+  Future<void> cycleThemePreset([int direction = 1]) async {
+    final presets = AppThemePreset.values;
+    if (presets.isEmpty) {
+      return;
+    }
+    final currentIndex = presets.indexOf(_themePreset);
+    final nextIndex = currentIndex == -1
+        ? 0
+        : (currentIndex + direction + presets.length) % presets.length;
+    await setThemePreset(presets[nextIndex]);
   }
 
   Future<void> refreshProbe(ServerProfile profile) async {
