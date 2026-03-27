@@ -8913,8 +8913,7 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
     final session = _sessionById(controller.sessions, sessionId);
     final timelineState = controller.timelineStateForSession(sessionId);
     final status = sessionId == null ? null : controller.statuses[sessionId];
-    final busy =
-        _isActiveSessionStatus(status) || (selected && controller.loading);
+    final busy = _isActiveSessionStatus(status);
     final title = _sessionHeaderTitle(session, project);
     final projectLabel = (() {
       final label = project?.label.trim();
@@ -9077,17 +9076,6 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
 
                       return Row(
                         children: <Widget>[
-                          Container(
-                            width: compact ? 9 : 10,
-                            height: compact ? 9 : 10,
-                            decoration: BoxDecoration(
-                              color: busy
-                                  ? theme.colorScheme.primary
-                                  : const Color(0xFF64D7C4),
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          SizedBox(width: density.inset(AppSpacing.xs, min: 4)),
                           Expanded(
                             child: hideTitle
                                 ? const SizedBox.shrink()
@@ -9117,25 +9105,51 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                                       if (showSubtitle) ...<Widget>[
                                         SizedBox(
                                           height: density.inset(
-                                            compact
-                                                ? AppSpacing.xxs
-                                                : AppSpacing.xs,
+                                            AppSpacing.xxs,
                                             min: 2,
                                           ),
                                         ),
-                                        Text(
-                                          subtitle,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: theme.textTheme.bodySmall
-                                              ?.copyWith(
-                                                color: visuallySelected
-                                                    ? theme.colorScheme.primary
-                                                          .withValues(
-                                                            alpha: 0.92,
-                                                          )
-                                                    : surfaces.muted,
+                                        Row(
+                                          children: <Widget>[
+                                            if (busy) ...<Widget>[
+                                              Container(
+                                                key: ValueKey<String>(
+                                                  'workspace-session-pane-busy-indicator-${pane.id}',
+                                                ),
+                                                width: compact ? 7 : 8,
+                                                height: compact ? 7 : 8,
+                                                decoration: BoxDecoration(
+                                                  color:
+                                                      theme.colorScheme.primary,
+                                                  shape: BoxShape.circle,
+                                                ),
                                               ),
+                                              SizedBox(
+                                                width: density.inset(
+                                                  AppSpacing.xxs,
+                                                  min: 4,
+                                                ),
+                                              ),
+                                            ],
+                                            Expanded(
+                                              child: Text(
+                                                subtitle,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: theme.textTheme.bodySmall
+                                                    ?.copyWith(
+                                                      color: visuallySelected
+                                                          ? theme
+                                                                .colorScheme
+                                                                .primary
+                                                                .withValues(
+                                                                  alpha: 0.92,
+                                                                )
+                                                          : surfaces.muted,
+                                                    ),
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ],
                                     ],

@@ -900,6 +900,100 @@ void main() {
     },
   );
 
+  testWidgets(
+    'session pane activity indicator only shows for responding sessions',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              return _BusyPaneIndicatorWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+            },
+      );
+      addTearDown(appController.dispose);
+
+      final navigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          navigatorKey: navigatorKey,
+          initialRoute: '/',
+        ),
+      );
+      navigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('workspace-split-session-pane-button'),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      await tester.tap(find.text('Session Two'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      final paneFinder = find.byWidgetPredicate(
+        (widget) =>
+            widget is InkWell &&
+            widget.key is ValueKey<String> &&
+            (widget.key! as ValueKey<String>).value.startsWith(
+              'workspace-session-pane-',
+            ),
+      );
+      final busyIndicatorFinder = find.byWidgetPredicate(
+        (widget) =>
+            widget.key is ValueKey<String> &&
+            (widget.key! as ValueKey<String>).value.startsWith(
+              'workspace-session-pane-busy-indicator-',
+            ),
+      );
+      final sessionOnePane = find.ancestor(
+        of: find.text('Session One'),
+        matching: paneFinder,
+      );
+      final sessionTwoPane = find.ancestor(
+        of: find.text('Session Two'),
+        matching: paneFinder,
+      );
+
+      expect(
+        find.descendant(
+          of: sessionOnePane,
+          matching: busyIndicatorFinder,
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: sessionTwoPane,
+          matching: busyIndicatorFinder,
+        ),
+        findsNothing,
+      );
+    },
+  );
+
   testWidgets('desktop layout allows up to eight split session panes', (
     tester,
   ) async {
@@ -2297,7 +2391,7 @@ class _RecordingWorkspaceController extends WorkspaceController {
     if (selectedSessionId == null) {
       return null;
     }
-    return _sessionStatuses[selectedSessionId];
+    return statuses[selectedSessionId];
   }
 
   @override
@@ -2609,6 +2703,24 @@ class _PaneQuestionWorkspaceController extends _RecordingWorkspaceController {
     questions: _questionsBySession.values.toList(growable: false),
     permissions: const <PermissionRequestSummary>[],
   );
+}
+
+class _BusyPaneIndicatorWorkspaceController
+    extends _RecordingWorkspaceController {
+  _BusyPaneIndicatorWorkspaceController({
+    required super.profile,
+    required super.directory,
+    super.initialSessionId,
+  });
+
+  final Map<String, SessionStatusSummary> _busyStatuses =
+      <String, SessionStatusSummary>{
+        ..._RecordingWorkspaceController._sessionStatuses,
+        'ses_1': const SessionStatusSummary(type: 'running'),
+      };
+
+  @override
+  Map<String, SessionStatusSummary> get statuses => _busyStatuses;
 }
 
 class _CompletedTodoWorkspaceController extends _RecordingWorkspaceController {
