@@ -239,6 +239,86 @@ void main() {
       'pasted-image.png',
     );
   });
+
+  testWidgets('composer shows a drop overlay when files hover over it', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final workspaceController = _AttachmentWorkspaceController(
+      profile: profile,
+      directory: '/workspace/demo',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceController: workspaceController,
+    );
+    addTearDown(appController.dispose);
+
+    WorkspaceComposerDropFilesHandler? dropFilesHandler;
+    ValueChanged<bool>? hoverChanged;
+    bool? dropRegionEnabled;
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+        attachmentPicker: () async => const <PromptAttachment>[],
+        composerDropRegionBuilder:
+            ({
+              required child,
+              required enabled,
+              required onHoverChanged,
+              required onFilesDropped,
+            }) {
+              dropRegionEnabled = enabled;
+              hoverChanged = onHoverChanged;
+              dropFilesHandler = onFilesDropped;
+              return KeyedSubtree(
+                key: const ValueKey<String>('composer-drop-region'),
+                child: child,
+              );
+            },
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(dropFilesHandler, isNotNull);
+    expect(dropRegionEnabled, isTrue);
+    expect(hoverChanged, isNotNull);
+    expect(
+      find.byKey(const ValueKey<String>('composer-drop-overlay')),
+      findsNothing,
+    );
+
+    hoverChanged!(true);
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey<String>('composer-drop-overlay')),
+      findsOneWidget,
+    );
+
+    hoverChanged!(false);
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey<String>('composer-drop-overlay')),
+      findsNothing,
+    );
+  });
 }
 
 class _WorkspaceRouteHarness extends StatelessWidget {
@@ -247,12 +327,14 @@ class _WorkspaceRouteHarness extends StatelessWidget {
     required this.initialRoute,
     required this.attachmentPicker,
     this.clipboardImageAttachmentLoader,
+    this.composerDropRegionBuilder,
   });
 
   final WebParityAppController controller;
   final String initialRoute;
   final Future<List<PromptAttachment>> Function() attachmentPicker;
   final Future<PromptAttachment?> Function()? clipboardImageAttachmentLoader;
+  final WorkspaceComposerDropRegionBuilder? composerDropRegionBuilder;
 
   @override
   Widget build(BuildContext context) {
@@ -277,6 +359,7 @@ class _WorkspaceRouteHarness extends StatelessWidget {
                     attachmentPicker: attachmentPicker,
                     clipboardImageAttachmentLoader:
                         clipboardImageAttachmentLoader,
+                    composerDropRegionBuilder: composerDropRegionBuilder,
                   ),
               };
             },
