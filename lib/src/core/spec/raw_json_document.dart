@@ -6,6 +6,8 @@ class RawJsonDocument {
 
   final Map<String, Object?> _raw;
 
+  Object? value(String key) => _raw[key];
+
   Map<String, Object?> toJson() => _deepCopy(_raw);
 
   RawJsonDocument merge(Map<String, Object?> patch) {

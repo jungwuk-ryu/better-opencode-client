@@ -59,15 +59,18 @@ class StaleCacheStore {
     }
   }
 
-  Future<void> save(String key, Object? payload) async {
+  Future<void> save(String key, Object? payload, {String? signature}) async {
     final payloadJson = jsonEncode(payload);
+    final resolvedSignature =
+        signature ?? '${payloadJson.length}:${payloadJson.hashCode}';
     final entry = StaleCacheEntry(
       payloadJson: payloadJson,
-      signature: payloadJson,
+      signature: resolvedSignature,
       fetchedAt: DateTime.now(),
     );
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('$cachePrefix$key', jsonEncode(entry.toJson()));
+    final storageKey = '$cachePrefix$key';
+    await prefs.setString(storageKey, jsonEncode(entry.toJson()));
   }
 
   Future<void> remove(String key) async {

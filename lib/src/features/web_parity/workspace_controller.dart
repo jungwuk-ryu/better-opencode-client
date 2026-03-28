@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:async';
 import 'dart:collection';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
@@ -632,6 +633,8 @@ class WorkspaceController extends ChangeNotifier {
   String? _queuedSessionMessagesCacheSessionId;
   List<ChatMessage>? _queuedSessionMessagesCacheMessages;
   int _queuedSessionMessagesCacheToken = 0;
+  Map<String, String> _persistedSessionCacheSignatureByKey =
+      const <String, String>{};
   bool _notifyScheduled = false;
   bool _notifyPending = false;
   Map<String, String> _activeChildSessionLivePreviewById =
@@ -1408,6 +1411,7 @@ class WorkspaceController extends ChangeNotifier {
     _watchedSessionLoadRevisionById = const <String, int>{};
     _watchedSessionHistoryLoadRevisionById = const <String, int>{};
     _watchedSessionHistoryCursorById = const <String, String?>{};
+    _persistedSessionCacheSignatureByKey = const <String, String>{};
   }
 
   void preserveSelectedSessionTimelineForWatch() {
@@ -5664,9 +5668,23 @@ class WorkspaceController extends ChangeNotifier {
     required String sessionId,
     required List<ChatMessage> messages,
   }) async {
+    final cacheKey = _sessionMessagesCacheKey(project, sessionId);
+    final cachedMessages = _sessionMessagesForCache(messages);
+    final signature =
+        '${cachedMessages.length}:${_computeTimelineContentSignature(cachedMessages)}';
+    if (_persistedSessionCacheSignatureByKey[cacheKey] == signature) {
+      return;
+    }
     await _cacheStore.save(
-      _sessionMessagesCacheKey(project, sessionId),
-      messages.map((message) => message.toJson()).toList(growable: false),
+      cacheKey,
+      cachedMessages.map((message) => message.toJson()).toList(growable: false),
+      signature: signature,
+    );
+    _persistedSessionCacheSignatureByKey = Map<String, String>.unmodifiable(
+      <String, String>{
+        ..._persistedSessionCacheSignatureByKey,
+        cacheKey: signature,
+      },
     );
   }
 
@@ -5709,12 +5727,90 @@ class WorkspaceController extends ChangeNotifier {
     }
 
     _sessionMessagesCachePersistTimer = Timer(
-      const Duration(milliseconds: 350),
+      const Duration(milliseconds: 1200),
       () {
         _sessionMessagesCachePersistTimer = null;
         unawaited(_flushQueuedSessionMessagesCache(token));
       },
     );
+  }
+
+  static const int _sessionCacheMessageLimit = 40;
+  static const int _sessionCachePartLimit = 24;
+  static const int _sessionCacheStringLimit = 1200;
+  static const int _sessionCacheCollectionLimit = 16;
+
+  List<ChatMessage> _sessionMessagesForCache(List<ChatMessage> messages) {
+    if (messages.isEmpty) {
+      return const <ChatMessage>[];
+    }
+    final start = math.max(0, messages.length - _sessionCacheMessageLimit);
+    return messages
+        .sublist(start)
+        .map(_cacheSessionMessage)
+        .toList(growable: false);
+  }
+
+  ChatMessage _cacheSessionMessage(ChatMessage message) {
+    final partStart = math.max(0, message.parts.length - _sessionCachePartLimit);
+    return message.copyWith(
+      info: message.info.copyWith(
+        metadata: _compactCacheMap(message.info.metadata),
+      ),
+      parts: message.parts
+          .sublist(partStart)
+          .map(_cacheSessionPart)
+          .toList(growable: false),
+    );
+  }
+
+  ChatPart _cacheSessionPart(ChatPart part) {
+    return part.copyWith(
+      text: _truncateCacheString(part.text),
+      metadata: _compactCacheMap(part.metadata),
+    );
+  }
+
+  Map<String, Object?> _compactCacheMap(Map<String, Object?> source) {
+    if (source.isEmpty) {
+      return const <String, Object?>{};
+    }
+    final entries = source.entries.take(_sessionCacheCollectionLimit);
+    return Map<String, Object?>.unmodifiable(
+      <String, Object?>{
+        for (final entry in entries) entry.key: _compactCacheValue(entry.value),
+      },
+    );
+  }
+
+  Object? _compactCacheValue(Object? value, {int depth = 0}) {
+    if (value == null) {
+      return null;
+    }
+    if (value is String) {
+      return _truncateCacheString(value);
+    }
+    if (depth >= 2) {
+      return value is num || value is bool ? value : value.toString();
+    }
+    if (value is Map) {
+      return _compactCacheMap(value.cast<String, Object?>());
+    }
+    if (value is List) {
+      return List<Object?>.unmodifiable(
+        value
+            .take(_sessionCacheCollectionLimit)
+            .map((item) => _compactCacheValue(item, depth: depth + 1)),
+      );
+    }
+    return value;
+  }
+
+  String? _truncateCacheString(String? value) {
+    if (value == null || value.length <= _sessionCacheStringLimit) {
+      return value;
+    }
+    return '${value.substring(0, _sessionCacheStringLimit)}...';
   }
 
   Future<void> _flushQueuedSessionMessagesCache(int token) async {

@@ -24482,6 +24482,16 @@ class _ReviewPanelState extends State<_ReviewPanel> {
 
 enum _ReviewDiffMode { unified, split }
 
+const int _reviewDiffSelectionLineLimit = 160;
+
+int _reviewDiffLineCount(_ParsedReviewDiff diff) {
+  var count = diff.headers.length;
+  for (final hunk in diff.hunks) {
+    count += 1 + hunk.lines.length;
+  }
+  return count;
+}
+
 class _ReviewDiffView extends StatelessWidget {
   const _ReviewDiffView({
     required this.diff,
@@ -24499,6 +24509,8 @@ class _ReviewDiffView extends StatelessWidget {
     final surfaces = theme.extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
     final parsedDiff = _cachedParsedReviewDiff(diff.content);
+    final selectionEnabled =
+        _reviewDiffLineCount(parsedDiff) <= _reviewDiffSelectionLineLimit;
     return ClipRRect(
       borderRadius: BorderRadius.circular(AppSpacing.md),
       child: BackdropFilter(
@@ -24537,6 +24549,7 @@ class _ReviewDiffView extends StatelessWidget {
                         diff: parsedDiff,
                         filePath: diff.path,
                         contentWidth: minWidth,
+                        selectionEnabled: selectionEnabled,
                         theme: theme,
                         surfaces: surfaces,
                         onLineComment: onLineComment,
@@ -24554,6 +24567,7 @@ class _ReviewDiffView extends StatelessWidget {
                       key: const ValueKey<String>('review-diff-split-view'),
                       diff: parsedDiff,
                       filePath: diff.path,
+                      selectionEnabled: selectionEnabled,
                       theme: theme,
                       surfaces: surfaces,
                       onLineComment: onLineComment,
@@ -24613,6 +24627,7 @@ class _ReviewSplitDiffBody extends StatelessWidget {
   const _ReviewSplitDiffBody({
     required this.diff,
     required this.filePath,
+    required this.selectionEnabled,
     required this.theme,
     required this.surfaces,
     required this.onLineComment,
@@ -24621,14 +24636,14 @@ class _ReviewSplitDiffBody extends StatelessWidget {
 
   final _ParsedReviewDiff diff;
   final String filePath;
+  final bool selectionEnabled;
   final ThemeData theme;
   final AppSurfaces surfaces;
   final ValueChanged<_ReviewCommentTarget> onLineComment;
 
   @override
   Widget build(BuildContext context) {
-    return SelectionArea(
-      child: Column(
+    final child = Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           for (
@@ -24666,8 +24681,8 @@ class _ReviewSplitDiffBody extends StatelessWidget {
             ),
           ],
         ],
-      ),
     );
+    return selectionEnabled ? SelectionArea(child: child) : child;
   }
 }
 
@@ -24795,6 +24810,7 @@ class _ReviewUnifiedDiffBody extends StatelessWidget {
     required this.diff,
     required this.filePath,
     required this.contentWidth,
+    required this.selectionEnabled,
     required this.theme,
     required this.surfaces,
     required this.onLineComment,
@@ -24804,63 +24820,55 @@ class _ReviewUnifiedDiffBody extends StatelessWidget {
   final _ParsedReviewDiff diff;
   final String filePath;
   final double contentWidth;
+  final bool selectionEnabled;
   final ThemeData theme;
   final AppSurfaces surfaces;
   final ValueChanged<_ReviewCommentTarget> onLineComment;
 
   @override
   Widget build(BuildContext context) {
+    final child = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        for (var index = 0; index < diff.headers.length; index += 1) ...<Widget>[
+          _ReviewDiffMetaRow(
+            text: diff.headers[index],
+            theme: theme,
+            surfaces: surfaces,
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+        ],
+        for (var hunkIndex = 0; hunkIndex < diff.hunks.length; hunkIndex += 1) ...<Widget>[
+          if (diff.headers.isNotEmpty || hunkIndex > 0)
+            const SizedBox(height: AppSpacing.sm),
+          _ReviewDiffHunkHeaderRow(
+            text: diff.hunks[hunkIndex].header,
+            theme: theme,
+            surfaces: surfaces,
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+          for (
+            var lineIndex = 0;
+            lineIndex < diff.hunks[hunkIndex].lines.length;
+            lineIndex += 1
+          ) ...<Widget>[
+            _ReviewUnifiedLineRow(
+              filePath: filePath,
+              hunkHeader: diff.hunks[hunkIndex].header,
+              line: diff.hunks[hunkIndex].lines[lineIndex],
+              theme: theme,
+              surfaces: surfaces,
+              onLineComment: onLineComment,
+            ),
+            if (lineIndex != diff.hunks[hunkIndex].lines.length - 1)
+              const SizedBox(height: 1),
+          ],
+        ],
+      ],
+    );
     return SizedBox(
       width: contentWidth,
-      child: SelectionArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            for (
-              var index = 0;
-              index < diff.headers.length;
-              index += 1
-            ) ...<Widget>[
-              _ReviewDiffMetaRow(
-                text: diff.headers[index],
-                theme: theme,
-                surfaces: surfaces,
-              ),
-              const SizedBox(height: AppSpacing.xxs),
-            ],
-            for (
-              var hunkIndex = 0;
-              hunkIndex < diff.hunks.length;
-              hunkIndex += 1
-            ) ...<Widget>[
-              if (diff.headers.isNotEmpty || hunkIndex > 0)
-                const SizedBox(height: AppSpacing.sm),
-              _ReviewDiffHunkHeaderRow(
-                text: diff.hunks[hunkIndex].header,
-                theme: theme,
-                surfaces: surfaces,
-              ),
-              const SizedBox(height: AppSpacing.xxs),
-              for (
-                var lineIndex = 0;
-                lineIndex < diff.hunks[hunkIndex].lines.length;
-                lineIndex += 1
-              ) ...<Widget>[
-                _ReviewUnifiedLineRow(
-                  filePath: filePath,
-                  hunkHeader: diff.hunks[hunkIndex].header,
-                  line: diff.hunks[hunkIndex].lines[lineIndex],
-                  theme: theme,
-                  surfaces: surfaces,
-                  onLineComment: onLineComment,
-                ),
-                if (lineIndex != diff.hunks[hunkIndex].lines.length - 1)
-                  const SizedBox(height: 1),
-              ],
-            ],
-          ],
-        ),
-      ),
+      child: selectionEnabled ? SelectionArea(child: child) : child,
     );
   }
 }

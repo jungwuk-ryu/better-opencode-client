@@ -8,15 +8,16 @@ import '../../core/spec/raw_json_document.dart';
 import '../projects/project_models.dart';
 
 class ConfigSnapshot {
-  const ConfigSnapshot({required this.config, required this.providerConfig});
+  ConfigSnapshot({required this.config, required this.providerConfig});
 
   final RawJsonDocument config;
   final RawJsonDocument providerConfig;
 
-  bool get snapshotTrackingEnabled => config.toJson()['snapshot'] != false;
+  late final bool snapshotTrackingEnabled = config.value('snapshot') != false;
 
-  ProviderCatalog get providerCatalog =>
-      ProviderCatalog.fromJson(providerConfig.toJson());
+  late final ProviderCatalog providerCatalog = ProviderCatalog.fromJson(
+    providerConfig.toJson(),
+  );
 }
 
 class ProviderCatalog {
