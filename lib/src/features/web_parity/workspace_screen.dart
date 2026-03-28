@@ -23968,6 +23968,7 @@ class _SidePanel extends StatelessWidget {
             ),
             WorkspaceSideTab.files => _FilesPanel(
               bundle: controller.fileBundle,
+              loadingFiles: controller.loadingFilesPanel,
               loadingPreview: controller.loadingFilePreview,
               expandedDirectories: controller.expandedFileDirectories,
               loadingDirectoryPath: controller.loadingFileDirectoryPath,
@@ -26080,6 +26081,7 @@ TextStyle? _reviewDiffHunkTextStyle({
 class _FilesPanel extends StatefulWidget {
   const _FilesPanel({
     required this.bundle,
+    required this.loadingFiles,
     required this.loadingPreview,
     required this.expandedDirectories,
     required this.loadingDirectoryPath,
@@ -26088,6 +26090,7 @@ class _FilesPanel extends StatefulWidget {
   });
 
   final FileBrowserBundle? bundle;
+  final bool loadingFiles;
   final bool loadingPreview;
   final Set<String> expandedDirectories;
   final String? loadingDirectoryPath;
@@ -26128,6 +26131,9 @@ class _FilesPanelState extends State<_FilesPanel> {
     final density = _workspaceDensity(context);
     final bundle = widget.bundle;
     if (bundle == null) {
+      if (widget.loadingFiles) {
+        return const Center(child: CircularProgressIndicator());
+      }
       return Center(
         child: Text(
           'Files are unavailable.',

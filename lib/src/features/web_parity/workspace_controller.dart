@@ -570,6 +570,7 @@ class WorkspaceController extends ChangeNotifier {
   bool _initializingGitRepository = false;
   bool _runningTerminal = false;
   bool _terminalOpen = false;
+  bool _loadingFilesPanel = false;
   bool _loadingFilePreview = false;
   String? _loadingFileDirectoryPath;
   bool _loadingReviewDiff = false;
@@ -689,6 +690,7 @@ class WorkspaceController extends ChangeNotifier {
   bool get initializingGitRepository => _initializingGitRepository;
   bool get runningTerminal => _runningTerminal;
   bool get terminalOpen => _terminalOpen;
+  bool get loadingFilesPanel => _loadingFilesPanel;
   bool get loadingFilePreview => _loadingFilePreview;
   String? get loadingFileDirectoryPath => _loadingFileDirectoryPath;
   bool get loadingReviewDiff => _loadingReviewDiff;
@@ -1294,6 +1296,7 @@ class WorkspaceController extends ChangeNotifier {
         _showingCachedSessionMessages = false;
         _resetSelectedSessionHistoryState();
         _sessionLoadError = null;
+        _loadingFilesPanel = false;
         _applyDefaultComposerSelection();
         _notify();
       }
@@ -1319,6 +1322,7 @@ class WorkspaceController extends ChangeNotifier {
     _showingCachedSessionMessages = false;
     _resetSelectedSessionHistoryState();
     _sessionLoadError = null;
+    _loadingFilesPanel = false;
     _loadingFileDirectoryPath = null;
     _expandedFileDirectories = <String>{};
     _loadedFileDirectories = <String>{};
@@ -1374,6 +1378,7 @@ class WorkspaceController extends ChangeNotifier {
       _sessionLoading = false;
       _showingCachedSessionMessages = false;
       _sessionLoadError = null;
+      _loadingFilesPanel = false;
       _applyDefaultComposerSelection();
     }
     await _loadProjectPanels();
@@ -3634,6 +3639,9 @@ class WorkspaceController extends ChangeNotifier {
       return;
     }
     _sideTab = value;
+    if (value == WorkspaceSideTab.files) {
+      unawaited(_loadFilesPanelIfNeeded());
+    }
     _notify();
   }
 
@@ -4089,39 +4097,65 @@ class WorkspaceController extends ChangeNotifier {
   }
 
   Future<void> _loadProjectPanels() async {
+    _loadingFilesPanel = false;
+    _fileBundle = null;
+    _loadingFilePreview = false;
+    _loadingFileDirectoryPath = null;
+    _loadedFileDirectories = <String>{};
+    _expandedFileDirectories = <String>{};
+    _reviewBundle = null;
+    _selectedReviewPath = null;
+    _reviewDiff = null;
+    _reviewDiffError = null;
+    _loadingReviewDiff = false;
+    await _loadSessionPanels();
+    if (_sideTab == WorkspaceSideTab.files) {
+      await _loadFilesPanelIfNeeded();
+    }
+  }
+
+  Future<void> _loadFilesPanelIfNeeded({bool force = false}) async {
     final project = _project;
     if (project == null) {
+      _loadingFilesPanel = false;
       return;
     }
+    if (_loadingFilesPanel) {
+      return;
+    }
+    if (!force && _fileBundle != null) {
+      return;
+    }
+    _loadingFilesPanel = true;
+    _loadingFilePreview = false;
+    _loadingFileDirectoryPath = null;
+    _notify();
     try {
-      _fileBundle = await _fileBrowserService.fetchBundle(
+      final bundle = await _fileBrowserService.fetchBundle(
         profile: profile,
         project: project,
       );
-      _loadingFilePreview = false;
-      _loadingFileDirectoryPath = null;
+      if (_disposed || project.directory != _project?.directory) {
+        return;
+      }
+      _fileBundle = bundle;
       _loadedFileDirectories = <String>{};
-      _expandedFileDirectories = _fileBundle?.selectedPath == null
-          ? <String>{}
-          : _ancestorDirectories(_fileBundle!.selectedPath!);
-      _reviewBundle = null;
-      _selectedReviewPath = null;
-      _reviewDiff = null;
-      _reviewDiffError = null;
-      _loadingReviewDiff = false;
-    } catch (_) {
-      _fileBundle = null;
-      _loadingFilePreview = false;
-      _loadingFileDirectoryPath = null;
       _expandedFileDirectories = <String>{};
+    } catch (_) {
+      if (_disposed || project.directory != _project?.directory) {
+        return;
+      }
+      _fileBundle = null;
       _loadedFileDirectories = <String>{};
-      _reviewBundle = null;
-      _selectedReviewPath = null;
-      _reviewDiff = null;
-      _reviewDiffError = null;
-      _loadingReviewDiff = false;
+      _expandedFileDirectories = <String>{};
+    } finally {
+      if (!_disposed && project.directory == _project?.directory) {
+        _loadingFilesPanel = false;
+        _loadingFilePreview = false;
+        _loadingFileDirectoryPath = null;
+        _notify();
+      }
     }
-    await _loadSessionPanels();
   }
 
   Future<void> _loadSessionPanels() async {
