@@ -5416,6 +5416,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                           visible: desktopSidebarVisible,
                           alignment: Alignment.centerLeft,
                           child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
                             mainAxisSize: MainAxisSize.min,
                             children: <Widget>[
                               KeyedSubtree(
@@ -13114,6 +13115,7 @@ class _WorkspaceBody extends StatelessWidget {
     }
 
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         Expanded(child: content),
         _HorizontalReveal(
@@ -13121,6 +13123,7 @@ class _WorkspaceBody extends StatelessWidget {
           visible: sidePanelVisible,
           alignment: Alignment.centerRight,
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               _DesktopResizeHandle(
