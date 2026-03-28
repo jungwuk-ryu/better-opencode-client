@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart' show DragStartBehavior;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -1303,13 +1304,19 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       totalWidth: totalWidth,
       sidePanelVisible: sidePanelVisible,
     );
-    final clampedWidth = (currentWidth + widthDelta)
+    final effectiveCurrentWidth = currentWidth
         .clamp(
           _desktopSidebarMinWidth,
           math.max(_desktopSidebarMinWidth, maxWidth),
         )
         .toDouble();
-    if ((clampedWidth - currentWidth).abs() < 0.01) {
+    final clampedWidth = (effectiveCurrentWidth + widthDelta)
+        .clamp(
+          _desktopSidebarMinWidth,
+          math.max(_desktopSidebarMinWidth, maxWidth),
+        )
+        .toDouble();
+    if ((clampedWidth - effectiveCurrentWidth).abs() < 0.01) {
       return;
     }
     setState(() {
@@ -1335,13 +1342,19 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       sidebarVisible: sidebarVisible,
       sidebarWidth: resolvedSidebarWidth,
     );
-    final clampedWidth = (currentWidth + widthDelta)
+    final effectiveCurrentWidth = currentWidth
         .clamp(
           _desktopSidePanelMinWidth,
           math.max(_desktopSidePanelMinWidth, maxWidth),
         )
         .toDouble();
-    if ((clampedWidth - currentWidth).abs() < 0.01) {
+    final clampedWidth = (effectiveCurrentWidth + widthDelta)
+        .clamp(
+          _desktopSidePanelMinWidth,
+          math.max(_desktopSidePanelMinWidth, maxWidth),
+        )
+        .toDouble();
+    if ((clampedWidth - effectiveCurrentWidth).abs() < 0.01) {
       return;
     }
     setState(() {
@@ -5393,6 +5406,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                   );
 
                   return Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: <Widget>[
                       if (!compact)
                         _HorizontalReveal(
@@ -5423,8 +5437,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                     widthDelta: delta,
                                     totalWidth: totalWidth,
                                     sidePanelVisible: desktopSidePanelVisible,
-                                    currentWidth:
-                                        resolvedDesktopWidths.sidebarWidth,
+                                    currentWidth: _desktopSidebarWidth,
                                   );
                                 },
                                 onDragEnd: _finishDesktopColumnResize,
@@ -5713,16 +5726,15 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                           compact || !desktopSidePanelVisible
                                           ? null
                                           : (delta) {
-                                              _resizeDesktopSidePanel(
-                                                widthDelta: -delta,
-                                                totalWidth: totalWidth,
-                                                sidebarVisible:
-                                                    desktopSidebarVisible,
-                                                currentWidth:
-                                                    resolvedDesktopWidths
-                                                        .sidePanelWidth,
-                                              );
-                                            },
+                                            _resizeDesktopSidePanel(
+                                              widthDelta: -delta,
+                                              totalWidth: totalWidth,
+                                              sidebarVisible:
+                                                  desktopSidebarVisible,
+                                              currentWidth:
+                                                  _desktopSidePanelWidth,
+                                            );
+                                          },
                                       onFinishResizeSidePanel:
                                           compact || !desktopSidePanelVisible
                                           ? null
@@ -10574,6 +10586,7 @@ class _SessionIdentity extends StatelessWidget {
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         _SessionGlyph(compact: compact),
         SizedBox(width: compact ? AppSpacing.sm : AppSpacing.md),
@@ -13144,28 +13157,39 @@ class _DesktopResizeHandle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
-    return MouseRegion(
-      cursor: SystemMouseCursors.resizeColumn,
-      child: GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onHorizontalDragUpdate: onDragUpdate == null
-            ? null
-            : (details) => onDragUpdate!(details.delta.dx),
-        onHorizontalDragEnd: onDragEnd == null ? null : (_) => onDragEnd!(),
-        child: SizedBox(
-          width: _WebParityWorkspaceScreenState._desktopResizeHandleWidth,
-          child: Center(
-            child: Container(
-              width: 2,
-              height: 52,
-              decoration: BoxDecoration(
-                color: surfaces.lineSoft.withValues(alpha: 0.82),
-                borderRadius: BorderRadius.circular(999),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final resolvedHeight = constraints.maxHeight.isFinite
+            ? constraints.maxHeight
+            : 64.0;
+        return MouseRegion(
+          cursor: SystemMouseCursors.resizeColumn,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            dragStartBehavior: DragStartBehavior.down,
+            onHorizontalDragUpdate: onDragUpdate == null
+                ? null
+                : (details) => onDragUpdate!(details.delta.dx),
+            onHorizontalDragEnd: onDragEnd == null ? null : (_) => onDragEnd!(),
+            child: ConstrainedBox(
+              constraints: BoxConstraints.tightFor(
+                width: _WebParityWorkspaceScreenState._desktopResizeHandleWidth,
+                height: resolvedHeight,
+              ),
+              child: Center(
+                child: Container(
+                  width: 2,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: surfaces.lineSoft.withValues(alpha: 0.82),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
               ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
