@@ -2355,6 +2355,11 @@ class WorkspaceController extends ChangeNotifier {
     final revision = ++_selectedSessionHistoryLoadRevision;
     _selectedSessionHistoryLoading = true;
     _notify();
+    final baselineServerMessages = _stripOptimisticMessages(
+      project: project,
+      sessionId: sessionId,
+      messages: _messages,
+    );
 
     try {
       final page = await _chatService.fetchMessagesPage(
@@ -2363,19 +2368,31 @@ class WorkspaceController extends ChangeNotifier {
         sessionId: sessionId,
         limit: _sessionHistoryPageSize,
         before: cursor,
+        onMessagesProgress: (partialOlderMessages) {
+          if (_isStaleSelectedSessionHistoryLoad(revision, sessionId)) {
+            return;
+          }
+          final partialMergedServerMessages = _prependSessionHistoryMessages(
+            olderMessages: partialOlderMessages,
+            currentMessages: baselineServerMessages,
+          );
+          _messages = _mergeSessionMessages(
+            project: project,
+            sessionId: sessionId,
+            serverMessages: partialMergedServerMessages,
+          );
+          _showingCachedSessionMessages = false;
+          _sessionLoadError = null;
+          _notify();
+        },
       );
       if (_isStaleSelectedSessionHistoryLoad(revision, sessionId)) {
         return;
       }
 
-      final currentServerMessages = _stripOptimisticMessages(
-        project: project,
-        sessionId: sessionId,
-        messages: _messages,
-      );
       final mergedServerMessages = _prependSessionHistoryMessages(
         olderMessages: page.messages,
-        currentMessages: currentServerMessages,
+        currentMessages: baselineServerMessages,
       );
       _messages = _mergeSessionMessages(
         project: project,
@@ -2433,6 +2450,11 @@ class WorkspaceController extends ChangeNotifier {
       currentState.copyWith(historyLoading: true, clearError: true),
     );
     _notify();
+    final baselineServerMessages = _stripOptimisticMessages(
+      project: project,
+      sessionId: sessionId,
+      messages: currentState.messages,
+    );
 
     try {
       final page = await _chatService.fetchMessagesPage(
@@ -2441,20 +2463,39 @@ class WorkspaceController extends ChangeNotifier {
         sessionId: sessionId,
         limit: _sessionHistoryPageSize,
         before: cursor,
+        onMessagesProgress: (partialOlderMessages) {
+          if (_isStaleWatchedSessionHistoryLoad(revision, sessionId)) {
+            return;
+          }
+          final partialMergedServerMessages = _prependSessionHistoryMessages(
+            olderMessages: partialOlderMessages,
+            currentMessages: baselineServerMessages,
+          );
+          _setWatchedSessionTimeline(
+            sessionId,
+            _buildTimelineState(
+              sessionId: sessionId,
+              messages: _mergeSessionMessages(
+                project: project,
+                sessionId: sessionId,
+                serverMessages: partialMergedServerMessages,
+              ),
+              loading: false,
+              showingCachedMessages: false,
+              historyMore: true,
+              historyLoading: true,
+              error: null,
+            ),
+          );
+          _notify();
+        },
       );
       if (_isStaleWatchedSessionHistoryLoad(revision, sessionId)) {
         return;
       }
-      final latestState =
-          _watchedSessionTimelineById[sessionId] ?? currentState;
-      final currentServerMessages = _stripOptimisticMessages(
-        project: project,
-        sessionId: sessionId,
-        messages: latestState.messages,
-      );
       final mergedServerMessages = _prependSessionHistoryMessages(
         olderMessages: page.messages,
-        currentMessages: currentServerMessages,
+        currentMessages: baselineServerMessages,
       );
       _setWatchedSessionHistoryCursor(sessionId, page.nextCursor);
       _setWatchedSessionTimeline(
@@ -2466,7 +2507,7 @@ class WorkspaceController extends ChangeNotifier {
             sessionId: sessionId,
             serverMessages: mergedServerMessages,
           ),
-          loading: latestState.loading,
+          loading: false,
           showingCachedMessages: false,
           historyMore: page.hasMore,
           historyLoading: false,
