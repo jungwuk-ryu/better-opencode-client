@@ -14679,7 +14679,11 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     _messageItemKeys.removeWhere(
       (messageId, _) => !messageIds.contains(messageId),
     );
-    if (sessionChanged || becameNonEmpty || messagesShrank) {
+    if (oldWidget.storageScopeKey != widget.storageScopeKey ||
+        sessionChanged ||
+        becameNonEmpty ||
+        messagesShrank) {
+      _clearStructuredTextCaches();
       _visibleStartIndex = _initialVisibleStart(widget.messages.length);
       _loadingOlder = false;
       _clearOlderHistoryPreservation();
@@ -19735,7 +19739,6 @@ class _TimelinePart extends StatelessWidget {
       );
     }
     return _StructuredTextBlock(
-      cacheKey: part.id,
       text: body,
       searchTerms: searchTerms,
       searchActive: searchActive,
@@ -20822,6 +20825,12 @@ final _attachmentPreviewBytesCache = _LruCache<String, Uint8List?>(
   maximumSize: 128,
 );
 
+void _clearStructuredTextCaches() {
+  _structuredTextParseCache.clear();
+  _paragraphSplitCache.clear();
+  _inlineCodeSegmentCache.clear();
+}
+
 sealed class _StructuredContentBlockData {
   const _StructuredContentBlockData();
 }
@@ -21101,46 +21110,20 @@ List<InlineSpan> _highlightTextSpanForSearch(
   return highlighted;
 }
 
-const int _structuredTextBlockCacheLimit = 128;
-final Map<String, List<_StructuredContentBlockData>>
-_structuredTextBlockCache = <String, List<_StructuredContentBlockData>>{};
-
-List<_StructuredContentBlockData> _structuredTextBlocksFor({
-  String? cacheKey,
-  required String text,
-}) {
-  final resolvedCacheKey =
-      '${cacheKey ?? '_structured-text'}:${text.length}:${text.hashCode}';
-  final cached = _structuredTextBlockCache.remove(resolvedCacheKey);
-  if (cached != null) {
-    _structuredTextBlockCache[resolvedCacheKey] = cached;
-    return cached;
-  }
-
-  final blocks = _parseStructuredTextBlocks(text);
-  if (_structuredTextBlockCache.length >= _structuredTextBlockCacheLimit) {
-    _structuredTextBlockCache.remove(_structuredTextBlockCache.keys.first);
-  }
-  _structuredTextBlockCache[resolvedCacheKey] = blocks;
-  return blocks;
-}
-
 class _StructuredTextBlock extends StatelessWidget {
   const _StructuredTextBlock({
-    this.cacheKey,
     required this.text,
     this.searchTerms = const <String>[],
     this.searchActive = false,
   });
 
-  final String? cacheKey;
   final String text;
   final List<String> searchTerms;
   final bool searchActive;
 
   @override
   Widget build(BuildContext context) {
-    final blocks = _structuredTextBlocksFor(cacheKey: cacheKey, text: text);
+    final blocks = _parseStructuredTextBlocks(text);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -21494,7 +21477,6 @@ class _StreamingTextPartState extends State<_StreamingTextPart> {
   Widget build(BuildContext context) {
     if (!widget.animate || widget.text.trim().isEmpty) {
       return _StructuredTextBlock(
-        cacheKey: widget.partId,
         text: widget.text,
         searchTerms: widget.searchTerms,
         searchActive: widget.searchActive,
@@ -27171,6 +27153,10 @@ class _LruCache<K, V> {
     while (_entries.length > maximumSize) {
       _entries.remove(_entries.keys.first);
     }
+  }
+
+  void clear() {
+    _entries.clear();
   }
 }
 

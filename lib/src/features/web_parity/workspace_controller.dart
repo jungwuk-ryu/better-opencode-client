@@ -1306,6 +1306,8 @@ class WorkspaceController extends ChangeNotifier {
     _project = project;
     _selectedSessionId = null;
     _messages = const <ChatMessage>[];
+    _resetDerivedMessageState();
+    _resetProjectSessionCaches();
     _sessionLoading = false;
     _showingCachedSessionMessages = false;
     _resetSelectedSessionHistoryState();
@@ -1370,6 +1372,42 @@ class WorkspaceController extends ChangeNotifier {
     await _connectEvents();
     _maybeFlushQueuedPrompts();
     _notify();
+  }
+
+  void _resetDerivedMessageState() {
+    _timelineDerivedMessagesRef = null;
+    _derivedMessagesRef = null;
+    _derivedConfigSnapshotRef = null;
+    _derivedRevertMessageId = null;
+    _orderedMessagesCache = const <ChatMessage>[];
+    _timelineContentSignatureCache = 0;
+    _sessionContextMetricsCache = const SessionContextMetrics(
+      totalCost: 0,
+      context: null,
+    );
+    _sessionSystemPromptCache = null;
+    _sessionContextBreakdownCache = const <SessionContextBreakdownSegment>[];
+    _userMessageCountCache = 0;
+    _assistantMessageCountCache = 0;
+  }
+
+  void _resetProjectSessionCaches() {
+    _sessionMessagesCachePersistTimer?.cancel();
+    _sessionMessagesCachePersistTimer = null;
+    _queuedSessionMessagesCacheProject = null;
+    _queuedSessionMessagesCacheSessionId = null;
+    _queuedSessionMessagesCacheMessages = null;
+    _queuedSessionMessagesCacheToken += 1;
+    _activeChildSessionPreviewLoadSignature = 0;
+    _activeChildSessionPreviewLoadToken += 1;
+    _activeChildSessionLivePreviewById = const <String, String>{};
+    _activeChildSessionCachedPreviewById = const <String, String>{};
+    _activeChildSessionCachedPreviewVersionById = const <String, int>{};
+    _watchedSessionIds = const <String>{};
+    _watchedSessionTimelineById = const <String, WorkspaceSessionTimelineState>{};
+    _watchedSessionLoadRevisionById = const <String, int>{};
+    _watchedSessionHistoryLoadRevisionById = const <String, int>{};
+    _watchedSessionHistoryCursorById = const <String, String?>{};
   }
 
   void preserveSelectedSessionTimelineForWatch() {
