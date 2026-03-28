@@ -800,23 +800,30 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
             SafeArea(
               child: Align(
                 alignment: Alignment.topCenter,
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(AppSpacing.lg),
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(
-                      maxWidth: _contentMaxWidth,
-                    ),
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        return _buildSimpleHomeContent(
-                          context,
-                          isWide:
-                              constraints.maxWidth >=
-                              AppSpacing.wideLayoutBreakpoint,
-                        );
-                      },
-                    ),
-                  ),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final compactPadding = constraints.maxWidth < 640;
+                    return SingleChildScrollView(
+                      padding: EdgeInsets.all(
+                        compactPadding ? AppSpacing.md : AppSpacing.lg,
+                      ),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          maxWidth: _contentMaxWidth,
+                        ),
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            return _buildSimpleHomeContent(
+                              context,
+                              isWide:
+                                  constraints.maxWidth >=
+                                  AppSpacing.wideLayoutBreakpoint,
+                            );
+                          },
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ),
             ),
@@ -1221,67 +1228,82 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final l10n = AppLocalizations.of(context)!;
     final selectedProfile = _selectedProfile;
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    final actions = Wrap(
+      spacing: AppSpacing.sm,
+      runSpacing: AppSpacing.sm,
+      alignment: WrapAlignment.end,
       children: <Widget>[
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(
-                l10n.homeHeaderEyebrow,
-                style: Theme.of(
-                  context,
-                ).textTheme.labelLarge?.copyWith(color: surfaces.accentSoft),
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                l10n.appTitle,
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                l10n.homeHeaderSubtitle,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyLarge?.copyWith(color: surfaces.muted),
-              ),
-            ],
+        if (selectedProfile != null)
+          Semantics(
+            container: true,
+            label: l10n.homeA11yBackToServersAction,
+            button: true,
+            child: OutlinedButton.icon(
+              onPressed: _returnToServerSelection,
+              icon: const Icon(Icons.arrow_back_rounded),
+              label: Text(l10n.homeBackToServersAction),
+            ),
+          ),
+        Semantics(
+          container: true,
+          label: l10n.homeA11yAddServerAction,
+          button: true,
+          child: TextButton.icon(
+            onPressed: _returnToServerSelection,
+            icon: const Icon(Icons.add_link_rounded),
+            label: Text(l10n.homeAddServerAction),
           ),
         ),
-        const SizedBox(width: AppSpacing.md),
-        Wrap(
-          spacing: AppSpacing.sm,
-          runSpacing: AppSpacing.sm,
-          alignment: WrapAlignment.end,
-          children: <Widget>[
-            if (selectedProfile != null)
-              Semantics(
-                container: true,
-                label: l10n.homeA11yBackToServersAction,
-                button: true,
-                child: OutlinedButton.icon(
-                  onPressed: _returnToServerSelection,
-                  icon: const Icon(Icons.arrow_back_rounded),
-                  label: Text(l10n.homeBackToServersAction),
-                ),
-              ),
-            Semantics(
-              container: true,
-              label: l10n.homeA11yAddServerAction,
-              button: true,
-              child: TextButton.icon(
-                onPressed: _returnToServerSelection,
-                icon: const Icon(Icons.add_link_rounded),
-                label: Text(l10n.homeAddServerAction),
-              ),
-            ),
-          ],
+      ],
+    );
+    final titleBlock = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          l10n.homeHeaderEyebrow,
+          style: Theme.of(
+            context,
+          ).textTheme.labelLarge?.copyWith(color: surfaces.accentSoft),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          l10n.appTitle,
+          style: Theme.of(
+            context,
+          ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          l10n.homeHeaderSubtitle,
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge?.copyWith(color: surfaces.muted),
         ),
       ],
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final stackActions = constraints.maxWidth < 760;
+        if (stackActions) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              titleBlock,
+              const SizedBox(height: AppSpacing.md),
+              actions,
+            ],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Expanded(child: titleBlock),
+            const SizedBox(width: AppSpacing.md),
+            actions,
+          ],
+        );
+      },
     );
   }
 
@@ -2474,6 +2496,20 @@ class _SectionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final heading = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(title, style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          subtitle,
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
+        ),
+      ],
+    );
+
     return Card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2485,32 +2521,31 @@ class _SectionCard extends StatelessWidget {
               AppSpacing.lg,
               AppSpacing.md,
             ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Expanded(
-                  child: Column(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final stackAction =
+                    action != null && constraints.maxWidth < 620;
+                if (stackAction) {
+                  return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      Text(
-                        title,
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                      const SizedBox(height: AppSpacing.xs),
-                      Text(
-                        subtitle,
-                        style: Theme.of(
-                          context,
-                        ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
-                      ),
+                      heading,
+                      const SizedBox(height: AppSpacing.md),
+                      action!,
                     ],
-                  ),
-                ),
-                if (action != null) ...<Widget>[
-                  const SizedBox(width: AppSpacing.md),
-                  action!,
-                ],
-              ],
+                  );
+                }
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Expanded(child: heading),
+                    if (action != null) ...<Widget>[
+                      const SizedBox(width: AppSpacing.md),
+                      action!,
+                    ],
+                  ],
+                );
+              },
             ),
           ),
           const Divider(height: 1),
