@@ -565,8 +565,8 @@ class WorkspaceController extends ChangeNotifier {
   bool _showingCachedSessionMessages = false;
   bool _selectedSessionHistoryMore = false;
   bool _selectedSessionHistoryLoading = false;
-  bool _submittingPrompt = false;
-  bool _interruptingSession = false;
+  Set<String> _submittingPromptSessionIds = const <String>{};
+  Set<String> _interruptingSessionIds = const <String>{};
   bool _initializingGitRepository = false;
   bool _runningTerminal = false;
   bool _terminalOpen = false;
@@ -685,8 +685,9 @@ class WorkspaceController extends ChangeNotifier {
   bool get loading => _loading;
   bool get sessionLoading => _sessionLoading;
   bool get showingCachedSessionMessages => _showingCachedSessionMessages;
-  bool get submittingPrompt => _submittingPrompt;
-  bool get interruptingSession => _interruptingSession;
+  bool get submittingPrompt => submittingPromptForSession(_selectedSessionId);
+  bool get interruptingSession =>
+      sessionInterruptingForSession(_selectedSessionId);
   bool get initializingGitRepository => _initializingGitRepository;
   bool get runningTerminal => _runningTerminal;
   bool get terminalOpen => _terminalOpen;
@@ -957,7 +958,7 @@ class WorkspaceController extends ChangeNotifier {
     if (sendingQueuedPromptIdForSession(normalizedSessionId) != null) {
       return true;
     }
-    if (submittingPrompt && selectedSessionId == normalizedSessionId) {
+    if (submittingPromptForSession(normalizedSessionId)) {
       return true;
     }
     final status = normalizedSessionId == selectedSessionId
@@ -979,7 +980,7 @@ class WorkspaceController extends ChangeNotifier {
     if (normalizedSessionId == null || normalizedSessionId.isEmpty) {
       return false;
     }
-    return (_selectedSessionId == normalizedSessionId && submittingPrompt) ||
+    return submittingPromptForSession(normalizedSessionId) ||
         _isActiveStatus(_statuses[normalizedSessionId]);
   }
 
@@ -988,7 +989,15 @@ class WorkspaceController extends ChangeNotifier {
     if (normalizedSessionId == null || normalizedSessionId.isEmpty) {
       return false;
     }
-    return _interruptingSession && _selectedSessionId == normalizedSessionId;
+    return _interruptingSessionIds.contains(normalizedSessionId);
+  }
+
+  bool submittingPromptForSession(String? sessionId) {
+    final normalizedSessionId = sessionId?.trim();
+    if (normalizedSessionId == null || normalizedSessionId.isEmpty) {
+      return false;
+    }
+    return _submittingPromptSessionIds.contains(normalizedSessionId);
   }
 
   SessionSummary? get rootSelectedSession =>
@@ -2694,10 +2703,6 @@ class WorkspaceController extends ChangeNotifier {
       return _selectedSessionId;
     }
 
-    if (_submittingPrompt) {
-      return _selectedSessionId;
-    }
-
     var sessionId = _selectedSessionId;
     if (sessionId == null || sessionId.isEmpty) {
       final created = await _chatService.createSession(
@@ -2713,6 +2718,9 @@ class WorkspaceController extends ChangeNotifier {
             _statuses[sessionId] ?? const SessionStatusSummary(type: 'idle'),
       };
       _notify();
+    }
+    if (submittingPromptForSession(sessionId)) {
+      return sessionId;
     }
 
     final effectiveMode = mode;
@@ -2731,7 +2739,10 @@ class WorkspaceController extends ChangeNotifier {
       return sessionId;
     }
 
-    _submittingPrompt = true;
+    _submittingPromptSessionIds = Set<String>.unmodifiable(<String>{
+      ..._submittingPromptSessionIds,
+      sessionId,
+    });
     _notify();
 
     try {
@@ -2750,7 +2761,9 @@ class WorkspaceController extends ChangeNotifier {
       );
       return sessionId;
     } finally {
-      _submittingPrompt = false;
+      _submittingPromptSessionIds = Set<String>.unmodifiable(
+        Set<String>.from(_submittingPromptSessionIds)..remove(sessionId),
+      );
       _notify();
     }
   }
@@ -3546,12 +3559,15 @@ class WorkspaceController extends ChangeNotifier {
     final sessionId = _selectedSessionId;
     if (project == null ||
         sessionId == null ||
-        _interruptingSession ||
-        !selectedSessionInterruptible) {
+        sessionInterruptingForSession(sessionId) ||
+        !sessionInterruptibleForSession(sessionId)) {
       return false;
     }
 
-    _interruptingSession = true;
+    _interruptingSessionIds = Set<String>.unmodifiable(<String>{
+      ..._interruptingSessionIds,
+      sessionId,
+    });
     _notify();
 
     var interrupted = false;
@@ -3572,7 +3588,9 @@ class WorkspaceController extends ChangeNotifier {
       return interrupted;
     } finally {
       if (!interrupted) {
-        _interruptingSession = false;
+        _interruptingSessionIds = Set<String>.unmodifiable(
+          Set<String>.from(_interruptingSessionIds)..remove(sessionId),
+        );
       }
       _notify();
     }
@@ -5301,7 +5319,7 @@ class WorkspaceController extends ChangeNotifier {
     if (_sendingQueuedPromptBySessionId.containsKey(normalized)) {
       return true;
     }
-    if (_submittingPrompt && _selectedSessionId == normalized) {
+    if (submittingPromptForSession(normalized)) {
       return true;
     }
     return _isActiveStatus(_statuses[normalized]);
@@ -7136,8 +7154,14 @@ class WorkspaceController extends ChangeNotifier {
         return;
       }
       _notifyPending = false;
-      if (_interruptingSession && !selectedSessionInterruptible) {
-        _interruptingSession = false;
+      final activeInterruptingSessionIds = _interruptingSessionIds
+          .where((sessionId) => sessionInterruptibleForSession(sessionId))
+          .toSet();
+      if (activeInterruptingSessionIds.length !=
+          _interruptingSessionIds.length) {
+        _interruptingSessionIds = Set<String>.unmodifiable(
+          activeInterruptingSessionIds,
+        );
       }
       _ensureActiveChildSessionPreviewCache();
       notifyListeners();

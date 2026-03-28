@@ -1666,7 +1666,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         _composerAttachments.isEmpty &&
         controller.selectedSessionId != null &&
         controller.selectedSessionInterruptible &&
-        !controller.interruptingSession;
+        !controller.sessionInterruptingForSession(controller.selectedSessionId);
   }
 
   bool _isCompactLayout(BuildContext context) {
@@ -4274,7 +4274,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     if (controller == null ||
         scopeKey == null ||
         _promptSubmitInFlightScopeKeys.contains(scopeKey) ||
-        controller.submittingPrompt ||
+        controller.submittingPromptForSession(controller.selectedSessionId) ||
         (draft.trim().isEmpty && attachments.isEmpty)) {
       return;
     }
@@ -4434,7 +4434,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
 
   Future<void> _interruptSelectedSession() async {
     final controller = _controller;
-    if (controller == null || controller.interruptingSession) {
+    if (controller == null ||
+        controller.sessionInterruptingForSession(controller.selectedSessionId)) {
       return;
     }
     try {
@@ -5039,7 +5040,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       focusRequestToken: _promptComposerFocusTokenForScope(scopeKey),
       submitting:
           _promptSubmitInFlightScopeKeys.contains(scopeKey) ||
-          (selected && controller.submittingPrompt),
+          controller.submittingPromptForSession(sessionId),
       busyFollowupMode: appController.busyFollowupMode,
       interruptible:
           _promptSubmitInFlightScopeKeys.contains(scopeKey) ||
@@ -5572,7 +5573,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                           resolvedDesktopWidths.sidePanelWidth,
                                       submittingPrompt:
                                           _activePromptSubmitInFlight ||
-                                          controller.submittingPrompt,
+                                          controller.submittingPromptForSession(
+                                            controller.selectedSessionId,
+                                          ),
                                       pickingAttachments:
                                           _pickingComposerAttachments,
                                       attachments: _composerAttachmentsForScope(
@@ -5629,8 +5632,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                           (_activePromptSubmitInFlight ||
                                               controller
                                                   .selectedSessionInterruptible),
-                                      interruptingPrompt:
-                                          controller.interruptingSession,
+                                      interruptingPrompt: controller
+                                          .sessionInterruptingForSession(
+                                            controller.selectedSessionId,
+                                          ),
                                       onCompactPaneChanged: (value) {
                                         if (_compactPane == value) {
                                           return;
