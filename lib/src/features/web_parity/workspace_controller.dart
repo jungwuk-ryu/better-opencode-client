@@ -487,6 +487,7 @@ class WorkspaceController extends ChangeNotifier {
     ProjectCatalogService? projectCatalogService,
     ProjectStore? projectStore,
     StaleCacheStore? cacheStore,
+    StaleCacheStore? spillStore,
     FileBrowserService? fileBrowserService,
     ReviewDiffService? reviewDiffService,
     TodoService? todoService,
@@ -502,6 +503,7 @@ class WorkspaceController extends ChangeNotifier {
            projectCatalogService ?? ProjectCatalogService(),
        _projectStore = projectStore ?? ProjectStore(),
        _cacheStore = cacheStore ?? StaleCacheStore(),
+       _spillStore = spillStore ?? FileBackedStaleCacheStore(),
        _fileBrowserService = fileBrowserService ?? FileBrowserService(),
        _reviewDiffService = reviewDiffService ?? ReviewDiffService(),
        _todoService = todoService ?? TodoService(),
@@ -533,6 +535,7 @@ class WorkspaceController extends ChangeNotifier {
   final ProjectCatalogService _projectCatalogService;
   final ProjectStore _projectStore;
   final StaleCacheStore _cacheStore;
+  final StaleCacheStore _spillStore;
   final FileBrowserService _fileBrowserService;
   final ReviewDiffService _reviewDiffService;
   final TodoService _todoService;
@@ -3533,7 +3536,7 @@ class WorkspaceController extends ChangeNotifier {
         await _cacheStore.remove(
           _sessionMessagesCacheKey(project, removedSessionId),
         );
-        await _cacheStore.remove(
+        await _spillStore.remove(
           _sessionMessagesSpillKey(project, removedSessionId),
         );
       }
@@ -3550,7 +3553,7 @@ class WorkspaceController extends ChangeNotifier {
         await _cacheStore.remove(
           _sessionMessagesCacheKey(project, removedSessionId),
         );
-        await _cacheStore.remove(
+        await _spillStore.remove(
           _sessionMessagesSpillKey(project, removedSessionId),
         );
       }
@@ -5765,21 +5768,21 @@ class WorkspaceController extends ChangeNotifier {
     required ProjectTarget project,
     required String sessionId,
   }) async {
-    final entry = await _cacheStore.load(
+    final entry = await _spillStore.load(
       _sessionMessagesSpillKey(project, sessionId),
     );
     if (entry == null || entry.payloadJson.trim().isEmpty) {
       return null;
     }
     if (entry.payloadJson.length > ChatService.maxSessionMessageResponseBytes) {
-      await _cacheStore.remove(_sessionMessagesSpillKey(project, sessionId));
+      await _spillStore.remove(_sessionMessagesSpillKey(project, sessionId));
       return null;
     }
     try {
       final decoded = await _decodeJsonPayload(entry.payloadJson);
       return _chatMessagesFromDecodedJson(decoded);
     } catch (_) {
-      await _cacheStore.remove(_sessionMessagesSpillKey(project, sessionId));
+      await _spillStore.remove(_sessionMessagesSpillKey(project, sessionId));
       return null;
     }
   }
@@ -5802,7 +5805,7 @@ class WorkspaceController extends ChangeNotifier {
   }) async {
     final cacheKey = _sessionMessagesSpillKey(project, sessionId);
     if (messages.isEmpty) {
-      await _cacheStore.remove(cacheKey);
+      await _spillStore.remove(cacheKey);
       return;
     }
 
@@ -5823,13 +5826,13 @@ class WorkspaceController extends ChangeNotifier {
       payloadJson = jsonEncode(payload);
     }
     if (compacted.isEmpty) {
-      await _cacheStore.remove(cacheKey);
+      await _spillStore.remove(cacheKey);
       return;
     }
 
     final signature =
         'spill:${compacted.length}:${_computeTimelineContentSignature(compacted)}';
-    await _cacheStore.save(cacheKey, payload, signature: signature);
+    await _spillStore.save(cacheKey, payload, signature: signature);
   }
 
   Future<bool> _restoreSelectedSessionSpilledHistory({
@@ -5875,7 +5878,7 @@ class WorkspaceController extends ChangeNotifier {
         remainingSpill.isNotEmpty ||
         (_selectedSessionHistoryCursor?.isNotEmpty ?? false);
     if (remainingSpill.isEmpty) {
-      await _cacheStore.remove(_sessionMessagesSpillKey(project, sessionId));
+      await _spillStore.remove(_sessionMessagesSpillKey(project, sessionId));
     } else {
       await _saveSpilledSessionMessages(
         project: project,

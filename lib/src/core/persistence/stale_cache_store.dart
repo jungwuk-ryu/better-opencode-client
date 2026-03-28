@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
@@ -95,5 +96,104 @@ class StaleCacheStore {
   Future<void> saveTtl(Duration ttl) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(ttlKey, ttl.inMilliseconds);
+  }
+}
+
+class FileBackedStaleCacheStore extends StaleCacheStore {
+  FileBackedStaleCacheStore({
+    Directory? rootDirectory,
+    this.namespace = 'spill-cache-v1',
+  }) : _rootDirectory = rootDirectory;
+
+  final Directory? _rootDirectory;
+  final String namespace;
+
+  @override
+  Future<StaleCacheEntry?> load(String key) async {
+    final file = await _fileForKey(key);
+    if (!await file.exists()) {
+      return null;
+    }
+    try {
+      final raw = await file.readAsString();
+      if (raw.isEmpty) {
+        await file.delete();
+        return null;
+      }
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) {
+        await file.delete();
+        return null;
+      }
+      return StaleCacheEntry.fromJson(decoded.cast<String, Object?>());
+    } catch (_) {
+      try {
+        await file.delete();
+      } catch (_) {}
+      return null;
+    }
+  }
+
+  @override
+  Future<void> save(String key, Object? payload, {String? signature}) async {
+    final payloadJson = jsonEncode(payload);
+    final resolvedSignature =
+        signature ?? '${payloadJson.length}:${payloadJson.hashCode}';
+    final entry = StaleCacheEntry(
+      payloadJson: payloadJson,
+      signature: resolvedSignature,
+      fetchedAt: DateTime.now(),
+    );
+    final file = await _fileForKey(key);
+    await file.parent.create(recursive: true);
+    await file.writeAsString(jsonEncode(entry.toJson()), flush: true);
+  }
+
+  @override
+  Future<void> remove(String key) async {
+    final file = await _fileForKey(key);
+    if (!await file.exists()) {
+      return;
+    }
+    try {
+      await file.delete();
+    } catch (_) {}
+  }
+
+  @override
+  Future<void> clearAll() async {
+    final directory = await _storageDirectory();
+    if (!await directory.exists()) {
+      return;
+    }
+    try {
+      await directory.delete(recursive: true);
+    } catch (_) {}
+  }
+
+  Future<Directory> _storageDirectory() async {
+    final baseDirectory = _rootDirectory ?? Directory.systemTemp;
+    final directory = Directory(
+      '${baseDirectory.path}${Platform.pathSeparator}better-opencode-client${Platform.pathSeparator}$namespace',
+    );
+    if (!await directory.exists()) {
+      await directory.create(recursive: true);
+    }
+    return directory;
+  }
+
+  Future<File> _fileForKey(String key) async {
+    final directory = await _storageDirectory();
+    final name = _hashedFileName(key);
+    return File('${directory.path}${Platform.pathSeparator}$name.json');
+  }
+
+  String _hashedFileName(String key) {
+    var hash = 0xcbf29ce484222325;
+    for (final byte in utf8.encode(key)) {
+      hash ^= byte;
+      hash = (hash * 0x100000001b3) & 0x7fffffffffffffff;
+    }
+    return hash.toRadixString(16);
   }
 }
