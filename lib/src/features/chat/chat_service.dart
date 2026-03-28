@@ -382,13 +382,15 @@ class ChatService {
         'Request failed for $uri with status ${response.statusCode}.',
       );
     }
+    final decodedPage = await _decodeMessagesFromResponse(
+      response,
+      maxResponseBytes: maxStreamedSessionMessageResponseBytes,
+      onMessagesProgress: onMessagesProgress,
+    );
     return ChatMessagePage(
-      messages: await _decodeMessagesFromResponse(
-        response,
-        maxResponseBytes: maxStreamedSessionMessageResponseBytes,
-        onMessagesProgress: onMessagesProgress,
-      ),
-      nextCursor: response.headers['x-next-cursor'],
+      messages: decodedPage.messages,
+      nextCursor: decodedPage.truncated ? null : response.headers['x-next-cursor'],
+      truncated: decodedPage.truncated,
     );
   }
 
@@ -434,7 +436,7 @@ class ChatService {
     return jsonDecode(response.body);
   }
 
-  Future<List<ChatMessage>> _decodeMessagesFromResponse(
+  Future<_DecodedMessagesResult> _decodeMessagesFromResponse(
     http.StreamedResponse response, {
     required int maxResponseBytes,
     void Function(List<ChatMessage> messages)? onMessagesProgress,
@@ -457,6 +459,7 @@ class ChatService {
     );
     final messages = <ChatMessage>[];
     var decodedSinceYield = 0;
+    var truncated = false;
 
     try {
       await for (final chunk in response.stream
@@ -488,6 +491,7 @@ class ChatService {
       }
       parser.close();
     } on StateError catch (error) {
+      truncated = true;
       messages.add(
         _buildTransportLimitMessage(
           messageIndex: messages.length,
@@ -501,7 +505,10 @@ class ChatService {
         List<ChatMessage>.unmodifiable(List<ChatMessage>.from(messages)),
       );
     }
-    return List<ChatMessage>.unmodifiable(messages);
+    return _DecodedMessagesResult(
+      messages: List<ChatMessage>.unmodifiable(messages),
+      truncated: truncated,
+    );
   }
 
   ChatMessage? _decodeStreamedMessageObject(
@@ -976,4 +983,14 @@ class _StreamedJsonObject {
   final String json;
   final bool truncated;
   final int estimatedChars;
+}
+
+class _DecodedMessagesResult {
+  const _DecodedMessagesResult({
+    required this.messages,
+    required this.truncated,
+  });
+
+  final List<ChatMessage> messages;
+  final bool truncated;
 }

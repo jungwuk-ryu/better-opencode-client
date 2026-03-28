@@ -553,10 +553,15 @@ class ChatSessionBundle {
 }
 
 class ChatMessagePage {
-  const ChatMessagePage({required this.messages, this.nextCursor});
+  const ChatMessagePage({
+    required this.messages,
+    this.nextCursor,
+    this.truncated = false,
+  });
 
   final List<ChatMessage> messages;
   final String? nextCursor;
+  final bool truncated;
 
-  bool get hasMore => nextCursor != null && nextCursor!.isNotEmpty;
+  bool get hasMore => !truncated && nextCursor != null && nextCursor!.isNotEmpty;
 }
