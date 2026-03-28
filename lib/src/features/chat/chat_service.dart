@@ -16,7 +16,9 @@ class ChatService {
 
   static const int defaultSessionHistoryPageSize = 50;
   static const int maxSessionMessageResponseBytes = 16 * 1024 * 1024;
+  static const int maxStreamedSessionMessageResponseBytes = 64 * 1024 * 1024;
   static const int _streamedDecodeYieldInterval = 8;
+  static const int _maxStreamedMessageChars = 1024 * 1024;
   static int globalSessionHistoryPageSize = defaultSessionHistoryPageSize;
 
   final http.Client _client;
@@ -383,7 +385,7 @@ class ChatService {
     return ChatMessagePage(
       messages: await _decodeMessagesFromResponse(
         response,
-        maxResponseBytes: maxSessionMessageResponseBytes,
+        maxResponseBytes: maxStreamedSessionMessageResponseBytes,
         onMessagesProgress: onMessagesProgress,
       ),
       nextCursor: response.headers['x-next-cursor'],
@@ -451,41 +453,171 @@ class ChatService {
     final parser = _JsonArrayObjectStreamParser(
       uri: uri,
       maxResponseBytes: maxResponseBytes,
+      maxObjectChars: _maxStreamedMessageChars,
     );
     final messages = <ChatMessage>[];
     var decodedSinceYield = 0;
 
-    await for (final chunk in response.stream
-        .transform(parser.byteCountingTransformer)
-        .transform(utf8.decoder)) {
-      final objects = parser.addChunk(chunk);
-      for (final objectJson in objects) {
-        final decoded = jsonDecode(objectJson);
-        if (decoded is! Map) {
-          continue;
-        }
-        final message = _safeParseMessage(decoded.cast<String, Object?>());
-        if (message != null) {
-          messages.add(message);
-          decodedSinceYield += 1;
-        }
-        if (decodedSinceYield >= _streamedDecodeYieldInterval) {
-          decodedSinceYield = 0;
-          onMessagesProgress?.call(
-            List<ChatMessage>.unmodifiable(List<ChatMessage>.from(messages)),
-          );
-          await Future<void>.delayed(Duration.zero);
+    try {
+      await for (final chunk in response.stream
+          .transform(parser.byteCountingTransformer)
+          .transform(utf8.decoder)) {
+        final objects = parser.addChunk(chunk);
+        for (final object in objects) {
+          final message = object.truncated
+              ? _buildQuarantinedMessage(
+                  object,
+                  fallbackIndex: messages.length,
+                )
+              : _decodeStreamedMessageObject(
+                  object,
+                  fallbackIndex: messages.length,
+                );
+          if (message != null) {
+            messages.add(message);
+            decodedSinceYield += 1;
+          }
+          if (decodedSinceYield >= _streamedDecodeYieldInterval) {
+            decodedSinceYield = 0;
+            onMessagesProgress?.call(
+              List<ChatMessage>.unmodifiable(List<ChatMessage>.from(messages)),
+            );
+            await Future<void>.delayed(Duration.zero);
+          }
         }
       }
+      parser.close();
+    } on StateError catch (error) {
+      messages.add(
+        _buildTransportLimitMessage(
+          messageIndex: messages.length,
+          detail: error.toString().trim(),
+        ),
+      );
     }
 
-    parser.close();
     if (decodedSinceYield > 0 && messages.isNotEmpty) {
       onMessagesProgress?.call(
         List<ChatMessage>.unmodifiable(List<ChatMessage>.from(messages)),
       );
     }
     return List<ChatMessage>.unmodifiable(messages);
+  }
+
+  ChatMessage? _decodeStreamedMessageObject(
+    _StreamedJsonObject object, {
+    required int fallbackIndex,
+  }) {
+    try {
+      final decoded = jsonDecode(object.json);
+      if (decoded is! Map) {
+        return _buildQuarantinedMessage(
+          object,
+          fallbackIndex: fallbackIndex,
+          reason: 'unsupported-shape',
+        );
+      }
+      return _safeParseMessage(decoded.cast<String, Object?>()) ??
+          _buildQuarantinedMessage(
+            object,
+            fallbackIndex: fallbackIndex,
+            reason: 'parse-failed',
+          );
+    } catch (_) {
+      return _buildQuarantinedMessage(
+        object,
+        fallbackIndex: fallbackIndex,
+        reason: 'decode-failed',
+      );
+    }
+  }
+
+  ChatMessage _buildQuarantinedMessage(
+    _StreamedJsonObject object, {
+    required int fallbackIndex,
+    String reason = 'oversized',
+  }) {
+    final id =
+        _extractFirstJsonStringField(object.json, 'id') ??
+        'quarantined-message-$fallbackIndex';
+    final role =
+        _extractFirstJsonStringField(object.json, 'role') ?? 'assistant';
+    final sessionId = _extractFirstJsonStringField(object.json, 'sessionID');
+    final tool = _extractFirstJsonStringField(object.json, 'tool');
+    final createdAtEpoch = _extractFirstJsonIntField(object.json, 'created');
+    final createdAt = createdAtEpoch == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(createdAtEpoch);
+    final toolLabel = tool == null || tool.isEmpty ? 'message' : '$tool tool';
+    final summary =
+        'A large $toolLabel payload was compacted by the client to keep this session responsive.';
+
+    return ChatMessage(
+      info: ChatMessageInfo(
+        id: id,
+        role: role,
+        sessionId: sessionId,
+        createdAt: createdAt,
+        metadata: <String, Object?>{
+          'quarantined': true,
+          'reason': reason,
+          'estimatedChars': object.estimatedChars,
+          if (tool != null && tool.isNotEmpty) 'tool': tool,
+        },
+      ),
+      parts: <ChatPart>[
+        ChatPart(
+          id: '$id-quarantined',
+          type: 'text',
+          text: summary,
+          tool: tool,
+          messageId: id,
+          sessionId: sessionId,
+          metadata: <String, Object?>{
+            'quarantined': true,
+            'reason': reason,
+            'estimatedChars': object.estimatedChars,
+          },
+        ),
+      ],
+    );
+  }
+
+  ChatMessage _buildTransportLimitMessage({
+    required int messageIndex,
+    required String detail,
+  }) {
+    const summary =
+        'The client stopped reading additional history to avoid a memory spike. You can still work with the messages that were loaded.';
+    final id = 'session-history-truncated-$messageIndex';
+    return ChatMessage(
+      info: ChatMessageInfo(
+        id: id,
+        role: 'assistant',
+        metadata: <String, Object?>{
+          'historyTruncated': true,
+          'detail': detail,
+        },
+      ),
+      parts: const <ChatPart>[
+        ChatPart(
+          id: 'session-history-truncated-part',
+          type: 'text',
+          text: summary,
+          metadata: <String, Object?>{'historyTruncated': true},
+        ),
+      ],
+    );
+  }
+
+  String? _extractFirstJsonStringField(String source, String fieldName) {
+    final match = RegExp('"$fieldName"\\s*:\\s*"([^"]+)"').firstMatch(source);
+    return match == null ? null : jsonDecode('"${match.group(1)!}"') as String;
+  }
+
+  int? _extractFirstJsonIntField(String source, String fieldName) {
+    final match = RegExp('"$fieldName"\\s*:\\s*(\\d+)').firstMatch(source);
+    return match == null ? null : int.tryParse(match.group(1)!);
   }
 
   Future<http.StreamedResponse> _sendGetRequest(
@@ -645,10 +777,12 @@ class _JsonArrayObjectStreamParser {
   _JsonArrayObjectStreamParser({
     required this.uri,
     required this.maxResponseBytes,
+    required this.maxObjectChars,
   });
 
   final Uri? uri;
   final int maxResponseBytes;
+  final int maxObjectChars;
 
   bool _startedArray = false;
   bool _finishedArray = false;
@@ -658,6 +792,8 @@ class _JsonArrayObjectStreamParser {
   bool _sawNonWhitespace = false;
   int _bytesRead = 0;
   int _compositeDepth = 0;
+  int _currentObjectChars = 0;
+  bool _currentObjectTruncated = false;
   StringBuffer? _currentObject;
 
   StreamTransformer<List<int>, List<int>> get byteCountingTransformer =>
@@ -677,11 +813,11 @@ class _JsonArrayObjectStreamParser {
         },
       );
 
-  List<String> addChunk(String chunk) {
+  List<_StreamedJsonObject> addChunk(String chunk) {
     if (chunk.isEmpty) {
-      return const <String>[];
+      return const <_StreamedJsonObject>[];
     }
-    final objects = <String>[];
+    final objects = <_StreamedJsonObject>[];
     for (var index = 0; index < chunk.length; index += 1) {
       final codeUnit = chunk.codeUnitAt(index);
 
@@ -725,6 +861,8 @@ class _JsonArrayObjectStreamParser {
         _insideString = false;
         _escaping = false;
         _compositeDepth = 1;
+        _currentObjectChars = 1;
+        _currentObjectTruncated = false;
         _currentObject = StringBuffer()..writeCharCode(codeUnit);
         continue;
       }
@@ -733,7 +871,14 @@ class _JsonArrayObjectStreamParser {
       if (buffer == null) {
         throw const FormatException('JSON object parser lost its buffer state.');
       }
-      buffer.writeCharCode(codeUnit);
+      _currentObjectChars += 1;
+      if (!_currentObjectTruncated) {
+        if (_currentObjectChars <= maxObjectChars) {
+          buffer.writeCharCode(codeUnit);
+        } else {
+          _currentObjectTruncated = true;
+        }
+      }
 
       if (_insideString) {
         if (_escaping) {
@@ -766,8 +911,16 @@ class _JsonArrayObjectStreamParser {
           );
         }
         if (_compositeDepth == 0) {
-          objects.add(buffer.toString());
+          objects.add(
+            _StreamedJsonObject(
+              json: buffer.toString(),
+              truncated: _currentObjectTruncated,
+              estimatedChars: _currentObjectChars,
+            ),
+          );
           _capturingObject = false;
+          _currentObjectChars = 0;
+          _currentObjectTruncated = false;
           _currentObject = null;
         }
       }
@@ -811,4 +964,16 @@ class _JsonArrayObjectStreamParser {
         : value.toStringAsFixed(1);
     return '$text ${units[unitIndex]}';
   }
+}
+
+class _StreamedJsonObject {
+  const _StreamedJsonObject({
+    required this.json,
+    required this.truncated,
+    required this.estimatedChars,
+  });
+
+  final String json;
+  final bool truncated;
+  final int estimatedChars;
 }
