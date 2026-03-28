@@ -672,6 +672,7 @@ class WorkspaceController extends ChangeNotifier {
       const <String, int>{};
   Map<String, String?> _watchedSessionHistoryCursorById =
       const <String, String?>{};
+  Map<String, int> _todoRefreshRevisionBySessionId = const <String, int>{};
   Map<String, List<WorkspaceQueuedPrompt>> _queuedPromptsBySessionId =
       const <String, List<WorkspaceQueuedPrompt>>{};
   Map<String, String> _queuedPromptFailureBySessionId =
@@ -1340,6 +1341,7 @@ class WorkspaceController extends ChangeNotifier {
     _reviewBundle = null;
     _selectedReviewPath = null;
     _reviewDiff = null;
+    _todoRefreshRevisionBySessionId = const <String, int>{};
     _replaceSelectedSessionTodos(const <TodoItem>[]);
     _pendingRequests = const PendingRequestBundle(
       questions: <QuestionRequestSummary>[],
@@ -3780,23 +3782,77 @@ class WorkspaceController extends ChangeNotifier {
   }
 
   void _replaceSelectedSessionTodos(List<TodoItem> todos) {
-    final immutableTodos = List<TodoItem>.unmodifiable(todos);
-    _todos = immutableTodos;
     final selectedSessionId = _selectedSessionId;
     if (selectedSessionId == null || selectedSessionId.isEmpty) {
+      _todos = List<TodoItem>.unmodifiable(todos);
       return;
+    }
+    _replaceTodosForSession(selectedSessionId, todos);
+  }
+
+  void _replaceTodosForSession(String sessionId, List<TodoItem> todos) {
+    final normalizedSessionId = sessionId.trim();
+    if (normalizedSessionId.isEmpty) {
+      return;
+    }
+    final immutableTodos = List<TodoItem>.unmodifiable(todos);
+    if (normalizedSessionId == _selectedSessionId) {
+      _todos = immutableTodos;
     }
     final nextTodosBySessionId = Map<String, List<TodoItem>>.from(
       _todosBySessionId,
     );
     if (immutableTodos.isEmpty) {
-      nextTodosBySessionId.remove(selectedSessionId);
+      nextTodosBySessionId.remove(normalizedSessionId);
     } else {
-      nextTodosBySessionId[selectedSessionId] = immutableTodos;
+      nextTodosBySessionId[normalizedSessionId] = immutableTodos;
     }
     _todosBySessionId = Map<String, List<TodoItem>>.unmodifiable(
       nextTodosBySessionId,
     );
+  }
+
+  Future<void> _refreshTodosForSession(
+    String? sessionId, {
+    bool notify = true,
+  }) async {
+    final project = _project;
+    final normalizedSessionId = sessionId?.trim();
+    if (project == null ||
+        normalizedSessionId == null ||
+        normalizedSessionId.isEmpty) {
+      return;
+    }
+    final revision =
+        (_todoRefreshRevisionBySessionId[normalizedSessionId] ?? 0) + 1;
+    _todoRefreshRevisionBySessionId = Map<String, int>.unmodifiable(
+      <String, int>{
+        ..._todoRefreshRevisionBySessionId,
+        normalizedSessionId: revision,
+      },
+    );
+    try {
+      final todos = await _todoService.fetchTodos(
+        profile: profile,
+        project: project,
+        sessionId: normalizedSessionId,
+      );
+      if (_disposed ||
+          project.directory != _project?.directory ||
+          _todoRefreshRevisionBySessionId[normalizedSessionId] != revision) {
+        return;
+      }
+      _replaceTodosForSession(normalizedSessionId, todos);
+      if (notify) {
+        _notify();
+      }
+    } catch (_) {
+      if (_disposed ||
+          project.directory != _project?.directory ||
+          _todoRefreshRevisionBySessionId[normalizedSessionId] != revision) {
+        return;
+      }
+    }
   }
 
   void _removeCachedTodosForSession(String? sessionId) {
@@ -5029,13 +5085,31 @@ class WorkspaceController extends ChangeNotifier {
         );
       }
     } else if (type == 'todo.updated') {
-      _replaceSelectedSessionTodos(
-        applyTodoUpdatedEvent(
-          _todos,
-          event.properties,
-          selectedSessionId: _selectedSessionId,
-        ),
-      );
+      final sessionId = event.properties['sessionID']?.toString().trim();
+      if (sessionId != null && sessionId.isNotEmpty) {
+        final currentTodos = sessionId == _selectedSessionId
+            ? _todos
+            : (_todosBySessionId[sessionId] ?? const <TodoItem>[]);
+        _replaceTodosForSession(
+          sessionId,
+          applyTodoUpdatedEvent(
+            currentTodos,
+            event.properties,
+            selectedSessionId: sessionId,
+          ),
+        );
+        _notify();
+        unawaited(_refreshTodosForSession(sessionId));
+      } else {
+        _replaceSelectedSessionTodos(
+          applyTodoUpdatedEvent(
+            _todos,
+            event.properties,
+            selectedSessionId: _selectedSessionId,
+          ),
+        );
+        _notify();
+      }
     } else if (type == 'question.asked') {
       _pendingRequests = PendingRequestBundle(
         questions: applyQuestionAskedEvent(
