@@ -5938,11 +5938,14 @@ class WorkspaceController extends ChangeNotifier {
     required ProjectTarget project,
     required String sessionId,
   }) async {
-    final spilled = await _loadSpilledSessionMessages(
-      project: project,
-      sessionId: sessionId,
+    final metadata = await _spillStore.loadMetadata(
+      _sessionMessagesSpillKey(project, sessionId),
     );
-    return spilled != null && spilled.isNotEmpty;
+    if (metadata == null) {
+      return false;
+    }
+    final itemCount = metadata.itemCount;
+    return itemCount == null || itemCount > 0;
   }
 
   Future<void> _saveSpilledSessionMessages({
@@ -5979,7 +5982,12 @@ class WorkspaceController extends ChangeNotifier {
 
     final signature =
         'spill:${compacted.length}:${_computeTimelineContentSignature(compacted)}';
-    await _spillStore.save(cacheKey, payload, signature: signature);
+    await _spillStore.save(
+      cacheKey,
+      payload,
+      signature: signature,
+      itemCount: compacted.length,
+    );
   }
 
   Future<bool> _restoreSelectedSessionSpilledHistory({

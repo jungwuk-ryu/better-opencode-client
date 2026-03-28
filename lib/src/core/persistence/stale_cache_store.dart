@@ -35,6 +35,38 @@ class StaleCacheEntry {
   }
 }
 
+class StaleCacheEntryMetadata {
+  const StaleCacheEntryMetadata({
+    required this.signature,
+    required this.fetchedAt,
+    this.itemCount,
+    this.payloadLength,
+  });
+
+  final String signature;
+  final DateTime fetchedAt;
+  final int? itemCount;
+  final int? payloadLength;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'signature': signature,
+    'fetchedAtMs': fetchedAt.millisecondsSinceEpoch,
+    'itemCount': itemCount,
+    'payloadLength': payloadLength,
+  };
+
+  factory StaleCacheEntryMetadata.fromJson(Map<String, Object?> json) {
+    return StaleCacheEntryMetadata(
+      signature: (json['signature'] as String?) ?? '',
+      fetchedAt: DateTime.fromMillisecondsSinceEpoch(
+        (json['fetchedAtMs'] as num?)?.toInt() ?? 0,
+      ),
+      itemCount: (json['itemCount'] as num?)?.toInt(),
+      payloadLength: (json['payloadLength'] as num?)?.toInt(),
+    );
+  }
+}
+
 class StaleCacheStore {
   static const String cachePrefix = 'cache.v1.';
   static const String ttlKey = '${cachePrefix}ttlMs';
@@ -60,18 +92,56 @@ class StaleCacheStore {
     }
   }
 
-  Future<void> save(String key, Object? payload, {String? signature}) async {
+  Future<void> save(
+    String key,
+    Object? payload, {
+    String? signature,
+    int? itemCount,
+  }) async {
     final payloadJson = jsonEncode(payload);
     final resolvedSignature =
         signature ?? '${payloadJson.length}:${payloadJson.hashCode}';
+    final fetchedAt = DateTime.now();
     final entry = StaleCacheEntry(
       payloadJson: payloadJson,
       signature: resolvedSignature,
-      fetchedAt: DateTime.now(),
+      fetchedAt: fetchedAt,
     );
     final prefs = await SharedPreferences.getInstance();
     final storageKey = '$cachePrefix$key';
     await prefs.setString(storageKey, jsonEncode(entry.toJson()));
+  }
+
+  Future<StaleCacheEntryMetadata?> loadMetadata(String key) async {
+    final prefs = await SharedPreferences.getInstance();
+    final storageKey = '$cachePrefix$key';
+    final raw = prefs.getString(storageKey);
+    if (raw == null || raw.isEmpty) {
+      return null;
+    }
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) {
+        await prefs.remove(storageKey);
+        return null;
+      }
+      final entry = StaleCacheEntry.fromJson(decoded.cast<String, Object?>());
+      return StaleCacheEntryMetadata(
+        signature: entry.signature,
+        fetchedAt: entry.fetchedAt,
+        payloadLength: entry.payloadJson.length,
+      );
+    } catch (_) {
+      await prefs.remove(storageKey);
+      return null;
+    }
+  }
+
+  Future<bool> has(String key) async {
+    final prefs = await SharedPreferences.getInstance();
+    final storageKey = '$cachePrefix$key';
+    final raw = prefs.getString(storageKey);
+    return raw != null && raw.isNotEmpty;
   }
 
   Future<void> remove(String key) async {
@@ -135,29 +205,93 @@ class FileBackedStaleCacheStore extends StaleCacheStore {
   }
 
   @override
-  Future<void> save(String key, Object? payload, {String? signature}) async {
+  Future<void> save(
+    String key,
+    Object? payload, {
+    String? signature,
+    int? itemCount,
+  }) async {
     final payloadJson = jsonEncode(payload);
     final resolvedSignature =
         signature ?? '${payloadJson.length}:${payloadJson.hashCode}';
+    final fetchedAt = DateTime.now();
     final entry = StaleCacheEntry(
       payloadJson: payloadJson,
       signature: resolvedSignature,
-      fetchedAt: DateTime.now(),
+      fetchedAt: fetchedAt,
+    );
+    final metadata = StaleCacheEntryMetadata(
+      signature: resolvedSignature,
+      fetchedAt: fetchedAt,
+      itemCount: itemCount,
+      payloadLength: payloadJson.length,
     );
     final file = await _fileForKey(key);
+    final metadataFile = await _metadataFileForKey(key);
     await file.parent.create(recursive: true);
     await file.writeAsString(jsonEncode(entry.toJson()), flush: true);
+    await metadataFile.writeAsString(jsonEncode(metadata.toJson()), flush: true);
+  }
+
+  @override
+  Future<StaleCacheEntryMetadata?> loadMetadata(String key) async {
+    final metadataFile = await _metadataFileForKey(key);
+    if (await metadataFile.exists()) {
+      try {
+        final raw = await metadataFile.readAsString();
+        if (raw.isEmpty) {
+          await metadataFile.delete();
+          return null;
+        }
+        final decoded = jsonDecode(raw);
+        if (decoded is! Map) {
+          await metadataFile.delete();
+          return null;
+        }
+        return StaleCacheEntryMetadata.fromJson(
+          decoded.cast<String, Object?>(),
+        );
+      } catch (_) {
+        try {
+          await metadataFile.delete();
+        } catch (_) {}
+        return null;
+      }
+    }
+    final file = await _fileForKey(key);
+    if (!await file.exists()) {
+      return null;
+    }
+    return StaleCacheEntryMetadata(
+      signature: '',
+      fetchedAt: DateTime.fromMillisecondsSinceEpoch(0),
+    );
+  }
+
+  @override
+  Future<bool> has(String key) async {
+    final metadataFile = await _metadataFileForKey(key);
+    if (await metadataFile.exists()) {
+      return true;
+    }
+    final file = await _fileForKey(key);
+    return file.exists();
   }
 
   @override
   Future<void> remove(String key) async {
     final file = await _fileForKey(key);
-    if (!await file.exists()) {
-      return;
+    final metadataFile = await _metadataFileForKey(key);
+    if (await file.exists()) {
+      try {
+        await file.delete();
+      } catch (_) {}
     }
-    try {
-      await file.delete();
-    } catch (_) {}
+    if (await metadataFile.exists()) {
+      try {
+        await metadataFile.delete();
+      } catch (_) {}
+    }
   }
 
   @override
@@ -186,6 +320,12 @@ class FileBackedStaleCacheStore extends StaleCacheStore {
     final directory = await _storageDirectory();
     final name = _hashedFileName(key);
     return File('${directory.path}${Platform.pathSeparator}$name.json');
+  }
+
+  Future<File> _metadataFileForKey(String key) async {
+    final directory = await _storageDirectory();
+    final name = _hashedFileName(key);
+    return File('${directory.path}${Platform.pathSeparator}$name.meta.json');
   }
 
   String _hashedFileName(String key) {
