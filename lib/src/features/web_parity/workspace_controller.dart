@@ -631,6 +631,8 @@ class WorkspaceController extends ChangeNotifier {
   String? _queuedSessionMessagesCacheSessionId;
   List<ChatMessage>? _queuedSessionMessagesCacheMessages;
   int _queuedSessionMessagesCacheToken = 0;
+  bool _notifyScheduled = false;
+  bool _notifyPending = false;
   Map<String, String> _activeChildSessionLivePreviewById =
       const <String, String>{};
   Map<String, String> _activeChildSessionCachedPreviewById =
@@ -6426,11 +6428,27 @@ class WorkspaceController extends ChangeNotifier {
     if (_disposed) {
       return;
     }
-    if (_interruptingSession && !selectedSessionInterruptible) {
-      _interruptingSession = false;
+    _notifyPending = true;
+    if (_notifyScheduled) {
+      return;
     }
-    _ensureActiveChildSessionPreviewCache();
-    notifyListeners();
+    _notifyScheduled = true;
+    WidgetsBinding.instance.scheduleFrame();
+    WidgetsBinding.instance.endOfFrame.then((_) {
+      _notifyScheduled = false;
+      if (_disposed || !_notifyPending) {
+        return;
+      }
+      _notifyPending = false;
+      if (_interruptingSession && !selectedSessionInterruptible) {
+        _interruptingSession = false;
+      }
+      _ensureActiveChildSessionPreviewCache();
+      notifyListeners();
+      if (_notifyPending && !_disposed) {
+        _notify();
+      }
+    });
   }
 
   @override
