@@ -6140,125 +6140,154 @@ class _WorkspaceTopBar extends StatelessWidget {
     if (compact) {
       return Material(
         color: surfaces.panel,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Container(
-              constraints: BoxConstraints(
-                minHeight: density.inset(54, min: 46),
-              ),
-              padding: EdgeInsets.symmetric(
-                horizontal: density.inset(AppSpacing.xxs, min: 2),
-                vertical: 2,
-              ),
-              decoration: BoxDecoration(
-                border: Border(bottom: BorderSide(color: surfaces.lineSoft)),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: <Widget>[
-                  IconButton(
-                    onPressed: onOpenDrawer,
-                    icon: const Icon(Icons.menu_rounded, size: 18),
-                    splashRadius: 18,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final showContextRing =
+                session != null && constraints.maxWidth >= 340;
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Container(
+                  constraints: BoxConstraints(
+                    minHeight: density.inset(54, min: 46),
                   ),
-                  if (canReturnToMain)
-                    IconButton(
-                      key: const ValueKey<String>(
-                        'workspace-back-to-main-session-button',
-                      ),
-                      tooltip: 'Back to main session',
-                      onPressed: onBackToMainSession,
-                      icon: const Icon(
-                        Icons.subdirectory_arrow_left_rounded,
-                        size: 18,
-                      ),
-                      splashRadius: 18,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: density.inset(AppSpacing.xxs, min: 2),
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(color: surfaces.lineSoft),
                     ),
-                  Expanded(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: density.inset(AppSpacing.xxs, min: 2),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: <Widget>[
+                      IconButton(
+                        onPressed: onOpenDrawer,
+                        icon: const Icon(Icons.menu_rounded, size: 18),
+                        splashRadius: 18,
                       ),
-                      child: _SessionIdentity(
+                      if (canReturnToMain)
+                        IconButton(
+                          key: const ValueKey<String>(
+                            'workspace-back-to-main-session-button',
+                          ),
+                          tooltip: 'Back to main session',
+                          onPressed: onBackToMainSession,
+                          icon: const Icon(
+                            Icons.subdirectory_arrow_left_rounded,
+                            size: 18,
+                          ),
+                          splashRadius: 18,
+                        ),
+                      Expanded(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: density.inset(AppSpacing.xxs, min: 2),
+                          ),
+                          child: _SessionIdentity(
+                            compact: true,
+                            title: title,
+                            titleKey: ValueKey<String>(
+                              'session-header-title-${session?.id ?? 'new'}',
+                            ),
+                            titleStyle: titleStyle,
+                            busy: busy,
+                            busyKey: ValueKey<String>(
+                              'session-header-busy-${session?.id ?? 'new'}',
+                            ),
+                          ),
+                        ),
+                      ),
+                      if (showContextRing)
+                        Padding(
+                          padding: EdgeInsets.only(
+                            right: density.inset(AppSpacing.xxs, min: 2),
+                          ),
+                          child: _SessionContextUsageRing(
+                            key: ValueKey<String>(
+                              'session-header-context-ring-${session!.id}',
+                            ),
+                            usagePercent: contextSnapshot?.usagePercent,
+                            totalTokens: contextSnapshot?.totalTokens,
+                            contextLimit: contextSnapshot?.contextLimit,
+                            compact: true,
+                          ),
+                        ),
+                      _SessionOverflowMenuButton(
                         compact: true,
-                        title: title,
-                        titleKey: ValueKey<String>(
-                          'session-header-title-${session?.id ?? 'new'}',
-                        ),
-                        titleStyle: titleStyle,
-                        busy: busy,
-                        busyKey: ValueKey<String>(
-                          'session-header-busy-${session?.id ?? 'new'}',
-                        ),
+                        sections: menuSections,
                       ),
-                    ),
+                    ],
                   ),
-                  if (session != null)
-                    Padding(
-                      padding: EdgeInsets.only(
-                        right: density.inset(AppSpacing.xxs, min: 2),
-                      ),
-                      child: _SessionContextUsageRing(
-                        key: ValueKey<String>(
-                          'session-header-context-ring-${session!.id}',
+                ),
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    density.inset(AppSpacing.xs, min: 4),
+                    density.inset(AppSpacing.xxs, min: 4),
+                    density.inset(AppSpacing.xs, min: 4),
+                    density.inset(AppSpacing.xxs, min: 4),
+                  ),
+                  child: Wrap(
+                    alignment: WrapAlignment.start,
+                    runAlignment: WrapAlignment.start,
+                    spacing: density.inset(AppSpacing.xxs, min: 2),
+                    runSpacing: density.inset(AppSpacing.xxs, min: 2),
+                    children: <Widget>[
+                      IconButton(
+                        key: const ValueKey<String>(
+                          'workspace-command-palette-button',
                         ),
-                        usagePercent: contextSnapshot?.usagePercent,
-                        totalTokens: contextSnapshot?.totalTokens,
-                        contextLimit: contextSnapshot?.contextLimit,
-                        compact: true,
+                        onPressed: onOpenCommandPalette,
+                        icon: const Icon(Icons.apps_rounded, size: 18),
+                        tooltip:
+                            'Command palette (${_formatWorkspaceShortcutLabel('mod+k')})',
+                        splashRadius: 18,
                       ),
-                    ),
-                  IconButton(
-                    key: const ValueKey<String>(
-                      'workspace-command-palette-button',
-                    ),
-                    onPressed: onOpenCommandPalette,
-                    icon: const Icon(Icons.apps_rounded, size: 18),
-                    tooltip:
-                        'Command palette (${_formatWorkspaceShortcutLabel('mod+k')})',
-                    splashRadius: 18,
+                      IconButton(
+                        key: const ValueKey<String>(
+                          'workspace-mcp-picker-button',
+                        ),
+                        onPressed: onOpenMcpPicker,
+                        icon: const Icon(Icons.extension_rounded, size: 18),
+                        tooltip:
+                            'Toggle MCPs (${_formatWorkspaceShortcutLabel('mod+;')})',
+                        splashRadius: 18,
+                      ),
+                      IconButton(
+                        key: const ValueKey<String>(
+                          'workspace-chat-search-button',
+                        ),
+                        onPressed: onOpenChatSearch,
+                        icon: const Icon(Icons.search_rounded, size: 18),
+                        tooltip: 'Search chat',
+                        splashRadius: 18,
+                      ),
+                      IconButton(
+                        onPressed: onToggleTerminal,
+                        icon: Icon(
+                          terminalOpen
+                              ? Icons.terminal_rounded
+                              : Icons.terminal_outlined,
+                          size: 18,
+                        ),
+                        tooltip:
+                            terminalOpen ? 'Hide terminal' : 'Show terminal',
+                        splashRadius: 18,
+                      ),
+                    ],
                   ),
-                  IconButton(
-                    key: const ValueKey<String>('workspace-mcp-picker-button'),
-                    onPressed: onOpenMcpPicker,
-                    icon: const Icon(Icons.extension_rounded, size: 18),
-                    tooltip:
-                        'Toggle MCPs (${_formatWorkspaceShortcutLabel('mod+;')})',
-                    splashRadius: 18,
-                  ),
-                  IconButton(
-                    key: const ValueKey<String>('workspace-chat-search-button'),
-                    onPressed: onOpenChatSearch,
-                    icon: const Icon(Icons.search_rounded, size: 18),
-                    tooltip: 'Search chat',
-                    splashRadius: 18,
-                  ),
-                  IconButton(
-                    onPressed: onToggleTerminal,
-                    icon: Icon(
-                      terminalOpen
-                          ? Icons.terminal_rounded
-                          : Icons.terminal_outlined,
-                      size: 18,
-                    ),
-                    tooltip: terminalOpen ? 'Hide terminal' : 'Show terminal',
-                    splashRadius: 18,
-                  ),
-                  _SessionOverflowMenuButton(
-                    compact: true,
-                    sections: menuSections,
-                  ),
-                ],
-              ),
-            ),
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 180),
-              switchInCurve: Curves.easeOutCubic,
-              switchOutCurve: Curves.easeInCubic,
-              child: searchBar,
-            ),
-          ],
+                ),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 180),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  child: searchBar,
+                ),
+              ],
+            );
+          },
         ),
       );
     }
@@ -6628,6 +6657,107 @@ class _WorkspaceChatSearchBar extends StatelessWidget {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
+    if (compact) {
+      return Container(
+        key: const ValueKey<String>('workspace-chat-search-panel'),
+        width: double.infinity,
+        padding: EdgeInsets.symmetric(
+          horizontal: density.inset(AppSpacing.sm),
+          vertical: density.inset(AppSpacing.xs),
+        ),
+        decoration: BoxDecoration(
+          color: surfaces.panelRaised.withValues(alpha: 0.94),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: surfaces.lineSoft),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Icon(Icons.search_rounded, size: 18, color: surfaces.muted),
+                SizedBox(width: density.inset(AppSpacing.sm, min: 6)),
+                Expanded(
+                  child: TextField(
+                    key: const ValueKey<String>('workspace-chat-search-field'),
+                    controller: controller,
+                    focusNode: focusNode,
+                    onChanged: onChanged,
+                    textInputAction: TextInputAction.search,
+                    onSubmitted: (_) => onNextMatch(),
+                    style: theme.textTheme.bodyMedium,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      border: InputBorder.none,
+                      hintText: 'Search this chat',
+                      hintStyle: theme.textTheme.bodyMedium?.copyWith(
+                        color: surfaces.muted,
+                      ),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  key: const ValueKey<String>(
+                    'workspace-chat-search-close-button',
+                  ),
+                  onPressed: onClose,
+                  tooltip: 'Close search',
+                  splashRadius: 16,
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
+            SizedBox(height: density.inset(AppSpacing.xxs, min: 4)),
+            Row(
+              children: <Widget>[
+                Flexible(
+                  child: Container(
+                    key: const ValueKey<String>('workspace-chat-search-status'),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: density.inset(AppSpacing.xs, min: 4),
+                      vertical: density.inset(AppSpacing.xxs, min: 2),
+                    ),
+                    decoration: BoxDecoration(
+                      color: surfaces.panelMuted.withValues(alpha: 0.92),
+                      borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
+                      border: Border.all(color: surfaces.lineSoft),
+                    ),
+                    child: Text(
+                      statusText,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: surfaces.muted,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+                SizedBox(width: density.inset(AppSpacing.xs, min: 4)),
+                IconButton(
+                  key: const ValueKey<String>(
+                    'workspace-chat-search-previous-button',
+                  ),
+                  onPressed: navigationEnabled ? onPreviousMatch : null,
+                  tooltip: 'Previous match',
+                  splashRadius: 16,
+                  icon: const Icon(Icons.keyboard_arrow_up_rounded),
+                ),
+                IconButton(
+                  key: const ValueKey<String>(
+                    'workspace-chat-search-next-button',
+                  ),
+                  onPressed: navigationEnabled ? onNextMatch : null,
+                  tooltip: 'Next match',
+                  splashRadius: 16,
+                  icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
     return Container(
       key: const ValueKey<String>('workspace-chat-search-panel'),
       width: double.infinity,
@@ -6677,6 +6807,8 @@ class _WorkspaceChatSearchBar extends StatelessWidget {
             ),
             child: Text(
               statusText,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: theme.textTheme.labelSmall?.copyWith(
                 color: surfaces.muted,
                 fontWeight: FontWeight.w700,
