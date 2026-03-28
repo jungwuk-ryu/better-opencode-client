@@ -613,6 +613,7 @@ class WorkspaceController extends ChangeNotifier {
   int _sessionLoadRevision = 0;
   int _selectedSessionHistoryLoadRevision = 0;
   int _reviewDiffRevision = 0;
+  List<ChatMessage>? _timelineDerivedMessagesRef;
   List<ChatMessage>? _derivedMessagesRef;
   ConfigSnapshot? _derivedConfigSnapshotRef;
   String? _derivedRevertMessageId;
@@ -746,37 +747,37 @@ class WorkspaceController extends ChangeNotifier {
   }
 
   List<ChatMessage> get orderedMessages {
-    _ensureDerivedMessageState();
+    _ensureTimelineDerivedMessageState();
     return _orderedMessagesCache;
   }
 
   int get timelineContentSignature {
-    _ensureDerivedMessageState();
+    _ensureTimelineDerivedMessageState();
     return _timelineContentSignatureCache;
   }
 
   SessionContextMetrics get sessionContextMetrics {
-    _ensureDerivedMessageState();
+    _ensureSessionContextDerivedState();
     return _sessionContextMetricsCache;
   }
 
   String? get sessionSystemPrompt {
-    _ensureDerivedMessageState();
+    _ensureSessionContextDerivedState();
     return _sessionSystemPromptCache;
   }
 
   List<SessionContextBreakdownSegment> get sessionContextBreakdown {
-    _ensureDerivedMessageState();
+    _ensureSessionContextDerivedState();
     return _sessionContextBreakdownCache;
   }
 
   int get userMessageCount {
-    _ensureDerivedMessageState();
+    _ensureTimelineDerivedMessageState();
     return _userMessageCountCache;
   }
 
   int get assistantMessageCount {
-    _ensureDerivedMessageState();
+    _ensureTimelineDerivedMessageState();
     return _assistantMessageCountCache;
   }
 
@@ -3648,7 +3649,32 @@ class WorkspaceController extends ChangeNotifier {
     }
   }
 
-  void _ensureDerivedMessageState() {
+  void _ensureTimelineDerivedMessageState() {
+    final currentMessages = messages;
+    if (identical(_timelineDerivedMessagesRef, currentMessages)) {
+      return;
+    }
+
+    _timelineDerivedMessagesRef = currentMessages;
+    _orderedMessagesCache = _orderedTimelineMessages(currentMessages);
+    _timelineContentSignatureCache = _computeTimelineContentSignature(
+      _orderedMessagesCache,
+    );
+    var userCount = 0;
+    var assistantCount = 0;
+    for (final message in currentMessages) {
+      switch (message.info.role) {
+        case 'user':
+          userCount += 1;
+        case 'assistant':
+          assistantCount += 1;
+      }
+    }
+    _userMessageCountCache = userCount;
+    _assistantMessageCountCache = assistantCount;
+  }
+
+  void _ensureSessionContextDerivedState() {
     final currentMessages = messages;
     final configSnapshot = this.configSnapshot;
     final revertMessageId = selectedSession?.revertMessageId;
@@ -3662,10 +3688,6 @@ class WorkspaceController extends ChangeNotifier {
     _derivedMessagesRef = currentMessages;
     _derivedConfigSnapshotRef = configSnapshot;
     _derivedRevertMessageId = revertMessageId;
-    _orderedMessagesCache = _orderedTimelineMessages(currentMessages);
-    _timelineContentSignatureCache = _computeTimelineContentSignature(
-      _orderedMessagesCache,
-    );
     _sessionContextMetricsCache = getSessionContextMetrics(
       messages: currentMessages,
       providerCatalog: providerCatalog,
@@ -3682,18 +3704,6 @@ class WorkspaceController extends ChangeNotifier {
             inputTokens: snapshot.inputTokens,
             systemPrompt: _sessionSystemPromptCache,
           );
-    var userCount = 0;
-    var assistantCount = 0;
-    for (final message in currentMessages) {
-      switch (message.info.role) {
-        case 'user':
-          userCount += 1;
-        case 'assistant':
-          assistantCount += 1;
-      }
-    }
-    _userMessageCountCache = userCount;
-    _assistantMessageCountCache = assistantCount;
   }
 
   void _restoreComposerSelectionFromMessages() {
