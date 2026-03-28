@@ -14525,48 +14525,6 @@ class _PromptComposerLoadingPlaceholder extends StatelessWidget {
   }
 }
 
-int _timelineContentSignature(List<ChatMessage> messages) {
-  var signature = messages.length;
-  for (final message in messages) {
-    signature = Object.hash(
-      signature,
-      message.info.id,
-      message.info.role,
-      message.info.agent,
-      message.info.variant,
-      message.info.modelId,
-      message.info.providerId,
-      message.info.createdAt?.millisecondsSinceEpoch,
-      message.info.completedAt?.millisecondsSinceEpoch,
-      message.info.cost,
-      message.info.totalTokens,
-      message.info.inputTokens,
-      message.info.outputTokens,
-      message.info.reasoningTokens,
-      message.info.cacheReadTokens,
-      message.info.cacheWriteTokens,
-      message.parts.length,
-    );
-    for (final part in message.parts) {
-      signature = Object.hash(
-        signature,
-        part.id,
-        part.type,
-        part.tool,
-        part.filename,
-        _timelineStringSignature(part.text),
-        _timelineStringSignature(part.metadata['summary']?.toString()),
-        _timelineStringSignature(part.metadata['content']?.toString()),
-        _timelineStringSignature(part.metadata['command']?.toString()),
-        _timelineStringSignature(part.metadata['output']?.toString()),
-        _timelineStringSignature(part.metadata['title']?.toString()),
-        _timelineStringSignature(part.metadata['status']?.toString()),
-      );
-    }
-  }
-  return signature;
-}
-
 int _timelineStringSignature(String? value) {
   if (value == null || value.isEmpty) {
     return 0;

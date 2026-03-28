@@ -217,7 +217,7 @@ List<ChatMessage> applyMessagePartUpdatedEvent(
     return messages;
   }
 
-  final parts = List<ChatPart>.from(currentMessage.parts);
+  final parts = List<ChatPart>.from(currentMessage!.parts);
   if (partIndex < 0) {
     parts.add(mergedPart);
   } else {
@@ -364,10 +364,7 @@ bool _chatPartEquals(ChatPart left, ChatPart right) {
       _objectMapEquals(left.metadata, right.metadata);
 }
 
-bool _objectMapEquals(
-  Map<String, Object?> left,
-  Map<String, Object?> right,
-) {
+bool _objectMapEquals(Map<String, Object?> left, Map<String, Object?> right) {
   if (identical(left, right)) {
     return true;
   }
@@ -380,14 +377,4 @@ bool _objectMapEquals(
     }
   }
   return true;
-}
-
-extension<T> on Iterable<T> {
-  T? get firstOrNull {
-    final iterator = this.iterator;
-    if (!iterator.moveNext()) {
-      return null;
-    }
-    return iterator.current;
-  }
 }
