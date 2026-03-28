@@ -48,6 +48,7 @@ const int _shellFileCacheTextMatchLimit = 4;
 const int _shellFileCacheTextMatchLineLimit = 280;
 const int _shellFileCacheSymbolLimit = 4;
 const int _shellFileCachePayloadSoftLimit = 256 * 1024;
+const int _shellFilePreviewCharacterLimit = 6000;
 
 class _ComposerSubmissionOptions {
   const _ComposerSubmissionOptions({
@@ -1317,7 +1318,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         return;
       }
       setState(() {
-        _filePreview = preview;
+        _filePreview = _compactShellFilePreview(preview);
       });
     } catch (error) {
       if (!_isActiveFilePreviewLoad(requestToken, scopeKey, path: path)) {
@@ -1393,6 +1394,21 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         ? match.lines
         : '${match.lines.substring(0, _shellFileCacheTextMatchLineLimit)}…';
     return TextMatchSummary(path: match.path, lines: lines);
+  }
+
+  FileContentSummary? _compactShellFilePreview(FileContentSummary? preview) {
+    if (preview == null) {
+      return null;
+    }
+    final content = preview.content;
+    if (content.length <= _shellFilePreviewCharacterLimit) {
+      return preview;
+    }
+    return FileContentSummary(
+      type: preview.type,
+      content:
+          '${content.substring(0, _shellFilePreviewCharacterLimit)}\n\n[Preview shortened in shell mode to keep memory use low.]',
+    );
   }
 
   String _shellFileCacheSignature(FileBrowserBundle bundle) {

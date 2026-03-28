@@ -26328,18 +26328,11 @@ class _FilesPanelState extends State<_FilesPanel> {
                                       ),
                                       child: LayoutBuilder(
                                         builder: (context, previewConstraints) {
-                                          return SingleChildScrollView(
-                                            child: ConstrainedBox(
-                                              constraints: BoxConstraints(
-                                                minWidth:
-                                                    previewConstraints.maxWidth,
-                                              ),
-                                              child: _HighlightedFilePreview(
-                                                path: bundle.selectedPath,
-                                                content:
-                                                    bundle.preview!.content,
-                                              ),
-                                            ),
+                                          return _WorkspaceSafeFilePreview(
+                                            path: bundle.selectedPath,
+                                            content: bundle.preview!.content,
+                                            previewWidth:
+                                                previewConstraints.maxWidth,
                                           );
                                         },
                                       ),
@@ -26404,6 +26397,7 @@ final _visibleFileTreeCache =
     _LruCache<_VisibleFileTreeCacheKey, List<_VisibleFileTreeEntry>>(
       maximumSize: 48,
     );
+const int _workspaceFilePreviewCollapsedCharacterLimit = 16000;
 
 int _fileNodeListSignature(List<FileNodeSummary> nodes) {
   final cachedSignature = _fileNodeSignatureCache[nodes];
@@ -26465,6 +26459,95 @@ class _HighlightedFilePreview extends StatefulWidget {
   @override
   State<_HighlightedFilePreview> createState() =>
       _HighlightedFilePreviewState();
+}
+
+class _WorkspaceSafeFilePreview extends StatefulWidget {
+  const _WorkspaceSafeFilePreview({
+    required this.path,
+    required this.content,
+    required this.previewWidth,
+  });
+
+  final String? path;
+  final String content;
+  final double previewWidth;
+
+  @override
+  State<_WorkspaceSafeFilePreview> createState() =>
+      _WorkspaceSafeFilePreviewState();
+}
+
+class _WorkspaceSafeFilePreviewState extends State<_WorkspaceSafeFilePreview> {
+  bool _expanded = false;
+
+  @override
+  void didUpdateWidget(covariant _WorkspaceSafeFilePreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.path != widget.path || oldWidget.content != widget.content) {
+      _expanded = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final canExpand =
+        widget.content.length > _workspaceFilePreviewCollapsedCharacterLimit;
+    final visibleContent = !_expanded && canExpand
+        ? '${widget.content.substring(0, _workspaceFilePreviewCollapsedCharacterLimit)}\n\n[Preview collapsed to keep rendering responsive. Use Show more to inspect the rest of the safe preview.]'
+        : widget.content;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        if (canExpand)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Icon(
+                  Icons.visibility_rounded,
+                  size: 16,
+                  color: surfaces.warning,
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                Expanded(
+                  child: Text(
+                    _expanded
+                        ? 'Showing the full safe preview payload.'
+                        : 'Showing the first $_workspaceFilePreviewCollapsedCharacterLimit characters to keep the preview responsive.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: surfaces.muted,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      _expanded = !_expanded;
+                    });
+                  },
+                  child: Text(_expanded ? 'Show less' : 'Show more'),
+                ),
+              ],
+            ),
+          ),
+        Expanded(
+          child: SingleChildScrollView(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minWidth: widget.previewWidth),
+              child: _HighlightedFilePreview(
+                path: widget.path,
+                content: visibleContent,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class _HighlightedFilePreviewState extends State<_HighlightedFilePreview> {

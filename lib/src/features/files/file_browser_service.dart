@@ -22,7 +22,7 @@ const int _symbolServerLimit = 16;
 const int _fileSearchResultLimit = 12;
 const int _textMatchResultLimit = 16;
 const int _symbolResultLimit = 16;
-const int _filePreviewCharacterLimit = 120000;
+const int _filePreviewCharacterLimit = 48000;
 
 class FileBrowserService {
   FileBrowserService({http.Client? client}) : _client = client ?? http.Client();
