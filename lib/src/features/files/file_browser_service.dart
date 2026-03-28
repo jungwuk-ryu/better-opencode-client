@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -6,6 +7,22 @@ import '../../core/connection/connection_models.dart';
 import '../../core/network/request_headers.dart';
 import '../projects/project_models.dart';
 import 'file_models.dart';
+
+const int _fileNodesResponseByteLimit = 3 * 1024 * 1024;
+const int _fileStatusResponseByteLimit = 2 * 1024 * 1024;
+const int _fileSearchResponseByteLimit = 2 * 1024 * 1024;
+const int _fileTextSearchResponseByteLimit = 2 * 1024 * 1024;
+const int _fileSymbolResponseByteLimit = 2 * 1024 * 1024;
+const int _fileContentResponseByteLimit = 768 * 1024;
+
+const int _fileSearchServerLimit = 12;
+const int _textMatchServerLimit = 16;
+const int _symbolServerLimit = 16;
+
+const int _fileSearchResultLimit = 12;
+const int _textMatchResultLimit = 16;
+const int _symbolResultLimit = 16;
+const int _filePreviewCharacterLimit = 120000;
 
 class FileBrowserService {
   FileBrowserService({http.Client? client}) : _client = client ?? http.Client();
@@ -22,6 +39,7 @@ class FileBrowserService {
       path: '/file',
       project: project,
       query: <String, String>{'path': path},
+      maxResponseBytes: _fileNodesResponseByteLimit,
     );
     if (body is! List) {
       return const <FileNodeSummary>[];
@@ -46,34 +64,48 @@ class FileBrowserService {
       profile: profile,
       path: '/file/status',
       project: project,
+      maxResponseBytes: _fileStatusResponseByteLimit,
     );
-    final searchBody = searchQuery.trim().isEmpty
+    final trimmedQuery = searchQuery.trim();
+    final searchBody = trimmedQuery.isEmpty
         ? const <Object?>[]
-        : await _getJson(
+        : await _getJsonOrDefault(
             profile: profile,
             path: '/find/file',
             project: project,
             query: <String, String>{
-              'query': searchQuery,
+              'query': trimmedQuery,
               'dirs': 'true',
-              'limit': '8',
+              'limit': '$_fileSearchServerLimit',
             },
+            maxResponseBytes: _fileSearchResponseByteLimit,
+            fallback: const <Object?>[],
           );
-    final textSearchBody = searchQuery.trim().isEmpty
+    final textSearchBody = trimmedQuery.isEmpty
         ? const <Object?>[]
-        : await _getJson(
+        : await _getJsonOrDefault(
             profile: profile,
             path: '/find',
             project: project,
-            query: <String, String>{'pattern': searchQuery},
+            query: <String, String>{
+              'pattern': trimmedQuery,
+              'limit': '$_textMatchServerLimit',
+            },
+            maxResponseBytes: _fileTextSearchResponseByteLimit,
+            fallback: const <Object?>[],
           );
-    final symbolBody = searchQuery.trim().isEmpty
+    final symbolBody = trimmedQuery.isEmpty
         ? const <Object?>[]
-        : await _getJson(
+        : await _getJsonOrDefault(
             profile: profile,
             path: '/find/symbol',
             project: project,
-            query: <String, String>{'query': searchQuery},
+            query: <String, String>{
+              'query': trimmedQuery,
+              'limit': '$_symbolServerLimit',
+            },
+            maxResponseBytes: _fileSymbolResponseByteLimit,
+            fallback: const <Object?>[],
           );
 
     final statuses = statusBody is List
@@ -86,11 +118,15 @@ class FileBrowserService {
               .toList(growable: false)
         : const <FileStatusSummary>[];
     final searchResults = searchBody is List
-        ? searchBody.map((item) => item.toString()).toList(growable: false)
+        ? searchBody
+              .take(_fileSearchResultLimit)
+              .map((item) => item.toString())
+              .toList(growable: false)
         : const <String>[];
     final textMatches = textSearchBody is List
         ? textSearchBody
               .whereType<Map>()
+              .take(_textMatchResultLimit)
               .map(
                 (item) =>
                     TextMatchSummary.fromJson(item.cast<String, Object?>()),
@@ -100,35 +136,12 @@ class FileBrowserService {
     final symbols = symbolBody is List
         ? symbolBody
               .whereType<Map>()
+              .take(_symbolResultLimit)
               .map(
                 (item) => SymbolSummary.fromJson(item.cast<String, Object?>()),
               )
               .toList(growable: false)
         : const <SymbolSummary>[];
-
-    String? selectedPath;
-    if (searchResults.isNotEmpty) {
-      selectedPath = searchResults.first;
-    } else {
-      for (final node in nodes) {
-        if (node.type != 'directory') {
-          selectedPath = node.path;
-          break;
-        }
-      }
-    }
-    FileContentSummary? preview;
-    if (selectedPath != null) {
-      try {
-        preview = await fetchFileContent(
-          profile: profile,
-          project: project,
-          path: selectedPath,
-        );
-      } catch (_) {
-        preview = null;
-      }
-    }
 
     return FileBrowserBundle(
       nodes: nodes,
@@ -136,8 +149,8 @@ class FileBrowserService {
       textMatches: textMatches,
       symbols: symbols,
       statuses: statuses,
-      preview: preview,
-      selectedPath: selectedPath,
+      preview: null,
+      selectedPath: null,
     );
   }
 
@@ -146,22 +159,56 @@ class FileBrowserService {
     required ProjectTarget project,
     required String path,
   }) async {
-    final body = await _getJson(
-      profile: profile,
-      path: '/file/content',
-      project: project,
-      query: <String, String>{'path': path},
-    );
-    if (body is! Map) {
-      return null;
+    try {
+      final body = await _getJson(
+        profile: profile,
+        path: '/file/content',
+        project: project,
+        query: <String, String>{'path': path},
+        maxResponseBytes: _fileContentResponseByteLimit,
+      );
+      if (body is! Map) {
+        return null;
+      }
+      return _sanitizeFileContentSummary(
+        FileContentSummary.fromJson(body.cast<String, Object?>()),
+        path: path,
+      );
+    } on _FileBrowserPayloadTooLarge {
+      return FileContentSummary(
+        type: 'text',
+        content:
+            '[Preview omitted because the file response exceeded the safe size limit.]',
+      );
     }
-    return FileContentSummary.fromJson(body.cast<String, Object?>());
+  }
+
+  Future<Object?> _getJsonOrDefault({
+    required ServerProfile profile,
+    required String path,
+    required ProjectTarget project,
+    required Object? fallback,
+    Map<String, String>? query,
+    required int maxResponseBytes,
+  }) async {
+    try {
+      return await _getJson(
+        profile: profile,
+        path: path,
+        project: project,
+        query: query,
+        maxResponseBytes: maxResponseBytes,
+      );
+    } on _FileBrowserPayloadTooLarge {
+      return fallback;
+    }
   }
 
   Future<Object?> _getJson({
     required ServerProfile profile,
     required String path,
     required ProjectTarget project,
+    required int maxResponseBytes,
     Map<String, String>? query,
   }) async {
     final baseUri = profile.uriOrNull;
@@ -180,19 +227,61 @@ class FileBrowserService {
         .replace(path: basePath)
         .resolve(path.startsWith('/') ? path.substring(1) : path)
         .replace(queryParameters: merged);
-    final response = await _client.get(uri, headers: headers);
+    final request = http.Request('GET', uri)..headers.addAll(headers);
+    final response = await _client.send(request);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw StateError(
         'Request failed for $uri with status ${response.statusCode}.',
       );
     }
-    if (response.body.trim().isEmpty) {
+    final contentLength = response.contentLength;
+    if (contentLength > maxResponseBytes) {
+      throw _FileBrowserPayloadTooLarge(
+        'Response for $path exceeded the safe size limit.',
+      );
+    }
+    final bytes = BytesBuilder(copy: false);
+    await for (final chunk in response.stream) {
+      bytes.add(chunk);
+      if (bytes.length > maxResponseBytes) {
+        throw _FileBrowserPayloadTooLarge(
+          'Response for $path exceeded the safe size limit.',
+        );
+      }
+    }
+    final body = utf8.decode(bytes.takeBytes(), allowMalformed: true);
+    if (body.trim().isEmpty) {
       return null;
     }
-    return jsonDecode(response.body);
+    return jsonDecode(body);
+  }
+
+  FileContentSummary _sanitizeFileContentSummary(
+    FileContentSummary summary, {
+    required String path,
+  }) {
+    final content = summary.content;
+    if (content.length <= _filePreviewCharacterLimit) {
+      return summary;
+    }
+    final truncated = content.substring(0, _filePreviewCharacterLimit);
+    return FileContentSummary(
+      type: summary.type,
+      content:
+          '$truncated\n\n[Preview truncated for $path because the file is too large to render safely.]',
+    );
   }
 
   void dispose() {
     _client.close();
   }
+}
+
+class _FileBrowserPayloadTooLarge implements Exception {
+  const _FileBrowserPayloadTooLarge(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
 }
