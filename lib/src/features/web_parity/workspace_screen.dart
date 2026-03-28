@@ -13557,6 +13557,8 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                                 historyLoading: timelineState.historyLoading,
                                 error: timelineState.error,
                                 messages: timelineState.orderedMessages,
+                                timelineContentSignature:
+                                    controller.timelineContentSignature,
                                 compact: compact,
                                 sessions: controller.sessions,
                                 selectedSession: selected
@@ -14584,6 +14586,7 @@ class _MessageTimeline extends StatefulWidget {
     required this.historyLoading,
     required this.error,
     required this.messages,
+    required this.timelineContentSignature,
     required this.compact,
     required this.sessions,
     required this.selectedSession,
@@ -14615,6 +14618,7 @@ class _MessageTimeline extends StatefulWidget {
   final bool historyLoading;
   final String? error;
   final List<ChatMessage> messages;
+  final int timelineContentSignature;
   final bool compact;
   final List<SessionSummary> sessions;
   final SessionSummary? selectedSession;
@@ -14971,7 +14975,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
 
   int _contentSignature() {
     return Object.hash(
-      _timelineContentSignature(widget.messages),
+      widget.timelineContentSignature,
       _showThinkingPlaceholder,
     );
   }
