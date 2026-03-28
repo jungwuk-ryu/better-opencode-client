@@ -178,16 +178,20 @@ List<ChatMessage> applyMessagePartUpdatedEvent(
     return messages;
   }
 
-  final next = List<ChatMessage>.from(messages);
-  final messageIndex = next.indexWhere(
-    (message) => message.info.id == messageId,
-  );
-  final currentPart = messageIndex >= 0
-      ? next[messageIndex].parts
-            .where((part) => part.id == partId)
-            .cast<ChatPart?>()
-            .firstOrNull
-      : null;
+  final messageIndex = messages.indexWhere((message) => message.info.id == messageId);
+  final currentMessage = messageIndex >= 0 ? messages[messageIndex] : null;
+  var partIndex = -1;
+  ChatPart? currentPart;
+  if (currentMessage != null) {
+    for (var index = 0; index < currentMessage.parts.length; index += 1) {
+      final candidate = currentMessage.parts[index];
+      if (candidate.id == partId) {
+        partIndex = index;
+        currentPart = candidate;
+        break;
+      }
+    }
+  }
   final mergedPart = _mergePart(
     currentPart,
     partJson,
@@ -197,7 +201,7 @@ List<ChatMessage> applyMessagePartUpdatedEvent(
 
   if (messageIndex < 0) {
     return <ChatMessage>[
-      ...next,
+      ...messages,
       ChatMessage(
         info: ChatMessageInfo(
           id: messageId,
@@ -209,14 +213,18 @@ List<ChatMessage> applyMessagePartUpdatedEvent(
     ];
   }
 
-  final parts = List<ChatPart>.from(next[messageIndex].parts);
-  final partIndex = parts.indexWhere((part) => part.id == partId);
+  if (currentPart != null && _chatPartEquals(currentPart, mergedPart)) {
+    return messages;
+  }
+
+  final parts = List<ChatPart>.from(currentMessage.parts);
   if (partIndex < 0) {
     parts.add(mergedPart);
   } else {
     parts[partIndex] = mergedPart;
   }
-  next[messageIndex] = next[messageIndex].copyWith(
+  final next = List<ChatMessage>.from(messages);
+  next[messageIndex] = currentMessage.copyWith(
     parts: parts.toList(growable: false),
   );
   return next;
@@ -343,6 +351,35 @@ ChatPart _mergePart(
       if (hasStreamingText) '_streaming': true,
     },
   );
+}
+
+bool _chatPartEquals(ChatPart left, ChatPart right) {
+  return left.id == right.id &&
+      left.type == right.type &&
+      left.text == right.text &&
+      left.tool == right.tool &&
+      left.filename == right.filename &&
+      left.messageId == right.messageId &&
+      left.sessionId == right.sessionId &&
+      _objectMapEquals(left.metadata, right.metadata);
+}
+
+bool _objectMapEquals(
+  Map<String, Object?> left,
+  Map<String, Object?> right,
+) {
+  if (identical(left, right)) {
+    return true;
+  }
+  if (left.length != right.length) {
+    return false;
+  }
+  for (final entry in left.entries) {
+    if (!right.containsKey(entry.key) || right[entry.key] != entry.value) {
+      return false;
+    }
+  }
+  return true;
 }
 
 extension<T> on Iterable<T> {
