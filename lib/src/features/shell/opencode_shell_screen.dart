@@ -1241,7 +1241,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
           _textMatches = cachedBundle.textMatches;
           _symbols = cachedBundle.symbols;
           _filePreview = null;
-          _selectedFilePath = cachedBundle.selectedPath;
+          _selectedFilePath = null;
           _fileSearchQuery = searchQuery;
         });
         final ttl = await _cacheStore.loadTtl();
@@ -1278,7 +1278,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         _textMatches = bundle.textMatches;
         _symbols = bundle.symbols;
         _filePreview = null;
-        _selectedFilePath = bundle.selectedPath;
+        _selectedFilePath = null;
         _fileSearchQuery = searchQuery;
       });
     } catch (_) {
@@ -1375,9 +1375,6 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     final symbols = bundle.symbols
         .take(_shellFileCacheSymbolLimit)
         .toList(growable: false);
-    final selectedPath = visiblePaths.contains(bundle.selectedPath)
-        ? bundle.selectedPath
-        : null;
     return FileBrowserBundle(
       nodes: nodes,
       searchResults: searchResults,
@@ -1385,7 +1382,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       symbols: symbols,
       statuses: statuses,
       preview: null,
-      selectedPath: selectedPath,
+      selectedPath: null,
     );
   }
 
@@ -1418,7 +1415,6 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       bundle.searchResults.length,
       bundle.textMatches.length,
       bundle.symbols.length,
-      bundle.selectedPath ?? '',
     ].join(':');
   }
 

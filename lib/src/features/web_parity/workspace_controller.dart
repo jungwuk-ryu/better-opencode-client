@@ -1843,10 +1843,7 @@ class WorkspaceController extends ChangeNotifier {
         }
       }
     }
-    if (statuses.isEmpty) {
-      return null;
-    }
-    return statuses.first.path;
+    return null;
   }
 
   void _applyReviewBundle(
@@ -4212,7 +4209,7 @@ class WorkspaceController extends ChangeNotifier {
       if (_disposed || project.directory != _project?.directory) {
         return;
       }
-      _fileBundle = bundle;
+      _fileBundle = bundle.copyWith(selectedPath: null, clearPreview: true);
       _loadedFileDirectories = <String>{};
       _expandedFileDirectories = <String>{};
     } catch (_) {
