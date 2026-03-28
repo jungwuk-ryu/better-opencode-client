@@ -41,6 +41,13 @@ import '../tools/todo_service.dart';
 const _motionFast = Duration(milliseconds: 220);
 const _motionMedium = Duration(milliseconds: 320);
 const _activityCycle = Duration(milliseconds: 1400);
+const int _shellFileCacheNodeLimit = 24;
+const int _shellFileCacheSearchResultLimit = 12;
+const int _shellFileCacheStatusLimit = 24;
+const int _shellFileCacheTextMatchLimit = 4;
+const int _shellFileCacheTextMatchLineLimit = 280;
+const int _shellFileCacheSymbolLimit = 4;
+const int _shellFileCachePayloadSoftLimit = 256 * 1024;
 
 class _ComposerSubmissionOptions {
   const _ComposerSubmissionOptions({
@@ -1216,31 +1223,33 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     final scopeKey = _scopeKey();
     final requestToken = ++_fileLoadRequestToken;
     _filePreviewRequestToken += 1;
-    final cacheKey = 'shell.files::${_scopeKey(searchQuery)}';
+    final cacheKey = _shellFilesCacheKey(searchQuery);
     final cached = await _cacheStore.load(cacheKey);
     if (!_isActiveFileLoad(requestToken, scopeKey)) {
       return;
     }
     if (cached != null) {
-      final bundle = FileBrowserBundle.fromJson(
-        (jsonDecode(cached.payloadJson) as Map).cast<String, Object?>(),
-      );
-      setState(() {
-        _fileNodes = bundle.nodes;
-        _fileStatuses = bundle.statuses;
-        _fileSearchResults = bundle.searchResults;
-        _textMatches = bundle.textMatches;
-        _symbols = bundle.symbols;
-        _filePreview = bundle.preview;
-        _selectedFilePath = bundle.selectedPath;
-        _fileSearchQuery = searchQuery;
-      });
-      final ttl = await _cacheStore.loadTtl();
-      if (!_isActiveFileLoad(requestToken, scopeKey)) {
-        return;
-      }
-      if (cached.isFresh(ttl, DateTime.now())) {
-        return;
+      final cachedBundle = _decodeShellFileCacheBundle(cached.payloadJson);
+      if (cachedBundle == null) {
+        await _cacheStore.remove(cacheKey);
+      } else {
+        setState(() {
+          _fileNodes = cachedBundle.nodes;
+          _fileStatuses = cachedBundle.statuses;
+          _fileSearchResults = cachedBundle.searchResults;
+          _textMatches = cachedBundle.textMatches;
+          _symbols = cachedBundle.symbols;
+          _filePreview = null;
+          _selectedFilePath = cachedBundle.selectedPath;
+          _fileSearchQuery = searchQuery;
+        });
+        final ttl = await _cacheStore.loadTtl();
+        if (!_isActiveFileLoad(requestToken, scopeKey)) {
+          return;
+        }
+        if (cached.isFresh(ttl, DateTime.now())) {
+          return;
+        }
       }
     }
     try {
@@ -1252,7 +1261,12 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       if (!_isActiveFileLoad(requestToken, scopeKey)) {
         return;
       }
-      await _cacheStore.save(cacheKey, bundle.toJson());
+      final compactBundle = _compactShellFileCacheBundle(bundle);
+      await _cacheStore.save(
+        cacheKey,
+        compactBundle.toJson(),
+        signature: _shellFileCacheSignature(compactBundle),
+      );
       if (!_isActiveFileLoad(requestToken, scopeKey)) {
         return;
       }
@@ -1262,7 +1276,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         _fileSearchResults = bundle.searchResults;
         _textMatches = bundle.textMatches;
         _symbols = bundle.symbols;
-        _filePreview = bundle.preview;
+        _filePreview = null;
         _selectedFilePath = bundle.selectedPath;
         _fileSearchQuery = searchQuery;
       });
@@ -1314,6 +1328,82 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         _filePreview = null;
       });
     }
+  }
+
+  String _shellFilesCacheKey(String searchQuery) {
+    return 'shell.files.v2::${_scopeKey(searchQuery)}';
+  }
+
+  FileBrowserBundle? _decodeShellFileCacheBundle(String payloadJson) {
+    if (payloadJson.isEmpty ||
+        payloadJson.length > _shellFileCachePayloadSoftLimit) {
+      return null;
+    }
+    try {
+      final decoded = jsonDecode(payloadJson);
+      if (decoded is! Map) {
+        return null;
+      }
+      return _compactShellFileCacheBundle(
+        FileBrowserBundle.fromJson(decoded.cast<String, Object?>()),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  FileBrowserBundle _compactShellFileCacheBundle(FileBrowserBundle bundle) {
+    final nodes = bundle.nodes
+        .take(_shellFileCacheNodeLimit)
+        .toList(growable: false);
+    final searchResults = bundle.searchResults
+        .take(_shellFileCacheSearchResultLimit)
+        .toList(growable: false);
+    final visiblePaths = <String>{
+      ...searchResults,
+      ...nodes.map((item) => item.path).take(5),
+    };
+    final statuses = bundle.statuses
+        .where((item) => visiblePaths.contains(item.path))
+        .take(_shellFileCacheStatusLimit)
+        .toList(growable: false);
+    final textMatches = bundle.textMatches
+        .take(_shellFileCacheTextMatchLimit)
+        .map(_compactShellTextMatch)
+        .toList(growable: false);
+    final symbols = bundle.symbols
+        .take(_shellFileCacheSymbolLimit)
+        .toList(growable: false);
+    final selectedPath = visiblePaths.contains(bundle.selectedPath)
+        ? bundle.selectedPath
+        : null;
+    return FileBrowserBundle(
+      nodes: nodes,
+      searchResults: searchResults,
+      textMatches: textMatches,
+      symbols: symbols,
+      statuses: statuses,
+      preview: null,
+      selectedPath: selectedPath,
+    );
+  }
+
+  TextMatchSummary _compactShellTextMatch(TextMatchSummary match) {
+    final lines = match.lines.length <= _shellFileCacheTextMatchLineLimit
+        ? match.lines
+        : '${match.lines.substring(0, _shellFileCacheTextMatchLineLimit)}…';
+    return TextMatchSummary(path: match.path, lines: lines);
+  }
+
+  String _shellFileCacheSignature(FileBrowserBundle bundle) {
+    return [
+      bundle.nodes.length,
+      bundle.statuses.length,
+      bundle.searchResults.length,
+      bundle.textMatches.length,
+      bundle.symbols.length,
+      bundle.selectedPath ?? '',
+    ].join(':');
   }
 
   Future<void> _runShellCommand(String command) async {
