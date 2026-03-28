@@ -1975,7 +1975,12 @@ class WorkspaceController extends ChangeNotifier {
         serverMessages: page.messages,
       );
       _selectedSessionHistoryCursor = page.nextCursor;
-      _selectedSessionHistoryMore = page.hasMore;
+      _selectedSessionHistoryMore =
+          page.hasMore ||
+          await _sessionHasSpilledHistory(
+            project: project,
+            sessionId: sessionId,
+          );
       _showingCachedSessionMessages = false;
       if (_messages.isEmpty) {
         _applyDefaultComposerSelection();
@@ -2355,6 +2360,13 @@ class WorkspaceController extends ChangeNotifier {
     final revision = ++_selectedSessionHistoryLoadRevision;
     _selectedSessionHistoryLoading = true;
     _notify();
+    if (await _restoreSelectedSessionSpilledHistory(
+      project: project,
+      sessionId: sessionId,
+      revision: revision,
+    )) {
+      return;
+    }
     final baselineServerMessages = _stripOptimisticMessages(
       project: project,
       sessionId: sessionId,
@@ -2404,6 +2416,10 @@ class WorkspaceController extends ChangeNotifier {
       _selectedSessionHistoryLoading = false;
       _sessionLoadError = null;
       _showingCachedSessionMessages = false;
+      await _spillSelectedSessionHistoryIfNeeded(
+        project: project,
+        sessionId: sessionId,
+      );
       unawaited(
         _persistSessionMessagesCache(
           project: project,
@@ -3510,6 +3526,9 @@ class WorkspaceController extends ChangeNotifier {
         await _cacheStore.remove(
           _sessionMessagesCacheKey(project, removedSessionId),
         );
+        await _cacheStore.remove(
+          _sessionMessagesSpillKey(project, removedSessionId),
+        );
       }
       await _projectStore.saveLastWorkspace(
         serverStorageKey: profile.storageKey,
@@ -3523,6 +3542,9 @@ class WorkspaceController extends ChangeNotifier {
       for (final removedSessionId in removedSessionIds) {
         await _cacheStore.remove(
           _sessionMessagesCacheKey(project, removedSessionId),
+        );
+        await _cacheStore.remove(
+          _sessionMessagesSpillKey(project, removedSessionId),
         );
       }
       await _loadSelectedSessionMessages(
@@ -5310,6 +5332,10 @@ class WorkspaceController extends ChangeNotifier {
     return 'workspace.messages::${profile.storageKey}::${project.directory}::$sessionId';
   }
 
+  String _sessionMessagesSpillKey(ProjectTarget project, String sessionId) {
+    return 'workspace.messages.spill::${profile.storageKey}::${project.directory}::$sessionId';
+  }
+
   String _queuedPromptCacheKey(ProjectTarget project) {
     return 'workspace.followups::${profile.storageKey}::${project.directory}';
   }
@@ -5728,6 +5754,169 @@ class WorkspaceController extends ChangeNotifier {
     }
   }
 
+  Future<List<ChatMessage>?> _loadSpilledSessionMessages({
+    required ProjectTarget project,
+    required String sessionId,
+  }) async {
+    final entry = await _cacheStore.load(
+      _sessionMessagesSpillKey(project, sessionId),
+    );
+    if (entry == null || entry.payloadJson.trim().isEmpty) {
+      return null;
+    }
+    if (entry.payloadJson.length > ChatService.maxSessionMessageResponseBytes) {
+      await _cacheStore.remove(_sessionMessagesSpillKey(project, sessionId));
+      return null;
+    }
+    try {
+      final decoded = await _decodeJsonPayload(entry.payloadJson);
+      return _chatMessagesFromDecodedJson(decoded);
+    } catch (_) {
+      await _cacheStore.remove(_sessionMessagesSpillKey(project, sessionId));
+      return null;
+    }
+  }
+
+  Future<bool> _sessionHasSpilledHistory({
+    required ProjectTarget project,
+    required String sessionId,
+  }) async {
+    final spilled = await _loadSpilledSessionMessages(
+      project: project,
+      sessionId: sessionId,
+    );
+    return spilled != null && spilled.isNotEmpty;
+  }
+
+  Future<void> _saveSpilledSessionMessages({
+    required ProjectTarget project,
+    required String sessionId,
+    required List<ChatMessage> messages,
+  }) async {
+    final cacheKey = _sessionMessagesSpillKey(project, sessionId);
+    if (messages.isEmpty) {
+      await _cacheStore.remove(cacheKey);
+      return;
+    }
+
+    var compacted = messages
+        .map(_cacheSessionMessage)
+        .toList(growable: false);
+    var payload = compacted
+        .map((message) => message.toJson())
+        .toList(growable: false);
+    var payloadJson = jsonEncode(payload);
+    while (payloadJson.length > ChatService.maxSessionMessageResponseBytes &&
+        compacted.isNotEmpty) {
+      final trimCount = math.max(1, compacted.length ~/ 8);
+      compacted = compacted.sublist(trimCount);
+      payload = compacted
+          .map((message) => message.toJson())
+          .toList(growable: false);
+      payloadJson = jsonEncode(payload);
+    }
+    if (compacted.isEmpty) {
+      await _cacheStore.remove(cacheKey);
+      return;
+    }
+
+    final signature =
+        'spill:${compacted.length}:${_computeTimelineContentSignature(compacted)}';
+    await _cacheStore.save(cacheKey, payload, signature: signature);
+  }
+
+  Future<bool> _restoreSelectedSessionSpilledHistory({
+    required ProjectTarget project,
+    required String sessionId,
+    required int revision,
+  }) async {
+    final spilledMessages = await _loadSpilledSessionMessages(
+      project: project,
+      sessionId: sessionId,
+    );
+    if (_isStaleSelectedSessionHistoryLoad(revision, sessionId)) {
+      return true;
+    }
+    if (spilledMessages == null || spilledMessages.isEmpty) {
+      return false;
+    }
+
+    final restoreStart = math.max(
+      0,
+      spilledMessages.length - _selectedSessionSpillHydrateBatch,
+    );
+    final restoredMessages = spilledMessages.sublist(restoreStart);
+    final remainingSpill = spilledMessages.sublist(0, restoreStart);
+    final currentServerMessages = _stripOptimisticMessages(
+      project: project,
+      sessionId: sessionId,
+      messages: _messages,
+    );
+    final mergedServerMessages = _prependSessionHistoryMessages(
+      olderMessages: restoredMessages,
+      currentMessages: currentServerMessages,
+    );
+    _messages = _mergeSessionMessages(
+      project: project,
+      sessionId: sessionId,
+      serverMessages: mergedServerMessages,
+    );
+    _selectedSessionHistoryLoading = false;
+    _showingCachedSessionMessages = false;
+    _sessionLoadError = null;
+    _selectedSessionHistoryMore =
+        remainingSpill.isNotEmpty ||
+        (_selectedSessionHistoryCursor?.isNotEmpty ?? false);
+    if (remainingSpill.isEmpty) {
+      await _cacheStore.remove(_sessionMessagesSpillKey(project, sessionId));
+    } else {
+      await _saveSpilledSessionMessages(
+        project: project,
+        sessionId: sessionId,
+        messages: remainingSpill,
+      );
+    }
+    unawaited(
+      _persistSessionMessagesCache(
+        project: project,
+        sessionId: sessionId,
+        messages: mergedServerMessages,
+        immediate: true,
+      ),
+    );
+    _notify();
+    return true;
+  }
+
+  Future<void> _spillSelectedSessionHistoryIfNeeded({
+    required ProjectTarget project,
+    required String sessionId,
+  }) async {
+    if (_selectedSessionId != sessionId ||
+        _messages.length <= _selectedSessionMemoryWindow) {
+      return;
+    }
+
+    final overflowCount = _messages.length - _selectedSessionMemoryWindow;
+    final overflowMessages = _messages.sublist(0, overflowCount);
+    final retainedMessages = _messages.sublist(overflowCount);
+    final existingSpill = await _loadSpilledSessionMessages(
+      project: project,
+      sessionId: sessionId,
+    );
+    final mergedSpill = <ChatMessage>[
+      ...?existingSpill,
+      ...overflowMessages.map(_cacheSessionMessage),
+    ];
+    _messages = List<ChatMessage>.unmodifiable(retainedMessages);
+    _selectedSessionHistoryMore = true;
+    await _saveSpilledSessionMessages(
+      project: project,
+      sessionId: sessionId,
+      messages: mergedSpill,
+    );
+  }
+
   Future<void> _saveSessionMessagesCache({
     required ProjectTarget project,
     required String sessionId,
@@ -5812,6 +6001,8 @@ class WorkspaceController extends ChangeNotifier {
   static const int _sessionCachePartLimit = 24;
   static const int _sessionCacheStringLimit = 1200;
   static const int _sessionCacheCollectionLimit = 16;
+  static const int _selectedSessionMemoryWindow = 80;
+  static const int _selectedSessionSpillHydrateBatch = 40;
 
   List<ChatMessage> _sessionMessagesForCache(List<ChatMessage> messages) {
     if (messages.isEmpty) {
