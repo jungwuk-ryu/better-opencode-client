@@ -13783,9 +13783,10 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                                 onRetry: handleRetry,
                                 onIgnoreOversizedSession:
                                     handleIgnoreOversizedSession,
-                                oversizedSessionBehavior: widget
-                                    .appController
-                                    .oversizedSessionBehavior,
+                                oversizedSessionBehavior:
+                                    AppScope
+                                        .of(context)
+                                        .oversizedSessionBehavior,
                                 onLoadMore: handleLoadMoreHistory,
                                 jumpToBottomEpoch: searchScoped
                                     ? timelineJumpEpoch
