@@ -137,8 +137,13 @@ void main() {
       await tester.pumpAndSettle();
 
       final controller = createdControllers.single;
-      final listFinder = find.byKey(
-        const PageStorageKey<String>('web-parity-message-timeline'),
+      final listFinder = find.byWidgetPredicate(
+        (widget) =>
+            widget is ListView &&
+            widget.controller != null &&
+            widget.key is PageStorageKey<String> &&
+            (((widget.key! as PageStorageKey<String>).value))
+                .contains('web-parity-message-timeline'),
       );
       ScrollPosition position() =>
           tester.widget<ListView>(listFinder).controller!.position;

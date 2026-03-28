@@ -717,7 +717,10 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
   Future<
     ({String? selectedSessionId, List<ChatMessage> messages, String? notice})
   >
-  _resolveInitialSelection(ChatSessionBundle bundle) async {
+  _resolveInitialSelection(
+    ChatSessionBundle bundle, {
+    required bool Function() isStillActive,
+  }) async {
     final l10n = AppLocalizations.of(context)!;
     final hint = widget.project.lastSession;
     if (hint == null) {
@@ -736,11 +739,25 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
           notice: null,
         );
       }
+      if (!isStillActive()) {
+        return (
+          selectedSessionId: null,
+          messages: const <ChatMessage>[],
+          notice: null,
+        );
+      }
       final messages = await _chatService.fetchMessages(
         profile: widget.profile,
         project: widget.project,
         sessionId: selectedSessionId,
       );
+      if (!isStillActive()) {
+        return (
+          selectedSessionId: null,
+          messages: const <ChatMessage>[],
+          notice: null,
+        );
+      }
       return (
         selectedSessionId: selectedSessionId,
         messages: messages,
@@ -796,11 +813,25 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
           notice: null,
         );
       }
+      if (!isStillActive()) {
+        return (
+          selectedSessionId: null,
+          messages: const <ChatMessage>[],
+          notice: null,
+        );
+      }
       final messages = await _chatService.fetchMessages(
         profile: widget.profile,
         project: widget.project,
         sessionId: matchedSession.id,
       );
+      if (!isStillActive()) {
+        return (
+          selectedSessionId: null,
+          messages: const <ChatMessage>[],
+          notice: null,
+        );
+      }
       return (
         selectedSessionId: matchedSession.id,
         messages: messages,
@@ -808,11 +839,25 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       );
     }
 
+    if (!isStillActive()) {
+      return (
+        selectedSessionId: null,
+        messages: const <ChatMessage>[],
+        notice: null,
+      );
+    }
     final messages = await _chatService.fetchMessages(
       profile: widget.profile,
       project: widget.project,
       sessionId: matchedSession.id,
     );
+    if (!isStillActive()) {
+      return (
+        selectedSessionId: null,
+        messages: const <ChatMessage>[],
+        notice: null,
+      );
+    }
     return (
       selectedSessionId: matchedSession.id,
       messages: messages,
@@ -869,7 +914,10 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       final bundle = ChatSessionBundle.fromJson(
         (jsonDecode(cached.payloadJson) as Map).cast<String, Object?>(),
       );
-      final initialSelection = await _resolveInitialSelection(bundle);
+      final initialSelection = await _resolveInitialSelection(
+        bundle,
+        isStillActive: () => _isActiveBundleLoad(requestToken, scopeKey),
+      );
       if (!_isActiveBundleLoad(requestToken, scopeKey)) {
         return;
       }
@@ -963,7 +1011,10 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       if (!_isActiveBundleLoad(requestToken, scopeKey)) {
         return;
       }
-      final initialSelection = await _resolveInitialSelection(bundle);
+      final initialSelection = await _resolveInitialSelection(
+        bundle,
+        isStillActive: () => _isActiveBundleLoad(requestToken, scopeKey),
+      );
       if (!_isActiveBundleLoad(requestToken, scopeKey)) {
         return;
       }

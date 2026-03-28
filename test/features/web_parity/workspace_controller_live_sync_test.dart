@@ -348,6 +348,21 @@ void main() {
     () async {
       final eventStreamService = _ControlledEventStreamService();
       final fetchCounts = <String, int>{};
+      final cacheStore = _RecordingCacheStore();
+      cacheStore
+              .entries['workspace.messages::${profile.storageKey}::${project.directory}::ses_2'] =
+          StaleCacheEntry(
+            payloadJson: jsonEncode(<Object?>[
+              _message(
+                id: 'msg_ses_2',
+                sessionId: 'ses_2',
+                text: 'hello two',
+                createdAt: 1710000007000,
+              ).toJson(),
+            ]),
+            signature: 'watched-cache',
+            fetchedAt: DateTime.fromMillisecondsSinceEpoch(1710000007000),
+          );
       final chatService = _FakeChatService(
         bundle: ChatSessionBundle(
           sessions: <SessionSummary>[
@@ -400,6 +415,7 @@ void main() {
         project: project,
         eventStreamService: eventStreamService,
         chatService: chatService,
+        cacheStore: cacheStore,
         initialSessions: <SessionSummary>[
           _session(
             id: 'ses_2',
@@ -426,7 +442,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       await Future<void>.delayed(Duration.zero);
 
-      expect(fetchCounts['ses_2'], 1);
+      expect(fetchCounts['ses_2'], isNull);
       expect(
         controller
             .timelineStateForSession('ses_2')
@@ -444,8 +460,8 @@ void main() {
         EventEnvelope(
           type: 'message.part.updated',
           properties: <String, Object?>{
-            'part': <String, Object?>{
-              'id': 'part_ses_2',
+              'part': <String, Object?>{
+              'id': 'part_msg_ses_2',
               'messageID': 'msg_ses_2',
               'sessionID': 'ses_2',
               'type': 'text',
@@ -472,7 +488,7 @@ void main() {
       expect(controller.selectedSessionId, 'ses_2');
       expect(controller.sessionLoading, isFalse);
       expect(controller.messages.single.parts.single.text, 'hello two live');
-      expect(fetchCounts['ses_2'], 1);
+      expect(fetchCounts['ses_2'], isNull);
       expect(
         controller
             .timelineStateForSession('ses_1')
@@ -578,12 +594,12 @@ void main() {
       expect(requests, <({String sessionId, int limit, String? before})>[
         (
           sessionId: 'ses_1',
-          limit: ChatService.sessionHistoryPageSize,
+          limit: ChatService.globalSessionHistoryPageSize,
           before: null,
         ),
         (
           sessionId: 'ses_1',
-          limit: ChatService.sessionHistoryPageSize,
+          limit: ChatService.globalSessionHistoryPageSize,
           before: 'cursor_older_1',
         ),
       ]);
@@ -602,7 +618,7 @@ void main() {
   );
 
   test(
-    'controller backfills older history for watched session timelines',
+    'controller keeps watched session history compact until selected',
     () async {
       final chatService = _FakeChatService(
         bundle: ChatSessionBundle(
@@ -712,16 +728,13 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       await Future<void>.delayed(Duration.zero);
 
-      expect(controller.timelineStateForSession('ses_2').historyMore, isTrue);
+      expect(controller.timelineStateForSession('ses_2').historyMore, isFalse);
 
       await controller.loadMoreTimelineSessionHistory('ses_2');
 
       expect(
-        controller
-            .timelineStateForSession('ses_2')
-            .messages
-            .map((message) => message.info.id),
-        <String>['msg_watch_1', 'msg_watch_2', 'msg_watch_3', 'msg_watch_4'],
+        controller.timelineStateForSession('ses_2').messages,
+        isEmpty,
       );
       expect(controller.timelineStateForSession('ses_2').historyMore, isFalse);
       expect(
@@ -833,6 +846,8 @@ void main() {
     expect(sessionActionService.abortCalls, 1);
     expect(sessionActionService.lastAbortedSessionId, 'ses_1');
     expect(controller.selectedStatus?.type, 'idle');
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
     expect(controller.interruptingSession, isFalse);
   });
 
@@ -1553,7 +1568,7 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 200));
       expect(cacheStore.saveCalls, 0);
 
-      await Future<void>.delayed(const Duration(milliseconds: 220));
+      await Future<void>.delayed(const Duration(milliseconds: 1100));
       expect(cacheStore.saveCalls, 1);
 
       final entry = cacheStore
@@ -1632,7 +1647,7 @@ void main() {
     addTearDown(controller.dispose);
 
     await controller.load();
-    await Future<void>.delayed(const Duration(milliseconds: 10));
+    await Future<void>.delayed(const Duration(milliseconds: 200));
 
     expect(
       controller.activeChildSessionPreviewById[childSessionId],
@@ -1643,6 +1658,41 @@ void main() {
   test('controller prefetches sidebar hover previews for sessions', () async {
     final eventStreamService = _ControlledEventStreamService();
     final fetchCounts = <String, int>{};
+    final cacheStore = _RecordingCacheStore();
+    cacheStore
+            .entries['workspace.messages::${profile.storageKey}::${project.directory}::ses_2'] =
+        StaleCacheEntry(
+          payloadJson: jsonEncode(<Object?>[
+            _message(
+              id: 'msg_user_older',
+              sessionId: 'ses_2',
+              text: 'Audit sidebar hover parity',
+              createdAt: 1710000003000,
+              role: 'user',
+            ).toJson(),
+            _message(
+              id: 'msg_assistant_older',
+              sessionId: 'ses_2',
+              text: 'Preparing the hover preview scaffold',
+              createdAt: 1710000003500,
+            ).toJson(),
+            _message(
+              id: 'msg_user_newer',
+              sessionId: 'ses_2',
+              text: 'Fix the flaky iOS snapshot test',
+              createdAt: 1710000004000,
+              role: 'user',
+            ).toJson(),
+            _message(
+              id: 'msg_assistant_newer',
+              sessionId: 'ses_2',
+              text: 'Review diff is ready',
+              createdAt: 1710000004500,
+            ).toJson(),
+          ]),
+          signature: 'hover-preview',
+          fetchedAt: DateTime.fromMillisecondsSinceEpoch(1710000008000),
+        );
     final chatService = _FakeChatService(
       bundle: ChatSessionBundle(
         sessions: <SessionSummary>[
@@ -1711,6 +1761,7 @@ void main() {
       project: project,
       eventStreamService: eventStreamService,
       chatService: chatService,
+      cacheStore: cacheStore,
       initialSessions: <SessionSummary>[
         _session(
           id: 'ses_2',
@@ -1733,7 +1784,7 @@ void main() {
     await controller.prefetchSessionHoverPreview('ses_2');
 
     final preview = controller.sessionHoverPreviewForSession('ses_2');
-    expect(fetchCounts['ses_2'], 1);
+    expect(fetchCounts['ses_2'], isNull);
     expect(preview.loading, isFalse);
     expect(preview.summary, 'Review diff is ready');
     expect(preview.messages.map((item) => item.label), <String>[
@@ -1742,7 +1793,7 @@ void main() {
     ]);
 
     await controller.prefetchSessionHoverPreview('ses_2');
-    expect(fetchCounts['ses_2'], 1);
+    expect(fetchCounts['ses_2'], isNull);
   });
 
   test(
@@ -1967,12 +2018,17 @@ class _RecordingCacheStore extends StaleCacheStore {
   Future<StaleCacheEntry?> load(String key) async => entries[key];
 
   @override
-  Future<void> save(String key, Object? payload) async {
+  Future<void> save(
+    String key,
+    Object? payload, {
+    String? signature,
+    int? itemCount,
+  }) async {
     saveCalls += 1;
     final payloadJson = jsonEncode(payload);
     entries[key] = StaleCacheEntry(
       payloadJson: payloadJson,
-      signature: payloadJson,
+      signature: signature ?? payloadJson,
       fetchedAt: DateTime.now(),
     );
   }
@@ -2140,6 +2196,7 @@ class _FakeChatService extends ChatService {
   Future<ChatSessionBundle> fetchBundle({
     required ServerProfile profile,
     required ProjectTarget project,
+    bool includeSelectedSessionMessages = true,
   }) async {
     return bundle;
   }
@@ -2164,6 +2221,7 @@ class _FakeChatService extends ChatService {
     required String sessionId,
     required int limit,
     String? before,
+    void Function(List<ChatMessage> messages)? onMessagesProgress,
   }) async {
     final pageHandler = fetchMessagesPageHandler;
     if (pageHandler != null) {

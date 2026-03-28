@@ -48,7 +48,7 @@ void main() {
     expect(fields[3].controller?.text, isEmpty);
   });
 
-  testWidgets('selecting a saved server loads it into the inline editor', (
+  testWidgets('saved servers expose an edit action instead of an inline editor', (
     tester,
   ) async {
     _setLargeSurface(tester);
@@ -80,20 +80,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Studio').first);
-    await tester.pumpAndSettle();
-
-    final fields = tester
-        .widgetList<TextFormField>(find.byType(TextFormField))
-        .toList();
-    expect(fields, hasLength(4));
-    expect(fields[0].controller?.text, 'Studio');
-    expect(fields[1].controller?.text, 'https://studio.example.com');
-    expect(fields[2].controller?.text, 'operator');
-    expect(fields[3].controller?.text, 'secret');
+    expect(find.text('Edit server'), findsWidgets);
+    expect(find.byType(TextFormField), findsNothing);
   });
 
-  testWidgets('add server clears the inline editor instead of opening a page', (
+  testWidgets('saved server home still exposes add server without inline form', (
     tester,
   ) async {
     _setLargeSurface(tester);
@@ -125,18 +116,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Add server').first);
-    await tester.pumpAndSettle();
-
-    final fields = tester
-        .widgetList<TextFormField>(find.byType(TextFormField))
-        .toList();
-    expect(fields, hasLength(4));
-    expect(fields[0].controller?.text, isEmpty);
-    expect(fields[1].controller?.text, isEmpty);
-    expect(fields[2].controller?.text, isEmpty);
-    expect(fields[3].controller?.text, isEmpty);
-    expect(find.text('Back to home'), findsNothing);
+    expect(find.text('Add server'), findsWidgets);
+    expect(find.byType(TextFormField), findsNothing);
   });
 }
 

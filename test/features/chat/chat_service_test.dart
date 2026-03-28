@@ -226,8 +226,10 @@ void main() {
       sessionId: 'ses_bad',
     );
 
-    expect(messages, hasLength(1));
-    expect(messages.single.parts.single.text, 'kept message');
+    expect(messages, hasLength(2));
+    expect(messages.first.parts.single.text, 'kept message');
+    expect(messages.last.info.metadata['quarantined'], isTrue);
+    expect(messages.last.info.metadata['reason'], 'parse-failed');
     service.dispose();
   });
 

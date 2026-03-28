@@ -276,6 +276,14 @@ class _TodoDockWorkspaceController extends WorkspaceController {
     _todos = const <TodoItem>[];
     notifyListeners();
   }
+
+  @override
+  void clearTodosForSession(String? sessionId) {
+    if (sessionId != _session.id) {
+      return;
+    }
+    clearTodos();
+  }
 }
 
 class _FakePtyService extends PtyService {

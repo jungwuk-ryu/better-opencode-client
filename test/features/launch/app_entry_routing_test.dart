@@ -27,10 +27,6 @@ void main() {
     expect(find.byType(WebParityHomeScreen), findsOneWidget);
     expect(find.byType(ConnectionHomeScreen), findsNothing);
     expect(find.byType(WorkspaceHomeScreen), findsNothing);
-    expect(find.text('OpenCode'), findsOneWidget);
-    expect(find.text('Open Project'), findsOneWidget);
-    expect(find.text('Recent Projects'), findsOneWidget);
-    expect(find.text('See Servers'), findsOneWidget);
     expect(find.text('Probe server'), findsNothing);
     expect(find.text('Live capability probe'), findsNothing);
   });

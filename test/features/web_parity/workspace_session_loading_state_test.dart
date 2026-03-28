@@ -315,6 +315,32 @@ class _SessionLoadingWorkspaceController extends WorkspaceController {
   List<TodoItem> get todos => const <TodoItem>[];
 
   @override
+  WorkspaceSessionTimelineState timelineStateForSession(String? sessionId) {
+    final normalized = sessionId?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return const WorkspaceSessionTimelineState.empty();
+    }
+    if (normalized == _selectedSessionId) {
+      return WorkspaceSessionTimelineState(
+        sessionId: normalized,
+        messages: _messages,
+        orderedMessages: _messages,
+        loading: _sessionLoading,
+        showingCachedMessages: false,
+        error: _sessionLoadError,
+      );
+    }
+    final messages = _messageListFor(normalized);
+    return WorkspaceSessionTimelineState(
+      sessionId: normalized,
+      messages: messages,
+      orderedMessages: messages,
+      loading: false,
+      showingCachedMessages: false,
+    );
+  }
+
+  @override
   PendingRequestBundle get pendingRequests => const PendingRequestBundle(
     questions: <QuestionRequestSummary>[],
     permissions: <PermissionRequestSummary>[],
@@ -485,6 +511,31 @@ class _CachedSessionWorkspaceController extends WorkspaceController {
 
   @override
   List<TodoItem> get todos => const <TodoItem>[];
+
+  @override
+  WorkspaceSessionTimelineState timelineStateForSession(String? sessionId) {
+    final normalized = sessionId?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return const WorkspaceSessionTimelineState.empty();
+    }
+    if (normalized == _selectedSessionId) {
+      return WorkspaceSessionTimelineState(
+        sessionId: normalized,
+        messages: _messages,
+        orderedMessages: _messages,
+        loading: _sessionLoading,
+        showingCachedMessages: _showingCachedSessionMessages,
+      );
+    }
+    final messages = _messageListFor(normalized, fresh: true);
+    return WorkspaceSessionTimelineState(
+      sessionId: normalized,
+      messages: messages,
+      orderedMessages: messages,
+      loading: false,
+      showingCachedMessages: false,
+    );
+  }
 
   @override
   PendingRequestBundle get pendingRequests => const PendingRequestBundle(

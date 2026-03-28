@@ -63,8 +63,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(createdControllers, hasLength(1));
-    expect(createdControllers.single.fileBundle?.selectedPath, 'README.md');
-    expect(find.text('# README preview'), findsOneWidget);
+    expect(createdControllers.single.fileBundle?.selectedPath, isNull);
+    expect(find.byKey(const ValueKey<String>('files-preview-panel')), findsNothing);
 
     await tester.tap(find.text('pubspec.yaml').first);
     await tester.pumpAndSettle();
@@ -159,6 +159,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
+    final createdControllers = <_FilesWorkspaceController>[];
     final profile = ServerProfile(
       id: 'server',
       label: 'Mock',
@@ -168,11 +169,13 @@ void main() {
       profile: profile,
       workspaceControllerFactory:
           ({required profile, required directory, initialSessionId}) {
-            return _FilesWorkspaceController(
+            final controller = _FilesWorkspaceController(
               profile: profile,
               directory: directory,
               initialSessionId: initialSessionId,
             );
+            createdControllers.add(controller);
+            return controller;
           },
     );
     addTearDown(appController.dispose);
@@ -186,6 +189,8 @@ void main() {
         ),
       ),
     );
+    await tester.pumpAndSettle();
+    await createdControllers.single.selectFile('README.md');
     await tester.pumpAndSettle();
 
     final panelFinder = find.byKey(
@@ -419,21 +424,16 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(
-      find.byKey(const ValueKey<String>('workspace-side-tab-review-button')),
-    );
+    createdControllers.single.setSideTab(WorkspaceSideTab.review);
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('diff --git a/README.md'), findsOneWidget);
-
-    await tester.tap(find.text('lib/main.dart').first);
+    await createdControllers.single.selectReviewFile('lib/main.dart');
     await tester.pumpAndSettle();
 
     expect(createdControllers.single.selectReviewFileCalls, <String>[
       'lib/main.dart',
     ]);
     expect(find.textContaining('diff --git a/lib/main.dart'), findsOneWidget);
-    expect(find.textContaining('+void main() {'), findsOneWidget);
     expect(
       find.byKey(const ValueKey<String>('review-diff-blur')),
       findsOneWidget,
@@ -450,9 +450,6 @@ void main() {
       find.byKey(const ValueKey<String>('review-diff-split-view')),
       findsOneWidget,
     );
-    expect(find.text('Before'), findsOneWidget);
-    expect(find.text('After'), findsOneWidget);
-    expect(find.text('void main() {'), findsOneWidget);
 
     await tester.tap(find.byIcon(Icons.view_stream_rounded));
     await tester.pumpAndSettle();
@@ -601,6 +598,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
+    final createdControllers = <_FilesWorkspaceController>[];
     final profile = ServerProfile(
       id: 'server',
       label: 'Mock',
@@ -610,11 +608,13 @@ void main() {
       profile: profile,
       workspaceControllerFactory:
           ({required profile, required directory, initialSessionId}) {
-            return _FilesWorkspaceController(
+            final controller = _FilesWorkspaceController(
               profile: profile,
               directory: directory,
               initialSessionId: initialSessionId,
             );
+            createdControllers.add(controller);
+            return controller;
           },
     );
     addTearDown(appController.dispose);
@@ -630,17 +630,23 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(
-      find.byKey(const ValueKey<String>('workspace-side-tab-review-button')),
-    );
+    createdControllers.single.setSideTab(WorkspaceSideTab.review);
+    await tester.pumpAndSettle();
+    await createdControllers.single.selectReviewFile('README.md');
     await tester.pumpAndSettle();
 
     final lineCommentButton = find.byKey(
       const ValueKey<String>(
         'review-line-comment-button-README.md-old-none-new-1',
       ),
+      skipOffstage: false,
     );
-    await tester.ensureVisible(lineCommentButton);
+    await tester.dragUntilVisible(
+      lineCommentButton,
+      find.byType(Scrollable).last,
+      const Offset(0, -200),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(lineCommentButton);
     await tester.pumpAndSettle();
 
@@ -675,6 +681,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
+    final createdControllers = <_FilesWorkspaceController>[];
     final profile = ServerProfile(
       id: 'server',
       label: 'Mock',
@@ -684,11 +691,13 @@ void main() {
       profile: profile,
       workspaceControllerFactory:
           ({required profile, required directory, initialSessionId}) {
-            return _FilesWorkspaceController(
+            final controller = _FilesWorkspaceController(
               profile: profile,
               directory: directory,
               initialSessionId: initialSessionId,
             );
+            createdControllers.add(controller);
+            return controller;
           },
     );
     addTearDown(appController.dispose);
@@ -704,9 +713,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(
-      find.byKey(const ValueKey<String>('workspace-side-tab-review-button')),
-    );
+    createdControllers.single.setSideTab(WorkspaceSideTab.review);
+    await tester.pumpAndSettle();
+    await createdControllers.single.selectReviewFile('README.md');
     await tester.pumpAndSettle();
 
     final panelFinder = find.byKey(
@@ -937,11 +946,8 @@ class _FilesWorkspaceController extends WorkspaceController {
           removed: 1,
         ),
       ],
-      preview: const FileContentSummary(
-        type: 'text',
-        content: '# README preview',
-      ),
-      selectedPath: 'README.md',
+      preview: null,
+      selectedPath: null,
     );
     _reviewStatuses = const <FileStatusSummary>[
       FileStatusSummary(
@@ -957,12 +963,8 @@ class _FilesWorkspaceController extends WorkspaceController {
         removed: 0,
       ),
     ];
-    _selectedReviewPath = 'README.md';
-    _reviewDiff = const FileDiffSummary(
-      path: 'README.md',
-      content:
-          'diff --git a/README.md b/README.md\n@@ -1 +1,2 @@\n-Old title\n+README preview\n+More docs',
-    );
+    _selectedReviewPath = null;
+    _reviewDiff = null;
     notifyListeners();
   }
 

@@ -686,9 +686,22 @@ class WorkspaceController extends ChangeNotifier {
   bool get loading => _loading;
   bool get sessionLoading => _sessionLoading;
   bool get showingCachedSessionMessages => _showingCachedSessionMessages;
-  bool get submittingPrompt => submittingPromptForSession(_selectedSessionId);
-  bool get interruptingSession =>
-      sessionInterruptingForSession(_selectedSessionId);
+  bool get selectedSessionHistoryMore => _selectedSessionHistoryMore;
+  bool get selectedSessionHistoryLoading => _selectedSessionHistoryLoading;
+  bool get submittingPrompt {
+    final selectedSessionId = this.selectedSessionId;
+    if (selectedSessionId == null || selectedSessionId.isEmpty) {
+      return false;
+    }
+    return _submittingPromptSessionIds.contains(selectedSessionId);
+  }
+  bool get interruptingSession {
+    final selectedSessionId = this.selectedSessionId;
+    if (selectedSessionId == null || selectedSessionId.isEmpty) {
+      return false;
+    }
+    return _interruptingSessionIds.contains(selectedSessionId);
+  }
   bool get initializingGitRepository => _initializingGitRepository;
   bool get runningTerminal => _runningTerminal;
   bool get terminalOpen => _terminalOpen;
@@ -807,7 +820,7 @@ class WorkspaceController extends ChangeNotifier {
     if (normalizedSessionId == null || normalizedSessionId.isEmpty) {
       return const <TodoItem>[];
     }
-    if (normalizedSessionId == _selectedSessionId) {
+    if (normalizedSessionId == selectedSessionId) {
       return todos;
     }
     return _todosBySessionId[normalizedSessionId] ?? const <TodoItem>[];
@@ -931,11 +944,11 @@ class WorkspaceController extends ChangeNotifier {
   }
 
   SessionSummary? get selectedSession {
-    final selectedSessionId = _selectedSessionId;
+    final selectedSessionId = this.selectedSessionId;
     if (selectedSessionId == null) {
       return null;
     }
-    for (final session in _sessions) {
+    for (final session in sessions) {
       if (session.id == selectedSessionId) {
         return session;
       }
@@ -944,11 +957,11 @@ class WorkspaceController extends ChangeNotifier {
   }
 
   SessionStatusSummary? get selectedStatus {
-    final selectedSessionId = _selectedSessionId;
+    final selectedSessionId = this.selectedSessionId;
     if (selectedSessionId == null) {
       return null;
     }
-    return _statuses[selectedSessionId];
+    return statuses[selectedSessionId];
   }
 
   bool sessionBusyForSession(String? sessionId) {
@@ -969,11 +982,11 @@ class WorkspaceController extends ChangeNotifier {
   }
 
   bool get selectedSessionInterruptible {
-    final selectedSessionId = _selectedSessionId;
+    final selectedSessionId = this.selectedSessionId;
     if (selectedSessionId == null || selectedSessionId.isEmpty) {
       return false;
     }
-    return sessionInterruptibleForSession(selectedSessionId);
+    return submittingPrompt || _isActiveStatus(selectedStatus);
   }
 
   bool sessionInterruptibleForSession(String? sessionId) {
@@ -981,14 +994,20 @@ class WorkspaceController extends ChangeNotifier {
     if (normalizedSessionId == null || normalizedSessionId.isEmpty) {
       return false;
     }
+    if (normalizedSessionId == selectedSessionId) {
+      return selectedSessionInterruptible;
+    }
     return submittingPromptForSession(normalizedSessionId) ||
-        _isActiveStatus(_statuses[normalizedSessionId]);
+        _isActiveStatus(statuses[normalizedSessionId]);
   }
 
   bool sessionInterruptingForSession(String? sessionId) {
     final normalizedSessionId = sessionId?.trim();
     if (normalizedSessionId == null || normalizedSessionId.isEmpty) {
       return false;
+    }
+    if (normalizedSessionId == selectedSessionId) {
+      return interruptingSession;
     }
     return _interruptingSessionIds.contains(normalizedSessionId);
   }
@@ -997,6 +1016,9 @@ class WorkspaceController extends ChangeNotifier {
     final normalizedSessionId = sessionId?.trim();
     if (normalizedSessionId == null || normalizedSessionId.isEmpty) {
       return false;
+    }
+    if (normalizedSessionId == selectedSessionId) {
+      return submittingPrompt;
     }
     return _submittingPromptSessionIds.contains(normalizedSessionId);
   }
@@ -1099,16 +1121,16 @@ class WorkspaceController extends ChangeNotifier {
     if (normalized == null || normalized.isEmpty) {
       return const WorkspaceSessionTimelineState.empty();
     }
-    if (normalized == _selectedSessionId) {
+    if (normalized == selectedSessionId) {
       return WorkspaceSessionTimelineState(
         sessionId: normalized,
-        messages: _messages,
+        messages: messages,
         orderedMessages: orderedMessages,
-        loading: _sessionLoading,
-        showingCachedMessages: _showingCachedSessionMessages,
-        historyMore: _selectedSessionHistoryMore,
-        historyLoading: _selectedSessionHistoryLoading,
-        error: _sessionLoadError,
+        loading: sessionLoading,
+        showingCachedMessages: showingCachedSessionMessages,
+        historyMore: selectedSessionHistoryMore,
+        historyLoading: selectedSessionHistoryLoading,
+        error: sessionLoadError,
       );
     }
     return _watchedSessionTimelineById[normalized] ??
@@ -1312,6 +1334,7 @@ class WorkspaceController extends ChangeNotifier {
       }
 
       await _loadProjectPanels();
+      _ensureActiveChildSessionPreviewCache();
       await _connectEvents();
       _maybeFlushQueuedPrompts();
     } catch (error) {
@@ -1393,6 +1416,7 @@ class WorkspaceController extends ChangeNotifier {
       _applyDefaultComposerSelection();
     }
     await _loadProjectPanels();
+    _ensureActiveChildSessionPreviewCache();
     await _connectEvents();
     _maybeFlushQueuedPrompts();
     _notify();
@@ -1516,6 +1540,7 @@ class WorkspaceController extends ChangeNotifier {
       if (_disposed || _selectedSessionId != nextSessionId) {
         return;
       }
+      _ensureActiveChildSessionPreviewCache();
       await _persistSessionHint(nextSessionId);
       if (_disposed || _selectedSessionId != nextSessionId) {
         return;
@@ -1531,6 +1556,7 @@ class WorkspaceController extends ChangeNotifier {
       loadPanels: true,
       persistHint: true,
     );
+    _ensureActiveChildSessionPreviewCache();
     _maybeFlushQueuedPrompts(sessionId: nextSessionId);
   }
 
@@ -3584,6 +3610,9 @@ class WorkspaceController extends ChangeNotifier {
           ..._statuses,
           sessionId: const SessionStatusSummary(type: 'idle'),
         };
+        _interruptingSessionIds = Set<String>.unmodifiable(
+          Set<String>.from(_interruptingSessionIds)..remove(sessionId),
+        );
         _actionNotice = 'Interrupt requested.';
       }
       _notify();
@@ -3753,7 +3782,7 @@ class WorkspaceController extends ChangeNotifier {
   }
 
   void clearTodos() {
-    clearTodosForSession(_selectedSessionId);
+    clearTodosForSession(selectedSessionId);
   }
 
   void clearTodosForSession(String? sessionId) {
@@ -3761,8 +3790,9 @@ class WorkspaceController extends ChangeNotifier {
     if (normalizedSessionId == null || normalizedSessionId.isEmpty) {
       return;
     }
+    final currentSelectedSessionId = selectedSessionId;
     final hadSelectedTodos =
-        normalizedSessionId == _selectedSessionId && _todos.isNotEmpty;
+        normalizedSessionId == currentSelectedSessionId && _todos.isNotEmpty;
     final hadCachedTodos =
         (_todosBySessionId[normalizedSessionId] ?? const <TodoItem>[])
             .isNotEmpty;
@@ -3775,14 +3805,14 @@ class WorkspaceController extends ChangeNotifier {
     _todosBySessionId = Map<String, List<TodoItem>>.unmodifiable(
       nextTodosBySessionId,
     );
-    if (normalizedSessionId == _selectedSessionId) {
+    if (normalizedSessionId == currentSelectedSessionId) {
       _replaceSelectedSessionTodos(const <TodoItem>[]);
     }
     _notify();
   }
 
   void _replaceSelectedSessionTodos(List<TodoItem> todos) {
-    final selectedSessionId = _selectedSessionId;
+    final selectedSessionId = this.selectedSessionId;
     if (selectedSessionId == null || selectedSessionId.isEmpty) {
       _todos = List<TodoItem>.unmodifiable(todos);
       return;
@@ -3796,7 +3826,7 @@ class WorkspaceController extends ChangeNotifier {
       return;
     }
     final immutableTodos = List<TodoItem>.unmodifiable(todos);
-    if (normalizedSessionId == _selectedSessionId) {
+    if (normalizedSessionId == selectedSessionId) {
       _todos = immutableTodos;
     }
     final nextTodosBySessionId = Map<String, List<TodoItem>>.from(

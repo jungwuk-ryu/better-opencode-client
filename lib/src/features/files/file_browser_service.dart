@@ -235,7 +235,7 @@ class FileBrowserService {
       );
     }
     final contentLength = response.contentLength;
-    if (contentLength > maxResponseBytes) {
+    if (contentLength != null && contentLength > maxResponseBytes) {
       throw _FileBrowserPayloadTooLarge(
         'Response for $path exceeded the safe size limit.',
       );

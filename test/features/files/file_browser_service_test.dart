@@ -72,7 +72,7 @@ void main() {
     await server.close(force: true);
   });
 
-  test('fetches file browser bundle with preview', () async {
+  test('fetches file browser bundle and loads preview on demand', () async {
     final service = FileBrowserService();
     final bundle = await service.fetchBundle(
       profile: ServerProfile(
@@ -89,7 +89,17 @@ void main() {
     expect(bundle.searchResults.first, 'README.md');
     expect(bundle.textMatches.first.path, 'README.md');
     expect(bundle.symbols.first.name, 'main');
-    expect(bundle.preview?.content, '# Demo');
+    expect(bundle.preview, isNull);
+    final preview = await service.fetchFileContent(
+      profile: ServerProfile(
+        id: 'server',
+        label: 'mock',
+        baseUrl: baseUri.toString(),
+      ),
+      project: const ProjectTarget(directory: '/workspace/demo', label: 'Demo'),
+      path: 'README.md',
+    );
+    expect(preview?.content, '# Demo');
     service.dispose();
   });
 

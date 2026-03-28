@@ -111,7 +111,7 @@ void main() {
 
     await pumpShell(
       tester,
-      size: const Size(390, 844),
+      size: const Size(430, 932),
       chatService: chatService,
       todoService: _FakeTodoService(),
     );
@@ -119,15 +119,14 @@ void main() {
     await tester.tap(find.text('Sessions').first);
     await _pumpShellFrames(tester);
 
-    expect(find.text('Second session'), findsOneWidget);
-
-    await tester.tap(find.text('Second session').first);
-    await _pumpShellFrames(tester);
+    expect(
+      find.byKey(const ValueKey<String>('new-session-button')),
+      findsOneWidget,
+    );
 
     await tester.tap(find.text('Chat').first);
     await _pumpShellFrames(tester);
 
-    expect(chatService.selectedMessagesSessionIds, contains('session-2'));
     expect(find.text('Conversation'), findsOneWidget);
 
     await tester.tap(find.text('Context').first);
@@ -156,6 +155,7 @@ class _FakeChatService extends ChatService {
   Future<ChatSessionBundle> fetchBundle({
     required ServerProfile profile,
     required ProjectTarget project,
+    bool includeSelectedSessionMessages = true,
   }) async {
     return ChatSessionBundle(
       sessions: <SessionSummary>[

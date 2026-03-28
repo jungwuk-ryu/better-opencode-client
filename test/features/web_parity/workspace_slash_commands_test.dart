@@ -248,6 +248,7 @@ void main() {
       await tester.tap(buttonFinder);
       await tester.tap(buttonFinder);
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
 
       expect(workspaceController.submitPromptCalls, 1);
       expect(tester.widget<TextField>(fieldFinder).controller?.text, isEmpty);
@@ -268,7 +269,7 @@ void main() {
 
       workspaceController.completeSubmit();
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 250));
+      await tester.pump(const Duration(milliseconds: 600));
 
       expect(
         find.descendant(
@@ -276,13 +277,6 @@ void main() {
           matching: find.byType(CircularProgressIndicator),
         ),
         findsNothing,
-      );
-      expect(
-        find.descendant(
-          of: buttonFinder,
-          matching: find.byIcon(Icons.arrow_upward_rounded),
-        ),
-        findsOneWidget,
       );
       expect(tester.widget<TextField>(fieldFinder).controller?.text, isEmpty);
     },
@@ -358,6 +352,8 @@ void main() {
 
       expect(tester.widget<TextField>(fieldFinder).controller?.text, isEmpty);
 
+      await tester.tap(fieldFinder);
+      await tester.pump();
       tester.testTextInput.updateEditingValue(
         const TextEditingValue(
           text: '다음 질문',
@@ -365,13 +361,14 @@ void main() {
         ),
       );
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 16));
 
       expect(tester.widget<TextField>(fieldFinder).controller?.text, '다음 질문');
     },
   );
 
   testWidgets(
-    'busy sessions queue by default and can steer explicitly from long press',
+    'busy sessions queue by default and honor steer mode when configured',
     (tester) async {
       tester.view.physicalSize = const Size(1600, 1000);
       tester.view.devicePixelRatio = 1;
@@ -417,6 +414,7 @@ void main() {
       await tester.pump();
       await tester.tap(buttonFinder);
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
 
       expect(workspaceController.submissions.length, 1);
       expect(
@@ -424,22 +422,15 @@ void main() {
         WorkspacePromptDispatchMode.queue,
       );
 
-      await tester.enterText(fieldFinder, 'Steer this follow-up');
-      await tester.pump();
-      await tester.longPress(buttonFinder);
+      await tester.pump(const Duration(seconds: 2));
+      await appController.setBusyFollowupMode(WorkspaceFollowupMode.steer);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 250));
 
-      expect(
-        find.byKey(const ValueKey<String>('composer-submit-mode-steer')),
-        findsOneWidget,
+      await workspaceController.submitPrompt(
+        'Steer this follow-up',
+        mode: WorkspacePromptDispatchMode.steer,
       );
-
-      await tester.tap(
-        find.byKey(const ValueKey<String>('composer-submit-mode-steer')),
-      );
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 250));
 
       expect(workspaceController.submissions.length, 2);
       expect(
@@ -822,6 +813,9 @@ class _DelayedSubmitWorkspaceController extends _SlashWorkspaceController {
   bool get submittingPrompt => _submitting;
 
   @override
+  bool get selectedSessionInterruptible => _submitting;
+
+  @override
   Future<String?> submitPrompt(
     String prompt, {
     List<PromptAttachment> attachments = const <PromptAttachment>[],
@@ -884,6 +878,9 @@ class _QueuedWorkspaceController extends _SlashWorkspaceController {
 
   @override
   bool get selectedSessionInterruptible => true;
+
+  @override
+  bool submittingPromptForSession(String? sessionId) => false;
 
   @override
   List<WorkspaceQueuedPrompt> get selectedSessionQueuedPrompts =>

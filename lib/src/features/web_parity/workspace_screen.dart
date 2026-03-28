@@ -10590,45 +10590,67 @@ class _SessionIdentity extends StatelessWidget {
               if (busy)
                 Padding(
                   padding: const EdgeInsets.only(top: 2),
-                  child: Container(
-                    key: busyKey,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.xs,
-                      vertical: 3,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.primary.withValues(alpha: 0.14),
-                      borderRadius: BorderRadius.circular(AppSpacing.md),
-                      border: Border.all(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.primary.withValues(alpha: 0.28),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        Container(
-                          width: 6,
-                          height: 6,
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.primary,
-                            shape: BoxShape.circle,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final primary = Theme.of(context).colorScheme.primary;
+                      final maxWidth = constraints.maxWidth.isFinite
+                          ? constraints.maxWidth
+                          : double.infinity;
+                      if (maxWidth <= 14) {
+                        final dotSize = maxWidth.clamp(4.0, 8.0);
+                        return Align(
+                          alignment: Alignment.centerLeft,
+                          child: Container(
+                            key: busyKey,
+                            width: dotSize,
+                            height: dotSize,
+                            decoration: BoxDecoration(
+                              color: primary,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        );
+                      }
+                      final showLabel = !compact && maxWidth >= 56;
+                      return Container(
+                        key: busyKey,
+                        padding: EdgeInsets.symmetric(
+                          horizontal: showLabel ? AppSpacing.xs : 4,
+                          vertical: showLabel ? 3 : 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: primary.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(AppSpacing.md),
+                          border: Border.all(
+                            color: primary.withValues(alpha: 0.28),
                           ),
                         ),
-                        const SizedBox(width: AppSpacing.xxs),
-                        Text(
-                          'Busy',
-                          style: Theme.of(context).textTheme.labelMedium
-                              ?.copyWith(
-                                color: surfaces.accentSoft,
-                                fontWeight: FontWeight.w700,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            Container(
+                              width: 6,
+                              height: 6,
+                              decoration: BoxDecoration(
+                                color: primary,
+                                shape: BoxShape.circle,
                               ),
+                            ),
+                            if (showLabel) ...<Widget>[
+                              const SizedBox(width: AppSpacing.xxs),
+                              Text(
+                                'Busy',
+                                style: Theme.of(context).textTheme.labelMedium
+                                    ?.copyWith(
+                                      color: surfaces.accentSoft,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                              ),
+                            ],
+                          ],
                         ),
-                      ],
-                    ),
+                      );
+                    },
                   ),
                 ),
             ],
@@ -13405,8 +13427,9 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
     final activeChildSessions = controller.activeChildSessionsForSession(
       sessionId,
     );
-    final activeChildSessionPreviewById = controller
-        .activeChildSessionPreviewByIdForSession(sessionId);
+    final activeChildSessionPreviewById = selected
+        ? controller.activeChildSessionPreviewById
+        : controller.activeChildSessionPreviewByIdForSession(sessionId);
     final paneQuestionRequest = controller.currentQuestionRequestForSession(
       sessionId,
     );
@@ -13415,7 +13438,8 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
     );
     final paneTodos = controller.todosForSession(sessionId);
     final paneTodoLive =
-        paneTodos.isNotEmpty ||
+        controller.sessionBusyForSession(sessionId) ||
+        activeChildSessions.isNotEmpty ||
         paneQuestionRequest != null ||
         panePermissionRequest != null;
     final visuallySelected = selected && showSelectionChrome;
@@ -14037,116 +14061,216 @@ class _ActiveSubSessionPanelBody extends StatelessWidget {
                             compact ? AppSpacing.sm : AppSpacing.md,
                           ),
                         ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: <Widget>[
-                            Container(
-                              width: compact ? 34 : 38,
-                              height: compact ? 34 : 38,
-                              decoration: BoxDecoration(
-                                color: theme.colorScheme.primary.withValues(
-                                  alpha: 0.14,
-                                ),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: theme.colorScheme.primary.withValues(
-                                    alpha: 0.26,
-                                  ),
-                                ),
-                              ),
-                              child: Icon(
-                                Icons.hub_rounded,
-                                size: compact ? 18 : 20,
-                                color: theme.colorScheme.primary.withValues(
-                                  alpha: 0.94,
-                                ),
-                              ),
-                            ),
-                            SizedBox(
-                              width: density.inset(AppSpacing.sm, min: 6),
-                            ),
-                            Expanded(
-                              child: Column(
+                        child: compact
+                            ? Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: <Widget>[
-                                  _ShimmeringRichText(
-                                    key: const ValueKey<String>(
-                                      'active-subsessions-title',
-                                    ),
-                                    text: TextSpan(
-                                      text: 'Sub-agents Running',
-                                      style: theme.textTheme.titleSmall
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w800,
-                                            letterSpacing: -0.15,
+                                  Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.center,
+                                    children: <Widget>[
+                                      Container(
+                                        width: 34,
+                                        height: 34,
+                                        decoration: BoxDecoration(
+                                          color: theme.colorScheme.primary
+                                              .withValues(alpha: 0.14),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
                                           ),
-                                    ),
-                                    active: true,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
+                                          border: Border.all(
+                                            color: theme.colorScheme.primary
+                                                .withValues(alpha: 0.26),
+                                          ),
+                                        ),
+                                        child: Icon(
+                                          Icons.hub_rounded,
+                                          size: 18,
+                                          color: theme.colorScheme.primary
+                                              .withValues(alpha: 0.94),
+                                        ),
+                                      ),
+                                      SizedBox(
+                                        width: density.inset(
+                                          AppSpacing.sm,
+                                          min: 6,
+                                        ),
+                                      ),
+                                      Expanded(
+                                        child: _ShimmeringRichText(
+                                          key: const ValueKey<String>(
+                                            'active-subsessions-title',
+                                          ),
+                                          text: TextSpan(
+                                            text: 'Sub-agents Running',
+                                            style: theme.textTheme.titleSmall
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.w800,
+                                                  letterSpacing: -0.15,
+                                                ),
+                                          ),
+                                          active: true,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      SizedBox(
+                                        width: density.inset(
+                                          AppSpacing.xs,
+                                          min: 4,
+                                        ),
+                                      ),
+                                      IconButton(
+                                        key: const ValueKey<String>(
+                                          'active-subsessions-toggle-button',
+                                        ),
+                                        onPressed: onToggleCollapsed,
+                                        icon: AnimatedRotation(
+                                          turns: collapsed ? 0.5 : 0,
+                                          duration: const Duration(
+                                            milliseconds: 180,
+                                          ),
+                                          child: Icon(
+                                            Icons.keyboard_arrow_down_rounded,
+                                            color: surfaces.muted,
+                                          ),
+                                        ),
+                                        padding: EdgeInsets.zero,
+                                        constraints: BoxConstraints.tightFor(
+                                          width: 34,
+                                          height: 34,
+                                        ),
+                                        splashRadius: 17,
+                                        tooltip: collapsed
+                                            ? 'Expand'
+                                            : 'Collapse',
+                                      ),
+                                    ],
                                   ),
-                                  AnimatedSwitcher(
-                                    duration: const Duration(milliseconds: 180),
-                                    switchInCurve: Curves.easeOutCubic,
-                                    switchOutCurve: Curves.easeInCubic,
-                                    child: !showPreview
-                                        ? const SizedBox.shrink()
-                                        : Padding(
-                                            key: const ValueKey<String>(
-                                              'active-subsessions-preview',
-                                            ),
-                                            padding: const EdgeInsets.only(
-                                              top: AppSpacing.xxs,
-                                              right: AppSpacing.sm,
-                                            ),
-                                            child: Text(
-                                              preview,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: theme.textTheme.bodySmall
-                                                  ?.copyWith(
-                                                    color: surfaces.muted,
-                                                    height: 1.2,
-                                                  ),
-                                            ),
+                                  const SizedBox(height: AppSpacing.xs),
+                                  _ActiveSubSessionCountBadge(
+                                    count: sessions.length,
+                                    compact: true,
+                                  ),
+                                ],
+                              )
+                            : Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: <Widget>[
+                                  Container(
+                                    width: 38,
+                                    height: 38,
+                                    decoration: BoxDecoration(
+                                      color: theme.colorScheme.primary
+                                          .withValues(alpha: 0.14),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: theme.colorScheme.primary
+                                            .withValues(alpha: 0.26),
+                                      ),
+                                    ),
+                                    child: Icon(
+                                      Icons.hub_rounded,
+                                      size: 20,
+                                      color: theme.colorScheme.primary
+                                          .withValues(alpha: 0.94),
+                                    ),
+                                  ),
+                                  SizedBox(
+                                    width: density.inset(AppSpacing.sm, min: 6),
+                                  ),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: <Widget>[
+                                        _ShimmeringRichText(
+                                          key: const ValueKey<String>(
+                                            'active-subsessions-title',
                                           ),
+                                          text: TextSpan(
+                                            text: 'Sub-agents Running',
+                                            style: theme.textTheme.titleSmall
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.w800,
+                                                  letterSpacing: -0.15,
+                                                ),
+                                          ),
+                                          active: true,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        AnimatedSwitcher(
+                                          duration: const Duration(
+                                            milliseconds: 180,
+                                          ),
+                                          switchInCurve: Curves.easeOutCubic,
+                                          switchOutCurve: Curves.easeInCubic,
+                                          child: !showPreview
+                                              ? const SizedBox.shrink()
+                                              : Padding(
+                                                  key: const ValueKey<String>(
+                                                    'active-subsessions-preview',
+                                                  ),
+                                                  padding:
+                                                      const EdgeInsets.only(
+                                                        top: AppSpacing.xxs,
+                                                        right: AppSpacing.sm,
+                                                      ),
+                                                  child: Text(
+                                                    preview,
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: theme
+                                                        .textTheme
+                                                        .bodySmall
+                                                        ?.copyWith(
+                                                          color:
+                                                              surfaces.muted,
+                                                          height: 1.2,
+                                                        ),
+                                                  ),
+                                                ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  SizedBox(
+                                    width: density.inset(AppSpacing.sm, min: 6),
+                                  ),
+                                  _ActiveSubSessionCountBadge(
+                                    count: sessions.length,
+                                    compact: false,
+                                  ),
+                                  const SizedBox(width: AppSpacing.sm),
+                                  IconButton(
+                                    key: const ValueKey<String>(
+                                      'active-subsessions-toggle-button',
+                                    ),
+                                    onPressed: onToggleCollapsed,
+                                    icon: AnimatedRotation(
+                                      turns: collapsed ? 0.5 : 0,
+                                      duration: const Duration(
+                                        milliseconds: 180,
+                                      ),
+                                      child: Icon(
+                                        Icons.keyboard_arrow_down_rounded,
+                                        color: surfaces.muted,
+                                      ),
+                                    ),
+                                    padding: EdgeInsets.zero,
+                                    constraints: BoxConstraints.tightFor(
+                                      width: 38,
+                                      height: 38,
+                                    ),
+                                    splashRadius: 19,
+                                    tooltip: collapsed
+                                        ? 'Expand'
+                                        : 'Collapse',
                                   ),
                                 ],
                               ),
-                            ),
-                            SizedBox(
-                              width: density.inset(AppSpacing.sm, min: 6),
-                            ),
-                            _ActiveSubSessionCountBadge(
-                              count: sessions.length,
-                              compact: compact,
-                            ),
-                            SizedBox(
-                              width: compact ? AppSpacing.xs : AppSpacing.sm,
-                            ),
-                            IconButton(
-                              key: const ValueKey<String>(
-                                'active-subsessions-toggle-button',
-                              ),
-                              onPressed: onToggleCollapsed,
-                              icon: AnimatedRotation(
-                                turns: collapsed ? 0.5 : 0,
-                                duration: const Duration(milliseconds: 180),
-                                child: Icon(
-                                  Icons.keyboard_arrow_down_rounded,
-                                  color: surfaces.muted,
-                                ),
-                              ),
-                              padding: EdgeInsets.zero,
-                              constraints: BoxConstraints.tightFor(
-                                width: compact ? 34 : 38,
-                                height: compact ? 34 : 38,
-                              ),
-                              splashRadius: compact ? 17 : 19,
-                              tooltip: collapsed ? 'Expand' : 'Collapse',
-                            ),
-                          ],
-                        ),
                       ),
                     ),
                   ),
@@ -14279,7 +14403,7 @@ class _ActiveSubSessionChip extends StatelessWidget {
           duration: const Duration(milliseconds: 180),
           curve: Curves.easeOutCubic,
           constraints: BoxConstraints(
-            minHeight: density.inset(compact ? 76 : 84, min: 68),
+            minHeight: density.inset(compact ? 64 : 84, min: 56),
           ),
           padding: EdgeInsets.fromLTRB(
             density.inset(compact ? AppSpacing.sm : AppSpacing.md),
@@ -14378,7 +14502,7 @@ class _ActiveSubSessionChip extends StatelessWidget {
                           ),
                 ),
                 active: true,
-                maxLines: 2,
+                maxLines: compact ? 1 : 2,
                 overflow: TextOverflow.ellipsis,
               ),
             ],
@@ -14415,27 +14539,37 @@ class _ActiveSubSessionCountBadge extends StatelessWidget {
           color: theme.colorScheme.primary.withValues(alpha: 0.28),
         ),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Container(
-            width: compact ? 6 : 7,
-            height: compact ? 6 : 7,
-            decoration: BoxDecoration(
-              color: theme.colorScheme.primary,
-              shape: BoxShape.circle,
+      child: compact
+          ? Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.primary,
+                fontWeight: FontWeight.w800,
+              ),
+            )
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Container(
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                Text(
+                  label,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.primary,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(width: AppSpacing.xs),
-          Text(
-            label,
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.primary,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -14448,7 +14582,7 @@ int _activeSubSessionColumnCount(
   if (maxWidth <= 0) {
     return 1;
   }
-  final minCardWidth = compact ? 250.0 : 270.0;
+  final minCardWidth = compact ? 180.0 : 270.0;
   final estimated = ((maxWidth + spacing) / (minCardWidth + spacing)).floor();
   final maxColumns = compact ? 2 : 3;
   if (estimated < 1) {
@@ -18479,10 +18613,10 @@ _TodoDockState _todoDockState({
   if (count == 0) {
     return _TodoDockState.hide;
   }
-  if (!live) {
-    return _TodoDockState.clear;
-  }
   if (!done) {
+    if (!live) {
+      return _TodoDockState.clear;
+    }
     return _TodoDockState.open;
   }
   return _TodoDockState.close;
@@ -18545,7 +18679,7 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
       _clearQueued = false;
       _dismissedCompletedSignature = null;
       _cancelCloseTimer();
-    } else if (previousSignature != nextSignature || !_done || !widget.live) {
+    } else if (previousSignature != nextSignature || !_done) {
       _dismissedCompletedSignature = null;
     }
     _syncState();
@@ -18714,8 +18848,7 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
       if (!mounted) {
         return;
       }
-      final shouldDismiss =
-          widget.live && _done && _todoSignature == todoSignature;
+      final shouldDismiss = _done && _todoSignature == todoSignature;
       setState(() {
         _visible = false;
         _closing = false;
@@ -24653,7 +24786,7 @@ class _ReviewPanelState extends State<_ReviewPanel> {
                                     ),
                                     showSelectedIcon: false,
                                     segments:
-                                        const <ButtonSegment<_ReviewDiffMode>>[
+                                        <ButtonSegment<_ReviewDiffMode>>[
                                           ButtonSegment<_ReviewDiffMode>(
                                             value: _ReviewDiffMode.unified,
                                             label: Text('Unified'),
@@ -24850,6 +24983,9 @@ class _ReviewDiffView extends StatelessWidget {
               final minWidth = mode == _ReviewDiffMode.split
                   ? math.max(constraints.maxWidth, density.maxContentWidth(940))
                   : constraints.maxWidth;
+              final contentHeight = constraints.maxHeight.isFinite
+                  ? constraints.maxHeight
+                  : 480.0;
               final maxRenderedLines = compactMode
                   ? _reviewDiffCompactRenderedLineLimit
                   : null;
@@ -24863,6 +24999,7 @@ class _ReviewDiffView extends StatelessWidget {
                   scrollDirection: Axis.horizontal,
                   child: SizedBox(
                     width: minWidth,
+                    height: contentHeight,
                     child: _ReviewUnifiedDiffBody(
                       key: const ValueKey<String>('review-diff-unified-view'),
                       rows: rows,
@@ -24885,6 +25022,7 @@ class _ReviewDiffView extends StatelessWidget {
                 scrollDirection: Axis.horizontal,
                 child: SizedBox(
                   width: minWidth,
+                  height: contentHeight,
                   child: _ReviewSplitDiffBody(
                     key: const ValueKey<String>('review-diff-split-view'),
                     rows: rows,

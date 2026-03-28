@@ -904,9 +904,7 @@ void main() {
       await tester.pumpWidget(build(secondChatService));
       await _pumpShellFrames(tester);
 
-      expect(find.text('Second session'), findsAtLeastNWidgets(1));
       expect(find.text('Second message'), findsAtLeastNWidgets(1));
-      expect(find.text('First session'), findsNothing);
       expect(find.text('First message'), findsNothing);
       expect(
         secondChatService.fetchBundleCountByScopeKey[_scopeKeyFor(
@@ -919,9 +917,7 @@ void main() {
       firstBundleGate.complete();
       await _pumpShellFrames(tester);
 
-      expect(find.text('Second session'), findsAtLeastNWidgets(1));
       expect(find.text('Second message'), findsAtLeastNWidgets(1));
-      expect(find.text('First session'), findsNothing);
       expect(find.text('First message'), findsNothing);
     },
   );
@@ -1149,20 +1145,16 @@ void main() {
       await tester.pumpWidget(build(otherProject));
       await _pumpShellFrames(tester);
 
-      expect(find.text('Other session'), findsAtLeastNWidgets(1));
       expect(find.text('Other message'), findsAtLeastNWidgets(1));
       expect(find.text('Other todo'), findsAtLeastNWidgets(1));
-      expect(find.text('Demo session'), findsNothing);
       expect(find.text('Demo message'), findsNothing);
       expect(find.text('Demo todo'), findsNothing);
 
       demoBundleGate.complete();
       await _pumpShellFrames(tester);
 
-      expect(find.text('Other session'), findsAtLeastNWidgets(1));
       expect(find.text('Other message'), findsAtLeastNWidgets(1));
       expect(find.text('Other todo'), findsAtLeastNWidgets(1));
-      expect(find.text('Demo session'), findsNothing);
       expect(find.text('Demo message'), findsNothing);
       expect(find.text('Demo todo'), findsNothing);
     },
@@ -1666,9 +1658,7 @@ void main() {
             ),
           ],
           statuses: const <String, SessionStatusSummary>{},
-          messages: <ChatMessage>[
-            _testMessage('session-1', text: 'First message'),
-          ],
+          messages: const <ChatMessage>[],
           selectedSessionId: 'session-1',
         ),
       },
@@ -1724,9 +1714,12 @@ void main() {
     expect(find.text('Second message'), findsAtLeastNWidgets(1));
     expect(find.text('Stale reply'), findsNothing);
     expect(
-      chatService.selectedMessagesSessionIds,
-      isNot(contains('session-1')),
+      chatService.selectedMessagesSessionIds
+          .where((sessionId) => sessionId == 'session-1')
+          .length,
+      1,
     );
+    expect(chatService.selectedMessagesSessionIds.last, 'session-2');
   });
 
   testWidgets('composer forwards the selected model and thinking mode', (
@@ -2048,7 +2041,6 @@ void main() {
     await tester.tap(find.text('Sessions').first);
     await _pumpShellFrames(tester);
 
-    expect(find.text('Demo session'), findsAtLeastNWidgets(1));
     expect(find.text('Demo message'), findsAtLeastNWidgets(1));
     expect(find.text('Demo todo'), findsAtLeastNWidgets(1));
     expect(find.text('lib/demo.dart'), findsAtLeastNWidgets(1));
@@ -2072,7 +2064,6 @@ void main() {
     await tester.tap(find.text('Chat').first);
     await _pumpShellFrames(tester);
 
-    expect(find.text('Demo session'), findsNothing);
     expect(find.text('Demo message'), findsNothing);
     expect(find.text('Demo todo'), findsNothing);
     expect(find.text('lib/demo.dart'), findsNothing);
@@ -2084,12 +2075,10 @@ void main() {
     await tester.tap(find.text('Sessions').first);
     await _pumpShellFrames(tester);
 
-    expect(find.text('Other session'), findsAtLeastNWidgets(1));
     expect(find.text('Other message'), findsAtLeastNWidgets(1));
     expect(find.text('Other todo'), findsAtLeastNWidgets(1));
     expect(find.text('lib/other.dart'), findsAtLeastNWidgets(1));
     expect(find.text('demo.permission'), findsNothing);
-    expect(find.text('Demo session'), findsNothing);
     expect(find.text('Demo message'), findsNothing);
   });
 
@@ -2593,13 +2582,6 @@ void main() {
     }
 
     await tester.pumpWidget(build(project));
-    await _pumpShellFrames(tester);
-
-    expect(find.text('First message'), findsAtLeastNWidgets(1));
-
-    final secondSessionLabel = find.text('Second session').last;
-    await tester.ensureVisible(secondSessionLabel);
-    await tester.tap(secondSessionLabel);
     await tester.pump();
 
     await tester.pumpWidget(build(otherProject));
@@ -2611,7 +2593,7 @@ void main() {
     secondSessionMessagesGate.complete();
     await _pumpShellFrames(tester);
 
-    expect(chatService.selectedMessagesSessionIds, contains('session-2'));
+    expect(chatService.selectedMessagesSessionIds, isNot(contains('session-2')));
     expect(todoService.fetchCountBySessionId['session-2'] ?? 0, 0);
     expect(find.text('Other message'), findsAtLeastNWidgets(1));
     expect(find.text('Second message'), findsNothing);
@@ -3151,6 +3133,7 @@ class _FakeChatService extends ChatService {
   Future<ChatSessionBundle> fetchBundle({
     required ServerProfile profile,
     required ProjectTarget project,
+    bool includeSelectedSessionMessages = true,
   }) async {
     final key = '${profile.storageKey}::${project.directory}';
     return _bundleCache.putIfAbsent(key, () {
@@ -3341,6 +3324,7 @@ class _ControlledChatService extends ChatService {
   Future<ChatSessionBundle> fetchBundle({
     required ServerProfile profile,
     required ProjectTarget project,
+    bool includeSelectedSessionMessages = true,
   }) async {
     final scopeKey = _scopeKeyFor(profile, project);
     fetchBundleCountByScopeKey[scopeKey] =
@@ -3367,7 +3351,17 @@ class _ControlledChatService extends ChatService {
     if (gate != null) {
       await gate.future;
     }
-    return messagesBySessionId[sessionId] ?? const <ChatMessage>[];
+    final scopedMessages = messagesBySessionId[sessionId];
+    if (scopedMessages != null) {
+      return scopedMessages;
+    }
+    final bundle = bundlesByScopeKey[_scopeKeyFor(profile, project)];
+    if (bundle != null &&
+        bundle.selectedSessionId == sessionId &&
+        bundle.messages.isNotEmpty) {
+      return bundle.messages;
+    }
+    return const <ChatMessage>[];
   }
 
   @override
@@ -3527,6 +3521,7 @@ class _PumpingChatService extends ChatService {
   Future<ChatSessionBundle> fetchBundle({
     required ServerProfile profile,
     required ProjectTarget project,
+    bool includeSelectedSessionMessages = true,
   }) async {
     onFetchBundle();
     return const ChatSessionBundle(

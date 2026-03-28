@@ -64,6 +64,12 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('Tool Calls'), findsWidgets);
+    await tester.dragUntilVisible(
+      find.text('System Prompt'),
+      find.byKey(const PageStorageKey<String>('web-parity-context-panel')),
+      const Offset(0, -300),
+    );
+    await tester.pumpAndSettle();
     expect(find.text('System Prompt'), findsOneWidget);
     expect(find.text('OpenAI'), findsOneWidget);
     expect(find.text('51,945'), findsOneWidget);
@@ -281,6 +287,9 @@ class _ContextWorkspaceController extends WorkspaceController {
 
   @override
   ConfigSnapshot? get configSnapshot => _snapshot;
+
+  @override
+  String? get sessionSystemPrompt => 'You are OpenCode. Stay concise.';
 
   @override
   Future<void> load() async {

@@ -168,6 +168,7 @@ class _FakeChatService extends ChatService {
   Future<ChatSessionBundle> fetchBundle({
     required ServerProfile profile,
     required ProjectTarget project,
+    bool includeSelectedSessionMessages = true,
   }) async {
     return ChatSessionBundle(
       sessions: <SessionSummary>[

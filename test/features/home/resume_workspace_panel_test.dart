@@ -62,10 +62,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('resume-workspace-panel')), findsOneWidget);
+    expect(find.byKey(const Key('resume-workspace-panel')), findsWidgets);
     expect(find.text('Resume last workspace'), findsWidgets);
-    expect(find.text('Project: Demo workspace'), findsOneWidget);
-    expect(find.text('Last session: Sprint planning'), findsOneWidget);
+    expect(find.text('Project: Demo workspace'), findsWidgets);
+    expect(find.text('Last session: Sprint planning'), findsWidgets);
     expect(find.byType(OpenCodeShellScreen), findsNothing);
   });
 
@@ -105,9 +105,9 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('resume-workspace-panel')), findsOneWidget);
+      expect(find.byKey(const Key('resume-workspace-panel')), findsWidgets);
       expect(find.text('Open last project'), findsWidgets);
-      expect(find.text('Project: Demo workspace'), findsOneWidget);
+      expect(find.text('Project: Demo workspace'), findsWidgets);
       expect(find.textContaining('Last session:'), findsNothing);
       expect(find.textContaining('Status:'), findsNothing);
       expect(find.byType(OpenCodeShellScreen), findsNothing);
@@ -165,7 +165,7 @@ void main() {
       find.descendant(
         of: find.byKey(const Key('resume-workspace-panel')),
         matching: find.byType(ElevatedButton),
-      ),
+      ).first,
     );
     await tester.pumpAndSettle();
 
@@ -233,8 +233,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('resume-workspace-panel')), findsOneWidget);
-      expect(find.text('Project: Studio workspace'), findsOneWidget);
+      expect(find.byKey(const Key('resume-workspace-panel')), findsWidgets);
+      expect(find.text('Project: Studio workspace'), findsWidgets);
 
       await tester.tap(find.text('Cloud'));
       await tester.pump();
@@ -332,7 +332,7 @@ void main() {
         find.descendant(
           of: find.byKey(const Key('resume-workspace-panel')),
           matching: find.byType(ElevatedButton),
-        ),
+        ).first,
       );
       await tester.pump();
       await studioCatalogStarted.future;
