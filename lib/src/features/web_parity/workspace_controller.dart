@@ -1952,6 +1952,18 @@ class WorkspaceController extends ChangeNotifier {
         project: project,
         sessionId: sessionId,
         limit: _sessionHistoryPageSize,
+        onMessagesProgress: (partialMessages) {
+          if (_isStaleSessionLoad(revision, sessionId)) {
+            return;
+          }
+          _messages = _mergeSessionMessages(
+            project: project,
+            sessionId: sessionId,
+            serverMessages: partialMessages,
+          );
+          _showingCachedSessionMessages = false;
+          _notify();
+        },
       );
       if (_isStaleSessionLoad(revision, sessionId)) {
         return;
