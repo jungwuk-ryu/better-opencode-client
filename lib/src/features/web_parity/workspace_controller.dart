@@ -1995,6 +1995,10 @@ class WorkspaceController extends ChangeNotifier {
       } else {
         _restoreComposerSelectionFromMessages();
       }
+      await _enforceSelectedSessionMemoryWindow(
+        project: project,
+        sessionId: sessionId,
+      );
       unawaited(
         _persistSessionMessagesCache(
           project: project,
@@ -2103,6 +2107,16 @@ class WorkspaceController extends ChangeNotifier {
       requireWatched: requireWatched,
     );
     _setWatchedSessionHistoryCursor(normalized, _selectedSessionHistoryCursor);
+    final project = _project;
+    if (project != null) {
+      unawaited(
+        _enforceWatchedSessionMemoryWindow(
+          project: project,
+          sessionId: normalized,
+          notify: true,
+        ),
+      );
+    }
   }
 
   void _setWatchedSessionTimeline(
@@ -2281,6 +2295,10 @@ class WorkspaceController extends ChangeNotifier {
     }
     if (sessionId != _selectedSessionId) {
       final currentState = _watchedSessionTimelineById[sessionId];
+      final hasSpilledHistory = await _sessionHasSpilledHistory(
+        project: project,
+        sessionId: sessionId,
+      );
       _setWatchedSessionTimeline(
         sessionId,
         _buildTimelineState(
@@ -2288,10 +2306,14 @@ class WorkspaceController extends ChangeNotifier {
           messages: currentState?.messages ?? const <ChatMessage>[],
           loading: false,
           showingCachedMessages: currentState?.showingCachedMessages ?? false,
-          historyMore: currentState?.historyMore ?? false,
+          historyMore: (currentState?.historyMore ?? false) || hasSpilledHistory,
           historyLoading: false,
           error: null,
         ),
+      );
+      await _enforceWatchedSessionMemoryWindow(
+        project: project,
+        sessionId: sessionId,
       );
       _notify();
       return;
@@ -2319,10 +2341,19 @@ class WorkspaceController extends ChangeNotifier {
           ),
           loading: false,
           showingCachedMessages: false,
-          historyMore: page.hasMore,
+          historyMore:
+              page.hasMore ||
+              await _sessionHasSpilledHistory(
+                project: project,
+                sessionId: sessionId,
+              ),
           historyLoading: false,
           error: null,
         ),
+      );
+      await _enforceWatchedSessionMemoryWindow(
+        project: project,
+        sessionId: sessionId,
       );
       unawaited(
         _saveSessionMessagesCache(
@@ -2463,9 +2494,7 @@ class WorkspaceController extends ChangeNotifier {
         !_watchedSessionIds.contains(sessionId) ||
         currentState == null ||
         !currentState.historyMore ||
-        currentState.historyLoading ||
-        cursor == null ||
-        cursor.isEmpty) {
+        currentState.historyLoading) {
       return;
     }
     final revision =
@@ -2481,6 +2510,24 @@ class WorkspaceController extends ChangeNotifier {
       currentState.copyWith(historyLoading: true, clearError: true),
     );
     _notify();
+    if (await _restoreWatchedSessionSpilledHistory(
+      project: project,
+      sessionId: sessionId,
+      revision: revision,
+    )) {
+      return;
+    }
+    if (cursor == null || cursor.isEmpty) {
+      if (_isStaleWatchedSessionHistoryLoad(revision, sessionId)) {
+        return;
+      }
+      _setWatchedSessionTimeline(
+        sessionId,
+        currentState.copyWith(historyLoading: false, historyMore: false),
+      );
+      _notify();
+      return;
+    }
     final baselineServerMessages = _stripOptimisticMessages(
       project: project,
       sessionId: sessionId,
@@ -2544,6 +2591,10 @@ class WorkspaceController extends ChangeNotifier {
           historyLoading: false,
           error: null,
         ),
+      );
+      await _enforceWatchedSessionMemoryWindow(
+        project: project,
+        sessionId: sessionId,
       );
       unawaited(
         _saveSessionMessagesCache(
@@ -2613,6 +2664,13 @@ class WorkspaceController extends ChangeNotifier {
         historyMore: currentState.historyMore,
         historyLoading: currentState.historyLoading,
         error: null,
+      ),
+    );
+    unawaited(
+      _enforceWatchedSessionMemoryWindow(
+        project: project,
+        sessionId: normalized,
+        notify: true,
       ),
     );
     if (persistImmediately) {
@@ -2822,6 +2880,10 @@ class WorkspaceController extends ChangeNotifier {
         _showingCachedSessionMessages = false;
         _sessionLoadError = null;
         _restoreComposerSelectionFromMessages();
+        await _enforceSelectedSessionMemoryWindow(
+          project: project,
+          sessionId: sessionId,
+        );
         unawaited(
           _persistSessionMessagesCache(
             project: project,
@@ -2860,11 +2922,19 @@ class WorkspaceController extends ChangeNotifier {
             loading: false,
             showingCachedMessages: false,
             historyMore: shouldReplaceHistoryCursor
-                ? page.hasMore
+                ? (page.hasMore ||
+                      await _sessionHasSpilledHistory(
+                        project: project,
+                        sessionId: sessionId,
+                      ))
                 : currentState.historyMore,
             historyLoading: false,
             error: null,
           ),
+        );
+        await _enforceWatchedSessionMemoryWindow(
+          project: project,
+          sessionId: sessionId,
         );
         unawaited(
           _saveSessionMessagesCache(
@@ -3618,6 +3688,10 @@ class WorkspaceController extends ChangeNotifier {
         _selectedSessionHistoryLoading = false;
         _showingCachedSessionMessages = false;
         _sessionLoadError = null;
+        await _enforceSelectedSessionMemoryWindow(
+          project: project,
+          sessionId: sessionId,
+        );
         unawaited(
           _saveSessionMessagesCache(
             project: project,
@@ -4799,7 +4873,8 @@ class WorkspaceController extends ChangeNotifier {
               serverMessages: nextServerMessages,
             )
           : nextServerMessages;
-      if (!identical(nextMessages, _messages)) {
+      final changed = !identical(nextMessages, _messages);
+      if (changed) {
         _sessionLoading = false;
         _showingCachedSessionMessages = false;
         _sessionLoadError = null;
@@ -4811,6 +4886,18 @@ class WorkspaceController extends ChangeNotifier {
         );
       }
       _messages = nextMessages;
+      if (changed &&
+          project != null &&
+          sessionId != null &&
+          sessionId.isNotEmpty) {
+        unawaited(
+          _enforceSelectedSessionMemoryWindow(
+            project: project,
+            sessionId: sessionId,
+            notify: true,
+          ),
+        );
+      }
     } else if (type == 'message.part.updated') {
       _applyActiveChildLivePreviewPartEvent(event.properties);
       final partJson = event.properties['part'] as Map?;
@@ -4846,13 +4933,26 @@ class WorkspaceController extends ChangeNotifier {
               serverMessages: nextServerMessages,
             )
           : nextServerMessages;
-      if (!identical(nextMessages, _messages)) {
+      final changed = !identical(nextMessages, _messages);
+      if (changed) {
         _sessionLoading = false;
         _showingCachedSessionMessages = false;
         _sessionLoadError = null;
         unawaited(_persistSelectedSessionMessagesCache(nextServerMessages));
       }
       _messages = nextMessages;
+      if (changed &&
+          project != null &&
+          sessionId != null &&
+          sessionId.isNotEmpty) {
+        unawaited(
+          _enforceSelectedSessionMemoryWindow(
+            project: project,
+            sessionId: sessionId,
+            notify: true,
+          ),
+        );
+      }
     } else if (type == 'message.removed') {
       _clearActiveChildLivePreviewForMessageEvent(event.properties);
       _applyWatchedSessionTimelineEvent(
@@ -4888,7 +4988,8 @@ class WorkspaceController extends ChangeNotifier {
               serverMessages: nextServerMessages,
             )
           : nextServerMessages;
-      if (!identical(nextMessages, _messages)) {
+      final changed = !identical(nextMessages, _messages);
+      if (changed) {
         _sessionLoading = false;
         _showingCachedSessionMessages = false;
         _sessionLoadError = null;
@@ -4900,6 +5001,18 @@ class WorkspaceController extends ChangeNotifier {
         );
       }
       _messages = nextMessages;
+      if (changed &&
+          project != null &&
+          sessionId != null &&
+          sessionId.isNotEmpty) {
+        unawaited(
+          _enforceSelectedSessionMemoryWindow(
+            project: project,
+            sessionId: sessionId,
+            notify: true,
+          ),
+        );
+      }
     } else if (type == 'todo.updated') {
       _replaceSelectedSessionTodos(
         applyTodoUpdatedEvent(
@@ -5932,6 +6045,76 @@ class WorkspaceController extends ChangeNotifier {
     return true;
   }
 
+  Future<bool> _restoreWatchedSessionSpilledHistory({
+    required ProjectTarget project,
+    required String sessionId,
+    required int revision,
+  }) async {
+    final spilledMessages = await _loadSpilledSessionMessages(
+      project: project,
+      sessionId: sessionId,
+    );
+    if (_isStaleWatchedSessionHistoryLoad(revision, sessionId)) {
+      return true;
+    }
+    final currentState = _watchedSessionTimelineById[sessionId];
+    if (currentState == null || spilledMessages == null || spilledMessages.isEmpty) {
+      return false;
+    }
+
+    final restoreStart = math.max(
+      0,
+      spilledMessages.length - _watchedSessionSpillHydrateBatch,
+    );
+    final restoredMessages = spilledMessages.sublist(restoreStart);
+    final remainingSpill = spilledMessages.sublist(0, restoreStart);
+    final currentServerMessages = _stripOptimisticMessages(
+      project: project,
+      sessionId: sessionId,
+      messages: currentState.messages,
+    );
+    final mergedServerMessages = _prependSessionHistoryMessages(
+      olderMessages: restoredMessages,
+      currentMessages: currentServerMessages,
+    );
+    _setWatchedSessionTimeline(
+      sessionId,
+      _buildTimelineState(
+        sessionId: sessionId,
+        messages: _mergeSessionMessages(
+          project: project,
+          sessionId: sessionId,
+          serverMessages: mergedServerMessages,
+        ),
+        loading: false,
+        showingCachedMessages: false,
+        historyMore:
+            remainingSpill.isNotEmpty ||
+            ((_watchedSessionHistoryCursorById[sessionId]?.isNotEmpty ?? false)),
+        historyLoading: false,
+        error: null,
+      ),
+    );
+    if (remainingSpill.isEmpty) {
+      await _spillStore.remove(_sessionMessagesSpillKey(project, sessionId));
+    } else {
+      await _saveSpilledSessionMessages(
+        project: project,
+        sessionId: sessionId,
+        messages: remainingSpill,
+      );
+    }
+    unawaited(
+      _saveSessionMessagesCache(
+        project: project,
+        sessionId: sessionId,
+        messages: mergedServerMessages,
+      ),
+    );
+    _notify();
+    return true;
+  }
+
   Future<void> _spillSelectedSessionHistoryIfNeeded({
     required ProjectTarget project,
     required String sessionId,
@@ -5959,6 +6142,69 @@ class WorkspaceController extends ChangeNotifier {
       sessionId: sessionId,
       messages: mergedSpill,
     );
+  }
+
+  Future<void> _enforceSelectedSessionMemoryWindow({
+    required ProjectTarget project,
+    required String sessionId,
+    bool notify = false,
+  }) async {
+    await _spillSelectedSessionHistoryIfNeeded(
+      project: project,
+      sessionId: sessionId,
+    );
+    if (notify) {
+      _notify();
+    }
+  }
+
+  Future<void> _enforceWatchedSessionMemoryWindow({
+    required ProjectTarget project,
+    required String sessionId,
+    bool notify = false,
+  }) async {
+    final currentState = _watchedSessionTimelineById[sessionId];
+    if (currentState == null ||
+        currentState.messages.length <= _watchedSessionMemoryWindow) {
+      if (notify && currentState != null) {
+        _notify();
+      }
+      return;
+    }
+
+    final overflowCount = currentState.messages.length - _watchedSessionMemoryWindow;
+    final overflowMessages = currentState.messages.sublist(0, overflowCount);
+    final retainedMessages = List<ChatMessage>.unmodifiable(
+      currentState.messages.sublist(overflowCount),
+    );
+    final existingSpill = await _loadSpilledSessionMessages(
+      project: project,
+      sessionId: sessionId,
+    );
+    final mergedSpill = <ChatMessage>[
+      ...?existingSpill,
+      ...overflowMessages.map(_cacheSessionMessage),
+    ];
+    _setWatchedSessionTimeline(
+      sessionId,
+      _buildTimelineState(
+        sessionId: sessionId,
+        messages: retainedMessages,
+        loading: currentState.loading,
+        showingCachedMessages: currentState.showingCachedMessages,
+        historyMore: true,
+        historyLoading: currentState.historyLoading,
+        error: currentState.error,
+      ),
+    );
+    await _saveSpilledSessionMessages(
+      project: project,
+      sessionId: sessionId,
+      messages: mergedSpill,
+    );
+    if (notify) {
+      _notify();
+    }
   }
 
   Future<void> _saveSessionMessagesCache({
@@ -6047,6 +6293,8 @@ class WorkspaceController extends ChangeNotifier {
   static const int _sessionCacheCollectionLimit = 16;
   static const int _selectedSessionMemoryWindow = 80;
   static const int _selectedSessionSpillHydrateBatch = 40;
+  static const int _watchedSessionMemoryWindow = 48;
+  static const int _watchedSessionSpillHydrateBatch = 24;
 
   List<ChatMessage> _sessionMessagesForCache(List<ChatMessage> messages) {
     if (messages.isEmpty) {
