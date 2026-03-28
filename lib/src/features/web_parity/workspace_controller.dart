@@ -2347,14 +2347,11 @@ class WorkspaceController extends ChangeNotifier {
 
   Future<void> _loadMoreSelectedSessionHistory(String sessionId) async {
     final project = _project;
-    final cursor = _selectedSessionHistoryCursor;
     if (project == null ||
         sessionId.isEmpty ||
         _selectedSessionId != sessionId ||
         !_selectedSessionHistoryMore ||
-        _selectedSessionHistoryLoading ||
-        cursor == null ||
-        cursor.isEmpty) {
+        _selectedSessionHistoryLoading) {
       return;
     }
     final revision = ++_selectedSessionHistoryLoadRevision;
@@ -2365,6 +2362,16 @@ class WorkspaceController extends ChangeNotifier {
       sessionId: sessionId,
       revision: revision,
     )) {
+      return;
+    }
+    final cursor = _selectedSessionHistoryCursor;
+    if (cursor == null || cursor.isEmpty) {
+      if (_isStaleSelectedSessionHistoryLoad(revision, sessionId)) {
+        return;
+      }
+      _selectedSessionHistoryLoading = false;
+      _selectedSessionHistoryMore = false;
+      _notify();
       return;
     }
     final baselineServerMessages = _stripOptimisticMessages(
