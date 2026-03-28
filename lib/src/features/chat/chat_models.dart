@@ -124,6 +124,12 @@ class ChatMessage {
   };
 }
 
+const int _metadataStringLimit = 16 * 1024;
+const int _metadataDiffLimit = 24 * 1024;
+const int _metadataCollectionLimit = 48;
+const int _diagnosticsSampleFileLimit = 16;
+const int _metadataMaxDepth = 5;
+
 class ChatMessageInfo {
   const ChatMessageInfo({
     required this.id,
@@ -239,7 +245,7 @@ class ChatMessageInfo {
       reasoningTokens: (tokens?['reasoning'] as num?)?.toInt(),
       cacheReadTokens: (cache?['read'] as num?)?.toInt(),
       cacheWriteTokens: (cache?['write'] as num?)?.toInt(),
-      metadata: json,
+      metadata: _sanitizeMetadataMap(json),
     );
   }
 
@@ -337,7 +343,7 @@ class ChatPart {
       filename: json['filename'] as String?,
       messageId: json['messageID'] as String?,
       sessionId: json['sessionID'] as String?,
-      metadata: json,
+      metadata: _sanitizePartMetadata(json),
     );
   }
 
@@ -349,6 +355,155 @@ class ChatPart {
     ..putIfAbsent('filename', () => filename)
     ..putIfAbsent('messageID', () => messageId)
     ..putIfAbsent('sessionID', () => sessionId);
+}
+
+Map<String, Object?> _sanitizePartMetadata(Map<String, Object?> json) {
+  final sanitized = _sanitizeMetadataMap(json);
+  if ((json['type'] as String?) != 'tool') {
+    return sanitized;
+  }
+  final state = (json['state'] as Map?)?.cast<String, Object?>();
+  if (state == null) {
+    return sanitized;
+  }
+  return Map<String, Object?>.unmodifiable(
+    <String, Object?>{
+      ...sanitized,
+      'state': _sanitizeToolState(
+        tool: json['tool']?.toString(),
+        state: state,
+      ),
+    },
+  );
+}
+
+Map<String, Object?> _sanitizeToolState({
+  required String? tool,
+  required Map<String, Object?> state,
+}) {
+  final sanitized = _sanitizeMetadataMap(state);
+  final metadata = (state['metadata'] as Map?)?.cast<String, Object?>();
+  return Map<String, Object?>.unmodifiable(
+    <String, Object?>{
+      ...sanitized,
+      if (metadata != null)
+        'metadata': _sanitizeToolStateMetadata(
+          tool: tool?.trim().toLowerCase(),
+          metadata: metadata,
+        ),
+    },
+  );
+}
+
+Map<String, Object?> _sanitizeToolStateMetadata({
+  required String? tool,
+  required Map<String, Object?> metadata,
+}) {
+  final sanitized = _sanitizeMetadataMap(metadata);
+  if (tool != 'apply_patch') {
+    return sanitized;
+  }
+  final next = <String, Object?>{...sanitized};
+  final diagnostics = metadata['diagnostics'];
+  if (diagnostics is Map) {
+    next['diagnostics'] = <String, Object?>{
+      'omitted': true,
+      'fileCount': diagnostics.length,
+      'sampleFiles': diagnostics.keys
+          .take(_diagnosticsSampleFileLimit)
+          .map((key) => key.toString())
+          .toList(growable: false),
+    };
+    next['truncated'] = true;
+  }
+  final diff = metadata['diff'];
+  if (diff is String && diff.length > _metadataDiffLimit) {
+    next['diff'] = _truncateMetadataString(diff, limit: _metadataDiffLimit);
+    next['truncated'] = true;
+  }
+  return Map<String, Object?>.unmodifiable(next);
+}
+
+Map<String, Object?> _sanitizeMetadataMap(
+  Map<String, Object?> source, {
+  int depth = 0,
+}) {
+  if (source.isEmpty) {
+    return const <String, Object?>{};
+  }
+  final result = <String, Object?>{};
+  for (final entry in source.entries.take(_metadataCollectionLimit)) {
+    result[entry.key] = _sanitizeMetadataValue(
+      entry.value,
+      key: entry.key,
+      depth: depth + 1,
+    );
+  }
+  if (source.length > _metadataCollectionLimit) {
+    result['truncatedKeys'] = source.length - _metadataCollectionLimit;
+  }
+  return Map<String, Object?>.unmodifiable(result);
+}
+
+Object? _sanitizeMetadataValue(
+  Object? value, {
+  required String key,
+  required int depth,
+}) {
+  if (value == null || value is num || value is bool) {
+    return value;
+  }
+  if (value is String) {
+    return _truncateMetadataString(
+      value,
+      limit: key == 'diff' ? _metadataDiffLimit : _metadataStringLimit,
+    );
+  }
+  if (value is Map) {
+    if (depth >= _metadataMaxDepth) {
+      return <String, Object?>{
+        'omitted': true,
+        'entryCount': value.length,
+      };
+    }
+    return _sanitizeMetadataMap(value.cast<String, Object?>(), depth: depth);
+  }
+  if (value is List) {
+    if (depth >= _metadataMaxDepth) {
+      return <String, Object?>{
+        'omitted': true,
+        'length': value.length,
+      };
+    }
+    final items = value
+        .take(_metadataCollectionLimit)
+        .map(
+          (item) => _sanitizeMetadataValue(
+            item,
+            key: key,
+            depth: depth + 1,
+          ),
+        )
+        .toList(growable: false);
+    if (value.length <= _metadataCollectionLimit) {
+      return items;
+    }
+    return <Object?>[
+      ...items,
+      <String, Object?>{
+        'omitted': true,
+        'remaining': value.length - _metadataCollectionLimit,
+      },
+    ];
+  }
+  return value.toString();
+}
+
+String _truncateMetadataString(String value, {required int limit}) {
+  if (value.length <= limit) {
+    return value;
+  }
+  return '${value.substring(0, limit)}\n...[truncated ${value.length - limit} chars]';
 }
 
 class ChatSessionBundle {

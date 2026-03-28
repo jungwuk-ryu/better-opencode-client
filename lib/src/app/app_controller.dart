@@ -10,6 +10,7 @@ import '../core/network/opencode_server_probe.dart';
 import '../core/persistence/server_profile_store.dart';
 import '../core/persistence/stale_cache_store.dart';
 import '../design_system/app_theme.dart';
+import '../features/chat/chat_service.dart';
 import '../features/projects/project_models.dart';
 import '../features/projects/project_store.dart';
 import '../features/web_parity/workspace_controller.dart';
@@ -81,6 +82,22 @@ enum AppColorSchemeMode {
   }
 }
 
+enum OversizedSessionBehavior {
+  retry,
+  openWithoutHistory;
+
+  String get storageValue => name;
+
+  static OversizedSessionBehavior fromStorage(String? value) {
+    return switch (value?.trim().toLowerCase()) {
+      'openwithouthistory' ||
+      'open_without_history' ||
+      'open-without-history' => OversizedSessionBehavior.openWithoutHistory,
+      _ => OversizedSessionBehavior.openWithoutHistory,
+    };
+  }
+}
+
 class WebParityAppController extends ChangeNotifier {
   WebParityAppController({
     ServerProfileStore? profileStore,
@@ -112,11 +129,18 @@ class WebParityAppController extends ChangeNotifier {
   static const _layoutDensityKey = 'web_parity.layout_density';
   static const _multiPaneComposerModeKey =
       'web_parity.multi_pane_composer_mode';
+  static const _sessionHistoryPageSizeKey =
+      'web_parity.session_history_page_size';
+  static const _oversizedSessionBehaviorKey =
+      'web_parity.oversized_session_behavior';
   static const _themePresetKey = 'web_parity.theme_preset';
   static const _themeSchemeKey = 'web_parity.theme_scheme';
   static const _releaseNotesEnabledKey = 'web_parity.release_notes_enabled';
   static const _releaseNotesSeenVersionKey =
       'web_parity.release_notes_seen_version';
+  static const int defaultSessionHistoryPageSize =
+      ChatService.defaultSessionHistoryPageSize;
+  static const List<int> sessionHistoryPageSizeOptions = <int>[25, 50, 100];
   static const double defaultTextScaleFactor = 1.0;
   static const double textScaleBaselineMultiplier = 0.9;
   static const double minTextScaleFactor = 0.9;
@@ -147,6 +171,9 @@ class WebParityAppController extends ChangeNotifier {
   WorkspaceLayoutDensity _layoutDensity = WorkspaceLayoutDensity.normal;
   WorkspaceMultiPaneComposerMode _multiPaneComposerMode =
       WorkspaceMultiPaneComposerMode.shared;
+  int _sessionHistoryPageSize = defaultSessionHistoryPageSize;
+  OversizedSessionBehavior _oversizedSessionBehavior =
+      OversizedSessionBehavior.openWithoutHistory;
   AppThemePreset _themePreset = AppThemePreset.remote;
   AppColorSchemeMode _colorSchemeMode = AppColorSchemeMode.system;
   bool _releaseNotesEnabled = true;
@@ -175,6 +202,9 @@ class WebParityAppController extends ChangeNotifier {
   WorkspaceLayoutDensity get layoutDensity => _layoutDensity;
   WorkspaceMultiPaneComposerMode get multiPaneComposerMode =>
       _multiPaneComposerMode;
+  int get sessionHistoryPageSize => _sessionHistoryPageSize;
+  OversizedSessionBehavior get oversizedSessionBehavior =>
+      _oversizedSessionBehavior;
   AppThemePreset get themePreset => _themePreset;
   AppColorSchemeMode get colorSchemeMode => _colorSchemeMode;
   bool get releaseNotesEnabled => _releaseNotesEnabled;
@@ -234,6 +264,12 @@ class WebParityAppController extends ChangeNotifier {
     final multiPaneComposerMode = WorkspaceMultiPaneComposerMode.fromStorage(
       prefs.getString(_multiPaneComposerModeKey),
     );
+    final sessionHistoryPageSize = _normalizeSessionHistoryPageSize(
+      prefs.getInt(_sessionHistoryPageSizeKey),
+    );
+    final oversizedSessionBehavior = OversizedSessionBehavior.fromStorage(
+      prefs.getString(_oversizedSessionBehaviorKey),
+    );
     final themePreset = AppThemePreset.fromStorage(
       prefs.getString(_themePresetKey),
     );
@@ -291,11 +327,14 @@ class WebParityAppController extends ChangeNotifier {
     _textScaleFactor = textScaleFactor;
     _layoutDensity = layoutDensity;
     _multiPaneComposerMode = multiPaneComposerMode;
+    _sessionHistoryPageSize = sessionHistoryPageSize;
+    _oversizedSessionBehavior = oversizedSessionBehavior;
     _themePreset = themePreset;
     _colorSchemeMode = colorSchemeMode;
     _releaseNotesEnabled = releaseNotesEnabled;
     _seenReleaseNotesVersion = seenReleaseNotesVersion;
     _pendingReleaseNotes = pendingReleaseNotes;
+    ChatService.globalSessionHistoryPageSize = sessionHistoryPageSize;
     _loading = false;
     notifyListeners();
   }
@@ -392,6 +431,30 @@ class WebParityAppController extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_multiPaneComposerModeKey, value.storageValue);
+  }
+
+  Future<void> setSessionHistoryPageSize(int value) async {
+    final normalized = _normalizeSessionHistoryPageSize(value);
+    if (_sessionHistoryPageSize == normalized) {
+      return;
+    }
+    _sessionHistoryPageSize = normalized;
+    ChatService.globalSessionHistoryPageSize = normalized;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_sessionHistoryPageSizeKey, normalized);
+  }
+
+  Future<void> setOversizedSessionBehavior(
+    OversizedSessionBehavior value,
+  ) async {
+    if (_oversizedSessionBehavior == value) {
+      return;
+    }
+    _oversizedSessionBehavior = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_oversizedSessionBehaviorKey, value.storageValue);
   }
 
   Future<void> setThemePreset(AppThemePreset value) async {
@@ -828,6 +891,18 @@ class WebParityAppController extends ChangeNotifier {
     return double.parse(
       snapped.clamp(minTextScaleFactor, maxTextScaleFactor).toStringAsFixed(2),
     );
+  }
+
+  int _normalizeSessionHistoryPageSize(int? value) {
+    if (value == null) {
+      return defaultSessionHistoryPageSize;
+    }
+    for (final option in sessionHistoryPageSizeOptions) {
+      if (option == value) {
+        return option;
+      }
+    }
+    return defaultSessionHistoryPageSize;
   }
 
   Map<String, ServerProbeReport> _retainReportsForProfiles(

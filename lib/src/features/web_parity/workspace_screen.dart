@@ -7571,6 +7571,49 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                 ),
                                 SizedBox(height: sectionGap),
                                 _WorkspaceSettingsSection(
+                                  title: 'Session loading',
+                                  child: _WorkspaceSettingsCard(
+                                    child: Column(
+                                      children: <Widget>[
+                                        _WorkspaceSettingsSessionHistoryPageSizeRow(
+                                          key: const ValueKey<String>(
+                                            'workspace-settings-session-history-page-size-row',
+                                          ),
+                                          value: widget
+                                              .appController
+                                              .sessionHistoryPageSize,
+                                          onChanged: (value) {
+                                            unawaited(
+                                              widget.appController
+                                                  .setSessionHistoryPageSize(
+                                                    value,
+                                                  ),
+                                            );
+                                          },
+                                        ),
+                                        const SizedBox(height: AppSpacing.sm),
+                                        _WorkspaceSettingsOversizedSessionBehaviorRow(
+                                          key: const ValueKey<String>(
+                                            'workspace-settings-oversized-session-behavior-row',
+                                          ),
+                                          value: widget
+                                              .appController
+                                              .oversizedSessionBehavior,
+                                          onChanged: (value) {
+                                            unawaited(
+                                              widget.appController
+                                                  .setOversizedSessionBehavior(
+                                                    value,
+                                                  ),
+                                            );
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(height: sectionGap),
+                                _WorkspaceSettingsSection(
                                   title: 'Composer',
                                   child: _WorkspaceSettingsCard(
                                     child: Column(
@@ -8034,6 +8077,144 @@ class _WorkspaceSettingsToggleRow extends StatelessWidget {
           ),
           SizedBox(width: density.inset(AppSpacing.md)),
           Switch.adaptive(value: value, onChanged: onChanged),
+        ],
+      ),
+    );
+  }
+}
+
+class _WorkspaceSettingsSessionHistoryPageSizeRow extends StatelessWidget {
+  const _WorkspaceSettingsSessionHistoryPageSizeRow({
+    required this.value,
+    required this.onChanged,
+    super.key,
+  });
+
+  final int value;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final density = _workspaceDensity(context);
+    return Container(
+      padding: EdgeInsets.all(density.inset(AppSpacing.md)),
+      decoration: BoxDecoration(
+        color: surfaces.panelMuted.withValues(alpha: 0.52),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            'Initial session history size',
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            'Choose how many messages to request when opening a session. Lower values reduce memory spikes on large histories.',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
+          ),
+          SizedBox(height: density.inset(AppSpacing.md)),
+          SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<int>(
+              key: const ValueKey<String>(
+                'workspace-settings-session-history-page-size-segments',
+              ),
+              showSelectedIcon: false,
+              segments: WebParityAppController.sessionHistoryPageSizeOptions
+                  .map(
+                    (option) => ButtonSegment<int>(
+                      value: option,
+                      label: Text('$option'),
+                      icon: const Icon(Icons.history_rounded),
+                    ),
+                  )
+                  .toList(growable: false),
+              selected: <int>{value},
+              onSelectionChanged: (selection) {
+                final next = selection.isEmpty ? value : selection.first;
+                onChanged(next);
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WorkspaceSettingsOversizedSessionBehaviorRow extends StatelessWidget {
+  const _WorkspaceSettingsOversizedSessionBehaviorRow({
+    required this.value,
+    required this.onChanged,
+    super.key,
+  });
+
+  final OversizedSessionBehavior value;
+  final ValueChanged<OversizedSessionBehavior> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final density = _workspaceDensity(context);
+    return Container(
+      padding: EdgeInsets.all(density.inset(AppSpacing.md)),
+      decoration: BoxDecoration(
+        color: surfaces.panelMuted.withValues(alpha: 0.52),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            'Oversized session action',
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            'When a session exceeds the safe response size, keep Retry or let the pane open without loading history.',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
+          ),
+          SizedBox(height: density.inset(AppSpacing.md)),
+          SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<OversizedSessionBehavior>(
+              key: const ValueKey<String>(
+                'workspace-settings-oversized-session-behavior-segments',
+              ),
+              showSelectedIcon: false,
+              segments:
+                  const <ButtonSegment<OversizedSessionBehavior>>[
+                    ButtonSegment<OversizedSessionBehavior>(
+                      value: OversizedSessionBehavior.retry,
+                      label: Text('Retry'),
+                      icon: Icon(Icons.refresh_rounded),
+                    ),
+                    ButtonSegment<OversizedSessionBehavior>(
+                      value: OversizedSessionBehavior.openWithoutHistory,
+                      label: Text('Open'),
+                      icon: Icon(Icons.folder_open_rounded),
+                    ),
+                  ],
+              selected: <OversizedSessionBehavior>{value},
+              onSelectionChanged: (selection) {
+                final next = selection.isEmpty ? value : selection.first;
+                onChanged(next);
+              },
+            ),
+          ),
         ],
       ),
     );
@@ -13246,6 +13427,13 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
       await controller.refreshTimelineSession(sessionId);
     }
 
+    void handleIgnoreOversizedSession() {
+      if (!selected) {
+        unawaited(handleFocus());
+      }
+      controller.ignoreSelectedSessionLoadFailure();
+    }
+
     Future<void> handleLoadMoreHistory() async {
       await controller.loadMoreTimelineSessionHistory(sessionId);
     }
@@ -13593,6 +13781,11 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                                 onRevertMessage: handleRevertMessage,
                                 onOpenSession: handleOpenSession,
                                 onRetry: handleRetry,
+                                onIgnoreOversizedSession:
+                                    handleIgnoreOversizedSession,
+                                oversizedSessionBehavior: widget
+                                    .appController
+                                    .oversizedSessionBehavior,
                                 onLoadMore: handleLoadMoreHistory,
                                 jumpToBottomEpoch: searchScoped
                                     ? timelineJumpEpoch
@@ -14561,6 +14754,8 @@ class _MessageTimeline extends StatefulWidget {
     required this.onRevertMessage,
     required this.onOpenSession,
     required this.onRetry,
+    required this.onIgnoreOversizedSession,
+    required this.oversizedSessionBehavior,
     required this.onLoadMore,
     required this.jumpToBottomEpoch,
     super.key,
@@ -14593,6 +14788,8 @@ class _MessageTimeline extends StatefulWidget {
   final Future<void> Function(ChatMessage message) onRevertMessage;
   final ValueChanged<String> onOpenSession;
   final Future<void> Function() onRetry;
+  final VoidCallback onIgnoreOversizedSession;
+  final OversizedSessionBehavior oversizedSessionBehavior;
   final Future<void> Function() onLoadMore;
   final int jumpToBottomEpoch;
 
@@ -14949,6 +15146,9 @@ class _MessageTimelineState extends State<_MessageTimeline> {
         showProgressDetails: widget.timelineProgressDetailsVisible,
       );
 
+  bool get _oversizedSessionError =>
+      widget.error?.toLowerCase().contains('too large to load safely') ?? false;
+
   void _beginBottomLock(String scopeKey) {
     _bottomLockScopeKey = scopeKey;
     _bottomLockLastExtent = null;
@@ -15118,10 +15318,18 @@ class _MessageTimelineState extends State<_MessageTimeline> {
         ),
         title: 'Couldn\'t load this session',
         message: widget.error!,
-        action: OutlinedButton(
-          onPressed: () => unawaited(widget.onRetry()),
-          child: const Text('Retry'),
-        ),
+        action:
+            _oversizedSessionError &&
+                widget.oversizedSessionBehavior ==
+                    OversizedSessionBehavior.openWithoutHistory
+            ? OutlinedButton(
+                onPressed: widget.onIgnoreOversizedSession,
+                child: const Text('Open without history'),
+              )
+            : OutlinedButton(
+                onPressed: () => unawaited(widget.onRetry()),
+                child: const Text('Retry'),
+              ),
       );
     }
     if (widget.messages.isEmpty && !showThinkingPlaceholder) {
@@ -15151,10 +15359,18 @@ class _MessageTimelineState extends State<_MessageTimeline> {
             shimmering: false,
             title: 'Showing cached messages',
             message: widget.error!,
-            action: OutlinedButton(
-              onPressed: () => unawaited(widget.onRetry()),
-              child: const Text('Retry'),
-            ),
+            action:
+                _oversizedSessionError &&
+                    widget.oversizedSessionBehavior ==
+                        OversizedSessionBehavior.openWithoutHistory
+                ? OutlinedButton(
+                    onPressed: widget.onIgnoreOversizedSession,
+                    child: const Text('Open without history'),
+                  )
+                : OutlinedButton(
+                    onPressed: () => unawaited(widget.onRetry()),
+                    child: const Text('Retry'),
+                  ),
           ),
         Expanded(
           child: Scrollbar(

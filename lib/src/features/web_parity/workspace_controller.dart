@@ -477,7 +477,7 @@ class WorkspaceComposerModelOption {
 }
 
 class WorkspaceController extends ChangeNotifier {
-  static const int _sessionHistoryPageSize = ChatService.sessionHistoryPageSize;
+  int get _sessionHistoryPageSize => _chatService.sessionHistoryPageSize;
 
   WorkspaceController({
     required this.profile,
@@ -1263,6 +1263,7 @@ class WorkspaceController extends ChangeNotifier {
       final bundle = await _chatService.fetchBundle(
         profile: profile,
         project: resolvedProject,
+        includeSelectedSessionMessages: false,
       );
       _sessions = bundle.sessions;
       _statuses = bundle.statuses;
@@ -1346,6 +1347,7 @@ class WorkspaceController extends ChangeNotifier {
     final bundle = await _chatService.fetchBundle(
       profile: profile,
       project: project,
+      includeSelectedSessionMessages: false,
     );
     _sessions = bundle.sessions;
     _statuses = bundle.statuses;
@@ -1542,6 +1544,16 @@ class WorkspaceController extends ChangeNotifier {
     await _loadWatchedSessionTimeline(normalized);
   }
 
+  void ignoreSelectedSessionLoadFailure() {
+    _sessionLoading = false;
+    _sessionLoadError = null;
+    _showingCachedSessionMessages = false;
+    if (_messages.isEmpty) {
+      _applyDefaultComposerSelection();
+    }
+    _notify();
+  }
+
   Future<void> prefetchSessionHoverPreview(String? sessionId) async {
     final normalized = sessionId?.trim();
     final project = _project;
@@ -1588,31 +1600,6 @@ class WorkspaceController extends ChangeNotifier {
       if (cachedMessages != null && cachedMessages.isNotEmpty) {
         _setSessionHoverPreviewFromMessages(normalized, cachedMessages);
       }
-
-      final fetchedMessages = await _chatService.fetchMessages(
-        profile: profile,
-        project: project,
-        sessionId: normalized,
-      );
-      if (_disposed || _project?.directory != expectedDirectory) {
-        return;
-      }
-      await _persistSessionMessagesCache(
-        project: project,
-        sessionId: normalized,
-        messages: fetchedMessages,
-      );
-      if (_disposed || _project?.directory != expectedDirectory) {
-        return;
-      }
-      final latestVersion =
-          _sessionById(normalized)?.updatedAt.millisecondsSinceEpoch ??
-          session.updatedAt.millisecondsSinceEpoch;
-      _setSessionHoverPreviewFromMessages(
-        normalized,
-        fetchedMessages,
-        version: latestVersion,
-      );
     } catch (_) {
       // Keep any cached hover preview content visible when network refresh fails.
     } finally {
@@ -2034,6 +2021,9 @@ class WorkspaceController extends ChangeNotifier {
     if (detail.isEmpty) {
       return 'The server may be offline or responding too slowly. Please try again.';
     }
+    if (detail.contains('too large to load safely')) {
+      return 'This session is too large to load safely with the current history limit.\nOpen it without history, or reduce the amount of history you load at once.';
+    }
     return 'The server may be offline or responding too slowly.\n$detail';
   }
 
@@ -2263,6 +2253,23 @@ class WorkspaceController extends ChangeNotifier {
         ),
       );
       _notify();
+    }
+    if (sessionId != _selectedSessionId) {
+      final currentState = _watchedSessionTimelineById[sessionId];
+      _setWatchedSessionTimeline(
+        sessionId,
+        _buildTimelineState(
+          sessionId: sessionId,
+          messages: currentState?.messages ?? const <ChatMessage>[],
+          loading: false,
+          showingCachedMessages: currentState?.showingCachedMessages ?? false,
+          historyMore: currentState?.historyMore ?? false,
+          historyLoading: false,
+          error: null,
+        ),
+      );
+      _notify();
+      return;
     }
 
     try {
@@ -2789,6 +2796,7 @@ class WorkspaceController extends ChangeNotifier {
       final bundle = await _chatService.fetchBundle(
         profile: profile,
         project: project,
+        includeSelectedSessionMessages: false,
       );
       if (_disposed || revision != _promptRefreshRevision) {
         return;
@@ -5654,6 +5662,10 @@ class WorkspaceController extends ChangeNotifier {
     if (entry == null) {
       return null;
     }
+    if (entry.payloadJson.length > ChatService.maxSessionMessageResponseBytes) {
+      await _cacheStore.remove(_sessionMessagesCacheKey(project, sessionId));
+      return null;
+    }
     try {
       final decoded = await _decodeJsonPayload(entry.payloadJson);
       return _chatMessagesFromDecodedJson(decoded);
@@ -5670,6 +5682,14 @@ class WorkspaceController extends ChangeNotifier {
   }) async {
     final cacheKey = _sessionMessagesCacheKey(project, sessionId);
     final cachedMessages = _sessionMessagesForCache(messages);
+    final payload = cachedMessages
+        .map((message) => message.toJson())
+        .toList(growable: false);
+    final payloadJson = jsonEncode(payload);
+    if (payloadJson.length > ChatService.maxSessionMessageResponseBytes) {
+      await _cacheStore.remove(cacheKey);
+      return;
+    }
     final signature =
         '${cachedMessages.length}:${_computeTimelineContentSignature(cachedMessages)}';
     if (_persistedSessionCacheSignatureByKey[cacheKey] == signature) {
@@ -5677,7 +5697,7 @@ class WorkspaceController extends ChangeNotifier {
     }
     await _cacheStore.save(
       cacheKey,
-      cachedMessages.map((message) => message.toJson()).toList(growable: false),
+      payload,
       signature: signature,
     );
     _persistedSessionCacheSignatureByKey = Map<String, String>.unmodifiable(

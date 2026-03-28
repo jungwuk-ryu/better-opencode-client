@@ -9,11 +9,25 @@ import 'chat_models.dart';
 import 'prompt_attachment_models.dart';
 
 class ChatService {
-  ChatService({http.Client? client}) : _client = client ?? http.Client();
+  ChatService({http.Client? client, int? sessionHistoryPageSize})
+    : _client = client ?? http.Client(),
+      _sessionHistoryPageSizeOverride = sessionHistoryPageSize;
 
-  static const int sessionHistoryPageSize = 100;
+  static const int defaultSessionHistoryPageSize = 50;
+  static const int maxSessionMessageResponseBytes = 16 * 1024 * 1024;
+  static int _globalSessionHistoryPageSize = defaultSessionHistoryPageSize;
 
   final http.Client _client;
+  final int? _sessionHistoryPageSizeOverride;
+
+  static int get globalSessionHistoryPageSize => _globalSessionHistoryPageSize;
+
+  static set globalSessionHistoryPageSize(int value) {
+    _globalSessionHistoryPageSize = value;
+  }
+
+  int get sessionHistoryPageSize =>
+      _sessionHistoryPageSizeOverride ?? _globalSessionHistoryPageSize;
 
   Future<SessionSummary> createSession({
     required ServerProfile profile,
@@ -258,6 +272,7 @@ class ChatService {
   Future<ChatSessionBundle> fetchBundle({
     required ServerProfile profile,
     required ProjectTarget project,
+    bool includeSelectedSessionMessages = true,
   }) async {
     final baseUri = profile.uriOrNull;
     if (baseUri == null) {
@@ -304,7 +319,7 @@ class ChatService {
     final selectedSessionId = visibleSessions.isNotEmpty
         ? visibleSessions.first.id
         : (sessions.isEmpty ? null : sessions.first.id);
-    final messages = selectedSessionId == null
+    final messages = !includeSelectedSessionMessages || selectedSessionId == null
         ? const <ChatMessage>[]
         : await fetchMessages(
             profile: profile,
@@ -361,6 +376,7 @@ class ChatService {
       '/session/$sessionId/message',
       headers: headers,
       query: query,
+      maxResponseBytes: maxSessionMessageResponseBytes,
     );
     final messagesBody = response.body.trim().isEmpty
         ? null
@@ -427,6 +443,7 @@ class ChatService {
     String path, {
     required Map<String, String> headers,
     Map<String, String>? query,
+    int? maxResponseBytes,
   }) async {
     final basePath = switch (baseUri.path) {
       '' => '/',
@@ -437,13 +454,64 @@ class ChatService {
         .replace(path: basePath)
         .resolve(path.startsWith('/') ? path.substring(1) : path)
         .replace(queryParameters: query);
-    final response = await _client.get(uri, headers: headers);
+    if (maxResponseBytes == null) {
+      final response = await _client.get(uri, headers: headers);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw StateError(
+          'Request failed for $uri with status ${response.statusCode}.',
+        );
+      }
+      return response;
+    }
+    final request = http.Request('GET', uri)..headers.addAll(headers);
+    final response = await _client.send(request);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw StateError(
         'Request failed for $uri with status ${response.statusCode}.',
       );
     }
-    return response;
+    final advertisedLength = int.tryParse(response.headers['content-length'] ?? '');
+    if (advertisedLength != null && advertisedLength > maxResponseBytes) {
+      throw StateError(
+        'Session payload too large to load safely from $uri '
+        '(${_formatByteCount(advertisedLength)} > ${_formatByteCount(maxResponseBytes)}).',
+      );
+    }
+    final bodyBytes = <int>[];
+    var receivedBytes = 0;
+    await for (final chunk in response.stream) {
+      receivedBytes += chunk.length;
+      if (receivedBytes > maxResponseBytes) {
+        throw StateError(
+          'Session payload too large to load safely from $uri '
+          '(>${_formatByteCount(maxResponseBytes)} received).',
+        );
+      }
+      bodyBytes.addAll(chunk);
+    }
+    return http.Response.bytes(
+      bodyBytes,
+      response.statusCode,
+      headers: response.headers,
+      isRedirect: response.isRedirect,
+      persistentConnection: response.persistentConnection,
+      reasonPhrase: response.reasonPhrase,
+      request: response.request,
+    );
+  }
+
+  String _formatByteCount(int bytes) {
+    const units = <String>['B', 'KB', 'MB', 'GB'];
+    var value = bytes.toDouble();
+    var unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+      value /= 1024;
+      unitIndex += 1;
+    }
+    final text = value >= 10 || unitIndex == 0
+        ? value.toStringAsFixed(0)
+        : value.toStringAsFixed(1);
+    return '$text ${units[unitIndex]}';
   }
 
   void dispose() {

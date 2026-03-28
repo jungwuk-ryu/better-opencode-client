@@ -713,9 +713,29 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     final l10n = AppLocalizations.of(context)!;
     final hint = widget.project.lastSession;
     if (hint == null) {
+      final selectedSessionId = bundle.selectedSessionId;
+      if (selectedSessionId == null) {
+        return (
+          selectedSessionId: null,
+          messages: const <ChatMessage>[],
+          notice: null,
+        );
+      }
+      if (bundle.messages.isNotEmpty) {
+        return (
+          selectedSessionId: selectedSessionId,
+          messages: bundle.messages,
+          notice: null,
+        );
+      }
+      final messages = await _chatService.fetchMessages(
+        profile: widget.profile,
+        project: widget.project,
+        sessionId: selectedSessionId,
+      );
       return (
-        selectedSessionId: bundle.selectedSessionId,
-        messages: bundle.messages,
+        selectedSessionId: selectedSessionId,
+        messages: messages,
         notice: null,
       );
     }
@@ -761,9 +781,21 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     }
 
     if (bundle.selectedSessionId == matchedSession.id) {
+      if (bundle.messages.isNotEmpty) {
+        return (
+          selectedSessionId: matchedSession.id,
+          messages: bundle.messages,
+          notice: null,
+        );
+      }
+      final messages = await _chatService.fetchMessages(
+        profile: widget.profile,
+        project: widget.project,
+        sessionId: matchedSession.id,
+      );
       return (
         selectedSessionId: matchedSession.id,
-        messages: bundle.messages,
+        messages: messages,
         notice: null,
       );
     }
@@ -819,7 +851,8 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     if (!_isActiveBundleLoad(requestToken, scopeKey)) {
       return;
     }
-    if (cached != null) {
+    if (cached != null &&
+        cached.payloadJson.length <= ChatService.maxSessionMessageResponseBytes) {
       setState(() {
         _clearScopeDependentState(clearSessions: clearStaleScopeState);
         _loading = true;
@@ -897,6 +930,8 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         }
         return;
       }
+    } else if (cached != null) {
+      await _cacheStore.remove(cacheKey);
     } else {
       if (!clearStaleScopeState) {
         setState(() {
@@ -910,6 +945,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
           ? await _chatService.fetchBundle(
               profile: widget.profile,
               project: widget.project,
+              includeSelectedSessionMessages: false,
             )
           : const ChatSessionBundle(
               sessions: <SessionSummary>[],
@@ -1013,7 +1049,9 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     if (!_isActiveSessionSelection(requestToken, scopeKey)) {
       return;
     }
-    if (cachedMessages != null) {
+    if (cachedMessages != null &&
+        cachedMessages.payloadJson.length <=
+            ChatService.maxSessionMessageResponseBytes) {
       final messages =
           ((jsonDecode(cachedMessages.payloadJson) as List)
                   .cast<Map<String, Object?>>())
@@ -1055,6 +1093,8 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       if (messagesFresh) {
         return;
       }
+    } else if (cachedMessages != null) {
+      await _cacheStore.remove(messagesKey);
     } else {
       setState(() {
         _selectedSessionId = sessionId;
