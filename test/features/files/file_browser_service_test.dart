@@ -12,35 +12,44 @@ void main() {
 
   setUp(() async {
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    baseUri = Uri.parse('http://${server.address.address}:${server.port}');
+    baseUri = Uri.parse(
+      'http://${server.address.address}:${server.port}/api?token=abc',
+    );
     server.listen((request) async {
-      final body = switch (request.uri.path) {
-        '/file' => request.uri.queryParameters['path'] == 'lib'
-            ? [
-                {
-                  'name': 'main.dart',
-                  'path': 'lib/main.dart',
-                  'absolute': '/workspace/demo/lib/main.dart',
-                  'type': 'file',
-                  'ignored': false,
-                },
-              ]
-            : [
-                {
-                  'name': 'lib',
-                  'path': 'lib',
-                  'absolute': '/workspace/demo/lib',
-                  'type': 'directory',
-                  'ignored': false,
-                },
-                {
-                  'name': 'README.md',
-                  'path': 'README.md',
-                  'absolute': '/workspace/demo/README.md',
-                  'type': 'file',
-                  'ignored': false,
-                },
-              ],
+      if (!_hasExpectedBaseContext(request.uri) ||
+          request.uri.queryParameters['directory'] != '/workspace/demo') {
+        request.response.statusCode = 400;
+        await request.response.close();
+        return;
+      }
+      final body = switch (_routePath(request.uri)) {
+        '/file' =>
+          request.uri.queryParameters['path'] == 'lib'
+              ? [
+                  {
+                    'name': 'main.dart',
+                    'path': 'lib/main.dart',
+                    'absolute': '/workspace/demo/lib/main.dart',
+                    'type': 'file',
+                    'ignored': false,
+                  },
+                ]
+              : [
+                  {
+                    'name': 'lib',
+                    'path': 'lib',
+                    'absolute': '/workspace/demo/lib',
+                    'type': 'directory',
+                    'ignored': false,
+                  },
+                  {
+                    'name': 'README.md',
+                    'path': 'README.md',
+                    'absolute': '/workspace/demo/README.md',
+                    'type': 'file',
+                    'ignored': false,
+                  },
+                ],
         '/file/status' => [
           {'path': 'README.md', 'added': 4, 'removed': 1, 'status': 'modified'},
         ],
@@ -119,4 +128,16 @@ void main() {
     expect(nodes.single.path, 'lib/main.dart');
     service.dispose();
   });
+}
+
+bool _hasExpectedBaseContext(Uri uri) {
+  final hasApiPrefix = uri.path == '/api' || uri.path.startsWith('/api/');
+  return hasApiPrefix && uri.queryParameters['token'] == 'abc';
+}
+
+String _routePath(Uri uri) {
+  if (uri.path == '/api') {
+    return '/';
+  }
+  return uri.path.substring('/api'.length);
 }

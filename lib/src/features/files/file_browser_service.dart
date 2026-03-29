@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import '../../core/connection/connection_models.dart';
 import '../../core/network/request_headers.dart';
+import '../../core/network/request_uri.dart';
 import '../projects/project_models.dart';
 import 'file_models.dart';
 
@@ -217,16 +218,8 @@ class FileBrowserService {
     }
     final headers = buildRequestHeaders(profile, accept: 'application/json');
 
-    final basePath = switch (baseUri.path) {
-      '' => '/',
-      final value when value.endsWith('/') => value,
-      final value => '$value/',
-    };
     final merged = <String, String>{'directory': project.directory, ...?query};
-    final uri = baseUri
-        .replace(path: basePath)
-        .resolve(path.startsWith('/') ? path.substring(1) : path)
-        .replace(queryParameters: merged);
+    final uri = buildRequestUri(baseUri, path: path, queryParameters: merged);
     final request = http.Request('GET', uri)..headers.addAll(headers);
     final response = await _client.send(request);
     if (response.statusCode < 200 || response.statusCode >= 300) {
