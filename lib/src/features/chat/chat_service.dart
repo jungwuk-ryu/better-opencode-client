@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import '../../core/connection/connection_models.dart';
 import '../../core/network/request_headers.dart';
+import '../../core/network/request_uri.dart';
 import '../projects/project_models.dart';
 import 'chat_models.dart';
 import 'prompt_attachment_models.dart';
@@ -42,17 +43,11 @@ class ChatService {
       accept: 'application/json',
       jsonBody: true,
     );
-    final basePath = switch (baseUri.path) {
-      '' => '/',
-      final value when value.endsWith('/') => value,
-      final value => '$value/',
-    };
-    final uri = baseUri
-        .replace(path: basePath)
-        .resolve('session')
-        .replace(
-          queryParameters: <String, String>{'directory': project.directory},
-        );
+    final uri = buildRequestUri(
+      baseUri,
+      path: 'session',
+      queryParameters: <String, String>{'directory': project.directory},
+    );
     final body = <String, Object?>{};
     if (title != null) {
       body['title'] = title;
@@ -94,17 +89,11 @@ class ChatService {
       accept: 'application/json',
       jsonBody: true,
     );
-    final basePath = switch (baseUri.path) {
-      '' => '/',
-      final value when value.endsWith('/') => value,
-      final value => '$value/',
-    };
-    final uri = baseUri
-        .replace(path: basePath)
-        .resolve('session/$sessionId/message')
-        .replace(
-          queryParameters: <String, String>{'directory': project.directory},
-        );
+    final uri = buildRequestUri(
+      baseUri,
+      path: 'session/$sessionId/message',
+      queryParameters: <String, String>{'directory': project.directory},
+    );
     final body = _buildPromptRequestBody(
       prompt: prompt,
       attachments: attachments,
@@ -152,17 +141,11 @@ class ChatService {
       accept: 'application/json',
       jsonBody: true,
     );
-    final basePath = switch (baseUri.path) {
-      '' => '/',
-      final value when value.endsWith('/') => value,
-      final value => '$value/',
-    };
-    final uri = baseUri
-        .replace(path: basePath)
-        .resolve('session/$sessionId/prompt_async')
-        .replace(
-          queryParameters: <String, String>{'directory': project.directory},
-        );
+    final uri = buildRequestUri(
+      baseUri,
+      path: 'session/$sessionId/prompt_async',
+      queryParameters: <String, String>{'directory': project.directory},
+    );
     final body = _buildPromptRequestBody(
       prompt: prompt,
       attachments: attachments,
@@ -213,17 +196,11 @@ class ChatService {
       accept: 'application/json',
       jsonBody: true,
     );
-    final basePath = switch (baseUri.path) {
-      '' => '/',
-      final value when value.endsWith('/') => value,
-      final value => '$value/',
-    };
-    final uri = baseUri
-        .replace(path: basePath)
-        .resolve('session/$sessionId/command')
-        .replace(
-          queryParameters: <String, String>{'directory': project.directory},
-        );
+    final uri = buildRequestUri(
+      baseUri,
+      path: 'session/$sessionId/command',
+      queryParameters: <String, String>{'directory': project.directory},
+    );
     final body = <String, Object?>{
       'command': command.trim(),
       'arguments': arguments,
@@ -317,7 +294,8 @@ class ChatService {
     final selectedSessionId = visibleSessions.isNotEmpty
         ? visibleSessions.first.id
         : (sessions.isEmpty ? null : sessions.first.id);
-    final messages = !includeSelectedSessionMessages || selectedSessionId == null
+    final messages =
+        !includeSelectedSessionMessages || selectedSessionId == null
         ? const <ChatMessage>[]
         : await fetchMessages(
             profile: profile,
@@ -389,7 +367,9 @@ class ChatService {
     );
     return ChatMessagePage(
       messages: decodedPage.messages,
-      nextCursor: decodedPage.truncated ? null : response.headers['x-next-cursor'],
+      nextCursor: decodedPage.truncated
+          ? null
+          : response.headers['x-next-cursor'],
       truncated: decodedPage.truncated,
     );
   }
@@ -462,16 +442,14 @@ class ChatService {
     var truncated = false;
 
     try {
-      await for (final chunk in response.stream
-          .transform(parser.byteCountingTransformer)
-          .transform(utf8.decoder)) {
+      await for (final chunk
+          in response.stream
+              .transform(parser.byteCountingTransformer)
+              .transform(utf8.decoder)) {
         final objects = parser.addChunk(chunk);
         for (final object in objects) {
           final message = object.truncated
-              ? _buildQuarantinedMessage(
-                  object,
-                  fallbackIndex: messages.length,
-                )
+              ? _buildQuarantinedMessage(object, fallbackIndex: messages.length)
               : _decodeStreamedMessageObject(
                   object,
                   fallbackIndex: messages.length,
@@ -601,10 +579,7 @@ class ChatService {
       info: ChatMessageInfo(
         id: id,
         role: 'assistant',
-        metadata: <String, Object?>{
-          'historyTruncated': true,
-          'detail': detail,
-        },
+        metadata: <String, Object?>{'historyTruncated': true, 'detail': detail},
       ),
       parts: const <ChatPart>[
         ChatPart(
@@ -633,15 +608,7 @@ class ChatService {
     required Map<String, String> headers,
     Map<String, String>? query,
   }) async {
-    final basePath = switch (baseUri.path) {
-      '' => '/',
-      final value when value.endsWith('/') => value,
-      final value => '$value/',
-    };
-    final uri = baseUri
-        .replace(path: basePath)
-        .resolve(path.startsWith('/') ? path.substring(1) : path)
-        .replace(queryParameters: query);
+    final uri = buildRequestUri(baseUri, path: path, queryParameters: query);
     final request = http.Request('GET', uri)..headers.addAll(headers);
     return _client.send(request);
   }
@@ -673,7 +640,9 @@ class ChatService {
         'Request failed for $uri with status ${response.statusCode}.',
       );
     }
-    final advertisedLength = int.tryParse(response.headers['content-length'] ?? '');
+    final advertisedLength = int.tryParse(
+      response.headers['content-length'] ?? '',
+    );
     if (advertisedLength != null && advertisedLength > maxResponseBytes) {
       throw StateError(
         'Session payload too large to load safely from $uri '
@@ -876,7 +845,9 @@ class _JsonArrayObjectStreamParser {
 
       final buffer = _currentObject;
       if (buffer == null) {
-        throw const FormatException('JSON object parser lost its buffer state.');
+        throw const FormatException(
+          'JSON object parser lost its buffer state.',
+        );
       }
       _currentObjectChars += 1;
       if (!_currentObjectTruncated) {

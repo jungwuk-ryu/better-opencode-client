@@ -19,30 +19,38 @@ void main() {
     lastCommandBody = null;
     lastMessagesQuery = null;
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    baseUri = Uri.parse('http://${server.address.address}:${server.port}');
+    baseUri = Uri.parse(
+      'http://${server.address.address}:${server.port}/api?token=abc',
+    );
     server.listen((request) async {
+      if (!_hasExpectedBaseContext(request.uri) ||
+          request.uri.queryParameters['directory'] != '/workspace/demo') {
+        request.response.statusCode = 400;
+        await request.response.close();
+        return;
+      }
+      final routePath = _routePath(request.uri);
       final requestBody = await utf8.decoder.bind(request).join();
       final decodedBody = requestBody.trim().isEmpty
           ? null
           : jsonDecode(requestBody) as Object?;
-      if (request.uri.path == '/session/ses_2/message' &&
+      if (routePath == '/session/ses_2/message' &&
           request.method == 'POST' &&
           decodedBody is Map) {
         lastPromptBody = decodedBody.cast<String, Object?>();
       }
-      if (request.uri.path == '/session/ses_2/command' &&
+      if (routePath == '/session/ses_2/command' &&
           request.method == 'POST' &&
           decodedBody is Map) {
         lastCommandBody = decodedBody.cast<String, Object?>();
       }
-      if (request.uri.path == '/session/ses_page/message' &&
-          request.method == 'GET') {
+      if (routePath == '/session/ses_page/message' && request.method == 'GET') {
         lastMessagesQuery = request.uri.queryParameters;
         if (request.uri.queryParameters['before'] == null) {
           request.response.headers.set('x-next-cursor', 'cursor_older_page');
         }
       }
-      final body = switch (request.uri.path) {
+      final body = switch (routePath) {
         '/session' when request.method == 'POST' => {
           'id': 'ses_2',
           'directory': '/workspace/demo',
@@ -125,6 +133,7 @@ void main() {
             {'id': 'prt_5', 'type': 'text', 'text': 'command ok'},
           ],
         },
+        '/session/ses_2/prompt_async' when request.method == 'POST' => true,
         '/session/ses_bad/message' => [
           {
             'info': {'id': 'msg_good', 'role': 'assistant'},
@@ -252,6 +261,7 @@ void main() {
     expect(firstPage.messages.single.info.id, 'msg_page_2');
     expect(firstPage.nextCursor, 'cursor_older_page');
     expect(lastMessagesQuery, <String, String>{
+      'token': 'abc',
       'directory': '/workspace/demo',
       'limit': '25',
     });
@@ -267,6 +277,7 @@ void main() {
     expect(olderPage.messages.single.info.id, 'msg_page_1');
     expect(olderPage.nextCursor, isNull);
     expect(lastMessagesQuery, <String, String>{
+      'token': 'abc',
       'directory': '/workspace/demo',
       'limit': '25',
       'before': 'cursor_older_page',
@@ -414,4 +425,33 @@ void main() {
     ]);
     service.dispose();
   });
+
+  test('sends async prompts through the prefixed session route', () async {
+    final service = ChatService();
+    final didQueue = await service.sendMessageAsync(
+      profile: ServerProfile(
+        id: 'server',
+        label: 'mock',
+        baseUrl: baseUri.toString(),
+      ),
+      project: const ProjectTarget(directory: '/workspace/demo', label: 'Demo'),
+      sessionId: 'ses_2',
+      prompt: 'queue this',
+    );
+
+    expect(didQueue, isTrue);
+    service.dispose();
+  });
+}
+
+bool _hasExpectedBaseContext(Uri uri) {
+  final hasApiPrefix = uri.path == '/api' || uri.path.startsWith('/api/');
+  return hasApiPrefix && uri.queryParameters['token'] == 'abc';
+}
+
+String _routePath(Uri uri) {
+  if (uri.path == '/api') {
+    return '/';
+  }
+  return uri.path.substring('/api'.length);
 }

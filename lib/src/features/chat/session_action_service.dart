@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 
 import '../../core/connection/connection_models.dart';
 import '../../core/network/request_headers.dart';
+import '../../core/network/request_uri.dart';
 import '../projects/project_models.dart';
 import 'chat_models.dart';
 
@@ -222,17 +223,11 @@ class SessionActionService {
     if (baseUri == null) {
       throw const FormatException('Invalid server profile URL.');
     }
-    final basePath = switch (baseUri.path) {
-      '' => '/',
-      final value when value.endsWith('/') => value,
-      final value => '$value/',
-    };
-    return baseUri
-        .replace(path: basePath)
-        .resolve(path.startsWith('/') ? path.substring(1) : path)
-        .replace(
-          queryParameters: <String, String>{'directory': project.directory},
-        );
+    return buildRequestUri(
+      baseUri,
+      path: path,
+      queryParameters: <String, String>{'directory': project.directory},
+    );
   }
 
   Map<String, String> _headers(ServerProfile profile, {bool jsonBody = false}) {

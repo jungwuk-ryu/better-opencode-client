@@ -12,11 +12,19 @@ void main() {
 
   setUp(() async {
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    baseUri = Uri.parse('http://${server.address.address}:${server.port}');
+    baseUri = Uri.parse(
+      'http://${server.address.address}:${server.port}/api?token=abc',
+    );
     server.listen((request) async {
+      if (!_hasExpectedBaseContext(request.uri) ||
+          request.uri.queryParameters['directory'] != '/workspace/demo') {
+        request.response.statusCode = 400;
+        await request.response.close();
+        return;
+      }
+      final routePath = _routePath(request.uri);
       Object? body;
-      if (request.method == 'POST' &&
-          request.uri.path == '/session/ses_1/fork') {
+      if (request.method == 'POST' && routePath == '/session/ses_1/fork') {
         body = {
           'id': 'ses_2',
           'directory': '/workspace/demo',
@@ -25,12 +33,10 @@ void main() {
           'time': {'updated': 1710000000000},
         };
       }
-      if (request.method == 'POST' &&
-          request.uri.path == '/session/ses_1/abort') {
+      if (request.method == 'POST' && routePath == '/session/ses_1/abort') {
         body = true;
       }
-      if (request.method == 'POST' &&
-          request.uri.path == '/session/ses_1/share') {
+      if (request.method == 'POST' && routePath == '/session/ses_1/share') {
         body = {
           'id': 'ses_1',
           'directory': '/workspace/demo',
@@ -40,10 +46,10 @@ void main() {
           'time': {'updated': 1710000000000},
         };
       }
-      if (request.method == 'DELETE' && request.uri.path == '/session/ses_1') {
+      if (request.method == 'DELETE' && routePath == '/session/ses_1') {
         body = true;
       }
-      if (request.method == 'PATCH' && request.uri.path == '/session/ses_1') {
+      if (request.method == 'PATCH' && routePath == '/session/ses_1') {
         body = {
           'id': 'ses_1',
           'directory': '/workspace/demo',
@@ -52,8 +58,7 @@ void main() {
           'time': {'updated': 1710000003000},
         };
       }
-      if (request.method == 'DELETE' &&
-          request.uri.path == '/session/ses_1/share') {
+      if (request.method == 'DELETE' && routePath == '/session/ses_1/share') {
         body = {
           'id': 'ses_1',
           'directory': '/workspace/demo',
@@ -62,8 +67,7 @@ void main() {
           'time': {'updated': 1710000000000},
         };
       }
-      if (request.method == 'POST' &&
-          request.uri.path == '/session/ses_1/revert') {
+      if (request.method == 'POST' && routePath == '/session/ses_1/revert') {
         body = {
           'id': 'ses_1',
           'directory': '/workspace/demo',
@@ -72,8 +76,7 @@ void main() {
           'time': {'updated': 1710000001000},
         };
       }
-      if (request.method == 'POST' &&
-          request.uri.path == '/session/ses_1/unrevert') {
+      if (request.method == 'POST' && routePath == '/session/ses_1/unrevert') {
         body = {
           'id': 'ses_1',
           'directory': '/workspace/demo',
@@ -82,12 +85,10 @@ void main() {
           'time': {'updated': 1710000002000},
         };
       }
-      if (request.method == 'POST' &&
-          request.uri.path == '/session/ses_1/init') {
+      if (request.method == 'POST' && routePath == '/session/ses_1/init') {
         body = true;
       }
-      if (request.method == 'POST' &&
-          request.uri.path == '/session/ses_1/summarize') {
+      if (request.method == 'POST' && routePath == '/session/ses_1/summarize') {
         body = true;
       }
       if (body == null) {
@@ -200,4 +201,16 @@ void main() {
     );
     service.dispose();
   });
+}
+
+bool _hasExpectedBaseContext(Uri uri) {
+  final hasApiPrefix = uri.path == '/api' || uri.path.startsWith('/api/');
+  return hasApiPrefix && uri.queryParameters['token'] == 'abc';
+}
+
+String _routePath(Uri uri) {
+  if (uri.path == '/api') {
+    return '/';
+  }
+  return uri.path.substring('/api'.length);
 }
