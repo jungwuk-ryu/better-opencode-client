@@ -1,0 +1,37 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Provision required Flutter path
+        run: |
+          sudo mkdir -p /home/ubuntu/tools
+          flutter_bin="$(command -v flutter)"
+          flutter_root="$(cd "$(dirname "$flutter_bin")/.." && pwd)"
+          sudo ln -sfn "$flutter_root" /home/ubuntu/tools/flutter
+          "/home/ubuntu/tools/flutter/bin/flutter" --version
+
+      - name: Pub get
+        run: '"/home/ubuntu/tools/flutter/bin/flutter" pub get'
+
+      - name: Analyze
+        run: '"/home/ubuntu/tools/flutter/bin/flutter" analyze'
+
+      - name: Generate l10n
+        run: '"/home/ubuntu/tools/flutter/bin/flutter" gen-l10n'
+
+      - name: Test
+        run: '"/home/ubuntu/tools/flutter/bin/flutter" test'
