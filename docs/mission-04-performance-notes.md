@@ -27,5 +27,5 @@ This note records the performance scan and the optimizations that were applied w
 
 ## Verification
 
-- `dart analyze` -> passed
-- `tool/manual/run_shell_derived_data.dart` -> verified todo ordering, file status indexing, and inspector JSON helper output during implementation
+- `flutter analyze` -> passed
+- `flutter run tool/manual/run_shell_derived_data.dart` -> verified todo ordering, file status indexing, and inspector JSON helper output during implementation

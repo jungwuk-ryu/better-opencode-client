@@ -69,5 +69,14 @@ Mission 6 required defining at least 10 failure/edge scenarios, reviewing the re
 
 ## Verification
 
-- `dart analyze` -> passed
+- `flutter analyze` -> passed
 - `flutter test test/features/requests/request_service_test.dart` -> passed
+
+## Post-mission follow-ups
+
+Later slices tightened web-parity and resilience in adjacent runtime ownership paths:
+
+- Request URI building preserves server base path prefixes and base query parameters across migrated services.
+- Remote `session.deleted` handling matches local fallback cleanup semantics so state cleanup is consistent.
+- Workspace SSE drop recovery uses a shared refetch-based recovery path and guards against duplicate application.
+- Malformed or partial request and live payloads are skipped safely so invalid events do not poison subsequent updates.

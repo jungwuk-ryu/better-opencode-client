@@ -1,21 +1,62 @@
 # better-opencode-client (BOC)
 
-better-opencode-client (BOC) is a spec-driven Flutter client for OpenCode.
+better-opencode-client is a spec-driven Flutter client for OpenCode. It is designed to stay compatible across server releases by relying on the server's OpenAPI document plus runtime capability probes.
 
-## Getting Started
+## Setup
 
-This project is a starting point for a Flutter application.
+1. Install Flutter for your platform.
+2. Fetch dependencies:
 
-A few resources to get you started if this is your first Flutter project:
+   ```bash
+   flutter pub get
+   ```
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+## Run
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```bash
+flutter run
+```
 
-## Project Rules
+## Test
 
-- [Responsive UI Matrix Rule](docs/testing-rules.md)
+The repo's CI mirrors this sequence:
+
+```bash
+flutter analyze
+flutter gen-l10n
+flutter test
+```
+
+## Localization outputs (tracked)
+
+Generated localization Dart files in `lib/l10n/` are tracked in this repository. After changing the ARB files, regenerate them with:
+
+```bash
+flutter gen-l10n
+```
+
+## Debug and manual tools
+
+This repo keeps a small set of manual verification scripts under `tool/manual/`.
+
+Example:
+
+```bash
+dart run tool/manual/run_shell_derived_data.dart
+```
+
+That script exercises shell derived-data helpers (todo ordering, file status indexing, and inspector JSON building) without launching the full app.
+
+## Runtime behavior notes (post-fix)
+
+These are repo-facing expectations that are covered by implementation and tests:
+
+- Request URIs preserve the base path prefix and base query parameters from the configured server URL, then merge request-specific query keys on top.
+- Remote `session.deleted` events use the same cleanup semantics as the local delete fallback, so session removal is consistent even when upstream delete payloads vary.
+- Workspace SSE drop recovery uses a refetch-based recovery path and reconnects without applying duplicate live events.
+- Malformed or partial request and live payloads are ignored safely so a bad event does not block later valid updates.
+
+## Docs
+
+- Architecture: `docs/architecture/foundation-architecture.md`
+- Project rules: `docs/testing-rules.md`

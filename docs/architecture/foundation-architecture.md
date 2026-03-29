@@ -49,7 +49,12 @@ The app uses SSE with two streams:
 - global stream for instance-level events
 - scoped stream for active project and session events
 
-An `EventReducer` is the single writer for live session, message, todo, question, and permission state. The reducer must:
+Live updates are handled as a pipeline rather than one global writer:
+
+1. SSE transport and monitoring detect drops, stale heartbeats, and unsafe stream state.
+2. Event payloads are reduced into small state fragments (for example, session status, message part updates, and todo status updates) and then applied by the owning feature services and controllers.
+
+The live update layer must:
 
 - coalesce deltas and full updates
 - tolerate duplicate delivery

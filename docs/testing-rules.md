@@ -22,7 +22,7 @@ Required viewport set:
 
 Implementation rules:
 
-- Reuse `/Users/jungwuk/Documents/works/opencode-mobile-remote/test/test_helpers/responsive_viewports.dart`.
+- Reuse `test/test_helpers/responsive_viewports.dart`.
 - Every UI test file must contain at least one responsive matrix smoke test for
   the surface it owns.
 - Use the full matrix by default. If a surface has a narrower supported range,
