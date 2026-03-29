@@ -27,6 +27,8 @@ import 'package:opencode_mobile_remote/src/features/tools/todo_models.dart';
 import 'package:opencode_mobile_remote/src/features/tools/todo_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../test_helpers/responsive_viewports.dart';
+
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues(<String, Object>{});
@@ -182,6 +184,35 @@ void main() {
       capabilitiesToUse: capabilities,
     );
   }
+
+  testWidgets('shell renders across the responsive viewport matrix', (
+    tester,
+  ) async {
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    for (final viewport in kResponsiveShellViewports) {
+      await pumpShell(tester, size: viewport.size);
+
+      final exception = tester.takeException();
+      expect(
+        exception,
+        isNull,
+        reason: 'shell layout failed on ${viewport.name}',
+      );
+      expect(
+        find.byType(OpenCodeShellScreen),
+        findsOneWidget,
+        reason: viewport.name,
+      );
+      expect(find.text('Chat'), findsAtLeastNWidgets(1), reason: viewport.name);
+      expect(
+        find.text('Settings'),
+        findsAtLeastNWidgets(1),
+        reason: viewport.name,
+      );
+    }
+  });
 
   testWidgets('desktop shell exposes stable primary destinations', (
     tester,

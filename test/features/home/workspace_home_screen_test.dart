@@ -21,12 +21,110 @@ import 'package:opencode_mobile_remote/src/features/shell/server_workspace_shell
 import 'package:opencode_mobile_remote/src/i18n/locale_controller.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../test_helpers/responsive_viewports.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() {
     SharedPreferences.setMockInitialValues(<String, Object>{});
   });
+
+  testWidgets('home first run renders across the responsive viewport matrix', (
+    tester,
+  ) async {
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final localeController = LocaleController();
+    addTearDown(localeController.dispose);
+
+    for (final viewport in kResponsiveLayoutViewports) {
+      await applyResponsiveTestViewport(tester, viewport.size);
+      await tester.pumpWidget(
+        _TestApp(
+          child: WorkspaceHomeScreen(
+            flavor: AppFlavor.debug,
+            localeController: localeController,
+            snapshot: const WorkspaceHomeSnapshot(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final exception = tester.takeException();
+      expect(
+        exception,
+        isNull,
+        reason: 'home first-run layout failed on ${viewport.name}',
+      );
+      expect(find.byType(WorkspaceHomeScreen), findsOneWidget, reason: viewport.name);
+      expect(find.text('Workspace'), findsOneWidget, reason: viewport.name);
+      expect(
+        find.text('better-opencode-client (BOC)'),
+        findsOneWidget,
+        reason: viewport.name,
+      );
+      expect(find.text('Add server'), findsWidgets, reason: viewport.name);
+    }
+  });
+
+  testWidgets(
+    'home workspace-ready state renders across the responsive viewport matrix',
+    (tester) async {
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final localeController = LocaleController();
+      addTearDown(localeController.dispose);
+
+      const profile = ServerProfile(
+        id: 'alpha',
+        label: 'Studio',
+        baseUrl: 'https://studio.example.com',
+      );
+
+      for (final viewport in kResponsiveLayoutViewports) {
+        await applyResponsiveTestViewport(tester, viewport.size);
+        await tester.pumpWidget(
+          _TestApp(
+            child: WorkspaceHomeScreen(
+              flavor: AppFlavor.debug,
+              localeController: localeController,
+              snapshot: WorkspaceHomeSnapshot(
+                savedProfiles: const <ServerProfile>[profile],
+                cachedReports: <String, ServerProbeReport>{
+                  profile.storageKey: _readyReport(),
+                },
+                selectedProfile: profile,
+              ),
+              workspaceSectionBuilder:
+                  (context, selectedProfile, onOpenProject) {
+                    return const Placeholder(
+                      key: Key('workspace-section-seam'),
+                    );
+                  },
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final exception = tester.takeException();
+        expect(
+          exception,
+          isNull,
+          reason: 'home ready-state layout failed on ${viewport.name}',
+        );
+        expect(find.text('Back to servers'), findsOneWidget, reason: viewport.name);
+        expect(
+          find.byKey(const Key('workspace-section-seam')),
+          findsOneWidget,
+          reason: viewport.name,
+        );
+        expect(find.text('Studio'), findsWidgets, reason: viewport.name);
+      }
+    },
+  );
 
   testWidgets('first run shows branded home scaffold without probe jargon', (
     tester,

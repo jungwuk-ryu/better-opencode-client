@@ -19,11 +19,81 @@ import 'package:opencode_mobile_remote/src/features/web_parity/workspace_layout_
 import 'package:opencode_mobile_remote/src/i18n/locale_controller.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../test_helpers/responsive_viewports.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() {
     SharedPreferences.setMockInitialValues(<String, Object>{});
+  });
+
+  testWidgets('web home renders across the responsive viewport matrix', (
+    tester,
+  ) async {
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    for (final viewport in kResponsiveLayoutViewports) {
+      await applyResponsiveTestViewport(tester, viewport.size);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final controller = _MutableHomeAppController(
+        profiles: <ServerProfile>[profile],
+        selected: profile,
+        reports: <String, ServerProbeReport>{
+          profile.storageKey: _probeReport(profile, version: '1.0.0'),
+        },
+        recentProjects: const <ProjectTarget>[
+          ProjectTarget(
+            directory: '/workspace/demo',
+            label: 'Demo',
+            source: 'server',
+          ),
+        ],
+      );
+      final localeController = LocaleController();
+
+      await tester.pumpWidget(
+        AppScope(
+          controller: controller,
+          child: MaterialApp(
+            theme: AppTheme.dark(),
+            home: WebParityHomeScreen(
+              flavor: AppFlavor.debug,
+              localeController: localeController,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final exception = tester.takeException();
+      expect(
+        exception,
+        isNull,
+        reason: 'web home layout failed on ${viewport.name}',
+      );
+      expect(
+        find.byType(WebParityHomeScreen),
+        findsOneWidget,
+        reason: viewport.name,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('home-server-card-server')),
+        findsOneWidget,
+        reason: viewport.name,
+      );
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+      localeController.dispose();
+      await tester.pump();
+    }
   });
 
   testWidgets(

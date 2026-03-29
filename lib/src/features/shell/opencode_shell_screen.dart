@@ -4631,88 +4631,68 @@ class _LeftRail extends StatelessWidget {
     final activeSessions = statuses.values.where(
       (status) => status.type == 'busy',
     );
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        _ProjectSwitcherPanel(
-          project: project,
-          profile: profile,
-          availableProjects: availableProjects,
-          projectPanelError: projectPanelError,
-          onSelectProject: onSelectProject,
-          onReloadProjects: onReloadProjects,
-          activeSessionsLabel: l10n.shellActiveCount(activeSessions.length),
-          activeSessionsIndicator: _AnimatedActivityGlyph(
-            active: activeSessions.isNotEmpty,
-            icon: Icons.bolt_rounded,
-            color: activeSessions.isNotEmpty
-                ? theme.colorScheme.primary
-                : surfaces.accentSoft,
+    final projectPanel = _ProjectSwitcherPanel(
+      project: project,
+      profile: profile,
+      availableProjects: availableProjects,
+      projectPanelError: projectPanelError,
+      onSelectProject: onSelectProject,
+      onReloadProjects: onReloadProjects,
+      activeSessionsLabel: l10n.shellActiveCount(activeSessions.length),
+      activeSessionsIndicator: _AnimatedActivityGlyph(
+        active: activeSessions.isNotEmpty,
+        icon: Icons.bolt_rounded,
+        color: activeSessions.isNotEmpty
+            ? theme.colorScheme.primary
+            : surfaces.accentSoft,
+      ),
+      onExit: onExit,
+    );
+    final sessionChildren = <Widget>[
+      Align(
+        alignment: Alignment.centerLeft,
+        child: Semantics(
+          button: true,
+          label: l10n.shellNewSession,
+          child: OutlinedButton.icon(
+            key: const ValueKey<String>('new-session-button'),
+            onPressed: onCreateSessionDraft,
+            icon: const Icon(Icons.add_comment_outlined),
+            label: Text(l10n.shellNewSession),
           ),
-          onExit: onExit,
         ),
-        const SizedBox(height: AppSpacing.lg),
-        Expanded(
-          child: _PanelCard(
-            tone: _PanelTone.subtle,
-            eyebrow: l10n.shellSessionsEyebrow,
-            title: l10n.shellSessionsTitle,
-            subtitle: l10n.shellThreadsCount(sessions.length),
-            fillChild: true,
-            child: ListView(
-              padding: EdgeInsets.zero,
-              children: <Widget>[
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Semantics(
-                    button: true,
-                    label: l10n.shellNewSession,
-                    child: OutlinedButton.icon(
-                      key: const ValueKey<String>('new-session-button'),
-                      onPressed: onCreateSessionDraft,
-                      icon: const Icon(Icons.add_comment_outlined),
-                      label: Text(l10n.shellNewSession),
+      ),
+      const SizedBox(height: AppSpacing.sm),
+      ...(sessions.isEmpty
+          ? <Widget>[
+              _SessionTile(
+                title: l10n.shellSessionCurrent,
+                status: l10n.shellStatusIdle,
+                statusType: 'idle',
+              ),
+            ]
+          : sessions
+                .map((session) {
+                  final depth = orderedSessions[session.id] ?? 0;
+                  return Padding(
+                    padding: EdgeInsets.only(
+                      left: depth * AppSpacing.sm,
+                      bottom: AppSpacing.sm,
                     ),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                ...(sessions.isEmpty
-                    ? <Widget>[
-                        _SessionTile(
-                          title: l10n.shellSessionCurrent,
-                          status: l10n.shellStatusIdle,
-                          statusType: 'idle',
-                        ),
-                      ]
-                    : sessions
-                          .map((session) {
-                            final depth = orderedSessions[session.id] ?? 0;
-                            return Padding(
-                              padding: EdgeInsets.only(
-                                left: depth * AppSpacing.sm,
-                                bottom: AppSpacing.sm,
-                              ),
-                              child: _SessionTile(
-                                title: session.title,
-                                status: _statusLabel(
-                                  l10n,
-                                  statuses[session.id],
-                                ),
-                                statusType:
-                                    statuses[session.id]?.type ?? 'idle',
-                                selected: session.id == selectedSessionId,
-                                onTap: () => onSelectSession(session.id),
-                              ),
-                            );
-                          })
-                          .toList(growable: false)),
-              ],
-            ),
-          ),
-        ),
-        if (selectedSessionId != null) ...<Widget>[
-          const SizedBox(height: AppSpacing.lg),
-          _PanelCard(
+                    child: _SessionTile(
+                      title: session.title,
+                      status: _statusLabel(l10n, statuses[session.id]),
+                      statusType: statuses[session.id]?.type ?? 'idle',
+                      selected: session.id == selectedSessionId,
+                      onTap: () => onSelectSession(session.id),
+                    ),
+                  );
+                })
+                .toList(growable: false)),
+    ];
+    final actionsPanel = selectedSessionId == null
+        ? null
+        : _PanelCard(
             tone: _PanelTone.subtle,
             eyebrow: l10n.shellControlsEyebrow,
             title: l10n.shellActionsTitle,
@@ -4771,9 +4751,59 @@ class _LeftRail extends StatelessWidget {
                   ),
               ],
             ),
-          ),
-        ],
-      ],
+          );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final useScrollableRail =
+            constraints.maxHeight.isFinite && constraints.maxHeight < 760;
+        if (useScrollableRail) {
+          return ListView(
+            padding: EdgeInsets.zero,
+            children: <Widget>[
+              projectPanel,
+              const SizedBox(height: AppSpacing.lg),
+              _PanelCard(
+                tone: _PanelTone.subtle,
+                eyebrow: l10n.shellSessionsEyebrow,
+                title: l10n.shellSessionsTitle,
+                subtitle: l10n.shellThreadsCount(sessions.length),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: sessionChildren,
+                ),
+              ),
+              if (actionsPanel != null) ...<Widget>[
+                const SizedBox(height: AppSpacing.lg),
+                actionsPanel,
+              ],
+            ],
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            projectPanel,
+            const SizedBox(height: AppSpacing.lg),
+            Expanded(
+              child: _PanelCard(
+                tone: _PanelTone.subtle,
+                eyebrow: l10n.shellSessionsEyebrow,
+                title: l10n.shellSessionsTitle,
+                subtitle: l10n.shellThreadsCount(sessions.length),
+                fillChild: true,
+                child: ListView(
+                  padding: EdgeInsets.zero,
+                  children: sessionChildren,
+                ),
+              ),
+            ),
+            if (actionsPanel != null) ...<Widget>[
+              const SizedBox(height: AppSpacing.lg),
+              actionsPanel,
+            ],
+          ],
+        );
+      },
     );
   }
 }

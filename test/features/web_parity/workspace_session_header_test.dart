@@ -19,8 +19,79 @@ import 'package:opencode_mobile_remote/src/features/web_parity/workspace_control
 import 'package:opencode_mobile_remote/src/features/web_parity/workspace_screen.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import '../../test_helpers/responsive_viewports.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets(
+    'session workspace renders across the responsive viewport matrix',
+    (tester) async {
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      for (final viewport in kResponsiveLayoutViewports) {
+        await applyResponsiveTestViewport(tester, viewport.size);
+
+        final profile = ServerProfile(
+          id: 'server',
+          label: 'Mock',
+          baseUrl: 'http://localhost:3000',
+        );
+        final appController = _StaticAppController(
+          profile: profile,
+          workspaceControllerFactory:
+              ({required profile, required directory, initialSessionId}) {
+                return _HeaderWorkspaceController(
+                  profile: profile,
+                  directory: directory,
+                  initialSessionId: initialSessionId,
+                );
+              },
+        );
+
+        await tester.pumpWidget(
+          _WorkspaceRouteHarness(
+            controller: appController,
+            initialRoute: buildWorkspaceRoute(
+              '/workspace/demo',
+              sessionId: 'ses_1',
+            ),
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 120));
+
+        final exception = tester.takeException();
+        expect(
+          exception,
+          isNull,
+          reason: 'workspace session layout failed on ${viewport.name}',
+        );
+        expect(
+          find.byKey(const ValueKey<String>('session-header-title-ses_1')),
+          findsOneWidget,
+          reason: viewport.name,
+        );
+        expect(
+          find.byKey(
+            const ValueKey<String>('session-header-overflow-menu-button'),
+          ),
+          findsOneWidget,
+          reason: viewport.name,
+        );
+        expect(
+          find.byKey(const ValueKey<String>('composer-text-field')),
+          findsOneWidget,
+          reason: viewport.name,
+        );
+
+        await tester.pumpWidget(const SizedBox.shrink());
+        appController.dispose();
+        await tester.pump();
+      }
+    },
+  );
 
   testWidgets(
     'session header shows the title, busy state, and context usage ring',

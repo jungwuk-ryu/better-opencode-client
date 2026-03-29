@@ -13,6 +13,8 @@ import 'package:opencode_mobile_remote/src/features/tools/todo_models.dart';
 import 'package:opencode_mobile_remote/src/features/tools/todo_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../test_helpers/responsive_viewports.dart';
+
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues(<String, Object>{});
@@ -94,13 +96,29 @@ void main() {
   testWidgets('stable primary destinations appear at every target width', (
     tester,
   ) async {
-    for (final width in <double>[390, 768, 1024, 1366]) {
-      await pumpShell(tester, size: Size(width, 1000));
+    for (final viewport in kResponsiveShellViewports) {
+      await pumpShell(tester, size: viewport.size);
 
-      expect(find.text('Sessions'), findsAtLeastNWidgets(1));
-      expect(find.text('Chat'), findsAtLeastNWidgets(1));
-      expect(find.text('Context'), findsAtLeastNWidgets(1));
-      expect(find.text('Settings'), findsAtLeastNWidgets(1));
+      expect(
+        find.text('Sessions'),
+        findsAtLeastNWidgets(1),
+        reason: viewport.name,
+      );
+      expect(
+        find.text('Chat'),
+        findsAtLeastNWidgets(1),
+        reason: viewport.name,
+      );
+      expect(
+        find.text('Context'),
+        findsAtLeastNWidgets(1),
+        reason: viewport.name,
+      );
+      expect(
+        find.text('Settings'),
+        findsAtLeastNWidgets(1),
+        reason: viewport.name,
+      );
     }
   });
 

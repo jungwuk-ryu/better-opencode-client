@@ -808,7 +808,11 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
             ),
             child: SafeArea(
               child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.lg),
+                padding: EdgeInsets.all(
+                  MediaQuery.sizeOf(context).width < 600
+                      ? AppSpacing.md
+                      : AppSpacing.lg,
+                ),
                 child: controller.loading
                     ? const Center(child: CircularProgressIndicator())
                     : Center(
@@ -817,6 +821,10 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
                           child: LayoutBuilder(
                             builder: (context, constraints) {
                               final wide = constraints.maxWidth >= 1180;
+                              final compactHome =
+                                  constraints.maxWidth < 600 ||
+                                  constraints.maxHeight < 700;
+                              final compactHeader = constraints.maxWidth < 720;
                               final serverListPanel = _HomeServerListPanel(
                                 profiles: controller.profiles,
                                 selectedProfile: selectedProfile,
@@ -880,99 +888,178 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
                                         target,
                                       ),
                               );
-                              return Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: <Widget>[
-                                  Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: <Widget>[
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
+                              final headerSection = compactHeader
+                                  ? Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: <Widget>[
+                                        Text(
+                                          'Servers',
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .headlineSmall
+                                              ?.copyWith(
+                                                fontWeight: FontWeight.w800,
+                                              ),
+                                        ),
+                                        const SizedBox(
+                                          height: AppSpacing.xxs,
+                                        ),
+                                        Text(
+                                          'Choose a server, inspect its current status, and jump back into the exact workspace layout you were using last.',
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodyLarge
+                                              ?.copyWith(
+                                                color: surfaces.muted,
+                                              ),
+                                        ),
+                                        const SizedBox(
+                                          height: AppSpacing.md,
+                                        ),
+                                        Wrap(
+                                          spacing: AppSpacing.sm,
+                                          runSpacing: AppSpacing.sm,
                                           children: <Widget>[
-                                            Text(
-                                              'Servers',
-                                              style: Theme.of(context)
-                                                  .textTheme
-                                                  .headlineSmall
-                                                  ?.copyWith(
-                                                    fontWeight: FontWeight.w800,
-                                                  ),
+                                            _ServerPill(
+                                              profile: selectedProfile,
+                                              report: selectedReport,
+                                              onTap: () =>
+                                                  _openServers(controller),
                                             ),
-                                            const SizedBox(
-                                              height: AppSpacing.xxs,
-                                            ),
-                                            Text(
-                                              'Choose a server, inspect its current status, and jump back into the exact workspace layout you were using last.',
-                                              style: Theme.of(context)
-                                                  .textTheme
-                                                  .bodyLarge
-                                                  ?.copyWith(
-                                                    color: surfaces.muted,
-                                                  ),
+                                            OutlinedButton.icon(
+                                              onPressed: () =>
+                                                  _openServers(controller),
+                                              icon: const Icon(
+                                                Icons.storage_rounded,
+                                              ),
+                                              label: const Text('See Servers'),
                                             ),
                                           ],
                                         ),
-                                      ),
-                                      const SizedBox(width: AppSpacing.lg),
-                                      Wrap(
-                                        spacing: AppSpacing.sm,
-                                        runSpacing: AppSpacing.sm,
-                                        children: <Widget>[
-                                          _ServerPill(
-                                            profile: selectedProfile,
-                                            report: selectedReport,
-                                            onTap: () =>
-                                                _openServers(controller),
+                                      ],
+                                    )
+                                  : Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: <Widget>[
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: <Widget>[
+                                              Text(
+                                                'Servers',
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .headlineSmall
+                                                    ?.copyWith(
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                    ),
+                                              ),
+                                              const SizedBox(
+                                                height: AppSpacing.xxs,
+                                              ),
+                                              Text(
+                                                'Choose a server, inspect its current status, and jump back into the exact workspace layout you were using last.',
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .bodyLarge
+                                                    ?.copyWith(
+                                                      color: surfaces.muted,
+                                                    ),
+                                              ),
+                                            ],
                                           ),
-                                          OutlinedButton.icon(
-                                            onPressed: () =>
-                                                _openServers(controller),
-                                            icon: const Icon(
-                                              Icons.storage_rounded,
+                                        ),
+                                        const SizedBox(width: AppSpacing.lg),
+                                        Wrap(
+                                          spacing: AppSpacing.sm,
+                                          runSpacing: AppSpacing.sm,
+                                          children: <Widget>[
+                                            _ServerPill(
+                                              profile: selectedProfile,
+                                              report: selectedReport,
+                                              onTap: () =>
+                                                  _openServers(controller),
                                             ),
-                                            label: const Text('See Servers'),
-                                          ),
-                                        ],
+                                            OutlinedButton.icon(
+                                              onPressed: () =>
+                                                  _openServers(controller),
+                                              icon: const Icon(
+                                                Icons.storage_rounded,
+                                              ),
+                                              label: const Text('See Servers'),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    );
+                              final contentSection = wide
+                                  ? Row(
+                                      children: <Widget>[
+                                        Flexible(
+                                          flex: 4,
+                                          child: serverListPanel,
+                                        ),
+                                        const SizedBox(width: AppSpacing.lg),
+                                        Flexible(
+                                          flex: 6,
+                                          child: detailPanel,
+                                        ),
+                                      ],
+                                    )
+                                  : Column(
+                                      children: <Widget>[
+                                        Expanded(
+                                          flex: 4,
+                                          child: serverListPanel,
+                                        ),
+                                        const SizedBox(
+                                          height: AppSpacing.lg,
+                                        ),
+                                        Expanded(
+                                          flex: 6,
+                                          child: detailPanel,
+                                        ),
+                                      ],
+                                    );
+                              if (compactHome) {
+                                final listPanelHeight = (constraints.maxHeight *
+                                        0.7)
+                                    .clamp(320.0, 440.0)
+                                    .toDouble();
+                                final detailPanelHeight =
+                                    (constraints.maxHeight * 1.05)
+                                        .clamp(460.0, 760.0)
+                                        .toDouble();
+                                return SingleChildScrollView(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: <Widget>[
+                                      headerSection,
+                                      const SizedBox(height: AppSpacing.lg),
+                                      SizedBox(
+                                        height: listPanelHeight,
+                                        child: serverListPanel,
+                                      ),
+                                      const SizedBox(height: AppSpacing.lg),
+                                      SizedBox(
+                                        height: detailPanelHeight,
+                                        child: detailPanel,
                                       ),
                                     ],
                                   ),
+                                );
+                              }
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: <Widget>[
+                                  headerSection,
                                   const SizedBox(height: AppSpacing.lg),
-                                  Expanded(
-                                    child: wide
-                                        ? Row(
-                                            children: <Widget>[
-                                              Flexible(
-                                                flex: 4,
-                                                child: serverListPanel,
-                                              ),
-                                              const SizedBox(
-                                                width: AppSpacing.lg,
-                                              ),
-                                              Flexible(
-                                                flex: 6,
-                                                child: detailPanel,
-                                              ),
-                                            ],
-                                          )
-                                        : Column(
-                                            children: <Widget>[
-                                              Expanded(
-                                                flex: 4,
-                                                child: serverListPanel,
-                                              ),
-                                              const SizedBox(
-                                                height: AppSpacing.lg,
-                                              ),
-                                              Expanded(
-                                                flex: 6,
-                                                child: detailPanel,
-                                              ),
-                                            ],
-                                          ),
-                                  ),
+                                  Expanded(child: contentSection),
                                 ],
                               );
                             },
@@ -1096,28 +1183,23 @@ class _HomeServerListPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      'Servers',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: AppSpacing.xxs),
-                    Text(
-                      'Saved servers stay visible here, with status and workspace summaries attached.',
-                      style: Theme.of(
-                        context,
-                      ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              Wrap(
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final compactHeader = constraints.maxWidth < 420;
+              final titleBlock = Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text('Servers', style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: AppSpacing.xxs),
+                  Text(
+                    'Saved servers stay visible here, with status and workspace summaries attached.',
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
+                  ),
+                ],
+              );
+              final actions = Wrap(
                 spacing: AppSpacing.sm,
                 runSpacing: AppSpacing.sm,
                 children: <Widget>[
@@ -1133,8 +1215,25 @@ class _HomeServerListPanel extends StatelessWidget {
                     label: const Text('Add Server'),
                   ),
                 ],
-              ),
-            ],
+              );
+              if (compactHeader) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    titleBlock,
+                    const SizedBox(height: AppSpacing.md),
+                    actions,
+                  ],
+                );
+              }
+              return Row(
+                children: <Widget>[
+                  Expanded(child: titleBlock),
+                  const SizedBox(width: AppSpacing.md),
+                  actions,
+                ],
+              );
+            },
           ),
           const SizedBox(height: AppSpacing.lg),
           if (profiles.isEmpty)
@@ -2099,25 +2198,47 @@ class _ServerManagementCard extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
-                          Row(
-                            children: <Widget>[
-                              Expanded(
-                                child: Text(
-                                  profile.effectiveLabel,
-                                  style: Theme.of(context).textTheme.titleMedium
-                                      ?.copyWith(fontWeight: FontWeight.w700),
-                                ),
-                              ),
-                              _ServerStatusBadge(report: report),
-                              if (selected) ...<Widget>[
-                                const SizedBox(width: AppSpacing.xs),
-                                _ServerMetaBadge(
-                                  icon: Icons.check_circle_rounded,
-                                  label: 'Active',
-                                  tint: Theme.of(context).colorScheme.primary,
-                                ),
-                              ],
-                            ],
+                          LayoutBuilder(
+                            builder: (context, constraints) {
+                              final compactBadges = constraints.maxWidth < 220;
+                              final title = Text(
+                                profile.effectiveLabel,
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              );
+                              final badges = Wrap(
+                                spacing: AppSpacing.xs,
+                                runSpacing: AppSpacing.xs,
+                                children: <Widget>[
+                                  _ServerStatusBadge(report: report),
+                                  if (selected)
+                                    _ServerMetaBadge(
+                                      icon: Icons.check_circle_rounded,
+                                      label: 'Active',
+                                      tint: Theme.of(context).colorScheme.primary,
+                                    ),
+                                ],
+                              );
+                              if (compactBadges) {
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: <Widget>[
+                                    title,
+                                    const SizedBox(height: AppSpacing.xxs),
+                                    badges,
+                                  ],
+                                );
+                              }
+                              return Row(
+                                children: <Widget>[
+                                  Expanded(child: title),
+                                  const SizedBox(width: AppSpacing.xs),
+                                  badges,
+                                ],
+                              );
+                            },
                           ),
                           const SizedBox(height: AppSpacing.xxs),
                           Text(
@@ -2469,11 +2590,16 @@ class _ServerMetaBadge extends StatelessWidget {
         children: <Widget>[
           Icon(icon, size: 14, color: accent),
           const SizedBox(width: AppSpacing.xxs),
-          Text(
-            label,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: accent,
-              fontWeight: FontWeight.w600,
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 140),
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: accent,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
