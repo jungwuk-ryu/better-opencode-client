@@ -409,8 +409,8 @@ String _workspaceNotificationStorageKey(ServerProfile profile) {
 List<WorkspaceNotificationEntry> _pruneWorkspaceNotifications(
   List<WorkspaceNotificationEntry> notifications,
 ) {
-  final cutoff = DateTime.now().millisecondsSinceEpoch -
-      _workspaceNotificationTtlMs;
+  final cutoff =
+      DateTime.now().millisecondsSinceEpoch - _workspaceNotificationTtlMs;
   final pruned = notifications
       .where((notification) => notification.timeMs >= cutoff)
       .toList(growable: false);
@@ -430,9 +430,8 @@ List<WorkspaceNotificationEntry> _workspaceNotificationsFromDecodedJson(
     decoded
         .whereType<Map>()
         .map(
-          (item) => WorkspaceNotificationEntry.fromJson(
-            item.cast<String, Object?>(),
-          ),
+          (item) =>
+              WorkspaceNotificationEntry.fromJson(item.cast<String, Object?>()),
         )
         .where(
           (item) =>
@@ -649,8 +648,7 @@ class WorkspaceController extends ChangeNotifier {
       const <String, int>{};
   List<WorkspaceNotificationEntry> _notifications =
       const <WorkspaceNotificationEntry>[];
-  Map<String, WorkspaceSidebarNotificationState>
-  _sessionNotificationStateById =
+  Map<String, WorkspaceSidebarNotificationState> _sessionNotificationStateById =
       const <String, WorkspaceSidebarNotificationState>{};
   Map<String, WorkspaceSidebarNotificationState>
   _projectNotificationStateByDirectory =
@@ -682,6 +680,10 @@ class WorkspaceController extends ChangeNotifier {
   int _queuedPromptSequence = 0;
   Map<String, bool> _permissionAutoAcceptByKey = const <String, bool>{};
   Set<String> _respondingPermissionRequestIds = const <String>{};
+  bool _recoveringEventStream = false;
+  String? _eventStreamRecoveryError;
+  int _eventStreamConnectionToken = 0;
+  int _eventStreamRecoveryToken = 0;
 
   bool get loading => _loading;
   bool get sessionLoading => _sessionLoading;
@@ -695,6 +697,7 @@ class WorkspaceController extends ChangeNotifier {
     }
     return _submittingPromptSessionIds.contains(selectedSessionId);
   }
+
   bool get interruptingSession {
     final selectedSessionId = this.selectedSessionId;
     if (selectedSessionId == null || selectedSessionId.isEmpty) {
@@ -702,6 +705,7 @@ class WorkspaceController extends ChangeNotifier {
     }
     return _interruptingSessionIds.contains(selectedSessionId);
   }
+
   bool get initializingGitRepository => _initializingGitRepository;
   bool get runningTerminal => _runningTerminal;
   bool get terminalOpen => _terminalOpen;
@@ -710,6 +714,8 @@ class WorkspaceController extends ChangeNotifier {
   String? get loadingFileDirectoryPath => _loadingFileDirectoryPath;
   bool get loadingReviewDiff => _loadingReviewDiff;
   WorkspaceSideTab get sideTab => _sideTab;
+  bool get recoveringEventStream => _recoveringEventStream;
+  String? get eventStreamRecoveryError => _eventStreamRecoveryError;
   String? get error => _error;
   String? get sessionLoadError => _sessionLoadError;
   String? get reviewDiffError => _reviewDiffError;
@@ -1452,7 +1458,8 @@ class WorkspaceController extends ChangeNotifier {
     _activeChildSessionCachedPreviewById = const <String, String>{};
     _activeChildSessionCachedPreviewVersionById = const <String, int>{};
     _watchedSessionIds = const <String>{};
-    _watchedSessionTimelineById = const <String, WorkspaceSessionTimelineState>{};
+    _watchedSessionTimelineById =
+        const <String, WorkspaceSessionTimelineState>{};
     _watchedSessionLoadRevisionById = const <String, int>{};
     _watchedSessionHistoryLoadRevisionById = const <String, int>{};
     _watchedSessionHistoryCursorById = const <String, String?>{};
@@ -2340,7 +2347,8 @@ class WorkspaceController extends ChangeNotifier {
           messages: currentState?.messages ?? const <ChatMessage>[],
           loading: false,
           showingCachedMessages: currentState?.showingCachedMessages ?? false,
-          historyMore: (currentState?.historyMore ?? false) || hasSpilledHistory,
+          historyMore:
+              (currentState?.historyMore ?? false) || hasSpilledHistory,
           historyLoading: false,
           error: null,
         ),
@@ -4657,19 +4665,16 @@ class WorkspaceController extends ChangeNotifier {
       }
       break;
     }
-    _setNotifications(
-      <WorkspaceNotificationEntry>[
-        ..._notifications,
-        WorkspaceNotificationEntry(
-          directory: session.directory,
-          sessionId: session.id,
-          timeMs: now,
-          viewed: viewed,
-          type: type,
-        ),
-      ],
-      notify: notify,
-    );
+    _setNotifications(<WorkspaceNotificationEntry>[
+      ..._notifications,
+      WorkspaceNotificationEntry(
+        directory: session.directory,
+        sessionId: session.id,
+        timeMs: now,
+        viewed: viewed,
+        type: type,
+      ),
+    ], notify: notify);
   }
 
   bool _notificationViewedInCurrentSession(SessionSummary session) {
@@ -4746,6 +4751,22 @@ class WorkspaceController extends ChangeNotifier {
 
   bool _shouldAutoAcceptPermission(PermissionRequestSummary request) {
     return autoAcceptsPermissionForSession(request.sessionId);
+  }
+
+  PermissionRequestSummary? _tryParsePermissionAskedEvent(
+    Map<String, Object?> properties,
+  ) {
+    try {
+      final request = PermissionRequestSummary.fromJson(properties);
+      if (request.id.isEmpty ||
+          request.sessionId.isEmpty ||
+          request.permission.isEmpty) {
+        return null;
+      }
+      return request;
+    } catch (_) {
+      return null;
+    }
   }
 
   void _optimisticallyResolvePermissionRequest(String requestId) {
@@ -4839,16 +4860,173 @@ class WorkspaceController extends ChangeNotifier {
     if (project == null) {
       return;
     }
+    final scopeKey = _eventStreamScopeKey(project);
+    final connectionToken = ++_eventStreamConnectionToken;
     try {
+      await _eventStreamService.disconnect();
+      if (!_isActiveEventStreamConnection(connectionToken, scopeKey)) {
+        return;
+      }
       await _eventStreamService.connect(
         profile: profile,
         project: project,
         onEvent: _handleEvent,
-        onError: (_, _) {},
+        onDone: () {
+          _handleEventStreamDropped(connectionToken, scopeKey);
+        },
+        onError: (_, _) {
+          _handleEventStreamDropped(connectionToken, scopeKey);
+        },
       );
-    } catch (_) {
+      if (!_isActiveEventStreamConnection(connectionToken, scopeKey)) {
+        return;
+      }
+      _eventStreamRecoveryError = null;
+      _notify();
+    } catch (error) {
+      if (!_isActiveEventStreamConnection(connectionToken, scopeKey)) {
+        return;
+      }
+      _eventStreamRecoveryError = error.toString();
+      _notify();
       // Best-effort parity path: fall back to manual refresh flows.
     }
+  }
+
+  String _eventStreamScopeKey(ProjectTarget project) {
+    return '${profile.storageKey}::${project.directory}';
+  }
+
+  bool _isActiveEventStreamConnection(int connectionToken, String scopeKey) {
+    if (_disposed) {
+      return false;
+    }
+    final project = _project;
+    return project != null &&
+        connectionToken == _eventStreamConnectionToken &&
+        scopeKey == _eventStreamScopeKey(project);
+  }
+
+  bool _isActiveEventStreamRecovery(int recoveryToken, String scopeKey) {
+    if (_disposed || !_recoveringEventStream) {
+      return false;
+    }
+    final project = _project;
+    return project != null &&
+        recoveryToken == _eventStreamRecoveryToken &&
+        scopeKey == _eventStreamScopeKey(project);
+  }
+
+  void _handleEventStreamDropped(int connectionToken, String scopeKey) {
+    if (!_isActiveEventStreamConnection(connectionToken, scopeKey) ||
+        _recoveringEventStream) {
+      return;
+    }
+    final recoveryToken = ++_eventStreamRecoveryToken;
+    _recoveringEventStream = true;
+    _eventStreamRecoveryError = null;
+    _notify();
+    unawaited(
+      _recoverEventStream(recoveryToken: recoveryToken, scopeKey: scopeKey),
+    );
+  }
+
+  Future<void> _recoverEventStream({
+    required int recoveryToken,
+    required String scopeKey,
+  }) async {
+    try {
+      await _eventStreamService.disconnect();
+      if (!_isActiveEventStreamRecovery(recoveryToken, scopeKey)) {
+        return;
+      }
+
+      try {
+        await _reloadEventStreamBundleForRecovery(
+          recoveryToken: recoveryToken,
+          scopeKey: scopeKey,
+        );
+      } catch (error) {
+        if (_isActiveEventStreamRecovery(recoveryToken, scopeKey)) {
+          _eventStreamRecoveryError = error.toString();
+        }
+      }
+
+      if (!_isActiveEventStreamRecovery(recoveryToken, scopeKey)) {
+        return;
+      }
+
+      await _connectEvents();
+      if (!_isActiveEventStreamRecovery(recoveryToken, scopeKey)) {
+        return;
+      }
+      _eventStreamRecoveryError = null;
+    } finally {
+      if (_isActiveEventStreamRecovery(recoveryToken, scopeKey)) {
+        _recoveringEventStream = false;
+      }
+      _notify();
+    }
+  }
+
+  Future<void> _reloadEventStreamBundleForRecovery({
+    required int recoveryToken,
+    required String scopeKey,
+  }) async {
+    final project = _project;
+    if (project == null) {
+      return;
+    }
+    final selectedSessionIdHint = _selectedSessionId;
+    final bundle = await _chatService.fetchBundle(
+      profile: profile,
+      project: project,
+      includeSelectedSessionMessages: false,
+    );
+    if (!_isActiveEventStreamRecovery(recoveryToken, scopeKey)) {
+      return;
+    }
+
+    _sessions = bundle.sessions;
+    _statuses = bundle.statuses;
+    _selectedSessionId = _resolveSessionSelection(
+      requestedSessionId: selectedSessionIdHint,
+      bundleSelectedSessionId: bundle.selectedSessionId,
+      project: project,
+      sessions: bundle.sessions,
+    );
+    _markSessionNotificationsViewed(_selectedSessionId, notify: false);
+
+    if (_selectedSessionId != null) {
+      await _loadSelectedSessionMessages(
+        project: project,
+        sessionId: _selectedSessionId!,
+        loadPanels: false,
+        persistHint: false,
+        notifyOnStart: false,
+      );
+    } else {
+      _messages = const <ChatMessage>[];
+      _sessionLoading = false;
+      _showingCachedSessionMessages = false;
+      _resetSelectedSessionHistoryState();
+      _sessionLoadError = null;
+      _loadingFilesPanel = false;
+      _applyDefaultComposerSelection();
+    }
+
+    if (!_isActiveEventStreamRecovery(recoveryToken, scopeKey)) {
+      return;
+    }
+
+    await _loadProjectPanels();
+    if (!_isActiveEventStreamRecovery(recoveryToken, scopeKey)) {
+      return;
+    }
+
+    _ensureActiveChildSessionPreviewCache();
+    _maybeFlushQueuedPrompts();
+    _notify();
   }
 
   void _handleEvent(EventEnvelope event) {
@@ -4859,57 +5037,12 @@ class WorkspaceController extends ChangeNotifier {
     if (type == 'session.created' || type == 'session.updated') {
       _sessions = applySessionUpsertEvent(_sessions, event.properties);
     } else if (type == 'session.deleted') {
-      final removedSessionId =
-          event.properties['sessionID']?.toString() ??
-          (event.properties['info'] as Map?)?['id']?.toString();
-      _sessions = applySessionDeletedEvent(_sessions, event.properties);
-      _statuses = removeSessionStatusEvent(_statuses, event.properties);
-      if (removedSessionId != null && removedSessionId.isNotEmpty) {
-        final nextWatchedIds = Set<String>.from(_watchedSessionIds)
-          ..remove(removedSessionId);
-        _watchedSessionIds = Set<String>.unmodifiable(nextWatchedIds);
-        final nextTimelineById =
-            Map<String, WorkspaceSessionTimelineState>.from(
-              _watchedSessionTimelineById,
-            )..remove(removedSessionId);
-        _watchedSessionTimelineById =
-            Map<String, WorkspaceSessionTimelineState>.unmodifiable(
-              nextTimelineById,
-            );
-        final nextLoadRevisionById = Map<String, int>.from(
-          _watchedSessionLoadRevisionById,
-        )..remove(removedSessionId);
-        _watchedSessionLoadRevisionById = Map<String, int>.unmodifiable(
-          nextLoadRevisionById,
-        );
-        final nextHistoryLoadRevisionById = Map<String, int>.from(
-          _watchedSessionHistoryLoadRevisionById,
-        )..remove(removedSessionId);
-        _watchedSessionHistoryLoadRevisionById = Map<String, int>.unmodifiable(
-          nextHistoryLoadRevisionById,
-        );
-        final nextHistoryCursorById = Map<String, String?>.from(
-          _watchedSessionHistoryCursorById,
-        )..remove(removedSessionId);
-        _watchedSessionHistoryCursorById = Map<String, String?>.unmodifiable(
-          nextHistoryCursorById,
-        );
-      }
-      _removeActiveChildPreviewState(removedSessionId);
-      _clearQueuedPromptStateForSession(removedSessionId);
-      _removeCachedTodosForSession(removedSessionId);
-      if (removedSessionId != null && removedSessionId.isNotEmpty) {
-        _setNotifications(
-          _notifications
-              .where((notification) => notification.sessionId != removedSessionId)
-              .toList(growable: false),
-          notify: false,
-        );
-      }
+      _handleSessionDeletedEvent(event.properties);
     } else if (type == 'session.status') {
       final sessionId = event.properties['sessionID']?.toString();
-      final previousStatus =
-          sessionId == null || sessionId.isEmpty ? null : _statuses[sessionId];
+      final previousStatus = sessionId == null || sessionId.isEmpty
+          ? null
+          : _statuses[sessionId];
       _statuses = applySessionStatusEvent(_statuses, event.properties);
       _recordSessionStatusNotification(
         sessionId: sessionId,
@@ -5167,8 +5300,8 @@ class WorkspaceController extends ChangeNotifier {
           selectedSessionId: null,
         ),
       );
-      final request = PermissionRequestSummary.fromJson(event.properties);
-      if (_shouldAutoAcceptPermission(request)) {
+      final request = _tryParsePermissionAskedEvent(event.properties);
+      if (request != null && _shouldAutoAcceptPermission(request)) {
         unawaited(
           _replyToPermissionInternal(
             requestId: request.id,
@@ -5196,6 +5329,193 @@ class WorkspaceController extends ChangeNotifier {
     } else {
       return;
     }
+    _notify();
+  }
+
+  void _handleSessionDeletedEvent(Map<String, Object?> properties) {
+    final removedSessionId =
+        properties['sessionID']?.toString() ??
+        (properties['info'] as Map?)?['id']?.toString();
+    final normalizedRemovedSessionId = removedSessionId?.trim() ?? '';
+    if (normalizedRemovedSessionId.isEmpty) {
+      _sessions = applySessionDeletedEvent(_sessions, properties);
+      _statuses = removeSessionStatusEvent(_statuses, properties);
+      return;
+    }
+
+    final removedSessionIds = _sessionTreeIds(
+      normalizedRemovedSessionId,
+    ).toSet();
+    final previousSelectedSessionId = _selectedSessionId;
+    _sessions = _sessions
+        .where((session) => !removedSessionIds.contains(session.id))
+        .toList(growable: false);
+    _statuses = Map<String, SessionStatusSummary>.fromEntries(
+      _statuses.entries.where(
+        (entry) => !removedSessionIds.contains(entry.key),
+      ),
+    );
+    _removeSessionScopedLiveState(removedSessionIds);
+
+    final selectedSessionRemoved =
+        previousSelectedSessionId != null &&
+        removedSessionIds.contains(previousSelectedSessionId);
+    if (!selectedSessionRemoved) {
+      return;
+    }
+
+    _selectedSessionId = _sessions.isEmpty ? null : _sessions.first.id;
+    _markSessionNotificationsViewed(_selectedSessionId, notify: false);
+    _messages = const <ChatMessage>[];
+    _sessionLoading = false;
+    _showingCachedSessionMessages = false;
+    _resetSelectedSessionHistoryState();
+    _sessionLoadError = null;
+    _replaceSelectedSessionTodos(const <TodoItem>[]);
+    _loadingReviewDiff = false;
+    _reviewDiffError = null;
+    _reviewBundle = null;
+    _selectedReviewPath = null;
+    _reviewDiff = null;
+
+    final project = _project;
+    if (project == null) {
+      return;
+    }
+    unawaited(
+      _applySessionDeletedSelectionFallback(
+        project: project,
+        removedSessionIds: removedSessionIds,
+      ),
+    );
+  }
+
+  void _removeSessionScopedLiveState(Set<String> removedSessionIds) {
+    if (removedSessionIds.isEmpty) {
+      return;
+    }
+
+    final nextWatchedIds = Set<String>.from(_watchedSessionIds)
+      ..removeWhere(removedSessionIds.contains);
+    _watchedSessionIds = Set<String>.unmodifiable(nextWatchedIds);
+
+    final nextTimelineById = Map<String, WorkspaceSessionTimelineState>.from(
+      _watchedSessionTimelineById,
+    )..removeWhere((sessionId, _) => removedSessionIds.contains(sessionId));
+    _watchedSessionTimelineById =
+        Map<String, WorkspaceSessionTimelineState>.unmodifiable(
+          nextTimelineById,
+        );
+
+    final nextLoadRevisionById = Map<String, int>.from(
+      _watchedSessionLoadRevisionById,
+    )..removeWhere((sessionId, _) => removedSessionIds.contains(sessionId));
+    _watchedSessionLoadRevisionById = Map<String, int>.unmodifiable(
+      nextLoadRevisionById,
+    );
+
+    final nextHistoryLoadRevisionById = Map<String, int>.from(
+      _watchedSessionHistoryLoadRevisionById,
+    )..removeWhere((sessionId, _) => removedSessionIds.contains(sessionId));
+    _watchedSessionHistoryLoadRevisionById = Map<String, int>.unmodifiable(
+      nextHistoryLoadRevisionById,
+    );
+
+    final nextHistoryCursorById = Map<String, String?>.from(
+      _watchedSessionHistoryCursorById,
+    )..removeWhere((sessionId, _) => removedSessionIds.contains(sessionId));
+    _watchedSessionHistoryCursorById = Map<String, String?>.unmodifiable(
+      nextHistoryCursorById,
+    );
+
+    for (final removedSessionId in removedSessionIds) {
+      _removeActiveChildPreviewState(removedSessionId);
+      _removeSessionHoverPreviewState(removedSessionId);
+      _clearQueuedPromptStateForSession(removedSessionId);
+      _removeCachedTodosForSession(removedSessionId);
+    }
+
+    final nextSubmittingPromptSessionIds = Set<String>.from(
+      _submittingPromptSessionIds,
+    )..removeWhere(removedSessionIds.contains);
+    _submittingPromptSessionIds = Set<String>.unmodifiable(
+      nextSubmittingPromptSessionIds,
+    );
+    final nextInterruptingSessionIds = Set<String>.from(_interruptingSessionIds)
+      ..removeWhere(removedSessionIds.contains);
+    _interruptingSessionIds = Set<String>.unmodifiable(
+      nextInterruptingSessionIds,
+    );
+
+    _pendingRequests = PendingRequestBundle(
+      questions: _pendingRequests.questions
+          .where((request) => !removedSessionIds.contains(request.sessionId))
+          .toList(growable: false),
+      permissions: _pendingRequests.permissions
+          .where((request) => !removedSessionIds.contains(request.sessionId))
+          .toList(growable: false),
+    );
+
+    _setNotifications(
+      _notifications
+          .where(
+            (notification) =>
+                !removedSessionIds.contains(notification.sessionId),
+          )
+          .toList(growable: false),
+      notify: false,
+    );
+
+    final project = _project;
+    if (project != null) {
+      unawaited(
+        _removeDeletedSessionCacheEntries(
+          project: project,
+          removedSessionIds: removedSessionIds,
+        ),
+      );
+    }
+  }
+
+  Future<void> _removeDeletedSessionCacheEntries({
+    required ProjectTarget project,
+    required Set<String> removedSessionIds,
+  }) async {
+    for (final removedSessionId in removedSessionIds) {
+      await _cacheStore.remove(
+        _sessionMessagesCacheKey(project, removedSessionId),
+      );
+      await _spillStore.remove(
+        _sessionMessagesSpillKey(project, removedSessionId),
+      );
+    }
+  }
+
+  Future<void> _applySessionDeletedSelectionFallback({
+    required ProjectTarget project,
+    required Set<String> removedSessionIds,
+  }) async {
+    await _removeDeletedSessionCacheEntries(
+      project: project,
+      removedSessionIds: removedSessionIds,
+    );
+    final selectedSessionId = _selectedSessionId;
+    if (selectedSessionId == null) {
+      await _projectStore.saveLastWorkspace(
+        serverStorageKey: profile.storageKey,
+        target: project.copyWith(clearLastSession: true),
+      );
+      await _loadSessionPanels();
+      _notify();
+      return;
+    }
+
+    await _loadSelectedSessionMessages(
+      project: project,
+      sessionId: selectedSessionId,
+      loadPanels: true,
+      persistHint: true,
+    );
     _notify();
   }
 
@@ -6078,9 +6398,7 @@ class WorkspaceController extends ChangeNotifier {
       return;
     }
 
-    var compacted = messages
-        .map(_cacheSessionMessage)
-        .toList(growable: false);
+    var compacted = messages.map(_cacheSessionMessage).toList(growable: false);
     var payload = compacted
         .map((message) => message.toJson())
         .toList(growable: false);
@@ -6185,7 +6503,9 @@ class WorkspaceController extends ChangeNotifier {
       return true;
     }
     final currentState = _watchedSessionTimelineById[sessionId];
-    if (currentState == null || spilledMessages == null || spilledMessages.isEmpty) {
+    if (currentState == null ||
+        spilledMessages == null ||
+        spilledMessages.isEmpty) {
       return false;
     }
 
@@ -6217,7 +6537,8 @@ class WorkspaceController extends ChangeNotifier {
         showingCachedMessages: false,
         historyMore:
             remainingSpill.isNotEmpty ||
-            ((_watchedSessionHistoryCursorById[sessionId]?.isNotEmpty ?? false)),
+            ((_watchedSessionHistoryCursorById[sessionId]?.isNotEmpty ??
+                false)),
         historyLoading: false,
         error: null,
       ),
@@ -6299,7 +6620,8 @@ class WorkspaceController extends ChangeNotifier {
       return;
     }
 
-    final overflowCount = currentState.messages.length - _watchedSessionMemoryWindow;
+    final overflowCount =
+        currentState.messages.length - _watchedSessionMemoryWindow;
     final overflowMessages = currentState.messages.sublist(0, overflowCount);
     final retainedMessages = List<ChatMessage>.unmodifiable(
       currentState.messages.sublist(overflowCount),
@@ -6354,11 +6676,7 @@ class WorkspaceController extends ChangeNotifier {
     if (_persistedSessionCacheSignatureByKey[cacheKey] == signature) {
       return;
     }
-    await _cacheStore.save(
-      cacheKey,
-      payload,
-      signature: signature,
-    );
+    await _cacheStore.save(cacheKey, payload, signature: signature);
     _persistedSessionCacheSignatureByKey = Map<String, String>.unmodifiable(
       <String, String>{
         ..._persistedSessionCacheSignatureByKey,
@@ -6435,7 +6753,10 @@ class WorkspaceController extends ChangeNotifier {
   }
 
   ChatMessage _cacheSessionMessage(ChatMessage message) {
-    final partStart = math.max(0, message.parts.length - _sessionCachePartLimit);
+    final partStart = math.max(
+      0,
+      message.parts.length - _sessionCachePartLimit,
+    );
     return message.copyWith(
       info: message.info.copyWith(
         metadata: _compactCacheMap(message.info.metadata),
@@ -6459,11 +6780,9 @@ class WorkspaceController extends ChangeNotifier {
       return const <String, Object?>{};
     }
     final entries = source.entries.take(_sessionCacheCollectionLimit);
-    return Map<String, Object?>.unmodifiable(
-      <String, Object?>{
-        for (final entry in entries) entry.key: _compactCacheValue(entry.value),
-      },
-    );
+    return Map<String, Object?>.unmodifiable(<String, Object?>{
+      for (final entry in entries) entry.key: _compactCacheValue(entry.value),
+    });
   }
 
   Object? _compactCacheValue(Object? value, {int depth = 0}) {
@@ -6613,6 +6932,30 @@ class WorkspaceController extends ChangeNotifier {
         const <String, List<WorkspaceSessionHoverPreviewMessage>>{};
     _sessionHoverPreviewVersionById = const <String, int>{};
     _sessionHoverPreviewLoadingIds = const <String>{};
+  }
+
+  void _removeSessionHoverPreviewState(String? sessionId) {
+    final normalized = sessionId?.trim() ?? '';
+    if (normalized.isEmpty) {
+      return;
+    }
+    _sessionHoverPreviewSummaryById = Map<String, String>.unmodifiable(
+      Map<String, String>.from(_sessionHoverPreviewSummaryById)
+        ..remove(normalized),
+    );
+    _sessionHoverPreviewMessagesById =
+        Map<String, List<WorkspaceSessionHoverPreviewMessage>>.unmodifiable(
+          Map<String, List<WorkspaceSessionHoverPreviewMessage>>.from(
+            _sessionHoverPreviewMessagesById,
+          )..remove(normalized),
+        );
+    _sessionHoverPreviewVersionById = Map<String, int>.unmodifiable(
+      Map<String, int>.from(_sessionHoverPreviewVersionById)
+        ..remove(normalized),
+    );
+    _sessionHoverPreviewLoadingIds = Set<String>.unmodifiable(
+      Set<String>.from(_sessionHoverPreviewLoadingIds)..remove(normalized),
+    );
   }
 
   List<WorkspaceSessionHoverPreviewMessage>

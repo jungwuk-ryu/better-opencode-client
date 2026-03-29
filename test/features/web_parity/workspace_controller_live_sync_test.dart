@@ -92,11 +92,209 @@ void main() {
     },
   );
 
-  test('controller tracks unseen sidebar notifications for background sessions', () async {
-    final eventStreamService = _ControlledEventStreamService();
-    final chatService = _FakeChatService(
-      bundle: ChatSessionBundle(
-        sessions: <SessionSummary>[
+  test(
+    'controller recovers live sync after stream completion without duplicate subscriptions',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+      expect(controller.recoveringEventStream, isFalse);
+      expect(controller.eventStreamRecoveryError, isNull);
+      expect(
+        eventStreamService.activeSubscriptionCountForScope(profile, project),
+        1,
+      );
+
+      eventStreamService.completeScope(profile, project);
+      await _waitFor(
+        () =>
+            !controller.recoveringEventStream &&
+            eventStreamService.connectCallCount >= 2,
+      );
+
+      expect(controller.recoveringEventStream, isFalse);
+      expect(controller.eventStreamRecoveryError, isNull);
+      expect(eventStreamService.connectCallCount, greaterThanOrEqualTo(2));
+      expect(eventStreamService.disconnectCallCount, greaterThanOrEqualTo(2));
+      expect(
+        eventStreamService.activeSubscriptionCountForScope(profile, project),
+        1,
+      );
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        EventEnvelope(
+          type: 'message.part.updated',
+          properties: <String, Object?>{
+            'part': <String, Object?>{
+              'id': 'part_recovered',
+              'messageID': 'msg_recovered',
+              'sessionID': 'ses_1',
+              'type': 'text',
+              'content': 'Recovered after onDone',
+            },
+          },
+        ),
+      );
+
+      expect(controller.messages, hasLength(1));
+      expect(
+        controller.messages.single.parts.single.text,
+        'Recovered after onDone',
+      );
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        EventEnvelope(
+          type: 'session.created',
+          properties: <String, Object?>{
+            'sessionID': 'ses_2',
+            'info': <String, Object?>{
+              'id': 'ses_2',
+              'directory': '/workspace/demo',
+              'title': 'Recovered background session',
+              'version': '1',
+            },
+          },
+        ),
+      );
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'session.error',
+          properties: <String, Object?>{'sessionID': 'ses_2'},
+        ),
+      );
+
+      expect(
+        controller.sessionNotificationForSession('ses_2'),
+        const WorkspaceSidebarNotificationState(unseenCount: 1, hasError: true),
+      );
+    },
+  );
+
+  test(
+    'controller recovers live sync after stream error and continues todo/permission updates',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+      expect(controller.todos, isEmpty);
+      expect(controller.currentPermissionRequest, isNull);
+      expect(
+        eventStreamService.activeSubscriptionCountForScope(profile, project),
+        1,
+      );
+
+      eventStreamService.emitErrorToScope(
+        profile,
+        project,
+        StateError('stream dropped'),
+      );
+      await _waitFor(
+        () =>
+            !controller.recoveringEventStream &&
+            eventStreamService.connectCallCount >= 2,
+      );
+
+      expect(controller.recoveringEventStream, isFalse);
+      expect(controller.eventStreamRecoveryError, isNull);
+      expect(eventStreamService.connectCallCount, greaterThanOrEqualTo(2));
+      expect(
+        eventStreamService.activeSubscriptionCountForScope(profile, project),
+        1,
+      );
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'todo.updated',
+          properties: <String, Object?>{
+            'sessionID': 'ses_1',
+            'todos': <Object?>[
+              <String, Object?>{
+                'id': 'todo_recovered',
+                'content': 'todo after onError',
+                'status': 'in_progress',
+                'priority': 'high',
+              },
+            ],
+          },
+        ),
+      );
+
+      expect(controller.todos, hasLength(1));
+      expect(controller.todos.single.content, 'todo after onError');
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'permission.asked',
+          properties: <String, Object?>{
+            'id': 'per_recovered',
+            'sessionID': 'ses_1',
+            'permission': 'bash',
+            'patterns': <Object?>['flutter test'],
+          },
+        ),
+      );
+
+      expect(controller.currentPermissionRequest?.id, 'per_recovered');
+    },
+  );
+
+  test(
+    'controller tracks unseen sidebar notifications for background sessions',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_2',
+              title: 'Background session',
+              createdAt: 1710000007000,
+              updatedAt: 1710000007000,
+            ),
+            _session(
+              id: 'ses_1',
+              title: 'Initial session',
+              createdAt: 1710000001000,
+              updatedAt: 1710000005000,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{
+            'ses_1': SessionStatusSummary(type: 'idle'),
+            'ses_2': SessionStatusSummary(type: 'idle'),
+          },
+          messages: const <ChatMessage>[],
+          selectedSessionId: 'ses_1',
+        ),
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+        initialSessions: <SessionSummary>[
           _session(
             id: 'ses_2',
             title: 'Background session',
@@ -110,100 +308,74 @@ void main() {
             updatedAt: 1710000005000,
           ),
         ],
-        statuses: const <String, SessionStatusSummary>{
-          'ses_1': SessionStatusSummary(type: 'idle'),
-          'ses_2': SessionStatusSummary(type: 'idle'),
-        },
-        messages: const <ChatMessage>[],
-        selectedSessionId: 'ses_1',
-      ),
-    );
-    final controller = _buildController(
-      profile: profile,
-      project: project,
-      eventStreamService: eventStreamService,
-      chatService: chatService,
-      initialSessions: <SessionSummary>[
-        _session(
-          id: 'ses_2',
-          title: 'Background session',
-          createdAt: 1710000007000,
-          updatedAt: 1710000007000,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+
+      expect(
+        controller.sessionNotificationForSession('ses_2'),
+        const WorkspaceSidebarNotificationState(),
+      );
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'session.status',
+          properties: <String, Object?>{
+            'sessionID': 'ses_2',
+            'status': <String, Object?>{'type': 'busy'},
+          },
         ),
-        _session(
-          id: 'ses_1',
-          title: 'Initial session',
-          createdAt: 1710000001000,
-          updatedAt: 1710000005000,
+      );
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'session.status',
+          properties: <String, Object?>{
+            'sessionID': 'ses_2',
+            'status': <String, Object?>{'type': 'idle'},
+          },
         ),
-      ],
-    );
-    addTearDown(controller.dispose);
+      );
 
-    await controller.load();
+      expect(
+        controller.sessionNotificationForSession('ses_2'),
+        const WorkspaceSidebarNotificationState(unseenCount: 1),
+      );
+      expect(
+        controller.projectNotificationForDirectory('/workspace/demo'),
+        const WorkspaceSidebarNotificationState(unseenCount: 1),
+      );
 
-    expect(
-      controller.sessionNotificationForSession('ses_2'),
-      const WorkspaceSidebarNotificationState(),
-    );
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'session.error',
+          properties: <String, Object?>{'sessionID': 'ses_2'},
+        ),
+      );
 
-    eventStreamService.emitToScope(
-      profile,
-      project,
-      const EventEnvelope(
-        type: 'session.status',
-        properties: <String, Object?>{
-          'sessionID': 'ses_2',
-          'status': <String, Object?>{'type': 'busy'},
-        },
-      ),
-    );
-    eventStreamService.emitToScope(
-      profile,
-      project,
-      const EventEnvelope(
-        type: 'session.status',
-        properties: <String, Object?>{
-          'sessionID': 'ses_2',
-          'status': <String, Object?>{'type': 'idle'},
-        },
-      ),
-    );
+      expect(
+        controller.sessionNotificationForSession('ses_2'),
+        const WorkspaceSidebarNotificationState(unseenCount: 2, hasError: true),
+      );
 
-    expect(
-      controller.sessionNotificationForSession('ses_2'),
-      const WorkspaceSidebarNotificationState(unseenCount: 1),
-    );
-    expect(
-      controller.projectNotificationForDirectory('/workspace/demo'),
-      const WorkspaceSidebarNotificationState(unseenCount: 1),
-    );
+      await controller.selectSession('ses_2');
 
-    eventStreamService.emitToScope(
-      profile,
-      project,
-      const EventEnvelope(
-        type: 'session.error',
-        properties: <String, Object?>{'sessionID': 'ses_2'},
-      ),
-    );
-
-    expect(
-      controller.sessionNotificationForSession('ses_2'),
-      const WorkspaceSidebarNotificationState(unseenCount: 2, hasError: true),
-    );
-
-    await controller.selectSession('ses_2');
-
-    expect(
-      controller.sessionNotificationForSession('ses_2'),
-      const WorkspaceSidebarNotificationState(),
-    );
-    expect(
-      controller.projectNotificationForDirectory('/workspace/demo'),
-      const WorkspaceSidebarNotificationState(),
-    );
-  });
+      expect(
+        controller.sessionNotificationForSession('ses_2'),
+        const WorkspaceSidebarNotificationState(),
+      );
+      expect(
+        controller.projectNotificationForDirectory('/workspace/demo'),
+        const WorkspaceSidebarNotificationState(),
+      );
+    },
+  );
 
   test('controller caches ordered timeline and context derivations', () async {
     final eventStreamService = _ControlledEventStreamService();
@@ -296,52 +468,562 @@ void main() {
     expect(controller.assistantMessageCount, 1);
   });
 
-  test('controller removes externally deleted sessions in real time', () async {
-    final eventStreamService = _ControlledEventStreamService();
-    final controller = _buildController(
-      profile: profile,
-      project: project,
-      eventStreamService: eventStreamService,
-      initialSessions: <SessionSummary>[
-        _session(
-          id: 'ses_2',
-          title: 'External session',
-          createdAt: 1710000007000,
-          updatedAt: 1710000007000,
+  test(
+    'controller falls back to a surviving session when selected tree is deleted remotely',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final cacheStore = _RecordingCacheStore();
+      final projectStore = _MemoryProjectStore();
+      cacheStore
+              .entries['workspace.messages::${profile.storageKey}::${project.directory}::ses_root'] =
+          StaleCacheEntry(
+            payloadJson: '[]',
+            signature: 'root',
+            fetchedAt: DateTime.fromMillisecondsSinceEpoch(1710000002000),
+          );
+      cacheStore
+              .entries['workspace.messages.spill::${profile.storageKey}::${project.directory}::ses_root'] =
+          StaleCacheEntry(
+            payloadJson: '[]',
+            signature: 'root-spill',
+            fetchedAt: DateTime.fromMillisecondsSinceEpoch(1710000002000),
+          );
+      cacheStore
+              .entries['workspace.messages::${profile.storageKey}::${project.directory}::ses_child'] =
+          StaleCacheEntry(
+            payloadJson: '[]',
+            signature: 'child',
+            fetchedAt: DateTime.fromMillisecondsSinceEpoch(1710000003000),
+          );
+      cacheStore
+              .entries['workspace.messages.spill::${profile.storageKey}::${project.directory}::ses_child'] =
+          StaleCacheEntry(
+            payloadJson: '[]',
+            signature: 'child-spill',
+            fetchedAt: DateTime.fromMillisecondsSinceEpoch(1710000003000),
+          );
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_root',
+              title: 'Root',
+              createdAt: 1710000001000,
+              updatedAt: 1710000005000,
+            ),
+            _session(
+              id: 'ses_child',
+              title: 'Child',
+              createdAt: 1710000002000,
+              updatedAt: 1710000006000,
+              parentId: 'ses_root',
+            ),
+            _session(
+              id: 'ses_other',
+              title: 'Other',
+              createdAt: 1710000009000,
+              updatedAt: 1710000009000,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{
+            'ses_root': SessionStatusSummary(type: 'idle'),
+            'ses_child': SessionStatusSummary(type: 'idle'),
+            'ses_other': SessionStatusSummary(type: 'idle'),
+          },
+          messages: const <ChatMessage>[],
+          selectedSessionId: 'ses_root',
         ),
-        _session(
-          id: 'ses_1',
-          title: 'Initial session',
-          createdAt: 1710000001000,
-          updatedAt: 1710000005000,
+        fetchMessagesHandler:
+            ({required profile, required project, required sessionId}) async {
+              if (sessionId != 'ses_other') {
+                return const <ChatMessage>[];
+              }
+              return <ChatMessage>[
+                _message(
+                  id: 'msg_other',
+                  sessionId: 'ses_other',
+                  text: 'Fallback session loaded',
+                  createdAt: 1710000010000,
+                ),
+              ];
+            },
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+        cacheStore: cacheStore,
+        spillStore: cacheStore,
+        projectStore: projectStore,
+        initialSelectedSessionId: 'ses_root',
+        initialSessions: <SessionSummary>[
+          _session(
+            id: 'ses_root',
+            title: 'Root',
+            createdAt: 1710000001000,
+            updatedAt: 1710000005000,
+          ),
+          _session(
+            id: 'ses_child',
+            title: 'Child',
+            createdAt: 1710000002000,
+            updatedAt: 1710000006000,
+            parentId: 'ses_root',
+          ),
+          _session(
+            id: 'ses_other',
+            title: 'Other',
+            createdAt: 1710000009000,
+            updatedAt: 1710000009000,
+          ),
+        ],
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+      expect(controller.selectedSessionId, 'ses_root');
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'session.deleted',
+          properties: <String, Object?>{
+            'sessionID': 'ses_root',
+            'info': <String, Object?>{'id': 'ses_root'},
+          },
         ),
-      ],
-    );
-    addTearDown(controller.dispose);
+      );
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
 
-    await controller.load();
+      expect(controller.selectedSessionId, 'ses_other');
+      expect(controller.visibleSessions.map((item) => item.id), <String>[
+        'ses_other',
+      ]);
+      expect(controller.messages.map((message) => message.info.id), <String>[
+        'msg_other',
+      ]);
+      expect(
+        cacheStore.entries.containsKey(
+          'workspace.messages::${profile.storageKey}::${project.directory}::ses_root',
+        ),
+        isFalse,
+      );
+      expect(
+        cacheStore.entries.containsKey(
+          'workspace.messages.spill::${profile.storageKey}::${project.directory}::ses_root',
+        ),
+        isFalse,
+      );
+      expect(
+        cacheStore.entries.containsKey(
+          'workspace.messages::${profile.storageKey}::${project.directory}::ses_child',
+        ),
+        isFalse,
+      );
+      expect(
+        cacheStore.entries.containsKey(
+          'workspace.messages.spill::${profile.storageKey}::${project.directory}::ses_child',
+        ),
+        isFalse,
+      );
+      expect(
+        projectStore.savedLastWorkspaceTargets.last.lastSession?.id,
+        'ses_other',
+      );
+    },
+  );
 
-    expect(controller.visibleSessions.map((item) => item.id), <String>[
-      'ses_2',
-      'ses_1',
-    ]);
+  test(
+    'controller removes only the non-selected deleted tree and stale session state',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final cacheStore = _RecordingCacheStore();
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_root',
+              title: 'Root',
+              createdAt: 1710000001000,
+              updatedAt: 1710000005000,
+            ),
+            _session(
+              id: 'ses_child',
+              title: 'Child',
+              createdAt: 1710000002000,
+              updatedAt: 1710000006000,
+              parentId: 'ses_root',
+            ),
+            _session(
+              id: 'ses_other',
+              title: 'Other',
+              createdAt: 1710000007000,
+              updatedAt: 1710000007000,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{
+            'ses_root': SessionStatusSummary(type: 'idle'),
+            'ses_child': SessionStatusSummary(type: 'idle'),
+            'ses_other': SessionStatusSummary(type: 'idle'),
+          },
+          messages: const <ChatMessage>[],
+          selectedSessionId: 'ses_root',
+        ),
+        fetchMessagesHandler:
+            ({required profile, required project, required sessionId}) async {
+              if (sessionId != 'ses_child') {
+                return const <ChatMessage>[];
+              }
+              return <ChatMessage>[
+                _message(
+                  id: 'msg_child_preview',
+                  sessionId: 'ses_child',
+                  text: 'Child preview text',
+                  createdAt: 1710000009000,
+                  role: 'user',
+                ),
+              ];
+            },
+      );
+      final requestService = _FakeRequestService(
+        pendingBundle: PendingRequestBundle(
+          questions: <QuestionRequestSummary>[
+            QuestionRequestSummary(
+              id: 'q_child',
+              sessionId: 'ses_child',
+              questions: const <QuestionPromptSummary>[
+                QuestionPromptSummary(
+                  question: 'Child question?',
+                  header: 'Question',
+                  multiple: false,
+                  options: <QuestionOptionSummary>[],
+                ),
+              ],
+            ),
+            QuestionRequestSummary(
+              id: 'q_other',
+              sessionId: 'ses_other',
+              questions: const <QuestionPromptSummary>[
+                QuestionPromptSummary(
+                  question: 'Other question?',
+                  header: 'Question',
+                  multiple: false,
+                  options: <QuestionOptionSummary>[],
+                ),
+              ],
+            ),
+          ],
+          permissions: const <PermissionRequestSummary>[],
+        ),
+      );
+      cacheStore
+              .entries['workspace.messages::${profile.storageKey}::${project.directory}::ses_child'] =
+          StaleCacheEntry(
+            payloadJson: '[]',
+            signature: 'child',
+            fetchedAt: DateTime.fromMillisecondsSinceEpoch(1710000003000),
+          );
+      cacheStore
+              .entries['workspace.messages::${profile.storageKey}::${project.directory}::ses_other'] =
+          StaleCacheEntry(
+            payloadJson: '[]',
+            signature: 'other',
+            fetchedAt: DateTime.fromMillisecondsSinceEpoch(1710000004000),
+          );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+        cacheStore: cacheStore,
+        requestService: requestService,
+        initialSelectedSessionId: 'ses_root',
+        initialSessions: <SessionSummary>[
+          _session(
+            id: 'ses_root',
+            title: 'Root',
+            createdAt: 1710000001000,
+            updatedAt: 1710000005000,
+          ),
+          _session(
+            id: 'ses_child',
+            title: 'Child',
+            createdAt: 1710000002000,
+            updatedAt: 1710000006000,
+            parentId: 'ses_root',
+          ),
+          _session(
+            id: 'ses_other',
+            title: 'Other',
+            createdAt: 1710000007000,
+            updatedAt: 1710000007000,
+          ),
+        ],
+      );
+      addTearDown(controller.dispose);
 
-    eventStreamService.emitToScope(
-      profile,
-      project,
-      const EventEnvelope(
-        type: 'session.deleted',
-        properties: <String, Object?>{
-          'sessionID': 'ses_2',
-          'info': <String, Object?>{'id': 'ses_2'},
-        },
-      ),
-    );
+      await controller.load();
+      expect(controller.selectedSessionId, 'ses_root');
 
-    expect(controller.visibleSessions.map((item) => item.id), <String>[
-      'ses_1',
-    ]);
-  });
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'todo.updated',
+          properties: <String, Object?>{
+            'sessionID': 'ses_child',
+            'info': <String, Object?>{
+              'id': 'todo_child',
+              'title': 'Child todo',
+            },
+          },
+        ),
+      );
+      await controller.prefetchSessionHoverPreview('ses_child');
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'session.status',
+          properties: <String, Object?>{
+            'sessionID': 'ses_child',
+            'status': <String, Object?>{'type': 'busy'},
+          },
+        ),
+      );
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'message.part.updated',
+          properties: <String, Object?>{
+            'part': <String, Object?>{
+              'id': 'part_child',
+              'messageID': 'msg_child',
+              'sessionID': 'ses_child',
+              'type': 'text',
+              'text': 'Working on child session',
+            },
+          },
+        ),
+      );
+
+      expect(controller.activeChildSessionPreviewById['ses_child'], isNotNull);
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'session.deleted',
+          properties: <String, Object?>{
+            'sessionID': 'ses_child',
+            'info': <String, Object?>{'id': 'ses_child'},
+          },
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.selectedSessionId, 'ses_root');
+      expect(controller.sessions.map((item) => item.id), <String>[
+        'ses_root',
+        'ses_other',
+      ]);
+      expect(controller.todosForSession('ses_child'), isEmpty);
+      expect(controller.activeChildSessionPreviewById['ses_child'], isNull);
+      expect(
+        controller.pendingRequests.questions.where(
+          (request) => request.sessionId == 'ses_child',
+        ),
+        isEmpty,
+      );
+      expect(
+        controller.sessionNotificationForSession('ses_child'),
+        const WorkspaceSidebarNotificationState(),
+      );
+      expect(
+        cacheStore.entries.containsKey(
+          'workspace.messages::${profile.storageKey}::${project.directory}::ses_child',
+        ),
+        isFalse,
+      );
+      expect(
+        cacheStore.entries.containsKey(
+          'workspace.messages::${profile.storageKey}::${project.directory}::ses_other',
+        ),
+        isTrue,
+      );
+    },
+  );
+
+  test(
+    'controller enters safe empty state when last session is deleted remotely',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final projectStore = _MemoryProjectStore();
+      final cacheStore = _RecordingCacheStore();
+      cacheStore
+              .entries['workspace.messages::${profile.storageKey}::${project.directory}::ses_1'] =
+          StaleCacheEntry(
+            payloadJson: '[]',
+            signature: 'one',
+            fetchedAt: DateTime.fromMillisecondsSinceEpoch(1710000005000),
+          );
+      cacheStore
+              .entries['workspace.messages.spill::${profile.storageKey}::${project.directory}::ses_1'] =
+          StaleCacheEntry(
+            payloadJson: '[]',
+            signature: 'one-spill',
+            fetchedAt: DateTime.fromMillisecondsSinceEpoch(1710000005000),
+          );
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_1',
+              title: 'Only session',
+              createdAt: 1710000001000,
+              updatedAt: 1710000005000,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{
+            'ses_1': SessionStatusSummary(type: 'idle'),
+          },
+          messages: const <ChatMessage>[],
+          selectedSessionId: 'ses_1',
+        ),
+        fetchMessagesHandler:
+            ({required profile, required project, required sessionId}) async {
+              return <ChatMessage>[
+                _message(
+                  id: 'msg_1',
+                  sessionId: 'ses_1',
+                  text: 'Initial message',
+                  createdAt: 1710000006000,
+                ),
+              ];
+            },
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+        cacheStore: cacheStore,
+        spillStore: cacheStore,
+        projectStore: projectStore,
+        initialSelectedSessionId: 'ses_1',
+        initialSessions: <SessionSummary>[
+          _session(
+            id: 'ses_1',
+            title: 'Only session',
+            createdAt: 1710000001000,
+            updatedAt: 1710000005000,
+          ),
+        ],
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+      expect(controller.selectedSessionId, 'ses_1');
+      expect(controller.messages, isNotEmpty);
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'session.deleted',
+          properties: <String, Object?>{
+            'sessionID': 'ses_1',
+            'info': <String, Object?>{'id': 'ses_1'},
+          },
+        ),
+      );
+      await _waitFor(
+        () =>
+            controller.selectedSessionId == null &&
+            !cacheStore.entries.containsKey(
+              'workspace.messages::${profile.storageKey}::${project.directory}::ses_1',
+            ) &&
+            !cacheStore.entries.containsKey(
+              'workspace.messages.spill::${profile.storageKey}::${project.directory}::ses_1',
+            ),
+      );
+
+      expect(controller.selectedSessionId, isNull);
+      expect(controller.visibleSessions, isEmpty);
+      expect(controller.messages, isEmpty);
+      expect(controller.todos, isEmpty);
+      expect(controller.reviewStatuses, isEmpty);
+      expect(controller.reviewDiff, isNull);
+      expect(controller.reviewDiffError, isNull);
+      expect(controller.pendingRequests.questions, isEmpty);
+      expect(controller.pendingRequests.permissions, isEmpty);
+      expect(
+        cacheStore.entries.containsKey(
+          'workspace.messages::${profile.storageKey}::${project.directory}::ses_1',
+        ),
+        isFalse,
+      );
+      expect(
+        cacheStore.entries.containsKey(
+          'workspace.messages.spill::${profile.storageKey}::${project.directory}::ses_1',
+        ),
+        isFalse,
+      );
+      expect(projectStore.savedLastWorkspaceTargets.last.lastSession, isNull);
+    },
+  );
+
+  test(
+    'controller ignores remote deletions safely when workspace is already empty',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final chatService = _FakeChatService(
+        bundle: const ChatSessionBundle(
+          sessions: <SessionSummary>[],
+          statuses: <String, SessionStatusSummary>{},
+          messages: <ChatMessage>[],
+          selectedSessionId: null,
+        ),
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+        initialSessions: const <SessionSummary>[],
+        initialSelectedSessionId: null,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+      expect(controller.visibleSessions, isEmpty);
+      expect(controller.selectedSessionId, isNull);
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'session.deleted',
+          properties: <String, Object?>{
+            'sessionID': 'ses_missing',
+            'info': <String, Object?>{'id': 'ses_missing'},
+          },
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.visibleSessions, isEmpty);
+      expect(controller.selectedSessionId, isNull);
+      expect(controller.messages, isEmpty);
+      expect(controller.todos, isEmpty);
+      expect(controller.pendingRequests.questions, isEmpty);
+      expect(controller.pendingRequests.permissions, isEmpty);
+    },
+  );
 
   test(
     'controller reuses watched session timelines when switching pane focus',
@@ -460,7 +1142,7 @@ void main() {
         EventEnvelope(
           type: 'message.part.updated',
           properties: <String, Object?>{
-              'part': <String, Object?>{
+            'part': <String, Object?>{
               'id': 'part_msg_ses_2',
               'messageID': 'msg_ses_2',
               'sessionID': 'ses_2',
@@ -732,10 +1414,7 @@ void main() {
 
       await controller.loadMoreTimelineSessionHistory('ses_2');
 
-      expect(
-        controller.timelineStateForSession('ses_2').messages,
-        isEmpty,
-      );
+      expect(controller.timelineStateForSession('ses_2').messages, isEmpty);
       expect(controller.timelineStateForSession('ses_2').historyMore, isFalse);
       expect(
         controller.timelineStateForSession('ses_2').historyLoading,
@@ -934,8 +1613,13 @@ void main() {
           },
         ),
       );
-      await Future<void>.delayed(Duration.zero);
-      await Future<void>.delayed(Duration.zero);
+      await _waitFor(
+        () =>
+            controller.selectedSessionId == 'ses_other' &&
+            controller.messages.any(
+              (message) => message.info.id == 'msg_other',
+            ),
+      );
 
       expect(asyncPrompts, <String>['Queue this follow-up']);
       expect(controller.selectedSessionQueuedPrompts, isEmpty);
@@ -1091,6 +1775,76 @@ void main() {
   );
 
   test(
+    'controller ignores malformed question live events and still applies later valid ones',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        initialSelectedSessionId: 'ses_root',
+        initialSessions: <SessionSummary>[
+          _session(
+            id: 'ses_root',
+            title: 'Root session',
+            createdAt: 1710000001000,
+            updatedAt: 1710000005000,
+          ),
+          _session(
+            id: 'ses_child',
+            title: 'Child session',
+            createdAt: 1710000002000,
+            updatedAt: 1710000006000,
+            parentId: 'ses_root',
+          ),
+        ],
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'question.asked',
+          properties: <String, Object?>{
+            'id': 'req_bad',
+            'sessionID': 'ses_child',
+            'questions': 'invalid',
+          },
+        ),
+      );
+
+      expect(controller.currentQuestionRequest, isNull);
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'question.asked',
+          properties: <String, Object?>{
+            'id': 'req_good',
+            'sessionID': 'ses_child',
+            'questions': <Object?>[
+              <String, Object?>{
+                'question': 'Can the controller recover?',
+                'header': 'Recovery',
+                'multiple': false,
+                'options': <Object?>[
+                  <String, Object?>{'label': 'Yes', 'description': 'Continue'},
+                ],
+              },
+            ],
+          },
+        ),
+      );
+
+      expect(controller.currentQuestionRequest?.id, 'req_good');
+    },
+  );
+
+  test(
     'controller auto-accepts child session permissions and persists the preference',
     () async {
       final eventStreamService = _ControlledEventStreamService();
@@ -1202,6 +1956,69 @@ void main() {
       );
       expect(restoredRequestService.permissionReplies.single.reply, 'once');
       expect(restoredController.currentPermissionRequest, isNull);
+    },
+  );
+
+  test(
+    'controller ignores malformed permission live events and still applies later valid ones',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        initialSelectedSessionId: 'ses_root',
+        initialSessions: <SessionSummary>[
+          _session(
+            id: 'ses_root',
+            title: 'Root session',
+            createdAt: 1710000001000,
+            updatedAt: 1710000005000,
+          ),
+          _session(
+            id: 'ses_child',
+            title: 'Child session',
+            createdAt: 1710000002000,
+            updatedAt: 1710000006000,
+            parentId: 'ses_root',
+          ),
+        ],
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'permission.asked',
+          properties: <String, Object?>{
+            'id': 'per_bad',
+            'sessionID': 'ses_child',
+            'permission': 'edit',
+            'patterns': 'invalid',
+          },
+        ),
+      );
+
+      expect(controller.currentPermissionRequest, isNull);
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'permission.asked',
+          properties: <String, Object?>{
+            'id': 'per_good',
+            'sessionID': 'ses_child',
+            'permission': 'edit',
+            'patterns': <Object?>['lib/**'],
+          },
+        ),
+      );
+
+      expect(controller.currentPermissionRequest?.id, 'per_good');
     },
   );
 
@@ -1881,12 +2698,14 @@ WorkspaceController _buildController({
   required ProjectTarget project,
   required _ControlledEventStreamService eventStreamService,
   ChatService? chatService,
+  ProjectStore? projectStore,
   ProjectCatalogService? projectCatalogService,
   ReviewDiffService? reviewDiffService,
   RequestService? requestService,
   SessionActionService? sessionActionService,
   ConfigService? configService,
   StaleCacheStore? cacheStore,
+  StaleCacheStore? spillStore,
   List<SessionSummary>? initialSessions,
   String? initialSelectedSessionId,
   PendingRequestBundle pendingBundle = const PendingRequestBundle(
@@ -1921,8 +2740,9 @@ WorkspaceController _buildController({
         ),
     projectCatalogService:
         projectCatalogService ?? _FakeProjectCatalogService(project),
-    projectStore: _MemoryProjectStore(),
+    projectStore: projectStore ?? _MemoryProjectStore(),
     cacheStore: cacheStore,
+    spillStore: spillStore,
     fileBrowserService: _FakeFileBrowserService(),
     reviewDiffService: reviewDiffService ?? _EmptyReviewDiffService(),
     todoService: _FakeTodoService(),
@@ -1980,9 +2800,25 @@ ChatMessage _message({
   );
 }
 
+Future<void> _waitFor(bool Function() condition, {int maxTicks = 80}) async {
+  for (var index = 0; index < maxTicks; index += 1) {
+    if (condition()) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+  }
+}
+
 class _ControlledEventStreamService extends EventStreamService {
-  final Map<String, void Function(EventEnvelope event)> _onEventByScopeKey =
-      <String, void Function(EventEnvelope event)>{};
+  final Map<String, List<void Function(EventEnvelope event)>>
+  _onEventByScopeKey = <String, List<void Function(EventEnvelope event)>>{};
+  final Map<String, List<void Function()>> _onDoneByScopeKey =
+      <String, List<void Function()>>{};
+  final Map<String, List<void Function(Object error, StackTrace stackTrace)>>
+  _onErrorByScopeKey =
+      <String, List<void Function(Object error, StackTrace stackTrace)>>{};
+  int connectCallCount = 0;
+  int disconnectCallCount = 0;
 
   @override
   Future<void> connect({
@@ -1992,7 +2828,24 @@ class _ControlledEventStreamService extends EventStreamService {
     void Function()? onDone,
     void Function(Object error, StackTrace stackTrace)? onError,
   }) async {
-    _onEventByScopeKey[_scopeKeyFor(profile, project)] = onEvent;
+    connectCallCount += 1;
+    final scopeKey = _scopeKeyFor(profile, project);
+    final listeners =
+        _onEventByScopeKey[scopeKey] ?? <void Function(EventEnvelope event)>[];
+    listeners.add(onEvent);
+    _onEventByScopeKey[scopeKey] = listeners;
+    if (onDone != null) {
+      final doneListeners = _onDoneByScopeKey[scopeKey] ?? <void Function()>[];
+      doneListeners.add(onDone);
+      _onDoneByScopeKey[scopeKey] = doneListeners;
+    }
+    if (onError != null) {
+      final errorListeners =
+          _onErrorByScopeKey[scopeKey] ??
+          <void Function(Object error, StackTrace stackTrace)>[];
+      errorListeners.add(onError);
+      _onErrorByScopeKey[scopeKey] = errorListeners;
+    }
   }
 
   void emitToScope(
@@ -2000,14 +2853,62 @@ class _ControlledEventStreamService extends EventStreamService {
     ProjectTarget project,
     EventEnvelope event,
   ) {
-    _onEventByScopeKey[_scopeKeyFor(profile, project)]?.call(event);
+    final listeners =
+        _onEventByScopeKey[_scopeKeyFor(profile, project)] ??
+        const <void Function(EventEnvelope event)>[];
+    for (final listener in List<void Function(EventEnvelope event)>.from(
+      listeners,
+    )) {
+      listener(event);
+    }
+  }
+
+  void completeScope(ServerProfile profile, ProjectTarget project) {
+    final listeners =
+        _onDoneByScopeKey[_scopeKeyFor(profile, project)] ??
+        const <void Function()>[];
+    for (final listener in List<void Function()>.from(listeners)) {
+      listener();
+    }
+  }
+
+  void emitErrorToScope(
+    ServerProfile profile,
+    ProjectTarget project,
+    Object error,
+  ) {
+    final listeners =
+        _onErrorByScopeKey[_scopeKeyFor(profile, project)] ??
+        const <void Function(Object error, StackTrace stackTrace)>[];
+    for (final listener
+        in List<void Function(Object error, StackTrace stackTrace)>.from(
+          listeners,
+        )) {
+      listener(error, StackTrace.current);
+    }
+  }
+
+  int activeSubscriptionCountForScope(
+    ServerProfile profile,
+    ProjectTarget project,
+  ) {
+    return _onEventByScopeKey[_scopeKeyFor(profile, project)]?.length ?? 0;
   }
 
   @override
-  Future<void> disconnect() async {}
+  Future<void> disconnect() async {
+    disconnectCallCount += 1;
+    _onEventByScopeKey.clear();
+    _onDoneByScopeKey.clear();
+    _onErrorByScopeKey.clear();
+  }
 
   @override
-  void dispose() {}
+  void dispose() {
+    _onEventByScopeKey.clear();
+    _onDoneByScopeKey.clear();
+    _onErrorByScopeKey.clear();
+  }
 }
 
 class _RecordingCacheStore extends StaleCacheStore {
@@ -2123,6 +3024,7 @@ class _FakeProjectCatalogService extends ProjectCatalogService {
 
 class _MemoryProjectStore extends ProjectStore {
   List<ProjectTarget> _recentProjects = const <ProjectTarget>[];
+  final List<ProjectTarget> savedLastWorkspaceTargets = <ProjectTarget>[];
 
   @override
   Future<List<ProjectTarget>> loadRecentProjects() async => _recentProjects;
@@ -2137,7 +3039,9 @@ class _MemoryProjectStore extends ProjectStore {
   Future<void> saveLastWorkspace({
     required String serverStorageKey,
     required ProjectTarget target,
-  }) async {}
+  }) async {
+    savedLastWorkspaceTargets.add(target);
+  }
 }
 
 class _FakeChatService extends ChatService {
