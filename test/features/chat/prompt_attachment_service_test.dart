@@ -3,7 +3,7 @@ import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:opencode_mobile_remote/src/features/chat/prompt_attachment_service.dart';
+import 'package:better_opencode_client/src/features/chat/prompt_attachment_service.dart';
 
 void main() {
   final service = PromptAttachmentService();

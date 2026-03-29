@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:opencode_mobile_remote/src/core/connection/connection_models.dart';
-import 'package:opencode_mobile_remote/src/features/settings/agent_service.dart';
+import 'package:better_opencode_client/src/core/connection/connection_models.dart';
+import 'package:better_opencode_client/src/features/settings/agent_service.dart';
 
 void main() {
   late HttpServer server;

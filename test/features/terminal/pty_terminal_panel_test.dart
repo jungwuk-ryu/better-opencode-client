@@ -2,11 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:opencode_mobile_remote/src/core/connection/connection_models.dart';
-import 'package:opencode_mobile_remote/src/design_system/app_theme.dart';
-import 'package:opencode_mobile_remote/src/features/terminal/pty_models.dart';
-import 'package:opencode_mobile_remote/src/features/terminal/pty_service.dart';
-import 'package:opencode_mobile_remote/src/features/terminal/pty_terminal_panel.dart';
+import 'package:better_opencode_client/src/core/connection/connection_models.dart';
+import 'package:better_opencode_client/src/design_system/app_theme.dart';
+import 'package:better_opencode_client/src/features/terminal/pty_models.dart';
+import 'package:better_opencode_client/src/features/terminal/pty_service.dart';
+import 'package:better_opencode_client/src/features/terminal/pty_terminal_panel.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 void main() {

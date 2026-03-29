@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:opencode_mobile_remote/src/core/network/live_event_reducer.dart';
+import 'package:better_opencode_client/src/core/network/live_event_reducer.dart';
 
 void main() {
   test('reducer deduplicates by part id through overwrite semantics', () {

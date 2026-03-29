@@ -1,7 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:opencode_mobile_remote/l10n/app_localizations.dart';
+import 'package:better_opencode_client/l10n/app_localizations.dart';
 
 import '../../design_system/app_spacing.dart';
 import '../../design_system/app_theme.dart';

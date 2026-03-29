@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:opencode_mobile_remote/src/design_system/app_snack_bar.dart';
-import 'package:opencode_mobile_remote/src/design_system/app_theme.dart';
+import 'package:better_opencode_client/src/design_system/app_snack_bar.dart';
+import 'package:better_opencode_client/src/design_system/app_theme.dart';
 
 void main() {
   testWidgets('app snack bars float with blur and transparent chrome', (

@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:opencode_mobile_remote/src/core/spec/raw_json_document.dart';
+import 'package:better_opencode_client/src/core/spec/raw_json_document.dart';
 
 void main() {
   Map<String, Object?> load(String path) {

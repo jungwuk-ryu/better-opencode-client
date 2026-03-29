@@ -1,10 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:opencode_mobile_remote/src/core/connection/connection_models.dart';
-import 'package:opencode_mobile_remote/src/core/network/opencode_server_probe.dart';
-import 'package:opencode_mobile_remote/src/core/spec/capability_registry.dart';
-import 'package:opencode_mobile_remote/src/core/spec/probe_snapshot.dart';
-import 'package:opencode_mobile_remote/src/features/connection/connection_status_mapper.dart';
-import 'package:opencode_mobile_remote/src/features/launch/launch_state_model.dart';
+import 'package:better_opencode_client/src/core/connection/connection_models.dart';
+import 'package:better_opencode_client/src/core/network/opencode_server_probe.dart';
+import 'package:better_opencode_client/src/core/spec/capability_registry.dart';
+import 'package:better_opencode_client/src/core/spec/probe_snapshot.dart';
+import 'package:better_opencode_client/src/features/connection/connection_status_mapper.dart';
+import 'package:better_opencode_client/src/features/launch/launch_state_model.dart';
 
 void main() {
   test('maps ready probe reports to ready status', () {

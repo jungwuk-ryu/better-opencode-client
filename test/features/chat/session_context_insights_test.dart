@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:opencode_mobile_remote/src/features/chat/chat_models.dart';
-import 'package:opencode_mobile_remote/src/features/chat/session_context_insights.dart';
-import 'package:opencode_mobile_remote/src/features/settings/config_service.dart';
+import 'package:better_opencode_client/src/features/chat/chat_models.dart';
+import 'package:better_opencode_client/src/features/chat/session_context_insights.dart';
+import 'package:better_opencode_client/src/features/settings/config_service.dart';
 
 void main() {
   test('computes context metrics from the last assistant message with tokens', () {

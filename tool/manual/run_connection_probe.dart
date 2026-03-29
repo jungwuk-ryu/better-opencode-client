@@ -1,7 +1,7 @@
 import 'dart:io';
 
-import 'package:opencode_mobile_remote/src/core/connection/connection_models.dart';
-import 'package:opencode_mobile_remote/src/core/network/opencode_server_probe.dart';
+import 'package:better_opencode_client/src/core/connection/connection_models.dart';
+import 'package:better_opencode_client/src/core/network/opencode_server_probe.dart';
 
 Future<void> main(List<String> args) async {
   if (args.isEmpty) {

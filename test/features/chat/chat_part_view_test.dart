@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:opencode_mobile_remote/l10n/app_localizations.dart';
-import 'package:opencode_mobile_remote/src/design_system/app_theme.dart';
-import 'package:opencode_mobile_remote/src/features/chat/chat_models.dart';
-import 'package:opencode_mobile_remote/src/features/chat/chat_part_view.dart';
+import 'package:better_opencode_client/l10n/app_localizations.dart';
+import 'package:better_opencode_client/src/design_system/app_theme.dart';
+import 'package:better_opencode_client/src/features/chat/chat_models.dart';
+import 'package:better_opencode_client/src/features/chat/chat_part_view.dart';
 
 void main() {
   Future<void> pumpPart(

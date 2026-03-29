@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:opencode_mobile_remote/src/app/app.dart';
-import 'package:opencode_mobile_remote/src/features/web_parity/web_home_screen.dart';
-import 'package:opencode_mobile_remote/src/features/connection/connection_home_screen.dart';
-import 'package:opencode_mobile_remote/src/features/home/workspace_home_screen.dart';
+import 'package:better_opencode_client/src/app/app.dart';
+import 'package:better_opencode_client/src/features/web_parity/web_home_screen.dart';
+import 'package:better_opencode_client/src/features/connection/connection_home_screen.dart';
+import 'package:better_opencode_client/src/features/home/workspace_home_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {

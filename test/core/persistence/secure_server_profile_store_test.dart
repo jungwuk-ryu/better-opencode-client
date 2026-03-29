@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:opencode_mobile_remote/src/core/connection/connection_models.dart';
-import 'package:opencode_mobile_remote/src/core/persistence/secure_server_profile_store.dart';
+import 'package:better_opencode_client/src/core/connection/connection_models.dart';
+import 'package:better_opencode_client/src/core/persistence/secure_server_profile_store.dart';
 
 void main() {
   test('hydrates saved and draft profiles from secure storage', () async {

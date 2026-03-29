@@ -1,16 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:opencode_mobile_remote/l10n/app_localizations.dart';
-import 'package:opencode_mobile_remote/src/core/connection/connection_models.dart';
-import 'package:opencode_mobile_remote/src/core/spec/capability_registry.dart';
-import 'package:opencode_mobile_remote/src/core/spec/probe_snapshot.dart';
-import 'package:opencode_mobile_remote/src/design_system/app_theme.dart';
-import 'package:opencode_mobile_remote/src/features/chat/chat_models.dart';
-import 'package:opencode_mobile_remote/src/features/chat/chat_service.dart';
-import 'package:opencode_mobile_remote/src/features/projects/project_models.dart';
-import 'package:opencode_mobile_remote/src/features/shell/opencode_shell_screen.dart';
-import 'package:opencode_mobile_remote/src/features/tools/todo_models.dart';
-import 'package:opencode_mobile_remote/src/features/tools/todo_service.dart';
+import 'package:better_opencode_client/l10n/app_localizations.dart';
+import 'package:better_opencode_client/src/core/connection/connection_models.dart';
+import 'package:better_opencode_client/src/core/spec/capability_registry.dart';
+import 'package:better_opencode_client/src/core/spec/probe_snapshot.dart';
+import 'package:better_opencode_client/src/design_system/app_theme.dart';
+import 'package:better_opencode_client/src/features/chat/chat_models.dart';
+import 'package:better_opencode_client/src/features/chat/chat_service.dart';
+import 'package:better_opencode_client/src/features/projects/project_models.dart';
+import 'package:better_opencode_client/src/features/shell/opencode_shell_screen.dart';
+import 'package:better_opencode_client/src/features/tools/todo_models.dart';
+import 'package:better_opencode_client/src/features/tools/todo_service.dart';
 
 void main() {
   const profile = ServerProfile(

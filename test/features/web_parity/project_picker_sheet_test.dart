@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:opencode_mobile_remote/src/core/connection/connection_models.dart';
-import 'package:opencode_mobile_remote/src/design_system/app_theme.dart';
-import 'package:opencode_mobile_remote/src/features/projects/project_catalog_service.dart';
-import 'package:opencode_mobile_remote/src/features/projects/project_models.dart';
-import 'package:opencode_mobile_remote/src/features/projects/project_store.dart';
-import 'package:opencode_mobile_remote/src/features/web_parity/project_picker_sheet.dart';
+import 'package:better_opencode_client/src/core/connection/connection_models.dart';
+import 'package:better_opencode_client/src/design_system/app_theme.dart';
+import 'package:better_opencode_client/src/features/projects/project_catalog_service.dart';
+import 'package:better_opencode_client/src/features/projects/project_models.dart';
+import 'package:better_opencode_client/src/features/projects/project_store.dart';
+import 'package:better_opencode_client/src/features/web_parity/project_picker_sheet.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

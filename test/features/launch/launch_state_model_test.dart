@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:opencode_mobile_remote/src/core/connection/connection_models.dart';
-import 'package:opencode_mobile_remote/src/features/launch/launch_state_model.dart';
-import 'package:opencode_mobile_remote/src/features/projects/project_models.dart';
+import 'package:better_opencode_client/src/core/connection/connection_models.dart';
+import 'package:better_opencode_client/src/features/launch/launch_state_model.dart';
+import 'package:better_opencode_client/src/features/projects/project_models.dart';
 
 void main() {
   const firstServer = ServerProfile(

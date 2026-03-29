@@ -1,9 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:opencode_mobile_remote/src/core/network/live_event_applier.dart';
-import 'package:opencode_mobile_remote/src/features/chat/chat_models.dart';
-import 'package:opencode_mobile_remote/src/features/tools/todo_models.dart';
+import 'package:better_opencode_client/src/core/network/live_event_applier.dart';
+import 'package:better_opencode_client/src/features/chat/chat_models.dart';
+import 'package:better_opencode_client/src/features/tools/todo_models.dart';
 
 void main() {
   var messages = const <ChatMessage>[];

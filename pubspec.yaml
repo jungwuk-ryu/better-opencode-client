@@ -1,4 +1,4 @@
-name: opencode_mobile_remote
+name: better_opencode_client
 description: "better-opencode-client (BOC), a Flutter client for OpenCode"
 publish_to: 'none'
 version: 1.0.0+1

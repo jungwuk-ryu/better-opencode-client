@@ -3,10 +3,10 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-import 'package:opencode_mobile_remote/src/core/connection/connection_models.dart';
-import 'package:opencode_mobile_remote/src/features/files/file_models.dart';
-import 'package:opencode_mobile_remote/src/features/files/review_diff_service.dart';
-import 'package:opencode_mobile_remote/src/features/projects/project_models.dart';
+import 'package:better_opencode_client/src/core/connection/connection_models.dart';
+import 'package:better_opencode_client/src/features/files/file_models.dart';
+import 'package:better_opencode_client/src/features/files/review_diff_service.dart';
+import 'package:better_opencode_client/src/features/projects/project_models.dart';
 
 void main() {
   test('fetches diff output through the official session diff api', () async {

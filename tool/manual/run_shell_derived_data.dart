@@ -1,9 +1,9 @@
 import 'dart:io';
 
-import 'package:opencode_mobile_remote/src/features/chat/chat_models.dart';
-import 'package:opencode_mobile_remote/src/features/files/file_models.dart';
-import 'package:opencode_mobile_remote/src/features/shell/shell_derived_data.dart';
-import 'package:opencode_mobile_remote/src/features/tools/todo_models.dart';
+import 'package:better_opencode_client/src/features/chat/chat_models.dart';
+import 'package:better_opencode_client/src/features/files/file_models.dart';
+import 'package:better_opencode_client/src/features/shell/shell_derived_data.dart';
+import 'package:better_opencode_client/src/features/tools/todo_models.dart';
 
 void main() {
   final sorted = sortTodosForDisplay(const <TodoItem>[

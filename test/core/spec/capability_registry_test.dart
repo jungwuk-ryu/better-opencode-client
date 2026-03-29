@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:opencode_mobile_remote/src/core/spec/capability_registry.dart';
-import 'package:opencode_mobile_remote/src/core/spec/probe_snapshot.dart';
+import 'package:better_opencode_client/src/core/spec/capability_registry.dart';
+import 'package:better_opencode_client/src/core/spec/probe_snapshot.dart';
 
 void main() {
   ProbeSnapshot load(String path) {

@@ -1,8 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:opencode_mobile_remote/src/core/persistence/secure_server_profile_store.dart';
-import 'package:opencode_mobile_remote/src/core/persistence/server_profile_store.dart';
+import 'package:better_opencode_client/src/core/persistence/secure_server_profile_store.dart';
+import 'package:better_opencode_client/src/core/persistence/server_profile_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {

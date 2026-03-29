@@ -1,21 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:opencode_mobile_remote/l10n/app_localizations.dart';
-import 'package:opencode_mobile_remote/src/app/flavor.dart';
-import 'package:opencode_mobile_remote/src/core/connection/connection_models.dart';
-import 'package:opencode_mobile_remote/src/core/network/opencode_server_probe.dart';
-import 'package:opencode_mobile_remote/src/core/persistence/stale_cache_store.dart';
-import 'package:opencode_mobile_remote/src/core/spec/capability_registry.dart';
-import 'package:opencode_mobile_remote/src/core/spec/probe_snapshot.dart';
-import 'package:opencode_mobile_remote/src/design_system/app_theme.dart';
-import 'package:opencode_mobile_remote/src/features/home/workspace_home_screen.dart';
-import 'package:opencode_mobile_remote/src/features/projects/project_catalog_service.dart';
-import 'package:opencode_mobile_remote/src/features/projects/project_models.dart';
-import 'package:opencode_mobile_remote/src/features/projects/project_store.dart';
-import 'package:opencode_mobile_remote/src/features/projects/project_workspace_section.dart';
-import 'package:opencode_mobile_remote/src/features/shell/opencode_shell_screen.dart';
-import 'package:opencode_mobile_remote/src/i18n/locale_controller.dart';
+import 'package:better_opencode_client/l10n/app_localizations.dart';
+import 'package:better_opencode_client/src/app/flavor.dart';
+import 'package:better_opencode_client/src/core/connection/connection_models.dart';
+import 'package:better_opencode_client/src/core/network/opencode_server_probe.dart';
+import 'package:better_opencode_client/src/core/persistence/stale_cache_store.dart';
+import 'package:better_opencode_client/src/core/spec/capability_registry.dart';
+import 'package:better_opencode_client/src/core/spec/probe_snapshot.dart';
+import 'package:better_opencode_client/src/design_system/app_theme.dart';
+import 'package:better_opencode_client/src/features/home/workspace_home_screen.dart';
+import 'package:better_opencode_client/src/features/projects/project_catalog_service.dart';
+import 'package:better_opencode_client/src/features/projects/project_models.dart';
+import 'package:better_opencode_client/src/features/projects/project_store.dart';
+import 'package:better_opencode_client/src/features/projects/project_workspace_section.dart';
+import 'package:better_opencode_client/src/features/shell/opencode_shell_screen.dart';
+import 'package:better_opencode_client/src/i18n/locale_controller.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {

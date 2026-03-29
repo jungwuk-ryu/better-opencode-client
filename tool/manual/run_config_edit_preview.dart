@@ -1,7 +1,7 @@
 import 'dart:io';
 
-import 'package:opencode_mobile_remote/src/core/spec/raw_json_document.dart';
-import 'package:opencode_mobile_remote/src/features/settings/config_edit_preview.dart';
+import 'package:better_opencode_client/src/core/spec/raw_json_document.dart';
+import 'package:better_opencode_client/src/features/settings/config_edit_preview.dart';
 
 void main() {
   final preview = buildConfigEditPreview(

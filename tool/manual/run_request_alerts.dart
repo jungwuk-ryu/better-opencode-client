@@ -1,7 +1,7 @@
 import 'dart:io';
 
-import 'package:opencode_mobile_remote/src/features/requests/request_alerts.dart';
-import 'package:opencode_mobile_remote/src/features/requests/request_models.dart';
+import 'package:better_opencode_client/src/features/requests/request_alerts.dart';
+import 'package:better_opencode_client/src/features/requests/request_models.dart';
 
 void main() {
   final questionAlert = buildQuestionAskedAlert(

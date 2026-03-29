@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:opencode_mobile_remote/src/core/network/live_event_applier.dart';
-import 'package:opencode_mobile_remote/src/features/chat/chat_models.dart';
-import 'package:opencode_mobile_remote/src/features/tools/todo_models.dart';
+import 'package:better_opencode_client/src/core/network/live_event_applier.dart';
+import 'package:better_opencode_client/src/features/chat/chat_models.dart';
+import 'package:better_opencode_client/src/features/tools/todo_models.dart';
 
 void main() {
   test('session.status preserves structured retry payloads', () {

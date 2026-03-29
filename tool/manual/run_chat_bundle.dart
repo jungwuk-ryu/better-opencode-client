@@ -1,8 +1,8 @@
 import 'dart:io';
 
-import 'package:opencode_mobile_remote/src/core/connection/connection_models.dart';
-import 'package:opencode_mobile_remote/src/features/chat/chat_service.dart';
-import 'package:opencode_mobile_remote/src/features/projects/project_models.dart';
+import 'package:better_opencode_client/src/core/connection/connection_models.dart';
+import 'package:better_opencode_client/src/features/chat/chat_service.dart';
+import 'package:better_opencode_client/src/features/projects/project_models.dart';
 
 Future<void> main(List<String> args) async {
   if (args.length < 2) {

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:opencode_mobile_remote/src/app/app_routes.dart';
+import 'package:better_opencode_client/src/app/app_routes.dart';
 
 void main() {
   test('encodes and decodes workspace routes', () {

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:opencode_mobile_remote/src/features/projects/project_models.dart';
-import 'package:opencode_mobile_remote/src/features/projects/project_store.dart';
+import 'package:better_opencode_client/src/features/projects/project_models.dart';
+import 'package:better_opencode_client/src/features/projects/project_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {

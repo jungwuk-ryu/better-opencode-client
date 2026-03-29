@@ -1,3 +1,3 @@
-import 'package:opencode_mobile_remote/src/app/bootstrap.dart';
+import 'package:better_opencode_client/src/app/bootstrap.dart';
 
 Future<void> main() => bootstrap();
