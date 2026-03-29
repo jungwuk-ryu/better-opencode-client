@@ -5,7 +5,10 @@ List<QuestionRequestSummary> applyQuestionAskedEvent(
   Map<String, Object?> properties, {
   required String? selectedSessionId,
 }) {
-  final nextQuestion = QuestionRequestSummary.fromJson(properties);
+  final nextQuestion = _tryParseQuestionRequest(properties);
+  if (nextQuestion == null) {
+    return questions;
+  }
   if (!_matchesSelectedSession(selectedSessionId, nextQuestion.sessionId)) {
     return questions;
   }
@@ -43,7 +46,10 @@ List<PermissionRequestSummary> applyPermissionAskedEvent(
   Map<String, Object?> properties, {
   required String? selectedSessionId,
 }) {
-  final nextPermission = PermissionRequestSummary.fromJson(properties);
+  final nextPermission = _tryParsePermissionRequest(properties);
+  if (nextPermission == null) {
+    return permissions;
+  }
   if (!_matchesSelectedSession(selectedSessionId, nextPermission.sessionId)) {
     return permissions;
   }
@@ -84,4 +90,34 @@ bool _matchesSelectedSession(
 ) {
   return selectedSessionId == null ||
       (eventSessionId != null && selectedSessionId == eventSessionId);
+}
+
+QuestionRequestSummary? _tryParseQuestionRequest(Map<String, Object?> json) {
+  try {
+    final request = QuestionRequestSummary.fromJson(json);
+    if (request.id.isEmpty ||
+        request.sessionId.isEmpty ||
+        request.questions.isEmpty) {
+      return null;
+    }
+    return request;
+  } catch (_) {
+    return null;
+  }
+}
+
+PermissionRequestSummary? _tryParsePermissionRequest(
+  Map<String, Object?> json,
+) {
+  try {
+    final request = PermissionRequestSummary.fromJson(json);
+    if (request.id.isEmpty ||
+        request.sessionId.isEmpty ||
+        request.permission.isEmpty) {
+      return null;
+    }
+    return request;
+  } catch (_) {
+    return null;
+  }
 }

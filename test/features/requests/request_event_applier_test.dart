@@ -42,6 +42,58 @@ void main() {
     expect(updated.single.questions.single.custom, isTrue);
   });
 
+  test(
+    'question.asked ignores malformed payloads and still applies later valid events',
+    () {
+      final existing = <QuestionRequestSummary>[
+        const QuestionRequestSummary(
+          id: 'que_existing',
+          sessionId: 'ses_1',
+          questions: <QuestionPromptSummary>[
+            QuestionPromptSummary(
+              question: 'Keep current state?',
+              header: 'Current',
+              multiple: false,
+              options: <QuestionOptionSummary>[],
+            ),
+          ],
+        ),
+      ];
+
+      final afterMalformed = applyQuestionAskedEvent(
+        existing,
+        const <String, Object?>{
+          'id': 'que_bad',
+          'sessionID': 'ses_1',
+          'questions': 'invalid',
+        },
+        selectedSessionId: 'ses_1',
+      );
+      final afterValid = applyQuestionAskedEvent(
+        afterMalformed,
+        const <String, Object?>{
+          'id': 'que_2',
+          'sessionID': 'ses_1',
+          'questions': <Object?>[
+            <String, Object?>{
+              'question': 'Proceed after malformed event?',
+              'header': 'Recovered',
+              'multiple': false,
+              'options': <Object?>[],
+            },
+          ],
+        },
+        selectedSessionId: 'ses_1',
+      );
+
+      expect(afterMalformed, same(existing));
+      expect(afterValid.map((item) => item.id), <String>[
+        'que_existing',
+        'que_2',
+      ]);
+    },
+  );
+
   test('question resolved removes only matching session request', () {
     final questions = <QuestionRequestSummary>[
       const QuestionRequestSummary(
@@ -87,6 +139,44 @@ void main() {
     expect(updated, hasLength(1));
     expect(updated.single.permission, 'edit');
   });
+
+  test(
+    'permission.asked ignores malformed payloads and still applies later valid events',
+    () {
+      final existing = <PermissionRequestSummary>[
+        const PermissionRequestSummary(
+          id: 'per_existing',
+          sessionId: 'ses_1',
+          permission: 'bash',
+          patterns: <String>['npm test'],
+        ),
+      ];
+
+      final afterMalformed =
+          applyPermissionAskedEvent(existing, const <String, Object?>{
+            'id': 'per_bad',
+            'sessionID': 'ses_1',
+            'permission': 'edit',
+            'patterns': 'invalid',
+          }, selectedSessionId: 'ses_1');
+      final afterValid = applyPermissionAskedEvent(
+        afterMalformed,
+        const <String, Object?>{
+          'id': 'per_2',
+          'sessionID': 'ses_1',
+          'permission': 'edit',
+          'patterns': <Object?>['lib/**'],
+        },
+        selectedSessionId: 'ses_1',
+      );
+
+      expect(afterMalformed, same(existing));
+      expect(afterValid.map((item) => item.id), <String>[
+        'per_existing',
+        'per_2',
+      ]);
+    },
+  );
 
   test('permission resolved removes only matching session request', () {
     final permissions = <PermissionRequestSummary>[

@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 
 import '../../core/connection/connection_models.dart';
 import '../../core/network/request_headers.dart';
+import '../../core/network/request_uri.dart';
 import '../projects/project_models.dart';
 import 'request_models.dart';
 
@@ -30,24 +31,10 @@ class RequestService {
         : null;
 
     final questions = questionsBody is List
-        ? questionsBody
-              .whereType<Map>()
-              .map(
-                (item) => QuestionRequestSummary.fromJson(
-                  item.cast<String, Object?>(),
-                ),
-              )
-              .toList(growable: false)
+        ? _decodeQuestions(questionsBody)
         : const <QuestionRequestSummary>[];
     final permissions = permissionsBody is List
-        ? permissionsBody
-              .whereType<Map>()
-              .map(
-                (item) => PermissionRequestSummary.fromJson(
-                  item.cast<String, Object?>(),
-                ),
-              )
-              .toList(growable: false)
+        ? _decodePermissions(permissionsBody)
         : const <PermissionRequestSummary>[];
 
     return PendingRequestBundle(questions: questions, permissions: permissions);
@@ -143,17 +130,11 @@ class RequestService {
     if (baseUri == null) {
       throw const FormatException('Invalid server profile URL.');
     }
-    final basePath = switch (baseUri.path) {
-      '' => '/',
-      final value when value.endsWith('/') => value,
-      final value => '$value/',
-    };
-    return baseUri
-        .replace(path: basePath)
-        .resolve(path.startsWith('/') ? path.substring(1) : path)
-        .replace(
-          queryParameters: <String, String>{'directory': project.directory},
-        );
+    return buildRequestUri(
+      baseUri,
+      path: path,
+      queryParameters: <String, String>{'directory': project.directory},
+    );
   }
 
   Map<String, String> _headers(ServerProfile profile, {bool jsonBody = false}) {
@@ -162,6 +143,60 @@ class RequestService {
       accept: 'application/json',
       jsonBody: jsonBody,
     );
+  }
+
+  List<QuestionRequestSummary> _decodeQuestions(List body) {
+    final questions = <QuestionRequestSummary>[];
+    for (final item in body.whereType<Map>()) {
+      final request = _tryParseQuestionRequest(item);
+      if (request != null) {
+        questions.add(request);
+      }
+    }
+    return questions.toList(growable: false);
+  }
+
+  List<PermissionRequestSummary> _decodePermissions(List body) {
+    final permissions = <PermissionRequestSummary>[];
+    for (final item in body.whereType<Map>()) {
+      final request = _tryParsePermissionRequest(item);
+      if (request != null) {
+        permissions.add(request);
+      }
+    }
+    return permissions.toList(growable: false);
+  }
+
+  QuestionRequestSummary? _tryParseQuestionRequest(Map item) {
+    try {
+      final request = QuestionRequestSummary.fromJson(
+        item.cast<String, Object?>(),
+      );
+      if (request.id.isEmpty ||
+          request.sessionId.isEmpty ||
+          request.questions.isEmpty) {
+        return null;
+      }
+      return request;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  PermissionRequestSummary? _tryParsePermissionRequest(Map item) {
+    try {
+      final request = PermissionRequestSummary.fromJson(
+        item.cast<String, Object?>(),
+      );
+      if (request.id.isEmpty ||
+          request.sessionId.isEmpty ||
+          request.permission.isEmpty) {
+        return null;
+      }
+      return request;
+    } catch (_) {
+      return null;
+    }
   }
 
   void dispose() {
