@@ -20,10 +20,17 @@ void main() {
     lastPatchPayload = null;
     fileDirectoryRequestCounts = <String, int>{};
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    baseUri = Uri.parse('http://${server.address.address}:${server.port}');
+    baseUri = Uri.parse(
+      'http://${server.address.address}:${server.port}/api?token=abc',
+    );
     server.listen((request) async {
-      if (request.method == 'PATCH' &&
-          request.uri.path == '/project/project-1') {
+      if (!_hasExpectedBaseContext(request.uri)) {
+        request.response.statusCode = 400;
+        await request.response.close();
+        return;
+      }
+      final routePath = _routePath(request.uri);
+      if (request.method == 'PATCH' && routePath == '/project/project-1') {
         final payload =
             (jsonDecode(await utf8.decoder.bind(request).join()) as Map)
                 .cast<String, Object?>();
@@ -57,7 +64,7 @@ void main() {
         await request.response.close();
         return;
       }
-      if (request.method == 'POST' && request.uri.path == '/project/git/init') {
+      if (request.method == 'POST' && routePath == '/project/git/init') {
         lastInitGitUri = request.uri;
         if (request.uri.queryParameters['directory'] != '/workspace/demo') {
           request.response.statusCode = 400;
@@ -79,12 +86,12 @@ void main() {
         await request.response.close();
         return;
       }
-      if (request.uri.path == '/file') {
+      if (routePath == '/file') {
         final directory = request.uri.queryParameters['directory'] ?? '';
         fileDirectoryRequestCounts[directory] =
             (fileDirectoryRequestCounts[directory] ?? 0) + 1;
       }
-      final body = switch (request.uri.path) {
+      final body = switch (routePath) {
         '/file' => switch (request.uri.queryParameters['directory']) {
           '/' => [
             {
@@ -267,7 +274,8 @@ void main() {
       directory: '/workspace/demo',
     );
 
-    expect(lastInitGitUri?.path, '/project/git/init');
+    expect(lastInitGitUri?.path, '/api/project/git/init');
+    expect(lastInitGitUri?.queryParameters['token'], 'abc');
     expect(lastInitGitUri?.queryParameters['directory'], '/workspace/demo');
     expect(target.directory, '/workspace/demo');
     expect(target.vcs, 'git');
@@ -327,6 +335,8 @@ void main() {
     expect(target.name, 'Renamed Demo');
     expect(target.icon?.effectiveImage, 'data:image/png;base64,BBBB');
     expect(target.commands?.start, 'pnpm install');
+    expect(lastPatchUri?.path, '/api/project/project-1');
+    expect(lastPatchUri?.queryParameters['token'], 'abc');
     expect(lastPatchUri?.queryParameters['directory'], '/workspace/demo');
     expect(lastPatchPayload?['name'], 'Renamed Demo');
     expect(lastPatchPayload?['icon'], <String, Object?>{
@@ -362,6 +372,7 @@ void main() {
     expect(target.icon?.effectiveImage, isNull);
     expect(target.icon?.color, 'mint');
     expect(target.commands, isNull);
+    expect(lastPatchUri?.queryParameters['token'], 'abc');
     expect(lastPatchUri?.queryParameters['directory'], '/workspace/demo');
     expect(lastPatchPayload?['name'], '');
     expect(lastPatchPayload?['icon'], <String, Object?>{'color': 'mint'});
@@ -445,6 +456,18 @@ void main() {
       service.dispose();
     },
   );
+}
+
+bool _hasExpectedBaseContext(Uri uri) {
+  final hasApiPrefix = uri.path == '/api' || uri.path.startsWith('/api/');
+  return hasApiPrefix && uri.queryParameters['token'] == 'abc';
+}
+
+String _routePath(Uri uri) {
+  if (uri.path == '/api') {
+    return '/';
+  }
+  return uri.path.substring('/api'.length);
 }
 
 bool _isValidProjectPatchRequest(Uri uri, Map<String, Object?> payload) {

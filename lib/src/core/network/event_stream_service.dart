@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../connection/connection_models.dart';
 import '../../features/projects/project_models.dart';
 import 'request_headers.dart';
+import 'request_uri.dart';
 import 'sse_frame.dart';
 import 'sse_parser.dart';
 
@@ -46,17 +47,11 @@ class EventStreamService {
     if (baseUri == null) {
       throw const FormatException('Invalid server profile URL.');
     }
-    final basePath = switch (baseUri.path) {
-      '' => '/',
-      final value when value.endsWith('/') => value,
-      final value => '$value/',
-    };
-    final uri = baseUri
-        .replace(path: basePath)
-        .resolve('event')
-        .replace(
-          queryParameters: <String, String>{'directory': project.directory},
-        );
+    final uri = buildRequestUri(
+      baseUri,
+      path: 'event',
+      queryParameters: <String, String>{'directory': project.directory},
+    );
 
     final headers = buildRequestHeaders(profile, accept: 'text/event-stream');
 

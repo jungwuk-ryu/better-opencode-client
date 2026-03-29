@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import '../../core/connection/connection_models.dart';
 import '../../core/network/request_headers.dart';
+import '../../core/network/request_uri.dart';
 import 'project_models.dart';
 
 class ProjectCatalogService {
@@ -86,12 +87,11 @@ class ProjectCatalogService {
     final headers = buildRequestHeaders(profile, accept: 'application/json');
 
     Uri withDirectory(String path) {
-      final uri = baseUri.resolve(
-        path.startsWith('/') ? path.substring(1) : path,
+      return buildRequestUri(
+        baseUri,
+        path: path,
+        queryParameters: <String, String>{'directory': directory},
       );
-      final query = Map<String, String>.from(uri.queryParameters);
-      query['directory'] = directory;
-      return uri.replace(queryParameters: query);
     }
 
     final currentBody = await _getJsonUri(
@@ -298,13 +298,14 @@ class ProjectCatalogService {
       ...buildRequestHeaders(profile, accept: 'application/json'),
       'content-type': 'application/json',
     };
-    final uri = baseUri.resolve('project/$projectId');
-    final queryParameters = Map<String, String>.from(uri.queryParameters);
     final directory = project.directory.trim();
-    if (directory.isNotEmpty) {
-      queryParameters['directory'] = directory;
-    }
-    final requestUri = uri.replace(queryParameters: queryParameters);
+    final requestUri = buildRequestUri(
+      baseUri,
+      path: 'project/$projectId',
+      queryParameters: directory.isEmpty
+          ? null
+          : <String, String>{'directory': directory},
+    );
     final body = <String, Object?>{'name': name?.trim() ?? ''};
     final iconPayload = _buildIconPayload(icon);
     if (iconPayload != null) {
@@ -598,10 +599,11 @@ class ProjectCatalogService {
     String path, {
     required Map<String, String> queryParameters,
   }) {
-    final uri = baseUri.resolve(
-      path.startsWith('/') ? path.substring(1) : path,
+    return buildRequestUri(
+      baseUri,
+      path: path,
+      queryParameters: queryParameters,
     );
-    return uri.replace(queryParameters: queryParameters);
   }
 
   Future<Object?> _getJson(
@@ -609,10 +611,7 @@ class ProjectCatalogService {
     String path, {
     required Map<String, String> headers,
   }) {
-    return _getJsonUri(
-      baseUri.resolve(path.startsWith('/') ? path.substring(1) : path),
-      headers: headers,
-    );
+    return _getJsonUri(buildRequestUri(baseUri, path: path), headers: headers);
   }
 
   Future<Object?> _getJsonUri(

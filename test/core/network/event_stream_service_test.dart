@@ -12,9 +12,13 @@ void main() {
 
   setUp(() async {
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    baseUri = Uri.parse('http://${server.address.address}:${server.port}');
+    baseUri = Uri.parse(
+      'http://${server.address.address}:${server.port}/api?token=abc',
+    );
     server.listen((request) async {
-      if (request.uri.path != '/event') {
+      if (!_hasExpectedBaseContext(request.uri) ||
+          _routePath(request.uri) != '/event' ||
+          request.uri.queryParameters['directory'] != '/workspace/demo') {
         request.response.statusCode = 404;
         await request.response.close();
         return;
@@ -77,7 +81,9 @@ void main() {
   test('rejects non-SSE responses', () async {
     await server.close(force: true);
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    baseUri = Uri.parse('http://${server.address.address}:${server.port}');
+    baseUri = Uri.parse(
+      'http://${server.address.address}:${server.port}/api?token=abc',
+    );
     server.listen((request) async {
       request.response.statusCode = 401;
       request.response.headers.contentType = ContentType.json;
@@ -103,4 +109,16 @@ void main() {
     );
     service.dispose();
   });
+}
+
+bool _hasExpectedBaseContext(Uri uri) {
+  final hasApiPrefix = uri.path == '/api' || uri.path.startsWith('/api/');
+  return hasApiPrefix && uri.queryParameters['token'] == 'abc';
+}
+
+String _routePath(Uri uri) {
+  if (uri.path == '/api') {
+    return '/';
+  }
+  return uri.path.substring('/api'.length);
 }
