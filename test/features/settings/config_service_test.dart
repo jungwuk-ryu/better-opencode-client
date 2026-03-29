@@ -10,19 +10,31 @@ import 'package:better_opencode_client/src/features/settings/config_service.dart
 void main() {
   late HttpServer server;
   late Uri baseUri;
+  Uri? lastRequestUri;
 
   setUp(() async {
+    lastRequestUri = null;
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    baseUri = Uri.parse('http://${server.address.address}:${server.port}');
+    baseUri = Uri.parse(
+      'http://${server.address.address}:${server.port}/api?token=abc',
+    );
     server.listen((request) async {
+      if (!_hasExpectedBaseContext(request.uri) ||
+          request.uri.queryParameters['directory'] != '/workspace/demo') {
+        request.response.statusCode = 400;
+        await request.response.close();
+        return;
+      }
+      lastRequestUri = request.uri;
+      final routePath = _routePath(request.uri);
       Object? body;
-      if (request.uri.path == '/config') {
+      if (routePath == '/config') {
         body = {
           'model': 'openai/gpt-5',
           'x-future': {'enabled': true},
         };
       }
-      if (request.uri.path == '/config/providers') {
+      if (routePath == '/config/providers') {
         body = {
           'providers': [
             {
@@ -102,6 +114,8 @@ void main() {
     );
 
     expect(updated.toJson()['model'], 'openai/gpt-5');
+    expect(lastRequestUri?.path, '/api/config');
+    expect(lastRequestUri?.queryParameters['token'], 'abc');
     service.dispose();
   });
 
@@ -151,4 +165,16 @@ void main() {
       'allow',
     );
   });
+}
+
+bool _hasExpectedBaseContext(Uri uri) {
+  final hasApiPrefix = uri.path == '/api' || uri.path.startsWith('/api/');
+  return hasApiPrefix && uri.queryParameters['token'] == 'abc';
+}
+
+String _routePath(Uri uri) {
+  if (uri.path == '/api') {
+    return '/';
+  }
+  return uri.path.substring('/api'.length);
 }

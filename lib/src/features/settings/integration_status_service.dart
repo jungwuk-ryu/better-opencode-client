@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 
 import '../../core/connection/connection_models.dart';
 import '../../core/network/request_headers.dart';
+import '../../core/network/request_uri.dart';
 import '../projects/project_models.dart';
 
 class McpIntegrationStatus {
@@ -205,17 +206,11 @@ class IntegrationStatusService {
       throw const FormatException('Invalid server profile URL.');
     }
     final headers = buildRequestHeaders(profile, accept: 'application/json');
-    final basePath = switch (baseUri.path) {
-      '' => '/',
-      final value when value.endsWith('/') => value,
-      final value => '$value/',
-    };
-    final uri = baseUri
-        .replace(path: basePath)
-        .resolve(path.startsWith('/') ? path.substring(1) : path)
-        .replace(
-          queryParameters: <String, String>{'directory': project.directory},
-        );
+    final uri = buildRequestUri(
+      baseUri,
+      path: path,
+      queryParameters: <String, String>{'directory': project.directory},
+    );
     final response = await _client.get(uri, headers: headers);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw StateError(
@@ -240,17 +235,11 @@ class IntegrationStatusService {
       accept: 'application/json',
       jsonBody: true,
     );
-    final basePath = switch (baseUri.path) {
-      '' => '/',
-      final value when value.endsWith('/') => value,
-      final value => '$value/',
-    };
-    final uri = baseUri
-        .replace(path: basePath)
-        .resolve(path.startsWith('/') ? path.substring(1) : path)
-        .replace(
-          queryParameters: <String, String>{'directory': project.directory},
-        );
+    final uri = buildRequestUri(
+      baseUri,
+      path: path,
+      queryParameters: <String, String>{'directory': project.directory},
+    );
     final response = await _client.post(
       uri,
       headers: headers,

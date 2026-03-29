@@ -14,17 +14,26 @@ void main() {
   setUp(() async {
     requestLog = <String>[];
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    baseUri = Uri.parse('http://${server.address.address}:${server.port}');
+    baseUri = Uri.parse(
+      'http://${server.address.address}:${server.port}/api?token=abc',
+    );
     server.listen((request) async {
+      if (!_hasExpectedBaseContext(request.uri) ||
+          request.uri.queryParameters['directory'] != '/workspace/demo') {
+        request.response.statusCode = 400;
+        await request.response.close();
+        return;
+      }
+      final routePath = _routePath(request.uri);
       requestLog.add('${request.method} ${request.uri.path}');
       Object? body;
-      if (request.uri.path == '/provider/auth') {
+      if (routePath == '/provider/auth') {
         body = {
           'openai': ['api_key'],
           'anthropic': ['oauth'],
         };
       }
-      if (request.uri.path == '/mcp') {
+      if (routePath == '/mcp') {
         body = {
           'github': {'status': 'connected'},
           'docs': {'status': 'needs_auth'},
@@ -34,7 +43,7 @@ void main() {
           },
         };
       }
-      if (request.uri.path == '/lsp') {
+      if (routePath == '/lsp') {
         body = [
           {
             'id': 'ts',
@@ -44,7 +53,7 @@ void main() {
           },
         ];
       }
-      if (request.uri.path == '/formatter') {
+      if (routePath == '/formatter') {
         body = [
           {
             'name': 'prettier',
@@ -54,17 +63,16 @@ void main() {
         ];
       }
       if (request.method == 'POST' &&
-          request.uri.path == '/provider/openai/oauth/authorize') {
+          routePath == '/provider/openai/oauth/authorize') {
         body = {'authorizationUrl': 'https://provider.example/auth'};
       }
-      if (request.method == 'POST' && request.uri.path == '/mcp/github/auth') {
+      if (request.method == 'POST' && routePath == '/mcp/github/auth') {
         body = {'authorizationUrl': 'https://mcp.example/auth'};
       }
-      if (request.method == 'POST' && request.uri.path == '/mcp/docs/connect') {
+      if (request.method == 'POST' && routePath == '/mcp/docs/connect') {
         body = true;
       }
-      if (request.method == 'POST' &&
-          request.uri.path == '/mcp/github/disconnect') {
+      if (request.method == 'POST' && routePath == '/mcp/github/disconnect') {
         body = true;
       }
       if (body == null) {
@@ -144,8 +152,20 @@ void main() {
       name: 'github',
     );
 
-    expect(requestLog, contains('POST /mcp/docs/connect'));
-    expect(requestLog, contains('POST /mcp/github/disconnect'));
+    expect(requestLog, contains('POST /api/mcp/docs/connect'));
+    expect(requestLog, contains('POST /api/mcp/github/disconnect'));
     service.dispose();
   });
+}
+
+bool _hasExpectedBaseContext(Uri uri) {
+  final hasApiPrefix = uri.path == '/api' || uri.path.startsWith('/api/');
+  return hasApiPrefix && uri.queryParameters['token'] == 'abc';
+}
+
+String _routePath(Uri uri) {
+  if (uri.path == '/api') {
+    return '/';
+  }
+  return uri.path.substring('/api'.length);
 }
