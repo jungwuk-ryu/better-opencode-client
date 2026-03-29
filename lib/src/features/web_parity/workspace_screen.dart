@@ -5464,10 +5464,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                       context: null,
                                     )
                                   : controller.sessionContextMetrics,
-                              shellToolPartsExpanded:
-                                  appController.shellToolPartsExpanded,
-                              onSetShellToolPartsExpanded:
-                                  appController.setShellToolPartsExpanded,
+                              shellToolDisplayMode:
+                                  appController.shellToolDisplayMode,
+                              onSetShellToolDisplayMode:
+                                  appController.setShellToolDisplayMode,
                               timelineProgressDetailsVisible:
                                   appController.timelineProgressDetailsVisible,
                               onSetTimelineProgressDetailsVisible: appController
@@ -5617,8 +5617,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                       compactPane: _compactPane,
                                       busyFollowupMode:
                                           appController.busyFollowupMode,
-                                      shellToolDefaultExpanded:
-                                          appController.shellToolPartsExpanded,
+                                      shellToolDisplayMode:
+                                          appController.shellToolDisplayMode,
                                       timelineProgressDetailsVisible:
                                           appController
                                               .timelineProgressDetailsVisible,
@@ -5886,8 +5886,8 @@ class _WorkspaceTopBar extends StatelessWidget {
     required this.mainSession,
     required this.status,
     required this.contextMetrics,
-    required this.shellToolPartsExpanded,
-    required this.onSetShellToolPartsExpanded,
+    required this.shellToolDisplayMode,
+    required this.onSetShellToolDisplayMode,
     required this.timelineProgressDetailsVisible,
     required this.onSetTimelineProgressDetailsVisible,
     required this.terminalOpen,
@@ -5928,8 +5928,9 @@ class _WorkspaceTopBar extends StatelessWidget {
   final SessionSummary? mainSession;
   final SessionStatusSummary? status;
   final SessionContextMetrics contextMetrics;
-  final bool shellToolPartsExpanded;
-  final Future<void> Function(bool value) onSetShellToolPartsExpanded;
+  final ShellToolDisplayMode shellToolDisplayMode;
+  final Future<void> Function(ShellToolDisplayMode value)
+  onSetShellToolDisplayMode;
   final bool timelineProgressDetailsVisible;
   final Future<void> Function(bool value) onSetTimelineProgressDetailsVisible;
   final bool terminalOpen;
@@ -6036,12 +6037,36 @@ class _WorkspaceTopBar extends StatelessWidget {
       ],
       <_SessionOverflowMenuAction>[
         _SessionOverflowMenuAction(
-          id: 'shell-default',
-          label: 'Expand shell output by default',
+          id: 'shell-display-collapsed',
+          label: 'Shell details off',
           icon: Icons.terminal_rounded,
-          checked: shellToolPartsExpanded,
+          checked: shellToolDisplayMode == ShellToolDisplayMode.collapsed,
           onSelected: () {
-            unawaited(onSetShellToolPartsExpanded(!shellToolPartsExpanded));
+            unawaited(
+              onSetShellToolDisplayMode(ShellToolDisplayMode.collapsed),
+            );
+          },
+        ),
+        _SessionOverflowMenuAction(
+          id: 'shell-display-auto-collapse',
+          label: 'Shell auto collapse',
+          icon: Icons.unfold_less_rounded,
+          checked: shellToolDisplayMode == ShellToolDisplayMode.autoCollapse,
+          onSelected: () {
+            unawaited(
+              onSetShellToolDisplayMode(ShellToolDisplayMode.autoCollapse),
+            );
+          },
+        ),
+        _SessionOverflowMenuAction(
+          id: 'shell-display-always-expanded',
+          label: 'Shell always expanded',
+          icon: Icons.unfold_more_rounded,
+          checked: shellToolDisplayMode == ShellToolDisplayMode.alwaysExpanded,
+          onSelected: () {
+            unawaited(
+              onSetShellToolDisplayMode(ShellToolDisplayMode.alwaysExpanded),
+            );
           },
         ),
         _SessionOverflowMenuAction(
@@ -7654,21 +7679,17 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                   child: _WorkspaceSettingsCard(
                                     child: Column(
                                       children: <Widget>[
-                                        _WorkspaceSettingsToggleRow(
+                                        _WorkspaceSettingsShellDisplayModeRow(
                                           key: const ValueKey<String>(
                                             'workspace-settings-shell-toggle',
                                           ),
-                                          title:
-                                              'Expand shell output by default',
-                                          subtitle:
-                                              'Show live shell command details immediately in the timeline.',
                                           value: widget
                                               .appController
-                                              .shellToolPartsExpanded,
+                                              .shellToolDisplayMode,
                                           onChanged: (value) {
                                             unawaited(
                                               widget.appController
-                                                  .setShellToolPartsExpanded(
+                                                  .setShellToolDisplayMode(
                                                     value,
                                                   ),
                                             );
@@ -8227,6 +8248,81 @@ class _WorkspaceSettingsToggleRow extends StatelessWidget {
           ),
           SizedBox(width: density.inset(AppSpacing.md)),
           Switch.adaptive(value: value, onChanged: onChanged),
+        ],
+      ),
+    );
+  }
+}
+
+class _WorkspaceSettingsShellDisplayModeRow extends StatelessWidget {
+  const _WorkspaceSettingsShellDisplayModeRow({
+    required this.value,
+    required this.onChanged,
+    super.key,
+  });
+
+  final ShellToolDisplayMode value;
+  final ValueChanged<ShellToolDisplayMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final density = _workspaceDensity(context);
+    return Container(
+      padding: EdgeInsets.all(density.inset(AppSpacing.md)),
+      decoration: BoxDecoration(
+        color: surfaces.panelMuted.withValues(alpha: 0.52),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            'Shell timeline details',
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            'Show the command first, keep a live 6-line shell preview, and choose whether full logs stay expanded.',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
+          ),
+          SizedBox(height: density.inset(AppSpacing.md)),
+          SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<ShellToolDisplayMode>(
+              key: const ValueKey<String>(
+                'workspace-settings-shell-display-mode-segments',
+              ),
+              showSelectedIcon: false,
+              segments: const <ButtonSegment<ShellToolDisplayMode>>[
+                ButtonSegment<ShellToolDisplayMode>(
+                  value: ShellToolDisplayMode.collapsed,
+                  label: Text('Off'),
+                  icon: Icon(Icons.unfold_less_rounded),
+                ),
+                ButtonSegment<ShellToolDisplayMode>(
+                  value: ShellToolDisplayMode.autoCollapse,
+                  label: Text('Auto'),
+                  icon: Icon(Icons.sync_alt_rounded),
+                ),
+                ButtonSegment<ShellToolDisplayMode>(
+                  value: ShellToolDisplayMode.alwaysExpanded,
+                  label: Text('Always'),
+                  icon: Icon(Icons.unfold_more_rounded),
+                ),
+              ],
+              selected: <ShellToolDisplayMode>{value},
+              onSelectionChanged: (selection) {
+                final next = selection.isEmpty ? value : selection.first;
+                onChanged(next);
+              },
+            ),
+          ),
         ],
       ),
     );
@@ -12972,7 +13068,7 @@ class _WorkspaceBody extends StatelessWidget {
     required this.recentSubmittedDraft,
     required this.compactPane,
     required this.busyFollowupMode,
-    required this.shellToolDefaultExpanded,
+    required this.shellToolDisplayMode,
     required this.timelineProgressDetailsVisible,
     required this.chatSearchQuery,
     required this.chatSearchMatchMessageIds,
@@ -13034,7 +13130,7 @@ class _WorkspaceBody extends StatelessWidget {
   final String? recentSubmittedDraft;
   final _CompactWorkspacePane compactPane;
   final WorkspaceFollowupMode busyFollowupMode;
-  final bool shellToolDefaultExpanded;
+  final ShellToolDisplayMode shellToolDisplayMode;
   final bool timelineProgressDetailsVisible;
   final String chatSearchQuery;
   final List<String> chatSearchMatchMessageIds;
@@ -13105,7 +13201,7 @@ class _WorkspaceBody extends StatelessWidget {
               compact: compact,
               paneViewModels: paneViewModels,
               activePaneId: activePaneId,
-              shellToolDefaultExpanded: shellToolDefaultExpanded,
+              shellToolDisplayMode: shellToolDisplayMode,
               timelineProgressDetailsVisible: timelineProgressDetailsVisible,
               chatSearchQuery: chatSearchQuery,
               chatSearchMatchMessageIds: chatSearchMatchMessageIds,
@@ -13383,7 +13479,7 @@ class _WorkspaceSessionPaneDeck extends StatelessWidget {
     required this.compact,
     required this.paneViewModels,
     required this.activePaneId,
-    required this.shellToolDefaultExpanded,
+    required this.shellToolDisplayMode,
     required this.timelineProgressDetailsVisible,
     required this.chatSearchQuery,
     required this.chatSearchMatchMessageIds,
@@ -13404,7 +13500,7 @@ class _WorkspaceSessionPaneDeck extends StatelessWidget {
   final bool compact;
   final List<_WorkspacePaneViewModel> paneViewModels;
   final String? activePaneId;
-  final bool shellToolDefaultExpanded;
+  final ShellToolDisplayMode shellToolDisplayMode;
   final bool timelineProgressDetailsVisible;
   final String chatSearchQuery;
   final List<String> chatSearchMatchMessageIds;
@@ -13455,7 +13551,7 @@ class _WorkspaceSessionPaneDeck extends StatelessWidget {
                 selected: paneViewModels[index].pane.id == resolvedActivePaneId,
                 showSelectionChrome: showSelectionChrome,
                 canClose: !compact && paneViewModels.length > 1,
-                shellToolDefaultExpanded: shellToolDefaultExpanded,
+                shellToolDisplayMode: shellToolDisplayMode,
                 timelineProgressDetailsVisible: timelineProgressDetailsVisible,
                 chatSearchQuery: chatSearchQuery,
                 chatSearchMatchMessageIds: chatSearchMatchMessageIds,
@@ -13490,7 +13586,7 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
     required this.selected,
     required this.showSelectionChrome,
     required this.canClose,
-    required this.shellToolDefaultExpanded,
+    required this.shellToolDisplayMode,
     required this.timelineProgressDetailsVisible,
     required this.chatSearchQuery,
     required this.chatSearchMatchMessageIds,
@@ -13513,7 +13609,7 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
   final bool selected;
   final bool showSelectionChrome;
   final bool canClose;
-  final bool shellToolDefaultExpanded;
+  final ShellToolDisplayMode shellToolDisplayMode;
   final bool timelineProgressDetailsVisible;
   final String chatSearchQuery;
   final List<String> chatSearchMatchMessageIds;
@@ -13939,8 +14035,8 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                                     ? controller.selectedSession
                                     : session,
                                 configSnapshot: controller.configSnapshot,
-                                shellToolDefaultExpanded:
-                                    shellToolDefaultExpanded,
+                                shellToolDisplayMode:
+                                    shellToolDisplayMode,
                                 timelineProgressDetailsVisible:
                                     timelineProgressDetailsVisible,
                                 searchQuery: searchScoped
@@ -15039,7 +15135,7 @@ class _MessageTimeline extends StatefulWidget {
     required this.sessions,
     required this.selectedSession,
     required this.configSnapshot,
-    required this.shellToolDefaultExpanded,
+    required this.shellToolDisplayMode,
     required this.timelineProgressDetailsVisible,
     required this.searchQuery,
     required this.matchingMessageIds,
@@ -15073,7 +15169,7 @@ class _MessageTimeline extends StatefulWidget {
   final List<SessionSummary> sessions;
   final SessionSummary? selectedSession;
   final ConfigSnapshot? configSnapshot;
-  final bool shellToolDefaultExpanded;
+  final ShellToolDisplayMode shellToolDisplayMode;
   final bool timelineProgressDetailsVisible;
   final String searchQuery;
   final Set<String> matchingMessageIds;
@@ -15797,8 +15893,8 @@ class _MessageTimelineState extends State<_MessageTimeline> {
                                   sessions: widget.sessions,
                                   selectedSession: widget.selectedSession,
                                   configSnapshot: widget.configSnapshot,
-                                  shellToolDefaultExpanded:
-                                      widget.shellToolDefaultExpanded,
+                                  shellToolDisplayMode:
+                                      widget.shellToolDisplayMode,
                                   timelineProgressDetailsVisible:
                                       widget.timelineProgressDetailsVisible,
                                   onForkMessage: widget.onForkMessage,
@@ -19459,7 +19555,7 @@ class _TimelineMessage extends StatefulWidget {
     required this.sessions,
     required this.selectedSession,
     required this.configSnapshot,
-    required this.shellToolDefaultExpanded,
+    required this.shellToolDisplayMode,
     required this.timelineProgressDetailsVisible,
     required this.onForkMessage,
     required this.onRevertMessage,
@@ -19475,7 +19571,7 @@ class _TimelineMessage extends StatefulWidget {
   final List<SessionSummary> sessions;
   final SessionSummary? selectedSession;
   final ConfigSnapshot? configSnapshot;
-  final bool shellToolDefaultExpanded;
+  final ShellToolDisplayMode shellToolDisplayMode;
   final bool timelineProgressDetailsVisible;
   final Future<void> Function(ChatMessage message) onForkMessage;
   final Future<void> Function(ChatMessage message) onRevertMessage;
@@ -19604,7 +19700,7 @@ class _TimelineMessageState extends State<_TimelineMessage> {
             currentSessionId: widget.currentSessionId,
             part: part,
             sessions: widget.sessions,
-            shellToolDefaultExpanded: widget.shellToolDefaultExpanded,
+            shellToolDisplayMode: widget.shellToolDisplayMode,
             textStreamingActive: messageIsActive,
             searchTerms: widget.searchTerms,
             searchActive: widget.searchActive,
@@ -19968,35 +20064,53 @@ class _UserTimelineMessageState extends State<_UserTimelineMessage> {
                   ),
                 ),
               ),
-              AnimatedSwitcher(
+              TweenAnimationBuilder<double>(
+                tween: Tween<double>(
+                  begin: _showDesktopActions ? 0 : 1,
+                  end: _showDesktopActions ? 1 : 0,
+                ),
                 duration: const Duration(milliseconds: 180),
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: Curves.easeInCubic,
-                child: !_showDesktopActions
-                    ? const SizedBox.shrink()
-                    : Padding(
-                        key: ValueKey<String>(
-                          'timeline-user-actions-${widget.message.info.id}',
-                        ),
-                        padding: const EdgeInsets.only(top: AppSpacing.sm),
-                        child: _UserMessageHoverBar(
-                          message: widget.message,
-                          configSnapshot: widget.configSnapshot,
-                          canCopy: _canCopy,
-                          canFork: _canFork,
-                          canRevert: _canRevert,
-                          runningActionId: _runningActionId,
-                          onCopy: _copyMessage,
-                          onFork: () => _runAction(
-                            'fork',
-                            () => widget.onForkMessage(widget.message),
-                          ),
-                          onRevert: () => _runAction(
-                            'revert',
-                            () => widget.onRevertMessage(widget.message),
-                          ),
-                        ),
+                curve: _showDesktopActions
+                    ? Curves.easeOutCubic
+                    : Curves.easeInCubic,
+                child: Padding(
+                  key: ValueKey<String>(
+                    'timeline-user-actions-${widget.message.info.id}',
+                  ),
+                  padding: const EdgeInsets.only(top: AppSpacing.sm),
+                  child: _UserMessageHoverBar(
+                    message: widget.message,
+                    configSnapshot: widget.configSnapshot,
+                    canCopy: _canCopy,
+                    canFork: _canFork,
+                    canRevert: _canRevert,
+                    runningActionId: _runningActionId,
+                    onCopy: _copyMessage,
+                    onFork: () => _runAction(
+                      'fork',
+                      () => widget.onForkMessage(widget.message),
+                    ),
+                    onRevert: () => _runAction(
+                      'revert',
+                      () => widget.onRevertMessage(widget.message),
+                    ),
+                  ),
+                ),
+                builder: (context, value, child) {
+                  if (!_showDesktopActions && value <= 0) {
+                    return const SizedBox.shrink();
+                  }
+                  return IgnorePointer(
+                    ignoring: value <= 0,
+                    child: ClipRect(
+                      child: Align(
+                        alignment: Alignment.topRight,
+                        heightFactor: value,
+                        child: Opacity(opacity: value, child: child),
                       ),
+                    ),
+                  );
+                },
               ),
             ],
           ),
@@ -20169,7 +20283,7 @@ class _TimelinePart extends StatelessWidget {
     required this.currentSessionId,
     required this.part,
     required this.sessions,
-    required this.shellToolDefaultExpanded,
+    required this.shellToolDisplayMode,
     required this.textStreamingActive,
     required this.searchTerms,
     required this.searchActive,
@@ -20180,7 +20294,7 @@ class _TimelinePart extends StatelessWidget {
   final String? currentSessionId;
   final ChatPart part;
   final List<SessionSummary> sessions;
-  final bool shellToolDefaultExpanded;
+  final ShellToolDisplayMode shellToolDisplayMode;
   final bool textStreamingActive;
   final List<String> searchTerms;
   final bool searchActive;
@@ -20225,9 +20339,11 @@ class _TimelinePart extends StatelessWidget {
         partId: part.id,
         title: _partTitle(part),
         subtitle: _shellToolSubtitle(part),
-        body: _shellToolBody(part),
+        command: _shellToolCommand(part),
+        output: _shellToolOutput(part),
+        running: _toolStateStatus(part) == 'running',
         shimmerActive: shimmerActive,
-        defaultExpanded: shellToolDefaultExpanded,
+        displayMode: shellToolDisplayMode,
         searchTerms: searchTerms,
         searchActive: searchActive,
       );
@@ -20442,9 +20558,11 @@ class _ShellTimelinePart extends StatefulWidget {
     required this.partId,
     required this.title,
     required this.subtitle,
-    required this.body,
+    required this.command,
+    required this.output,
+    required this.running,
     required this.shimmerActive,
-    required this.defaultExpanded,
+    required this.displayMode,
     this.searchTerms = const <String>[],
     this.searchActive = false,
     super.key,
@@ -20453,9 +20571,11 @@ class _ShellTimelinePart extends StatefulWidget {
   final String partId;
   final String title;
   final String? subtitle;
-  final String body;
+  final String command;
+  final String output;
+  final bool running;
   final bool shimmerActive;
-  final bool defaultExpanded;
+  final ShellToolDisplayMode displayMode;
   final List<String> searchTerms;
   final bool searchActive;
 
@@ -20464,29 +20584,77 @@ class _ShellTimelinePart extends StatefulWidget {
 }
 
 class _ShellTimelinePartState extends State<_ShellTimelinePart> {
+  static const int _maxPreviewLines = 6;
+  static const double _expandedLogMaxHeight = 164;
+
   Timer? _copiedTimer;
-  late bool _expanded = widget.defaultExpanded;
+  late final ScrollController _logScrollController = ScrollController();
+  late bool _expanded = _desiredExpanded(
+    widget.displayMode,
+    widget.running,
+  );
   bool _copied = false;
+
+  static bool _desiredExpanded(
+    ShellToolDisplayMode mode,
+    bool running,
+  ) {
+    return switch (mode) {
+      ShellToolDisplayMode.collapsed => false,
+      ShellToolDisplayMode.autoCollapse => running,
+      ShellToolDisplayMode.alwaysExpanded => true,
+    };
+  }
+
+  String get _fullBody {
+    final command = widget.command.trim();
+    final output = widget.output.trim();
+    if (command.isEmpty) {
+      return output;
+    }
+    if (output.isEmpty) {
+      return '\$ $command';
+    }
+    return '\$ $command\n\n$output';
+  }
 
   @override
   void didUpdateWidget(covariant _ShellTimelinePart oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.defaultExpanded != widget.defaultExpanded) {
-      _expanded = widget.defaultExpanded;
+    final displayModeChanged = oldWidget.displayMode != widget.displayMode;
+    final runningChanged = oldWidget.running != widget.running;
+    if (displayModeChanged ||
+        widget.displayMode == ShellToolDisplayMode.alwaysExpanded ||
+        (widget.displayMode == ShellToolDisplayMode.autoCollapse &&
+            runningChanged)) {
+      _expanded = _desiredExpanded(widget.displayMode, widget.running);
     }
+    if (oldWidget.output != widget.output ||
+        oldWidget.command != widget.command ||
+        runningChanged ||
+        displayModeChanged) {
+      _scheduleScrollToLatest();
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleScrollToLatest();
   }
 
   @override
   void dispose() {
     _copiedTimer?.cancel();
+    _logScrollController.dispose();
     super.dispose();
   }
 
   Future<void> _copyBody() async {
-    if (widget.body.trim().isEmpty) {
+    if (_fullBody.trim().isEmpty) {
       return;
     }
-    await Clipboard.setData(ClipboardData(text: widget.body));
+    await Clipboard.setData(ClipboardData(text: _fullBody));
     _copiedTimer?.cancel();
     if (!mounted) {
       return;
@@ -20504,6 +20672,24 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
     });
   }
 
+  void _scheduleScrollToLatest() {
+    if (!_expanded || !_logScrollController.hasClients) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_expanded || !_logScrollController.hasClients) {
+          return;
+        }
+        _logScrollController.jumpTo(_logScrollController.position.maxScrollExtent);
+      });
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_logScrollController.hasClients) {
+        return;
+      }
+      _logScrollController.jumpTo(_logScrollController.position.maxScrollExtent);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -20511,8 +20697,15 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
     final pending = widget.shimmerActive;
     final subtitle = widget.subtitle?.trim() ?? '';
     final hasSubtitle = !pending && subtitle.isNotEmpty;
-    final hasBody = widget.body.trim().isNotEmpty;
-    final canToggle = hasBody && !pending;
+    final command = widget.command.trim();
+    final output = widget.output.trim();
+    final preview = _shellPreviewOutput(output, maxLines: _maxPreviewLines);
+    final hasCommand = command.isNotEmpty;
+    final hasOutput = output.isNotEmpty;
+    final canToggle =
+        hasOutput &&
+        !pending &&
+        widget.displayMode != ShellToolDisplayMode.alwaysExpanded;
     final titleStyle = theme.textTheme.titleSmall?.copyWith(
       fontWeight: FontWeight.w700,
       color: theme.colorScheme.onSurface,
@@ -20521,6 +20714,12 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
       height: 1.6,
       color: surfaces.muted,
     );
+    final monoStyle = GoogleFonts.ibmPlexMono(
+      fontSize: 13,
+      height: 1.5,
+      color: theme.colorScheme.onSurface,
+    );
+    final previewSurface = surfaces.panelMuted;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -20581,9 +20780,43 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
                       ],
                     ),
                   ),
-                  if (canToggle)
+                  if (_fullBody.trim().isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(left: AppSpacing.sm),
+                      child: Tooltip(
+                        message: _copied ? 'Copied' : 'Copy',
+                        waitDuration: const Duration(milliseconds: 100),
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: surfaces.panel,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: surfaces.lineSoft),
+                          ),
+                          child: IconButton(
+                            key: ValueKey<String>(
+                              'timeline-shell-copy-${widget.partId}',
+                            ),
+                            onPressed: _copyBody,
+                            icon: Icon(
+                              _copied
+                                  ? Icons.check_rounded
+                                  : Icons.content_copy_rounded,
+                              size: 16,
+                            ),
+                            visualDensity: VisualDensity.compact,
+                            splashRadius: 18,
+                            tooltip: _copied ? 'Copied' : 'Copy',
+                          ),
+                        ),
+                      ),
+                    ),
+                  if (canToggle)
+                    Padding(
+                      padding: EdgeInsets.only(
+                        left: _fullBody.trim().isNotEmpty
+                            ? AppSpacing.xs
+                            : AppSpacing.sm,
+                      ),
                       child: Icon(
                         _expanded
                             ? Icons.keyboard_arrow_up_rounded
@@ -20597,83 +20830,119 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
             ),
           ),
         ),
+        Container(
+          width: double.infinity,
+          margin: _timelineExpandableBodyMargin,
+          padding: _timelineShellBodyPadding,
+          decoration: BoxDecoration(
+            color: previewSurface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: surfaces.lineSoft),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              if (hasCommand)
+                Text.rich(
+                  TextSpan(
+                    style: monoStyle.copyWith(fontWeight: FontWeight.w600),
+                    children: _buildSearchHighlightedTextSpans(
+                      text: '\$ $command',
+                      style: monoStyle.copyWith(fontWeight: FontWeight.w600),
+                      terms: widget.searchTerms,
+                      highlightColor: _searchTextHighlightColor(
+                        context,
+                        active: widget.searchActive,
+                        code: true,
+                      ),
+                    ),
+                  ),
+                  key: ValueKey<String>('timeline-shell-command-${widget.partId}'),
+                ),
+              if (hasCommand && hasOutput)
+                const SizedBox(height: AppSpacing.sm),
+              if (hasOutput)
+                Text.rich(
+                  TextSpan(
+                    style: monoStyle.copyWith(color: surfaces.muted),
+                    children: _buildSearchHighlightedTextSpans(
+                      text: preview,
+                      style: monoStyle.copyWith(color: surfaces.muted),
+                      terms: widget.searchTerms,
+                      highlightColor: _searchTextHighlightColor(
+                        context,
+                        active: widget.searchActive,
+                        code: true,
+                      ),
+                    ),
+                  ),
+                  key: ValueKey<String>(
+                    'timeline-shell-preview-output-${widget.partId}',
+                  ),
+                )
+              else if (pending)
+                Text(
+                  'Waiting for shell output…',
+                  style: monoStyle.copyWith(color: surfaces.muted),
+                ),
+            ],
+          ),
+        ),
         ClipRect(
           child: AnimatedSize(
             duration: const Duration(milliseconds: 180),
             curve: Curves.easeOutCubic,
-            child: !_expanded || !hasBody
+            child: !_expanded || !hasOutput
                 ? const SizedBox.shrink()
                 : Container(
+                    key: ValueKey<String>(
+                      'timeline-shell-expanded-${widget.partId}',
+                    ),
                     width: double.infinity,
-                    margin: _timelineExpandableBodyMargin,
+                    margin: const EdgeInsets.only(
+                      left: AppSpacing.sm,
+                      right: AppSpacing.sm,
+                      bottom: AppSpacing.xs,
+                    ),
                     decoration: BoxDecoration(
-                      color: surfaces.panelMuted,
+                      color: surfaces.panel,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(color: surfaces.lineSoft),
                     ),
-                    child: Stack(
-                      children: <Widget>[
-                        SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
+                    child: AnimatedOpacity(
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOutCubic,
+                      opacity: _expanded ? 1 : 0,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          maxHeight: _expandedLogMaxHeight,
+                        ),
+                        child: SingleChildScrollView(
+                          controller: _logScrollController,
                           padding: _timelineShellBodyPadding,
-                          child: Text.rich(
-                            TextSpan(
-                              style: GoogleFonts.ibmPlexMono(
-                                fontSize: 14,
-                                height: 1.5,
-                                color: theme.colorScheme.onSurface,
-                              ),
-                              children: _buildSearchHighlightedTextSpans(
-                                text: widget.body,
-                                style: GoogleFonts.ibmPlexMono(
-                                  fontSize: 14,
-                                  height: 1.5,
-                                  color: theme.colorScheme.onSurface,
-                                ),
-                                terms: widget.searchTerms,
-                                highlightColor: _searchTextHighlightColor(
-                                  context,
-                                  active: widget.searchActive,
-                                  code: true,
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Text.rich(
+                              TextSpan(
+                                style: monoStyle,
+                                children: _buildSearchHighlightedTextSpans(
+                                  text: output,
+                                  style: monoStyle,
+                                  terms: widget.searchTerms,
+                                  highlightColor: _searchTextHighlightColor(
+                                    context,
+                                    active: widget.searchActive,
+                                    code: true,
+                                  ),
                                 ),
                               ),
-                            ),
-                            key: ValueKey<String>(
-                              'timeline-shell-body-${widget.partId}',
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          top: AppSpacing.sm,
-                          right: AppSpacing.sm,
-                          child: Tooltip(
-                            message: _copied ? 'Copied' : 'Copy',
-                            waitDuration: const Duration(milliseconds: 100),
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: surfaces.panel,
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: surfaces.lineSoft),
-                              ),
-                              child: IconButton(
-                                key: ValueKey<String>(
-                                  'timeline-shell-copy-${widget.partId}',
-                                ),
-                                onPressed: _copyBody,
-                                icon: Icon(
-                                  _copied
-                                      ? Icons.check_rounded
-                                      : Icons.content_copy_rounded,
-                                  size: 16,
-                                ),
-                                visualDensity: VisualDensity.compact,
-                                splashRadius: 18,
-                                tooltip: _copied ? 'Copied' : 'Copy',
+                              key: ValueKey<String>(
+                                'timeline-shell-body-${widget.partId}',
                               ),
                             ),
                           ),
                         ),
-                      ],
+                      ),
                     ),
                   ),
           ),
@@ -23941,24 +24210,33 @@ String? _shellToolSubtitle(ChatPart part) {
   ]);
 }
 
-String _shellToolBody(ChatPart part) {
-  final command = _firstNonEmpty(<String?>[
-    _nestedString(part.metadata, const <String>['state', 'input', 'command']),
-    _nestedString(part.metadata, const <String>['input', 'command']),
-    _nestedString(part.metadata, const <String>['command']),
-  ]);
-  final output = _stringifyShellOutput(
+String _shellToolCommand(ChatPart part) {
+  return _firstNonEmpty(<String?>[
+        _nestedString(part.metadata, const <String>['state', 'input', 'command']),
+        _nestedString(part.metadata, const <String>['input', 'command']),
+        _nestedString(part.metadata, const <String>['command']),
+      ]) ??
+      '';
+}
+
+String _shellToolOutput(ChatPart part) {
+  return _stringifyShellOutput(
     _nestedValue(part.metadata, const <String>['state', 'output']) ??
         _nestedValue(part.metadata, const <String>['output']) ??
         part.text,
   );
-  if (command == null || command.isEmpty) {
-    return output;
+}
+
+String _shellPreviewOutput(String output, {required int maxLines}) {
+  final normalized = output.trimRight();
+  if (normalized.isEmpty) {
+    return '';
   }
-  if (output.isEmpty) {
-    return '\$ $command';
+  final lines = normalized.split('\n');
+  if (lines.length <= maxLines) {
+    return normalized;
   }
-  return '\$ $command\n\n$output';
+  return lines.sublist(lines.length - maxLines).join('\n');
 }
 
 String _stringifyShellOutput(Object? value) {

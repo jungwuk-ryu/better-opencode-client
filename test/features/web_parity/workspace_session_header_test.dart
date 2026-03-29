@@ -263,7 +263,7 @@ void main() {
     expect(
       find.byKey(
         const ValueKey<String>(
-          'session-header-overflow-menu-item-shell-default',
+          'session-header-overflow-menu-item-shell-display-auto-collapse',
         ),
       ),
       findsOneWidget,
@@ -446,7 +446,10 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 120));
 
-    expect(appController.shellToolPartsExpanded, isTrue);
+    expect(
+      appController.shellToolDisplayMode,
+      ShellToolDisplayMode.alwaysExpanded,
+    );
 
     await tester.tap(
       find.byKey(const ValueKey<String>('session-header-overflow-menu-button')),
@@ -457,14 +460,17 @@ void main() {
     await tester.tap(
       find.byKey(
         const ValueKey<String>(
-          'session-header-overflow-menu-item-shell-default',
+          'session-header-overflow-menu-item-shell-display-collapsed',
         ),
       ),
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 220));
 
-    expect(appController.shellToolPartsExpanded, isFalse);
+    expect(
+      appController.shellToolDisplayMode,
+      ShellToolDisplayMode.collapsed,
+    );
   });
 
   testWidgets(
@@ -741,12 +747,23 @@ class _StaticAppController extends WebParityAppController {
   _StaticAppController({
     required this.profile,
     required WorkspaceControllerFactory workspaceControllerFactory,
-  }) : super(workspaceControllerFactory: workspaceControllerFactory);
+  }) : _shellToolDisplayMode = ShellToolDisplayMode.alwaysExpanded,
+       super(workspaceControllerFactory: workspaceControllerFactory);
 
   final ServerProfile profile;
+  ShellToolDisplayMode _shellToolDisplayMode;
 
   @override
   ServerProfile? get selectedProfile => profile;
+
+  @override
+  ShellToolDisplayMode get shellToolDisplayMode => _shellToolDisplayMode;
+
+  @override
+  Future<void> setShellToolDisplayMode(ShellToolDisplayMode value) async {
+    _shellToolDisplayMode = value;
+    notifyListeners();
+  }
 }
 
 class _HeaderWorkspaceController extends WorkspaceController {

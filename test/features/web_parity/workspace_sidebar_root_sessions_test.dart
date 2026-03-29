@@ -302,14 +302,16 @@ void main() {
       findsNothing,
     );
 
-    final shellSwitch = find.descendant(
+    final shellDisplaySegments = find.descendant(
       of: find.byKey(const ValueKey<String>('workspace-settings-shell-toggle')),
-      matching: find.byType(Switch),
+      matching: find.byKey(
+        const ValueKey<String>('workspace-settings-shell-display-mode-segments'),
+      ),
     );
-    await tester.tap(shellSwitch);
+    await tester.tap(find.descendant(of: shellDisplaySegments, matching: find.text('Off')));
     await tester.pump();
 
-    expect(appController.shellToolPartsExpanded, isFalse);
+    expect(appController.shellToolDisplayMode, ShellToolDisplayMode.collapsed);
 
     final highlightToggle = find.descendant(
       of: find.byKey(
@@ -317,7 +319,7 @@ void main() {
       ),
       matching: find.byType(Switch),
     );
-    await tester.tap(highlightToggle);
+    tester.widget<Switch>(highlightToggle).onChanged!(false);
     await tester.pump();
 
     expect(appController.chatCodeBlockHighlightingEnabled, isFalse);
@@ -977,13 +979,17 @@ class _StaticAppController extends WebParityAppController {
     this.sidebarChildSessionsVisibleValue = false,
     this.chatCodeBlockHighlightingEnabledValue = true,
     required WorkspaceControllerFactory workspaceControllerFactory,
-  }) : busyFollowupModeValue = WorkspaceFollowupMode.queue,
+  }) : shellToolDisplayModeValue = shellToolPartsExpandedValue
+           ? ShellToolDisplayMode.alwaysExpanded
+           : ShellToolDisplayMode.collapsed,
+       busyFollowupModeValue = WorkspaceFollowupMode.queue,
        textScaleFactorValue = WebParityAppController.defaultTextScaleFactor,
        super(workspaceControllerFactory: workspaceControllerFactory);
 
   final ServerProfile profile;
   final ServerProbeReport? report;
   bool shellToolPartsExpandedValue;
+  ShellToolDisplayMode shellToolDisplayModeValue;
   bool timelineProgressDetailsVisibleValue;
   bool sidebarChildSessionsVisibleValue;
   bool chatCodeBlockHighlightingEnabledValue;
@@ -997,7 +1003,11 @@ class _StaticAppController extends WebParityAppController {
   ServerProbeReport? get selectedReport => report;
 
   @override
-  bool get shellToolPartsExpanded => shellToolPartsExpandedValue;
+  ShellToolDisplayMode get shellToolDisplayMode => shellToolDisplayModeValue;
+
+  @override
+  bool get shellToolPartsExpanded =>
+      shellToolDisplayModeValue == ShellToolDisplayMode.alwaysExpanded;
 
   @override
   bool get timelineProgressDetailsVisible =>
@@ -1017,8 +1027,9 @@ class _StaticAppController extends WebParityAppController {
   double get textScaleFactor => textScaleFactorValue;
 
   @override
-  Future<void> setShellToolPartsExpanded(bool value) async {
-    shellToolPartsExpandedValue = value;
+  Future<void> setShellToolDisplayMode(ShellToolDisplayMode value) async {
+    shellToolDisplayModeValue = value;
+    shellToolPartsExpandedValue = value == ShellToolDisplayMode.alwaysExpanded;
     notifyListeners();
   }
 

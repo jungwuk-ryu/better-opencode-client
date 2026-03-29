@@ -98,6 +98,24 @@ enum OversizedSessionBehavior {
   }
 }
 
+enum ShellToolDisplayMode {
+  collapsed,
+  autoCollapse,
+  alwaysExpanded;
+
+  String get storageValue => name;
+
+  static ShellToolDisplayMode fromStorage(String? value) {
+    return switch (value?.trim().toLowerCase()) {
+      'collapsed' || 'off' => ShellToolDisplayMode.collapsed,
+      'alwaysexpanded' ||
+      'always_expanded' ||
+      'always-expanded' => ShellToolDisplayMode.alwaysExpanded,
+      _ => ShellToolDisplayMode.autoCollapse,
+    };
+  }
+}
+
 class WebParityAppController extends ChangeNotifier {
   WebParityAppController({
     ServerProfileStore? profileStore,
@@ -116,8 +134,9 @@ class WebParityAppController extends ChangeNotifier {
            workspaceControllerFactory ?? _defaultWorkspaceControllerFactory;
 
   static const _selectedProfileKey = 'web_parity.selected_profile';
-  static const _shellToolPartsExpandedKey =
+  static const _legacyShellToolPartsExpandedKey =
       'web_parity.shell_tool_parts_expanded';
+  static const _shellToolDisplayModeKey = 'web_parity.shell_tool_display_mode';
   static const _timelineProgressDetailsVisibleKey =
       'web_parity.timeline_progress_details_visible';
   static const _sidebarChildSessionsVisibleKey =
@@ -162,7 +181,8 @@ class WebParityAppController extends ChangeNotifier {
   Map<String, WorkspacePaneLayoutSnapshot> _workspacePaneLayoutsByStorageKey =
       const <String, WorkspacePaneLayoutSnapshot>{};
   ServerProfile? _selectedProfile;
-  bool _shellToolPartsExpanded = true;
+  ShellToolDisplayMode _shellToolDisplayMode =
+      ShellToolDisplayMode.autoCollapse;
   bool _timelineProgressDetailsVisible = false;
   bool _sidebarChildSessionsVisible = false;
   bool _chatCodeBlockHighlightingEnabled = true;
@@ -190,7 +210,9 @@ class WebParityAppController extends ChangeNotifier {
   Map<String, WorkspacePaneLayoutSnapshot>
   get workspacePaneLayoutsByStorageKey => _workspacePaneLayoutsByStorageKey;
   ServerProfile? get selectedProfile => _selectedProfile;
-  bool get shellToolPartsExpanded => _shellToolPartsExpanded;
+  ShellToolDisplayMode get shellToolDisplayMode => _shellToolDisplayMode;
+  bool get shellToolPartsExpanded =>
+      _shellToolDisplayMode == ShellToolDisplayMode.alwaysExpanded;
   bool get timelineProgressDetailsVisible => _timelineProgressDetailsVisible;
   bool get sidebarChildSessionsVisible => _sidebarChildSessionsVisible;
   bool get chatCodeBlockHighlightingEnabled =>
@@ -244,8 +266,7 @@ class WebParityAppController extends ChangeNotifier {
     final workspacePaneLayouts = await _loadWorkspacePaneLayouts(profiles);
     final prefs = await SharedPreferences.getInstance();
     final selectedProfileId = prefs.getString(_selectedProfileKey);
-    final shellToolPartsExpanded =
-        prefs.getBool(_shellToolPartsExpandedKey) ?? true;
+    final shellToolDisplayMode = _loadShellToolDisplayMode(prefs);
     final timelineProgressDetailsVisible =
         prefs.getBool(_timelineProgressDetailsVisibleKey) ?? false;
     final sidebarChildSessionsVisible =
@@ -319,7 +340,7 @@ class WebParityAppController extends ChangeNotifier {
     _reports = reports;
     _workspacePaneLayoutsByStorageKey = workspacePaneLayouts;
     _selectedProfile = selectedProfile;
-    _shellToolPartsExpanded = shellToolPartsExpanded;
+    _shellToolDisplayMode = shellToolDisplayMode;
     _timelineProgressDetailsVisible = timelineProgressDetailsVisible;
     _sidebarChildSessionsVisible = sidebarChildSessionsVisible;
     _chatCodeBlockHighlightingEnabled = chatCodeBlockHighlightingEnabled;
@@ -350,14 +371,36 @@ class WebParityAppController extends ChangeNotifier {
     await _persistSelectedProfile(profile);
   }
 
-  Future<void> setShellToolPartsExpanded(bool value) async {
-    if (_shellToolPartsExpanded == value) {
+  ShellToolDisplayMode _loadShellToolDisplayMode(SharedPreferences prefs) {
+    final storedMode = prefs.getString(_shellToolDisplayModeKey);
+    if (storedMode != null && storedMode.trim().isNotEmpty) {
+      return ShellToolDisplayMode.fromStorage(storedMode);
+    }
+    final legacyExpanded = prefs.getBool(_legacyShellToolPartsExpandedKey);
+    if (legacyExpanded != null) {
+      return legacyExpanded
+          ? ShellToolDisplayMode.alwaysExpanded
+          : ShellToolDisplayMode.collapsed;
+    }
+    return ShellToolDisplayMode.autoCollapse;
+  }
+
+  Future<void> setShellToolDisplayMode(ShellToolDisplayMode value) async {
+    if (_shellToolDisplayMode == value) {
       return;
     }
-    _shellToolPartsExpanded = value;
+    _shellToolDisplayMode = value;
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_shellToolPartsExpandedKey, value);
+    await prefs.setString(_shellToolDisplayModeKey, value.storageValue);
+  }
+
+  Future<void> setShellToolPartsExpanded(bool value) {
+    return setShellToolDisplayMode(
+      value
+          ? ShellToolDisplayMode.alwaysExpanded
+          : ShellToolDisplayMode.collapsed,
+    );
   }
 
   Future<void> setTimelineProgressDetailsVisible(bool value) async {

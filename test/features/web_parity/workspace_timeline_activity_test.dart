@@ -221,11 +221,10 @@ void main() {
     expect(find.text('Explored 4 reads'), findsOneWidget);
     expect(find.textContaining('daily-job.spec.ts'), findsNothing);
 
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>('timeline-explored-context-header-part_read_1'),
-      ),
+    final exploredHeader = find.byKey(
+      const ValueKey<String>('timeline-explored-context-header-part_read_1'),
     );
+    tester.widget<InkWell>(exploredHeader).onTap!.call();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
@@ -285,11 +284,10 @@ void main() {
 
     expect(find.text('Explored 1 read, 1 search'), findsOneWidget);
 
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>('timeline-explored-context-header-part_read_1'),
-      ),
+    final exploredHeader = find.byKey(
+      const ValueKey<String>('timeline-explored-context-header-part_read_1'),
     );
+    tester.widget<InkWell>(exploredHeader).onTap!.call();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
@@ -553,6 +551,74 @@ void main() {
     );
   });
 
+  testWidgets(
+    'desktop user message actions survive rapid hover toggles without duplicate keys',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        initialShellToolPartsExpanded: true,
+        initialTimelineProgressDetailsVisible: false,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              return _UserMessageActionWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+            },
+      );
+      addTearDown(appController.dispose);
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          initialRoute: buildWorkspaceRoute(
+            '/workspace/demo',
+            sessionId: 'ses_1',
+          ),
+          platform: TargetPlatform.macOS,
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      final bubble = find.byKey(
+        const ValueKey<String>('timeline-user-message-msg_user_hover'),
+      );
+      expect(bubble, findsOneWidget);
+
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      addTearDown(mouse.removePointer);
+      await mouse.addPointer();
+
+      await mouse.moveTo(tester.getCenter(bubble));
+      await tester.pump(const Duration(milliseconds: 60));
+      await mouse.moveTo(const Offset(8, 8));
+      await tester.pump(const Duration(milliseconds: 60));
+      await mouse.moveTo(tester.getCenter(bubble));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 220));
+
+      expect(tester.takeException(), isNull);
+      expect(
+        find.byKey(
+          const ValueKey<String>('timeline-user-actions-msg_user_hover'),
+        ),
+        findsOneWidget,
+      );
+    },
+  );
+
   testWidgets('chat code block highlighting can be disabled', (tester) async {
     tester.view.physicalSize = const Size(1600, 1000);
     tester.view.devicePixelRatio = 1;
@@ -754,15 +820,90 @@ void main() {
       find.textContaining(r'$ git diff --staged && git diff'),
       findsOneWidget,
     );
+    expect(
+      find.byKey(const ValueKey<String>('timeline-shell-expanded-part_tool')),
+      findsOneWidget,
+    );
 
-    await appController.setShellToolPartsExpanded(false);
+    await appController.setShellToolDisplayMode(ShellToolDisplayMode.collapsed);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
     expect(
       find.textContaining(r'$ git diff --staged && git diff'),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('timeline-shell-expanded-part_tool')),
       findsNothing,
     );
+  });
+
+  testWidgets('shell auto mode releases expansion after completion', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    late _MutableShellWorkspaceController controllerInstance;
+    final appController = _StaticAppController(
+      profile: profile,
+      initialShellToolDisplayMode: ShellToolDisplayMode.autoCollapse,
+      initialTimelineProgressDetailsVisible: false,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            controllerInstance = _MutableShellWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+            return controllerInstance;
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(
+      find.byKey(const ValueKey<String>('timeline-shell-expanded-part_tool')),
+      findsOneWidget,
+    );
+
+    controllerInstance.completeShell(
+      output: List<String>.generate(8, (index) => 'line ${index + 1}').join('\n'),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(
+      find.byKey(const ValueKey<String>('timeline-shell-expanded-part_tool')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(
+        const ValueKey<String>('timeline-shell-preview-output-part_tool'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('line 8'), findsOneWidget);
+    expect(find.textContaining('line 1'), findsNothing);
   });
 
   testWidgets('compaction renders as a divider instead of an activity card', (
@@ -939,11 +1080,16 @@ class _WorkspaceRouteHarness extends StatelessWidget {
 class _StaticAppController extends WebParityAppController {
   _StaticAppController({
     required this.profile,
-    required bool initialShellToolPartsExpanded,
+    bool initialShellToolPartsExpanded = false,
+    ShellToolDisplayMode? initialShellToolDisplayMode,
     required bool initialTimelineProgressDetailsVisible,
     this.initialChatCodeBlockHighlightingEnabled = true,
     required WorkspaceControllerFactory workspaceControllerFactory,
-  }) : _shellToolPartsExpanded = initialShellToolPartsExpanded,
+  }) : _shellToolDisplayMode =
+           initialShellToolDisplayMode ??
+           (initialShellToolPartsExpanded
+               ? ShellToolDisplayMode.alwaysExpanded
+               : ShellToolDisplayMode.collapsed),
        _timelineProgressDetailsVisible = initialTimelineProgressDetailsVisible,
        _chatCodeBlockHighlightingEnabled =
            initialChatCodeBlockHighlightingEnabled,
@@ -951,7 +1097,7 @@ class _StaticAppController extends WebParityAppController {
 
   final ServerProfile profile;
   final bool initialChatCodeBlockHighlightingEnabled;
-  bool _shellToolPartsExpanded;
+  ShellToolDisplayMode _shellToolDisplayMode;
   bool _timelineProgressDetailsVisible;
   bool _chatCodeBlockHighlightingEnabled;
 
@@ -959,7 +1105,11 @@ class _StaticAppController extends WebParityAppController {
   ServerProfile? get selectedProfile => profile;
 
   @override
-  bool get shellToolPartsExpanded => _shellToolPartsExpanded;
+  ShellToolDisplayMode get shellToolDisplayMode => _shellToolDisplayMode;
+
+  @override
+  bool get shellToolPartsExpanded =>
+      _shellToolDisplayMode == ShellToolDisplayMode.alwaysExpanded;
 
   @override
   bool get timelineProgressDetailsVisible => _timelineProgressDetailsVisible;
@@ -969,8 +1119,8 @@ class _StaticAppController extends WebParityAppController {
       _chatCodeBlockHighlightingEnabled;
 
   @override
-  Future<void> setShellToolPartsExpanded(bool value) async {
-    _shellToolPartsExpanded = value;
+  Future<void> setShellToolDisplayMode(ShellToolDisplayMode value) async {
+    _shellToolDisplayMode = value;
     notifyListeners();
   }
 
@@ -983,6 +1133,103 @@ class _StaticAppController extends WebParityAppController {
   @override
   Future<void> setChatCodeBlockHighlightingEnabled(bool value) async {
     _chatCodeBlockHighlightingEnabled = value;
+    notifyListeners();
+  }
+}
+
+class _MutableShellWorkspaceController extends WorkspaceController {
+  _MutableShellWorkspaceController({
+    required super.profile,
+    required super.directory,
+    super.initialSessionId,
+  });
+
+  static const ProjectTarget _projectTarget = ProjectTarget(
+    directory: '/workspace/demo',
+    label: 'Demo',
+  );
+
+  static final DateTime _timestamp = DateTime.fromMillisecondsSinceEpoch(
+    1711421100000,
+  );
+
+  static final SessionSummary _session = SessionSummary(
+    id: 'ses_1',
+    directory: '/workspace/demo',
+    title: 'Shell session',
+    version: '1',
+    updatedAt: _timestamp,
+    createdAt: _timestamp,
+  );
+
+  bool _loading = true;
+  List<ChatMessage> _messages = <ChatMessage>[_buildShellMessage()];
+
+  static ChatMessage _buildShellMessage({
+    String status = 'running',
+    String output = 'line 1\nline 2',
+  }) {
+    return ChatMessage(
+      info: ChatMessageInfo(
+        id: 'msg_shell',
+        role: 'assistant',
+        sessionId: 'ses_1',
+        createdAt: _timestamp,
+      ),
+      parts: <ChatPart>[
+        ChatPart(
+          id: 'part_tool',
+          type: 'tool',
+          tool: 'bash',
+          metadata: <String, Object?>{
+            'state': <String, Object?>{
+              'status': status,
+              'title': 'Shell output',
+              'input': <String, Object?>{
+                'description': 'Run repository checks',
+                'command': 'git diff --staged && git diff',
+              },
+              'output': output,
+            },
+          },
+        ),
+      ],
+    );
+  }
+
+  @override
+  bool get loading => _loading;
+
+  @override
+  ProjectTarget? get project => _projectTarget;
+
+  @override
+  List<ProjectTarget> get availableProjects => const <ProjectTarget>[
+    _projectTarget,
+  ];
+
+  @override
+  List<SessionSummary> get sessions => <SessionSummary>[_session];
+
+  @override
+  String? get selectedSessionId => _session.id;
+
+  @override
+  SessionSummary? get selectedSession => _session;
+
+  @override
+  List<ChatMessage> get messages => _messages;
+
+  @override
+  Future<void> load() async {
+    _loading = false;
+    notifyListeners();
+  }
+
+  void completeShell({required String output}) {
+    _messages = <ChatMessage>[
+      _buildShellMessage(status: 'completed', output: output),
+    ];
     notifyListeners();
   }
 }
