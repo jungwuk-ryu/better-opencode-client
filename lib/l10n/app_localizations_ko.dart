@@ -36,16 +36,16 @@ class AppLocalizationsKo extends AppLocalizations {
   String get healthyStream => '정상 스트림';
 
   @override
-  String get staleStream => 'stale stream 복구';
+  String get staleStream => '지연된 스트림 복구';
 
   @override
   String get duplicateStream => '중복 이벤트 처리';
 
   @override
-  String get resyncStream => 'resync 필요';
+  String get resyncStream => '재동기화 필요';
 
   @override
-  String get capabilityFlags => 'capability 플래그';
+  String get capabilityFlags => '기능 플래그';
 
   @override
   String get streamFrames => '스트림 프레임';
@@ -260,7 +260,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get connectionCheckedAtLabel => '확인 시각';
 
   @override
-  String get connectionCapabilitiesLabel => '활성 capability 수';
+  String get connectionCapabilitiesLabel => '활성 기능 수';
 
   @override
   String get connectionReadinessLabel => '준비 상태';
@@ -309,10 +309,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String get connectionOutcomeAuthFailure => '인증 실패';
 
   @override
-  String get connectionOutcomeSpecFailure => 'spec fetch 실패';
+  String get connectionOutcomeSpecFailure => '명세 가져오기 실패';
 
   @override
-  String get connectionOutcomeUnsupported => '미지원 capability';
+  String get connectionOutcomeUnsupported => '미지원';
 
   @override
   String get connectionOutcomeConnectivityFailure => '연결 실패';
@@ -329,7 +329,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get connectionDetailSpecFailure =>
-      '서버에는 도달했지만 OpenAPI spec을 정상적으로 가져오거나 파싱하지 못했습니다.';
+      '서버에는 도달했지만 OpenAPI 명세를 정상적으로 가져오거나 파싱하지 못했습니다.';
 
   @override
   String get connectionDetailUnsupported =>
@@ -382,7 +382,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get capabilityHasExperimentalTools => '고급 도구';
 
   @override
-  String get capabilityHasProviderOAuth => 'provider OAuth';
+  String get capabilityHasProviderOAuth => '프로바이더 OAuth';
 
   @override
   String get capabilityHasMcpAuth => 'MCP 인증';
@@ -1029,7 +1029,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get shellComposerModelDefault => '서버 기본값';
 
   @override
-  String get shellComposerThinkingLabel => 'Thinking';
+  String get shellComposerThinkingLabel => '사고';
 
   @override
   String get shellComposerThinkingLow => '가볍게';
@@ -1065,13 +1065,13 @@ class AppLocalizationsKo extends AppLocalizations {
   String get shellFilesSubtitle => '트리, 상태, 검색이 여기에 들어옵니다.';
 
   @override
-  String get shellDiffTitle => 'diff';
+  String get shellDiffTitle => '변경 사항';
 
   @override
   String get shellDiffSubtitle => '패치와 스냅샷 검토가 여기에 나타납니다.';
 
   @override
-  String get shellTodoTitle => 'todo';
+  String get shellTodoTitle => '할 일';
 
   @override
   String get shellTodoSubtitle => '작업 진행과 히스토리가 여기에 보입니다.';
@@ -1086,7 +1086,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get shellTerminalTitle => '터미널';
 
   @override
-  String get shellTerminalSubtitle => '빠른 shell과 attach 흐름이 여기에 배치됩니다.';
+  String get shellTerminalSubtitle => '빠른 셸과 연결 흐름이 여기에 배치됩니다.';
 
   @override
   String get shellInspectorTitle => '인스펙터';
@@ -1356,11 +1356,11 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get shellUtilitiesToggleBody =>
-      '세로 레이아웃에서는 아래 유틸리티 서랍을 열어 파일, diff, todo, tools, terminal 패널을 확인합니다.';
+      '세로 레이아웃에서는 아래 유틸리티 서랍을 열어 파일, 변경 사항, 할 일, 도구, 터미널 패널을 확인합니다.';
 
   @override
   String get shellUtilitiesToggleBodyCompact =>
-      '유틸리티를 열어 파일, diff, todo, tools, terminal 패널을 전환합니다.';
+      '유틸리티를 열어 파일, 변경 사항, 할 일, 도구, 터미널 패널을 전환합니다.';
 
   @override
   String get shellContextEyebrow => '컨텍스트';
