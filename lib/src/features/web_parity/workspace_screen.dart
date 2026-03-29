@@ -10719,7 +10719,6 @@ class _SessionIdentity extends StatelessWidget {
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         _SessionGlyph(compact: compact),
         SizedBox(width: compact ? AppSpacing.sm : AppSpacing.md),
@@ -13247,7 +13246,6 @@ class _WorkspaceBody extends StatelessWidget {
     }
 
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         Expanded(child: content),
         _HorizontalReveal(
