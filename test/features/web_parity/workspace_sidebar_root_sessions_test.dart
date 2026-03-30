@@ -483,6 +483,32 @@ void main() {
     );
 
     await tester.tap(
+      find.descendant(of: languageRow, matching: find.text('日本語')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    expect(localeController.mode, AppLocaleMode.japanese);
+    expect(localeController.locale, const Locale('ja'));
+    expect(
+      tester.widget<MaterialApp>(find.byType(MaterialApp)).locale,
+      const Locale('ja'),
+    );
+
+    await tester.tap(
+      find.descendant(of: languageRow, matching: find.text('中文')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    expect(localeController.mode, AppLocaleMode.chinese);
+    expect(localeController.locale, const Locale('zh'));
+    expect(
+      tester.widget<MaterialApp>(find.byType(MaterialApp)).locale,
+      const Locale('zh'),
+    );
+
+    await tester.tap(
       find.descendant(of: languageRow, matching: find.text('System')),
     );
     await tester.pump();

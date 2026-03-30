@@ -1,6 +1,8 @@
 import 'package:flutter/widgets.dart';
 
 import '../../l10n/app_localizations.dart';
+import 'web_parity_localizations_ja.dart';
+import 'web_parity_localizations_zh.dart';
 
 extension WebParityBuildContextLocalizations on BuildContext {
   AppLocalizations? get appL10n => AppLocalizations.of(this);
@@ -25,13 +27,25 @@ extension WebParityBuildContextLocalizations on BuildContext {
 }
 
 extension WebParityAppLocalizations on AppLocalizations {
-  bool get _usesKorean => localeName.toLowerCase().startsWith('ko');
+  Map<String, String>? get _localizedWebParityText {
+    final locale = localeName.toLowerCase();
+    if (locale.startsWith('ko')) {
+      return _koWebParityText;
+    }
+    if (locale.startsWith('ja')) {
+      return jaWebParityText;
+    }
+    if (locale.startsWith('zh')) {
+      return zhWebParityText;
+    }
+    return null;
+  }
 
   String webParity(
     String english, {
     Map<String, Object?> args = const <String, Object?>{},
   }) {
-    final template = _usesKorean ? (_koWebParityText[english] ?? english) : english;
+    final template = _localizedWebParityText?[english] ?? english;
     if (args.isEmpty) {
       return template;
     }
@@ -101,12 +115,9 @@ const Map<String, String> _koWebParityText = <String, String>{
       '자동 전송에 실패했습니다. 수정하거나 삭제하거나 다시 전송하세요.',
   "Couldn't load this session": '이 세션을 불러오지 못했습니다',
   'Create a Git repository': 'Git 저장소 만들기',
-  'Create a fresh chat session in this project.':
-      '이 프로젝트에서 새 채팅 세션을 만듭니다.',
-  'Create a fresh terminal tab for this project.':
-      '이 프로젝트에 새 터미널 탭을 만듭니다.',
-  'Create and copy a share link for this session.':
-      '이 세션의 공유 링크를 생성하고 복사합니다.',
+  'Create a fresh chat session in this project.': '이 프로젝트에서 새 채팅 세션을 만듭니다.',
+  'Create a fresh terminal tab for this project.': '이 프로젝트에 새 터미널 탭을 만듭니다.',
+  'Create and copy a share link for this session.': '이 세션의 공유 링크를 생성하고 복사합니다.',
   'Create a new session': '새 세션 만들기',
   'Creating repository...': '저장소 생성 중...',
   'Current project': '현재 프로젝트',
@@ -124,8 +135,7 @@ const Map<String, String> _koWebParityText = <String, String>{
   'Delete server': '서버 삭제',
   'Delete server?': '서버를 삭제할까요?',
   'Delete Session': '세션 삭제',
-  'Delete the current session after confirmation.':
-      '확인 후 현재 세션을 삭제합니다.',
+  'Delete the current session after confirmation.': '확인 후 현재 세션을 삭제합니다.',
   'Deny': '거부',
   'Dismiss': '닫기',
   'Dismiss project menu': '프로젝트 메뉴 닫기',
@@ -137,14 +147,12 @@ const Map<String, String> _koWebParityText = <String, String>{
   'Edit queued message': '대기 메시지 편집',
   'Edit server': '서버 편집',
   'Edit Server': '서버 편집',
-  'Enable or disable auto-accept for this session':
-      '이 세션의 자동 허용을 켜거나 끕니다',
+  'Enable or disable auto-accept for this session': '이 세션의 자동 허용을 켜거나 끕니다',
   'Enable or disable permission auto-accept for the active session.':
       '현재 세션의 권한 자동 허용을 켜거나 끕니다.',
   'English': 'English',
   'Enter a valid server address.': '유효한 서버 주소를 입력하세요.',
-  'Explain what you want the model to focus on.':
-      '모델이 중점적으로 볼 내용을 적어주세요.',
+  'Explain what you want the model to focus on.': '모델이 중점적으로 볼 내용을 적어주세요.',
   'Failed to load workspace': '워크스페이스를 불러오지 못했습니다',
   'Files': '파일',
   'Files are unavailable.': '파일을 불러올 수 없습니다.',
@@ -155,8 +163,7 @@ const Map<String, String> _koWebParityText = <String, String>{
   'Fork Session': '세션 포크',
   'Fork to New Session': '새 세션으로 포크',
   'Forked into "{title}".': '"{title}" 세션으로 포크했습니다.',
-  'Forked from this message into "{title}".':
-      '이 메시지에서 "{title}" 세션으로 포크했습니다.',
+  'Forked from this message into "{title}".': '이 메시지에서 "{title}" 세션으로 포크했습니다.',
   'Hide terminal': '터미널 숨기기',
   'Hide Terminal': '터미널 숨기기',
   'Hide the in-session search bar.': '세션 내 검색 바를 숨깁니다.',
@@ -235,8 +242,7 @@ const Map<String, String> _koWebParityText = <String, String>{
   'Open the current release notes again at any time from here.':
       '여기서 언제든 현재 릴리즈 노트를 다시 열 수 있습니다.',
   'Open the reasoning depth picker.': '추론 깊이 선택기를 엽니다.',
-  'Open the terminal drawer for this project.':
-      '이 프로젝트의 터미널 드로어를 엽니다.',
+  'Open the terminal drawer for this project.': '이 프로젝트의 터미널 드로어를 엽니다.',
   'Open without history': '기록 없이 열기',
   'Other': '기타',
   'Output Tokens': '출력 토큰',
@@ -259,8 +265,7 @@ const Map<String, String> _koWebParityText = <String, String>{
   'Queue': '대기열',
   'Queued': '대기 중',
   'Raw messages': '원본 메시지',
-  'Readable session summaries and messages':
-      '읽기 쉬운 세션 요약과 메시지',
+  'Readable session summaries and messages': '읽기 쉬운 세션 요약과 메시지',
   'Ready': '준비됨',
   'Reasoning': '추론',
   'Reasoning Tokens': '추론 토큰',
@@ -280,15 +285,13 @@ const Map<String, String> _koWebParityText = <String, String>{
   'Resume Workspace': '워크스페이스 다시 열기',
   'Return to the home screen and choose a server before opening a project.':
       '프로젝트를 열기 전에 홈 화면으로 돌아가 서버를 먼저 선택하세요.',
-  'Return to the server and project home screen.':
-      '서버 및 프로젝트 홈 화면으로 돌아갑니다.',
+  'Return to the server and project home screen.': '서버 및 프로젝트 홈 화면으로 돌아갑니다.',
   'Review': '리뷰',
   'Review comment context': '리뷰 코멘트 컨텍스트',
   'Running': '실행 중',
   'Running Now': '현재 실행 중',
   'Save': '저장',
-  'Saved "{label}" and refreshed status.':
-      '"{label}" 서버를 저장하고 상태를 새로 확인했습니다.',
+  'Saved "{label}" and refreshed status.': '"{label}" 서버를 저장하고 상태를 새로 확인했습니다.',
   'Save Changes': '변경 저장',
   'Save Server': '서버 저장',
   'Save the server here and its status will be checked immediately.':
@@ -330,8 +333,7 @@ const Map<String, String> _koWebParityText = <String, String>{
   'Session': '세션',
   'Session Created': '세션 생성 시각',
   'Session deleted.': '세션을 삭제했습니다.',
-  'Session deleted. Opened "{title}".':
-      '세션을 삭제하고 "{title}" 세션을 열었습니다.',
+  'Session deleted. Opened "{title}".': '세션을 삭제하고 "{title}" 세션을 열었습니다.',
   'Session loading': '세션 불러오기',
   'Session title': '세션 제목',
   'Settings': '설정',
@@ -411,8 +413,7 @@ const Map<String, String> _koWebParityText = <String, String>{
   'Waiting behind the current run.': '현재 실행이 끝나길 기다리는 중입니다.',
   'Wait for the workspace project to finish loading before managing MCPs.':
       '워크스페이스 프로젝트 로딩이 끝난 뒤 MCP를 관리하세요.',
-  'Will send as soon as the session is ready.':
-      '세션이 준비되는 즉시 전송합니다.',
+  'Will send as soon as the session is ready.': '세션이 준비되는 즉시 전송합니다.',
   'Workspace': '워크스페이스',
   'Workspace Settings': '워크스페이스 설정',
   'Workspace startup script': '워크스페이스 시작 스크립트',
@@ -421,8 +422,7 @@ const Map<String, String> _koWebParityText = <String, String>{
   '1 queued follow-up': '대기 중인 후속 메시지 1개',
   '1 unseen update': '새 업데이트 1개',
   '1 unseen update, including an error': '오류를 포함한 새 업데이트 1개',
-  'Added review comment to composer context.':
-      '리뷰 코멘트를 컴포저 컨텍스트에 추가했습니다.',
+  'Added review comment to composer context.': '리뷰 코멘트를 컴포저 컨텍스트에 추가했습니다.',
   'After': '이후',
   'Agent': '에이전트',
   'Always': '항상',
@@ -444,8 +444,7 @@ const Map<String, String> _koWebParityText = <String, String>{
   'Choose model': '모델 선택',
   'Code Search': '코드 검색',
   'Code block copied.': '코드 블록을 복사했습니다.',
-  'Collapse or reveal the sessions sidebar.':
-      '세션 사이드바를 접거나 펼칩니다.',
+  'Collapse or reveal the sessions sidebar.': '세션 사이드바를 접거나 펼칩니다.',
   'Collapse the terminal drawer.': '터미널 드로어를 접습니다.',
   'Command palette': '명령 팔레트',
   'Commands': '명령',
@@ -458,16 +457,12 @@ const Map<String, String> _koWebParityText = <String, String>{
   'Copied': '복사됨',
   'Copy': '복사',
   'Copy code': '코드 복사',
-  'Copy the existing share link for this session.':
-      '이 세션의 기존 공유 링크를 복사합니다.',
+  'Copy the existing share link for this session.': '이 세션의 기존 공유 링크를 복사합니다.',
   'Create Git repository': 'Git 저장소 만들기',
-  'Create a branched copy of the current session.':
-      '현재 세션의 분기 복사본을 만듭니다.',
+  'Create a branched copy of the current session.': '현재 세션의 분기 복사본을 만듭니다.',
   'Custom patterns preserved': '사용자 지정 패턴 유지',
-  'Cycle backward through available agents.':
-      '사용 가능한 에이전트를 뒤로 순환합니다.',
-  'Cycle forward through available agents.':
-      '사용 가능한 에이전트를 앞으로 순환합니다.',
+  'Cycle backward through available agents.': '사용 가능한 에이전트를 뒤로 순환합니다.',
+  'Cycle forward through available agents.': '사용 가능한 에이전트를 앞으로 순환합니다.',
   'Cycle reasoning': '추론 전환',
   'Dark': '다크',
   'Default busy follow-up mode': '바쁠 때 기본 후속 동작',
@@ -483,10 +478,8 @@ const Map<String, String> _koWebParityText = <String, String>{
   'Images': '이미지',
   'Inherited from global default': '전역 기본값 상속',
   'Initial session history size': '초기 세션 기록 크기',
-  'Inspect context usage and token breakdown.':
-      '컨텍스트 사용량과 토큰 구성을 확인합니다.',
-  'Jump straight to the active prompt input.':
-      '현재 프롬프트 입력창으로 바로 이동합니다.',
+  'Inspect context usage and token breakdown.': '컨텍스트 사용량과 토큰 구성을 확인합니다.',
+  'Jump straight to the active prompt input.': '현재 프롬프트 입력창으로 바로 이동합니다.',
   'Jump straight to the chat input.': '채팅 입력창으로 바로 이동합니다.',
   'Keyboard': '키보드',
   'Light': '라이트',
@@ -498,10 +491,8 @@ const Map<String, String> _koWebParityText = <String, String>{
   'Maximum number of session panes open': '열 수 있는 세션 패널 최대 개수',
   'Medium': '중간',
   'Model': '모델',
-  'Move across projects in the left rail order.':
-      '왼쪽 레일 순서대로 프로젝트 사이를 이동합니다.',
-  'Move to the next project in the sidebar rail.':
-      '사이드바 레일의 다음 프로젝트로 이동합니다.',
+  'Move across projects in the left rail order.': '왼쪽 레일 순서대로 프로젝트 사이를 이동합니다.',
+  'Move to the next project in the sidebar rail.': '사이드바 레일의 다음 프로젝트로 이동합니다.',
   'Move to the next visible session.': '다음 보이는 세션으로 이동합니다.',
   'Move to the previous project in the sidebar rail.':
       '사이드바 레일의 이전 프로젝트로 이동합니다.',
@@ -519,8 +510,7 @@ const Map<String, String> _koWebParityText = <String, String>{
       '데스크톱 레이아웃에서 다른 세션 패널을 엽니다.',
   'Open or hide the files side panel.': '파일 사이드 패널을 열거나 숨깁니다.',
   'Open or hide the review side panel.': '리뷰 사이드 패널을 열거나 숨깁니다.',
-  'Open the agent picker for the active composer.':
-      '현재 컴포저의 에이전트 선택기를 엽니다.',
+  'Open the agent picker for the active composer.': '현재 컴포저의 에이전트 선택기를 엽니다.',
   'Open the grouped model picker.': '그룹화된 모델 선택기를 엽니다.',
   'Optional': '선택 사항',
   'Oversized session action': '큰 세션 작업',
@@ -529,12 +519,9 @@ const Map<String, String> _koWebParityText = <String, String>{
   'Partial': '부분 지원',
   'Patch': '패치',
   'Per Pane': '패널별',
-  'Permission required in the active session':
-      '현재 세션에 권한 승인이 필요합니다',
-  'Pick files and add them to the active prompt.':
-      '파일을 선택해 현재 프롬프트에 추가합니다.',
-  'Question pending in the active session':
-      '현재 세션에 답변 대기 중인 질문이 있습니다',
+  'Permission required in the active session': '현재 세션에 권한 승인이 필요합니다',
+  'Pick files and add them to the active prompt.': '파일을 선택해 현재 프롬프트에 추가합니다.',
+  'Question pending in the active session': '현재 세션에 답변 대기 중인 질문이 있습니다',
   'Questions': '질문',
   'Read': '읽기',
   'Recent prompts': '최근 프롬프트',
@@ -543,13 +530,10 @@ const Map<String, String> _koWebParityText = <String, String>{
   'Remove the current share link.': '현재 공유 링크를 제거합니다.',
   'Retry': '다시 시도',
   'Revert Message': '메시지 되돌리기',
-  'Reverted the session to this message.':
-      '세션을 이 메시지 시점으로 되돌렸습니다.',
+  'Reverted the session to this message.': '세션을 이 메시지 시점으로 되돌렸습니다.',
   'Rotate the active agent selection.': '현재 에이전트 선택을 순환합니다.',
-  'Rotate through the available reasoning options.':
-      '사용 가능한 추론 옵션을 순환합니다.',
-  'Rotate through the installed theme presets.':
-      '설치된 테마 프리셋을 순환합니다.',
+  'Rotate through the available reasoning options.': '사용 가능한 추론 옵션을 순환합니다.',
+  'Rotate through the installed theme presets.': '설치된 테마 프리셋을 순환합니다.',
   'Scroll up or tap to load more': '위로 스크롤하거나 탭해 더 불러오세요',
   'Search': '검색',
   'Search messages in the active session.': '현재 세션의 메시지를 검색합니다.',
@@ -569,8 +553,7 @@ const Map<String, String> _koWebParityText = <String, String>{
   'Sidebar': '사이드바',
   'Skill': '스킬',
   'Snapshot': '스냅샷',
-  'Split the chat area into another session pane':
-      '채팅 영역을 다른 세션 패널로 분할합니다.',
+  'Split the chat area into another session pane': '채팅 영역을 다른 세션 패널로 분할합니다.',
   'Step': '단계',
   'Step Result': '단계 결과',
   'Stop running session': '실행 중 세션 중단',
@@ -591,8 +574,7 @@ const Map<String, String> _koWebParityText = <String, String>{
   'Unanswered': '응답 없음',
   'Unshare session': '세션 공유 해제',
   'Updating...': '업데이트 중...',
-  'Use the model default reasoning depth.':
-      '모델의 기본 추론 깊이를 사용합니다.',
+  'Use the model default reasoning depth.': '모델의 기본 추론 깊이를 사용합니다.',
   'User': '사용자',
   'View': '보기',
   'Waiting for shell output…': '셸 출력을 기다리는 중…',

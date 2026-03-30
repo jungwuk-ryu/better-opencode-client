@@ -9,10 +9,20 @@ import '../../l10n/app_localizations.dart';
 enum AppLocaleMode {
   system,
   english,
-  korean;
+  korean,
+  japanese,
+  chinese;
 
   static const _englishLocale = Locale('en');
   static const _koreanLocale = Locale('ko');
+  static const _japaneseLocale = Locale('ja');
+  static const _chineseLocale = Locale('zh');
+  static const List<AppLocaleMode> manualModes = <AppLocaleMode>[
+    AppLocaleMode.english,
+    AppLocaleMode.korean,
+    AppLocaleMode.japanese,
+    AppLocaleMode.chinese,
+  ];
 
   String get storageValue => name;
 
@@ -20,12 +30,16 @@ enum AppLocaleMode {
     AppLocaleMode.system => null,
     AppLocaleMode.english => _englishLocale,
     AppLocaleMode.korean => _koreanLocale,
+    AppLocaleMode.japanese => _japaneseLocale,
+    AppLocaleMode.chinese => _chineseLocale,
   };
 
   static AppLocaleMode fromStorage(String? value) {
     return switch (value?.trim().toLowerCase()) {
       'english' || 'en' => AppLocaleMode.english,
       'korean' || 'ko' => AppLocaleMode.korean,
+      'japanese' || 'ja' => AppLocaleMode.japanese,
+      'chinese' || 'zh' || 'zh-cn' || 'zh_hans' => AppLocaleMode.chinese,
       _ => AppLocaleMode.system,
     };
   }
@@ -76,9 +90,13 @@ class LocaleController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void toggle() {
-    final nextMode = locale.languageCode == 'ko'
-        ? AppLocaleMode.english
-        : AppLocaleMode.korean;
+    final currentIndex = AppLocaleMode.manualModes.indexWhere(
+      (mode) => mode.overrideLocale?.languageCode == locale.languageCode,
+    );
+    final nextMode = currentIndex >= 0
+        ? AppLocaleMode.manualModes[(currentIndex + 1) %
+              AppLocaleMode.manualModes.length]
+        : AppLocaleMode.manualModes.first;
     unawaited(setMode(nextMode));
   }
 
@@ -104,10 +122,9 @@ class LocaleController extends ChangeNotifier with WidgetsBindingObserver {
 
   static Locale _resolveSupportedLocale(List<Locale> locales) {
     return basicLocaleListResolution(
-          locales,
-          AppLocalizations.supportedLocales,
-        ) ??
-        AppLocalizations.supportedLocales.first;
+      locales,
+      AppLocalizations.supportedLocales,
+    );
   }
 
   static bool _sameLocale(Locale left, Locale right) {

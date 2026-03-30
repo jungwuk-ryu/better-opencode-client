@@ -1,0 +1,627 @@
+{
+  "@@locale": "ja",
+  "appTitle": "より良いオープンコードクライアント (BOC)",
+  "foundationTitle": "基礎ワークスペース",
+  "foundationSubtitle": "サーバーに接続する前に、組み込みのチェックとライブ アップデートの準備が整います。",
+  "currentFlavor": "風味",
+  "currentLocale": "ロケール",
+  "fullCapabilityProbe": "サーバーの完全チェック",
+  "legacyCapabilityProbe": "互換性チェック",
+  "probeErrorCapability": "エラー処理を確認してください",
+  "healthyStream": "健全な流れ",
+  "staleStream": "古いストリームの回復",
+  "duplicateStream": "重複イベントの処理",
+  "resyncStream": "再同期が必要です",
+  "capabilityFlags": "機能フラグ",
+  "streamFrames": "ストリームフレーム",
+  "unknownFields": "不明なフィールドが保存される",
+  "switchLocale": "ロケールを切り替える",
+  "cacheSettingsAction": "キャッシュ設定",
+  "cacheSettingsTitle": "キャッシュ設定",
+  "cacheSettingsSubtitle": "キャッシュの鮮度を調整し、保存された接続チェックとワークスペースのスナップショットをクリアします。",
+  "cacheTtlLabel": "キャッシュの鮮度",
+  "cacheClearAction": "キャッシュされたデータをクリアする",
+  "cacheClearingAction": "キャッシュをクリアしています...",
+  "cacheTtl15Seconds": "15秒",
+  "cacheTtl1Minute": "1分",
+  "cacheTtl5Minutes": "5分",
+  "cacheTtl15Minutes": "15分",
+  "connectionTitle": "サーバー接続マネージャー",
+  "connectionSubtitle": "信頼できる OpenCode サーバーを保存し、必要に応じてサーバー チェックを実行し、ホームに戻ってプロジェクトを選択します。",
+  "serverProfileManager": "サーバープロファイルマネージャー",
+  "connectionProfileHint": "信頼できるホストには保存されたプロファイルを使用し、高速な再試行には最近の試行を使用します。",
+  "profileLabel": "プロファイルラベル",
+  "serverAddress": "サーバーアドレス",
+  "username": "ユーザー名",
+  "password": "パスワード",
+  "testingConnection": "テスト中...",
+  "testConnection": "テスト接続",
+  "saveProfile": "プロファイルの保存",
+  "deleteProfile": "プロフィールの削除",
+  "connectionGuidance": "サーバー チェックでは、健全性、互換性、サインイン、プロバイダー アクセス、およびツールの可用性を確認します。さらに多くのネットワーク検出オプションが追加される予定です。",
+  "savedServers": "保存されたサーバー",
+  "recentConnections": "最近のつながり",
+  "noSavedServers": "保存されたサーバーはまだありません。",
+  "noRecentConnections": "最近の試みはまだありません。",
+  "connectionDiagnostics": "接続診断",
+  "connectionDiagnosticsHint": "ワークスペースを開く前に、サーバー チェックを実行してサインインと互換性を確認します。",
+  "serverVersion": "バージョン",
+  "sseStatus": "ライブアップデート",
+  "readyStatus": "準備ができて",
+  "needsAttentionStatus": "注意が必要です",
+  "connectionEmptyState": "サーバー プロファイルを入力し、サーバー チェックを実行して診断を入力します。",
+  "connectionHeaderEyebrow": "ライブサーバー接続",
+  "connectionHeaderTitle": "実際の OpenCode サーバーに接続する",
+  "connectionHeaderSubtitle": "保存されたサーバーの詳細を確認し、サインインを確認し、このサーバーの準備ができたらワークスペースのホームに戻ります。",
+  "connectionStatusAwaiting": "最初のチェック待ち",
+  "connectionFormTitle": "サーバープロファイルマネージャー",
+  "connectionFormSubtitle": "保存されたサーバーの詳細を更新し、チェックを再試行して、このプロファイルを自宅で使用できるようにしておいてください。",
+  "savedProfilesCountLabel": "保存されました",
+  "recentConnectionsCountLabel": "最近の",
+  "sseReadyLabel": "ライブアップデートの準備完了",
+  "ssePendingLabel": "チェック保留中",
+  "connectionProfileLabel": "プロファイル名",
+  "connectionProfileLabelHint": "スタジオステージング、ラップトップトンネル、オンプレミスゲートウェイ",
+  "connectionAddressLabel": "サーバーアドレス",
+  "connectionAddressHint": "https://opencode.example.com",
+  "connectionUsernameLabel": "基本認証ユーザー名",
+  "connectionUsernameHint": "オプション",
+  "connectionPasswordLabel": "基本認証パスワード",
+  "connectionPasswordHint": "オプション",
+  "connectionAddressValidation": "有効なサーバー アドレスを入力してください。",
+  "connectionBackHomeAction": "家に戻る",
+  "connectionProbeAction": "サーバーをチェックする",
+  "connectionSaveAction": "プロファイルの保存",
+  "connectionDraftRestoredLabel": "保存されていないドラフトを復元しました",
+  "connectionPinProfileAction": "ピンプロファイル",
+  "connectionUnpinProfileAction": "プロフィールの固定を解除する",
+  "connectionProbeResultTitle": "サーバーチェック",
+  "connectionProbeResultSubtitle": "この詳細ビューを使用して、保存されたサーバーがまだ応答しているかどうかを確認します。プロジェクトの選択はワークスペース ホームから行われます。",
+  "connectionProbeEmptyTitle": "最近のチェックはまだありません",
+  "connectionProbeEmptySubtitle": "ワークスペースのホームに戻る前に、サーバー チェックを実行してサインインと互換性を確認します。",
+  "connectionVersionLabel": "バージョン",
+  "connectionCheckedAtLabel": "チェック済み",
+  "connectionCapabilitiesLabel": "有効な機能",
+  "connectionReadinessLabel": "準備完了",
+  "connectionMissingCapabilitiesLabel": "必要な機能が不足している",
+  "connectionExperimentalPathsLabel": "高度なツール",
+  "connectionEndpointSectionTitle": "チェック結果",
+  "connectionCapabilitySectionTitle": "能力",
+  "savedProfilesTitle": "保存されたプロファイル",
+  "savedProfilesSubtitle": "ピン留めされたサーバーは、迅速なチェックの準備ができています。",
+  "savedProfilesEmptyTitle": "保存されたプロファイルはまだありません",
+  "savedProfilesEmptySubtitle": "次回アプリが既知のサーバーターゲットで開くように、作業アドレスを保存します。",
+  "recentConnectionsTitle": "最近の試み",
+  "recentConnectionsSubtitle": "最近のサーバー チェック。固定されたサーバーとは別に保持されます。",
+  "recentConnectionsEmptyTitle": "最近の試みはまだありません",
+  "recentConnectionsEmptySubtitle": "サーバーをチェックすると、すぐに再試行できるように最新の結果がここに表示されます。",
+  "connectionOutcomeReady": "接続の準備ができました",
+  "connectionOutcomeAuthFailure": "認証失敗",
+  "connectionOutcomeSpecFailure": "仕様の取得に失敗しました",
+  "connectionOutcomeUnsupported": "サポートされていない機能セット",
+  "connectionOutcomeConnectivityFailure": "接続障害",
+  "connectionDetailReady": "コアサービスが応答し、自宅でプロジェクトの選択肢を提供できるようになりました。",
+  "connectionDetailAuthFailure": "サーバーは応答しましたが、提供されたサインインの詳細は拒否されました。",
+  "connectionDetailBasicAuthFailure": "このサーバーは基本認証によって保護されています。ユーザー名とパスワードを追加または更新して、再試行してください。",
+  "connectionDetailSpecFailure": "サーバーにはアクセスできますが、OpenAPI 仕様を取得または解析できませんでした。",
+  "connectionDetailUnsupported": "サーバーにはアクセスできますが、このアプリに必要な機能がまだありません。",
+  "connectionDetailConnectivityFailure": "チェックを完了するのに十分な信頼性でサーバーにアクセスできませんでした。",
+  "endpointReadyStatus": "準備ができて",
+  "endpointAuthStatus": "認証",
+  "endpointUnsupportedStatus": "サポートされていない",
+  "endpointFailureStatus": "失敗",
+  "endpointUnknownStatus": "未知",
+  "fixtureDiagnosticsTitle": "診断",
+  "fixtureDiagnosticsSubtitle": "接続チェックとステータスの詳細はここにあります。",
+  "capabilityCanShareSession": "セッションを共有する",
+  "capabilityCanForkSession": "セッションをフォーク",
+  "capabilityCanSummarizeSession": "セッションを要約する",
+  "capabilityCanRevertSession": "セッションを元に戻す",
+  "capabilityHasQuestions": "質問",
+  "capabilityHasPermissions": "権限",
+  "capabilityHasExperimentalTools": "高度なツール",
+  "capabilityHasProviderOAuth": "プロバイダーOAuth",
+  "capabilityHasMcpAuth": "MCP認証",
+  "capabilityHasTuiControl": "TUI制御",
+  "projectSelectionTitle": "プロジェクトを選択してください",
+  "projectSelectionSubtitle": "このサーバーからプロジェクト、最近の作業、またはフォルダー パスを開きます。",
+  "currentProjectTitle": "現在のプロジェクト",
+  "currentProjectSubtitle": "サーバーがすでにプロジェクト内にある場合は、最初にここに表示されます。",
+  "serverProjectsTitle": "このサーバー上のプロジェクト",
+  "serverProjectsSubtitle": "サーバーが現在開くことができる他のプロジェクト。",
+  "serverProjectsEmpty": "現在利用可能なサーバー プロジェクトはありません。最近のプロジェクトまたはフォルダー パスを開くことはできます。",
+  "manualProjectTitle": "フォルダーのパスを開く",
+  "manualProjectSubtitle": "これは、サーバー リストが空の場合、または必要なフォルダーが正確にわかっている場合に使用します。",
+  "manualProjectPathLabel": "プロジェクトディレクトリ",
+  "manualProjectPathHint": "/ワークスペース/私のプロジェクト",
+  "projectInspectAction": "パスの検査",
+  "projectInspectingAction": "検査中...",
+  "projectBrowseAction": "フォルダを参照する",
+  "projectPathSuggestionsLoading": "サーバーフォルダーを検索しています...",
+  "projectPathSuggestionsEmpty": "このサーバーには一致するフォルダーが見つかりません。",
+  "recentProjectsTitle": "最近のプロジェクト",
+  "recentProjectsSubtitle": "最近開いたプロジェクト。最新セッションのヒントがある場合はそれも表示されます。",
+  "pinnedProjectsTitle": "固定されたプロジェクト",
+  "pinnedProjectsSubtitle": "地元のお気に入りが常に上位に表示され、モバイルから簡単にアクセスできます。",
+  "projectFilterLabel": "プロジェクトをフィルタリングする",
+  "projectFilterHint": "名前、フォルダー、ブランチ、またはセッション",
+  "projectFilterEmpty": "このフィルターに一致するプロジェクトはありません。",
+  "recentProjectsEmpty": "最近のプロジェクトはまだありません。",
+  "projectPreviewTitle": "プロジェクトの詳細",
+  "projectPreviewSubtitle": "次のワークスペースを開く前に確認してください。",
+  "projectPreviewEmpty": "プロジェクト、最近のワークスペース、またはフォルダー パスを選択すると、ここで詳細が表示されます。",
+  "projectDirectoryLabel": "ディレクトリ",
+  "projectSourceLabel": "ソース",
+  "projectVcsLabel": "VCS",
+  "projectBranchLabel": "支店",
+  "projectLastSessionLabel": "最後のセッション",
+  "projectLastStatusLabel": "最終ステータス",
+  "projectLastSessionUnknown": "まだ捕まっていない",
+  "projectLastStatusUnknown": "まだ捕まっていない",
+  "projectSelectionReadyHint": "このプロジェクトを開いてセッションを続行します。",
+  "homeHeaderEyebrow": "ワークスペース",
+  "homeHeaderSubtitle": "サーバーに接続し、プロジェクトを開いてセッションを続行します。",
+  "homeAddServerAction": "サーバーの追加",
+  "homeBackToServersAction": "サーバーに戻る",
+  "homeConnectServerAction": "接続する",
+  "homeEditSelectedServerAction": "選択したサーバーを編集する",
+  "homeEditServerAction": "サーバーの編集",
+  "homeSwitchServerAction": "サーバーを切り替える",
+  "homeNextStepsTitle": "次のステップ",
+  "homeNextStepsPinnedServers": "最も使用するサーバーを固定して、上位に表示されるようにします。",
+  "homeNextStepsProjects": "サーバーの準備ができたら、プロジェクトを開いてセッションにジャンプします。",
+  "homeNextStepsRetryEdit": "家から出ずにサーバーを再試行または編集します。",
+  "homeMetricSavedServers": "保存されたサーバー",
+  "homeMetricRecentActivity": "最近の活動",
+  "homeMetricCurrentFocus": "現在のサーバー",
+  "homeChooseServerLabel": "サーバーを選択してください",
+  "homeResumeLastWorkspaceTitle": "最後のワークスペースを再開する",
+  "homeOpenLastProjectTitle": "最後のプロジェクトを開く",
+  "homeResumeLastWorkspaceBody": "{project} で続行し、中断したところから再開します。",
+  "@homeResumeLastWorkspaceBody": {
+    "placeholders": {
+      "project": {
+        "type": "String"
+      }
+    }
+  },
+  "homeOpenLastProjectBody": "{project} を開き、セッションを選択するか、新しいセッションを開始します。",
+  "@homeOpenLastProjectBody": {
+    "placeholders": {
+      "project": {
+        "type": "String"
+      }
+    }
+  },
+  "homeResumeLastWorkspaceAction": "ワークスペースを再開する",
+  "homeOpenLastProjectAction": "プロジェクトを開く",
+  "homeResumeMetricProject": "プロジェクト",
+  "homeResumeMetricLastSession": "最後のセッション",
+  "homeResumeMetricStatus": "状態",
+  "homeActionCheckingWorkspace": "ワークスペースを確認しています...",
+  "homeActionContinue": "続く",
+  "homeActionRetry": "リトライ",
+  "homeActionCheckingServer": "サーバーをチェックしています...",
+  "homeThisServerLabel": "このサーバー",
+  "homeWorkspaceSectionTitle": "プロジェクトとセッション",
+  "homeWorkspaceLoadingSubtitle": "保存したサーバーと最近のアクティビティを読み込みます。",
+  "homeWorkspaceSelectionHint": "リストからサーバーを選択するか、新しいサーバーを追加します。",
+  "homeWorkspaceConnectHint": "選択したサーバーに接続してプロジェクトをロードします。",
+  "homeWorkspaceEmptySubtitle": "ここでサーバーを追加して、プロジェクトとセッションの開始を開始します。",
+  "homeWorkspaceFeatureSaveTitle": "サーバーを一度保存​​する",
+  "homeWorkspaceFeatureSaveBody": "サーバーを 1 か所に保管し、戻ってきたときにすぐに使えるようにします。",
+  "homeWorkspaceFeatureChooseTitle": "次にプロジェクトを開きます",
+  "homeWorkspaceFeatureChooseBody": "サーバーの準備ができたら、プロジェクトを選択して続行します。",
+  "homeWorkspaceFeatureRecentTitle": "最近のことを常に表示しておきます",
+  "homeWorkspaceFeatureRecentBody": "保存されたサーバーと最近のチェックは 1 つの画面にまとめて表示されます。",
+  "homeWorkspaceSubtitleReady": "続行するプロジェクトを選択してください。",
+  "homeWorkspaceSubtitleSignIn": "サインインの詳細を更新するか、プロジェクトを読み込む前に再試行してください。",
+  "homeWorkspaceSubtitleOffline": "このサーバーを再試行するか、保存されたアドレスを確認してください。",
+  "homeWorkspaceSubtitleUpdate": "プロジェクトを読み込む前にサーバーを更新してください。",
+  "homeWorkspaceSubtitleUnknown": "プロジェクトをロードする前に簡単なチェックを実行します。",
+  "homeWorkspaceTitleChooseServer": "保存されたサーバーを選択してください",
+  "homeWorkspaceTitleChecking": "{server}の確認",
+  "@homeWorkspaceTitleChecking": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
+  "homeWorkspaceTitleReady": "プロジェクトの準備完了",
+  "homeWorkspaceTitleSignInRequired": "サインインが必要です",
+  "homeWorkspaceTitleOffline": "オフライン",
+  "homeWorkspaceTitleUpdate": "アップデートが必要です",
+  "homeWorkspaceTitleContinueFromHome": "自宅から続ける",
+  "homeWorkspaceBodyChecking": "プロジェクトとセッションを読み込む前に、サインインと互換性をチェックします。",
+  "homeWorkspaceBodyReady": "{server} の準備は完了しましたが、プロジェクト リストはまだロード中です。",
+  "@homeWorkspaceBodyReady": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
+  "homeWorkspaceBodySignInRequired": "{server} が応答しましたが、プロジェクトを読み込む前にサインインの詳細に注意する必要があります。",
+  "@homeWorkspaceBodySignInRequired": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
+  "homeWorkspaceBodyBasicAuthRequired": "{server} は Basic 認証によって保護されています。プロジェクトをロードする前に、このサーバーを編集し、ユーザー名とパスワードを追加してください。",
+  "@homeWorkspaceBodyBasicAuthRequired": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
+  "homeWorkspaceBodyOffline": "今、{server} に到達できませんでした。再試行するか、保存されたアドレスが変更されている場合は編集します。",
+  "@homeWorkspaceBodyOffline": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
+  "homeWorkspaceBodyUpdateRequired": "{server} は応答しましたが、プロジェクトをロードするには更新が必要です。",
+  "@homeWorkspaceBodyUpdateRequired": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
+  "homeWorkspaceBodyUnknown": "簡単なチェックを実行し、サインインまたはアドレスに注意が必要な場合にのみ詳細を編集します。",
+  "homeNoticeWorkspaceUnavailable": "最後のワークスペースは利用できなくなりました。続行するプロジェクトを選択してください。",
+  "homeNoticeWorkspaceResumeFailed": "現在、最後のワークスペースを再度開くことができませんでした。以下のプロジェクトを選択するか、このサーバーを再試行してください。",
+  "homeSavedServersTitle": "保存されたサーバー",
+  "homeSavedServersSubtitle": "サーバーを選択し、プロジェクトとセッションに進みます。",
+  "homeServerPanelSubtitle": "サーバーを追加し、保存された詳細を編集し、準備ができたら接続します。",
+  "homeSavedServersEmptyTitle": "保存されたサーバーはまだありません",
+  "homeSavedServersEmptySubtitle": "最初のサーバーを追加して、プロジェクトとセッションの開始を開始します。",
+  "homeRecentActivityTitle": "最近の活動",
+  "homeRecentActivitySubtitle": "最近チェックしたサーバーの簡単な記録。",
+  "homeRecentActivityEmptyTitle": "最近の活動はまだありません",
+  "homeRecentActivityEmptySubtitle": "サーバーに接続または再試行すると、最近のチェックがここに表示されます。",
+  "homeRecentActivityNotUsed": "まだ使用されていません",
+  "homeRecentActivityLastUsed": "最後に使用したのは {timestamp}",
+  "@homeRecentActivityLastUsed": {
+    "placeholders": {
+      "timestamp": {
+        "type": "String"
+      }
+    }
+  },
+  "homeCredentialsSaved": "認証情報が保存されました",
+  "homeCredentialsMissing": "認証情報が保存されていません",
+  "homeServerCardBodyReady": "自宅からプロジェクトやセッションを開く準備ができました。",
+  "homeServerCardBodySignIn": "再試行するか、プロジェクトを読み込む前にサインインの詳細を更新してください。",
+  "homeServerCardBodyBasicAuthRequired": "このサーバーがプロジェクトをロードするには、基本認証が必要です。",
+  "homeServerCardBodyOffline": "再試行するか、続行する前に保存されたアドレスを編集してください。",
+  "homeServerCardBodyUpdate": "プロジェクトやセッションを続行する前に、サーバーを更新してください。",
+  "homeServerCardBodyUnknownWithAuth": "プロジェクトをロードする前に簡単なチェックを実行します。",
+  "homeServerCardBodyUnknown": "簡単なチェックを実行し、サインインが必要な場合にのみ詳細を編集します。",
+  "homeConnectionFailedNotice": "{server}に接続できませんでした。保存されたアドレスまたは資格情報を確認して、再試行してください。",
+  "@homeConnectionFailedNotice": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
+  "homeConnectionNeedsCredentialsNotice": "このサーバーは接続する前にユーザー名とパスワードが必要です。",
+  "homeStatusNewHome": "新しい家",
+  "homeStatusChooseServer": "サーバーを選択してください",
+  "homeStatusCheckingServer": "サーバーをチェックしています",
+  "homeStatusReadyForProjects": "プロジェクトの準備完了",
+  "homeStatusSignInRequired": "サインインが必要です",
+  "homeStatusServerOffline": "サーバーがオフライン",
+  "homeStatusNeedsAttention": "注意が必要です",
+  "homeStatusAwaitingSetup": "セットアップを待っています",
+  "homeHeroTitleNoServers": "サーバーから始める",
+  "homeHeroTitleOneServer": "サーバー、準備完了",
+  "homeHeroTitleManyServers": "すべてのサーバーを 1 か所に",
+  "homeHeroBodyNoServers": "サーバーを一度追加してから、ここに戻ってプロジェクトを開いてセッションを続行します。",
+  "homeHeroBodyOneServer": "自宅から続行し、何か変更があった場合にのみサーバーの詳細を開きます。",
+  "homeHeroBodyManyServers": "サーバーを選択し、最新情報を表示しておき、必要に応じて簡単なチェックを実行します。",
+  "homeA11yAddServerAction": "サーバーの追加",
+  "homeA11yBackToServersAction": "サーバーの選択に戻る",
+  "homeA11yEditSelectedServerAction": "選択したサーバーを編集する",
+  "homeA11yWorkspacePrimaryAction": "ワークスペースの主なアクション",
+  "homeA11yEditServerAction": "サーバーの編集",
+  "homeA11ySwitchServerAction": "サーバーを切り替える",
+  "homeA11yResumeWorkspaceAction": "ワークスペースを再開する",
+  "homeStatusShortReady": "準備ができて",
+  "homeStatusShortSignInRequired": "サインインが必要です",
+  "homeStatusShortOffline": "オフライン",
+  "homeStatusShortNeedsAttention": "注意が必要です",
+  "homeStatusShortNotCheckedYet": "まだチェックされていません",
+  "projectCatalogUnavailableTitle": "プロジェクトリストは利用できません",
+  "projectCatalogUnavailableBody": "今、このサーバーのプロジェクト リストをロードできませんでした。最近使用したワークスペースを開いたり、フォルダー パスを入力したりすることはできます。",
+  "projectOpenAction": "プロジェクトを開く",
+  "projectPinAction": "ピンプロジェクト",
+  "projectUnpinAction": "プロジェクトの固定を解除する",
+  "shellProjectRailTitle": "プロジェクトとセッション",
+  "shellDestinationSessions": "セッション",
+  "shellDestinationChat": "チャット",
+  "shellDestinationContext": "コンテクスト",
+  "shellDestinationSettings": "設定",
+  "shellAdvancedLabel": "高度な",
+  "shellAdvancedSubtitle": "高度な設定とトラブルシューティング ツール。",
+  "shellAdvancedOverviewSubtitle": "技術的なオプションはメインフローから除外されます。",
+  "shellOpenAdvancedAction": "アドバンストを開く",
+  "shellBackToSettingsAction": "設定に戻る",
+  "shellA11yOpenCacheSettings": "キャッシュ設定を開く",
+  "shellA11yOpenAdvanced": "詳細設定を開く",
+  "shellA11yBackToSettings": "設定に戻る",
+  "shellA11yBackToProjectsAction": "プロジェクトに戻る",
+  "shellA11yComposerField": "メッセージフィールド",
+  "shellA11ySendMessageAction": "メッセージを送信する",
+  "shellIntegrationsLastAuthUrlTitle": "最終認証URL",
+  "shellIntegrationsEventsSubtitle": "イベント ストリームのステータスとリカバリの詳細。",
+  "shellStreamHealthConnected": "接続済み",
+  "shellStreamHealthStale": "古い",
+  "shellStreamHealthReconnecting": "再接続中",
+  "shellConfigPreviewUnavailable": "現在、構成ビューは利用できません。",
+  "shellNoticeLastSessionUnavailable": "最後のセッションは利用できなくなりました。別のセッションを選択するか、新しいセッションを開始してください。",
+  "shellConfigJsonObjectError": "Config は JSON オブジェクトである必要があります。",
+  "shellRecoveryLogReconnectRequested": "再接続が要求されました",
+  "shellRecoveryLogReconnectCompleted": "再接続が完了しました",
+  "shellUnknownLabel": "未知",
+  "shellBackToProjectsAction": "プロジェクトに戻る",
+  "shellSessionsTitle": "セッション",
+  "shellSessionCurrent": "現在のセッション",
+  "shellSessionDraft": "ドラフトブランチ",
+  "shellSessionReview": "レビューブランチ",
+  "shellStatusActive": "アクティブ",
+  "shellStatusIdle": "アイドル状態",
+  "shellStatusError": "エラー",
+  "shellChatHeaderTitle": "チャットワークスペース",
+  "shellThinkingModeLabel": "バランスの取れた思考",
+  "shellAgentLabel": "エージェント",
+  "shellChatTimelineTitle": "会話",
+  "shellUserMessageTitle": "あなた",
+  "shellUserMessageBody": "セッションを選択し、メッセージを送信して開始します。",
+  "shellAssistantMessageTitle": "オープンコード",
+  "shellAssistantMessageBody": "あなたはワークスペースにいます。コンテキストを確認し、セッションを選択し、作業を進めます。",
+  "shellComposerPlaceholder": "メッセージを書く",
+  "shellComposerSendAction": "送信",
+  "shellComposerCreatingSession": "セッションを作成して送信する",
+  "shellComposerSending": "送信中...",
+  "shellComposerModelLabel": "モデル",
+  "shellComposerModelDefault": "サーバーのデフォルト",
+  "shellComposerThinkingLabel": "考え",
+  "shellComposerThinkingLow": "ライト",
+  "shellComposerThinkingBalanced": "バランスの取れた",
+  "shellComposerThinkingDeep": "深い",
+  "shellComposerThinkingMax": "マックス",
+  "shellRenameSessionTitle": "セッション名の変更",
+  "shellSessionTitleHint": "セッションタイトル",
+  "shellCancelAction": "キャンセル",
+  "shellSaveAction": "保存",
+  "shellContextTitle": "コンテキストユーティリティ",
+  "shellFilesTitle": "ファイル",
+  "shellFilesSubtitle": "ツリー、ステータス、検索はここにあります。",
+  "shellDiffTitle": "差分",
+  "shellDiffSubtitle": "パッチとスナップショットのレビューがここに表示されます。",
+  "shellTodoTitle": "藤堂",
+  "shellTodoSubtitle": "タスクの進行状況と履歴はここに表示されたままになります。",
+  "shellToolsTitle": "ツール",
+  "shellToolsSubtitle": "このワークスペースに役立つツール。",
+  "shellTerminalTitle": "ターミナル",
+  "shellTerminalSubtitle": "クイックシェルとアタッチフローがここに着陸します。",
+  "shellInspectorTitle": "検査官",
+  "shellConfigTitle": "構成",
+  "shellConfigInvalid": "無効な構成",
+  "shellConfigDraftEmpty": "構成ドラフトは空です。",
+  "shellConfigChangedKeys": "変更されたキー: {count}",
+  "@shellConfigChangedKeys": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "shellConfigApplying": "申請中...",
+  "shellConfigApplyAction": "構成を適用する",
+  "shellIntegrationsTitle": "統合",
+  "shellIntegrationsProviders": "プロバイダー",
+  "shellIntegrationsMethods": "メソッド",
+  "shellIntegrationsStartProviderAuth": "プロバイダー認証を開始する",
+  "shellIntegrationsMcp": "MCP",
+  "shellIntegrationsStartMcpAuth": "MCP認証を開始する",
+  "shellIntegrationsLsp": "LSP",
+  "shellIntegrationsFormatter": "フォーマッタ",
+  "shellIntegrationsEnabled": "有効",
+  "shellIntegrationsDisabled": "無効",
+  "shellIntegrationsRecentEvents": "最近の出来事",
+  "shellIntegrationsStreamHealth": "ストリームの健全性",
+  "shellIntegrationsRecoveryLog": "回復ログ",
+  "shellWorkspaceEyebrow": "ワークスペース",
+  "shellSessionsEyebrow": "セッション",
+  "shellControlsEyebrow": "コントロール",
+  "shellActionsTitle": "アクション",
+  "shellActionFork": "フォーク",
+  "shellActionShare": "共有",
+  "shellActionUnshare": "共有を解除する",
+  "shellActionRename": "名前の変更",
+  "shellActionDelete": "消去",
+  "shellActionAbort": "アボート",
+  "shellActionRevert": "元に戻す",
+  "shellActionUnrevert": "元に戻す",
+  "shellActionInit": "初期化する",
+  "shellActionSummarize": "要約する",
+  "shellPrimaryEyebrow": "主要な",
+  "shellTimelineEyebrow": "タイムライン",
+  "shellFocusedThreadEyebrow": "注目のスレッド",
+  "shellNewSessionDraft": "新しいセッションの草稿",
+  "shellTimelinePartsInFocus": "{count} タイムライン パーツにフォーカス",
+  "@shellTimelinePartsInFocus": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "shellReadyToStart": "始める準備完了",
+  "shellLiveContext": "ライブコンテキスト",
+  "shellPartsCount": "{count}パーツ",
+  "@shellPartsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "shellFocusedThreadSubtitle": "アクティブなスレッドに焦点を当てる",
+  "shellConversationSubtitle": "長文の読み上げと返信の作成が中心",
+  "shellConnectionIssueTitle": "接続の問題",
+  "shellUtilitiesEyebrow": "公共事業",
+  "shellFilesSearchHint": "ファイル、テキスト、またはシンボルを検索する",
+  "shellPreviewTitle": "プレビュー",
+  "shellCurrentSelection": "現在の選択内容",
+  "shellMatchesTitle": "一致",
+  "shellMatchesSubtitle": "関連するテキストの結果",
+  "shellSymbolsTitle": "記号",
+  "shellSymbolsSubtitle": "クイックコードのランドマーク",
+  "shellTerminalHint": "障害者",
+  "shellTerminalRunAction": "コマンドの実行",
+  "shellTerminalRunning": "走っています...",
+  "shellTrackedLabel": "追跡された",
+  "shellPendingApprovalsTitle": "承認待ち",
+  "shellPendingApprovalsSubtitle": "{count} 項目が入力待ちです",
+  "@shellPendingApprovalsSubtitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "shellAllowOnceAction": "一度許可する",
+  "shellRejectAction": "拒否する",
+  "shellAnswerAction": "答え",
+  "shellConfigPreviewSubtitle": "構成の確認と編集",
+  "shellInspectorSubtitle": "セッションとメッセージのメタデータのスナップショット",
+  "shellIntegrationsLspSubtitle": "言語サーバーの準備状況",
+  "shellIntegrationsFormatterSubtitle": "フォーマットの利用可能性",
+  "shellActionsSubtitle": "セッションコントロールとライフサイクルアクション",
+  "shellActiveCount": "{count} アクティブ",
+  "@shellActiveCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "shellThreadsCount": "現在のプロジェクト全体の {count} スレッド",
+  "@shellThreadsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chatPartAssistant": "アシスタント",
+  "chatPartUser": "ユーザー",
+  "chatPartThinking": "考え",
+  "chatPartTool": "道具",
+  "chatPartToolNamed": "ツール: {name}",
+  "@chatPartToolNamed": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "chatPartFile": "ファイル",
+  "chatPartStepStart": "ステップスタート",
+  "chatPartStepFinish": "ステップフィニッシュ",
+  "chatPartSnapshot": "スナップショット",
+  "chatPartPatch": "パッチ",
+  "chatPartRetry": "リトライ",
+  "chatPartAgent": "エージェント",
+  "chatPartSubtask": "サブタスク",
+  "chatPartCompaction": "圧縮",
+  "shellUtilitiesToggleTitle": "ユーティリティドロワー",
+  "shellUtilitiesToggleBody": "下部のユーティリティ ドロワーを開いて、ファイル、差分、Todo、ツール、縦向きレイアウトのターミナル パネルを調べます。",
+  "shellUtilitiesToggleBodyCompact": "ユーティリティを開いて、ファイル、差分、Todo、ツール、ターミナル パネルを切り替えます。",
+  "shellContextEyebrow": "コンテクスト",
+  "shellSecondaryContextSubtitle": "アクティブな会話の二次コンテキスト",
+  "shellSupportRailsSubtitle": "ファイル、タスク、コマンド、統合用のサポートレール",
+  "shellModulesCount": "{count}モジュール",
+  "@shellModulesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "shellSwipeUtilitiesIntoView": "ユーティリティをスワイプして表示します",
+  "shellOpenUtilityRail": "ユーティリティレールを開きます",
+  "shellOpenCodeRemote": "BOC",
+  "shellContextNearby": "近くのコンテキスト",
+  "shellShownCount": "表示は{count}",
+  "@shellShownCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "shellSymbolFallback": "シンボル",
+  "shellFileStatusSummary": "{status} +{added} -{removed}",
+  "@shellFileStatusSummary": {
+    "placeholders": {
+      "status": {
+        "type": "String"
+      },
+      "added": {
+        "type": "int"
+      },
+      "removed": {
+        "type": "int"
+      }
+    }
+  },
+  "shellNewSession": "新しいセッション",
+  "shellReplying": "返信する",
+  "shellCompactComposer": "コンパクトコンポーザー",
+  "shellExpandedComposer": "拡張されたコンポーザー",
+  "shellRetryAttempt": "{count} を試みます",
+  "@shellRetryAttempt": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "shellStatusWithDetails": "{status} - {details}",
+  "@shellStatusWithDetails": {
+    "placeholders": {
+      "status": {
+        "type": "String"
+      },
+      "details": {
+        "type": "String"
+      }
+    }
+  },
+  "shellTodoStatusInProgress": "進行中",
+  "shellTodoStatusPending": "保留中",
+  "shellTodoStatusCompleted": "完成した",
+  "shellTodoStatusUnknown": "未知",
+  "shellQuestionAskedNotification": "質問がリクエストされました",
+  "shellPermissionAskedNotification": "許可が要求されました",
+  "shellNotificationOpenAction": "開ける",
+  "chatPartUnknown": "不明な部分: {type}",
+  "@chatPartUnknown": {
+    "placeholders": {
+      "type": {
+        "type": "String"
+      }
+    }
+  }
+}

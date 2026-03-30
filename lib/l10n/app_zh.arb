@@ -1,0 +1,627 @@
+{
+  "@@locale": "zh",
+  "appTitle": "更好的开放代码客户端 (BOC)",
+  "foundationTitle": "基础工作区",
+  "foundationSubtitle": "在连接服务器之前，内置检查和实时更新已准备就绪。",
+  "currentFlavor": "味道",
+  "currentLocale": "语言环境",
+  "fullCapabilityProbe": "全服务器检查",
+  "legacyCapabilityProbe": "兼容性检查",
+  "probeErrorCapability": "检查错误处理",
+  "healthyStream": "健康流",
+  "staleStream": "过时流恢复",
+  "duplicateStream": "重复事件处理",
+  "resyncStream": "需要重新同步",
+  "capabilityFlags": "能力标志",
+  "streamFrames": "流帧",
+  "unknownFields": "保留未知字段",
+  "switchLocale": "切换区域设置",
+  "cacheSettingsAction": "缓存设置",
+  "cacheSettingsTitle": "缓存设置",
+  "cacheSettingsSubtitle": "调整缓存新鲜度并清除存储的连接检查和工作区快照。",
+  "cacheTtlLabel": "缓存新鲜度",
+  "cacheClearAction": "清除缓存数据",
+  "cacheClearingAction": "正在清除缓存...",
+  "cacheTtl15Seconds": "15秒",
+  "cacheTtl1Minute": "1分钟",
+  "cacheTtl5Minutes": "5分钟",
+  "cacheTtl15Minutes": "15分钟",
+  "connectionTitle": "服务器连接管理器",
+  "connectionSubtitle": "存储受信任的 OpenCode 服务器，在需要时运行服务器检查，然后返回主页选择项目。",
+  "serverProfileManager": "服务器配置文件管理器",
+  "connectionProfileHint": "使用受信任主机保存的配置文件和最近的尝试进行快速重试。",
+  "profileLabel": "轮廓标签",
+  "serverAddress": "服务器地址",
+  "username": "用户名",
+  "password": "密码",
+  "testingConnection": "测试...",
+  "testConnection": "测试连接",
+  "saveProfile": "保存个人资料",
+  "deleteProfile": "删除个人资料",
+  "connectionGuidance": "服务器检查确认运行状况、兼容性、登录、提供商访问和工具可用性。更多网络发现选项即将推出。",
+  "savedServers": "已保存的服务器",
+  "recentConnections": "最近的连接",
+  "noSavedServers": "还没有保存的服务器。",
+  "noRecentConnections": "最近还没有尝试。",
+  "connectionDiagnostics": "连接诊断",
+  "connectionDiagnosticsHint": "在打开工作区之前运行服务器检查以确认登录和兼容性。",
+  "serverVersion": "版本",
+  "sseStatus": "实时更新",
+  "readyStatus": "准备好",
+  "needsAttentionStatus": "需要注意",
+  "connectionEmptyState": "输入服务器配置文件并运行服务器检查以填充诊断信息。",
+  "connectionHeaderEyebrow": "实时服务器连接",
+  "connectionHeaderTitle": "连接真正的 OpenCode 服务器",
+  "connectionHeaderSubtitle": "查看保存的服务器详细信息，验证登录，并在该服务器准备就绪后返回工作区主页。",
+  "connectionStatusAwaiting": "等待第一次检查",
+  "connectionFormTitle": "服务器配置文件管理器",
+  "connectionFormSubtitle": "更新保存的服务器详细信息，重试检查，并保留此配置文件以便回家。",
+  "savedProfilesCountLabel": "已保存",
+  "recentConnectionsCountLabel": "最近的",
+  "sseReadyLabel": "实时更新已准备就绪",
+  "ssePendingLabel": "支票待处理",
+  "connectionProfileLabel": "个人资料名称",
+  "connectionProfileLabelHint": "工作室舞台、笔记本电脑隧道、本地网关",
+  "connectionAddressLabel": "服务器地址",
+  "connectionAddressHint": "https://opencode.example.com",
+  "connectionUsernameLabel": "基本身份验证用户名",
+  "connectionUsernameHint": "选修的",
+  "connectionPasswordLabel": "基本验证密码",
+  "connectionPasswordHint": "选修的",
+  "connectionAddressValidation": "输入有效的服务器地址。",
+  "connectionBackHomeAction": "回到家",
+  "connectionProbeAction": "检查服务器",
+  "connectionSaveAction": "保存个人资料",
+  "connectionDraftRestoredLabel": "恢复未保存的草稿",
+  "connectionPinProfileAction": "引脚轮廓",
+  "connectionUnpinProfileAction": "取消固定个人资料",
+  "connectionProbeResultTitle": "服务器检查",
+  "connectionProbeResultSubtitle": "使用此详细视图可以确认保存的服务器是否仍然响应。项目选择是在工作区主页进行的。",
+  "connectionProbeEmptyTitle": "最近还没有检查",
+  "connectionProbeEmptySubtitle": "返回工作区主页之前，运行服务器检查以确认登录和兼容性。",
+  "connectionVersionLabel": "版本",
+  "connectionCheckedAtLabel": "已检查",
+  "connectionCapabilitiesLabel": "已启用的功能",
+  "connectionReadinessLabel": "准备情况",
+  "connectionMissingCapabilitiesLabel": "缺少所需的功能",
+  "connectionExperimentalPathsLabel": "高级工具",
+  "connectionEndpointSectionTitle": "检查结果",
+  "connectionCapabilitySectionTitle": "能力",
+  "savedProfilesTitle": "已保存的配置文件",
+  "savedProfilesSubtitle": "固定的服务器随时准备进行快速检查。",
+  "savedProfilesEmptyTitle": "尚未保存个人资料",
+  "savedProfilesEmptySubtitle": "保存工作地址，以便应用程序下次打开时使用已知的服务器目标。",
+  "recentConnectionsTitle": "最近的尝试",
+  "recentConnectionsSubtitle": "最近的服务器检查与固定服务器分开。",
+  "recentConnectionsEmptyTitle": "最近还没有尝试过",
+  "recentConnectionsEmptySubtitle": "检查服务器，最新结果将保留在这里以便快速重试。",
+  "connectionOutcomeReady": "准备连接",
+  "connectionOutcomeAuthFailure": "认证失败",
+  "connectionOutcomeSpecFailure": "规格获取失败",
+  "connectionOutcomeUnsupported": "不支持的功能集",
+  "connectionOutcomeConnectivityFailure": "连接失败",
+  "connectionDetailReady": "核心服务做出了回应，家庭现在可以提供项目选择。",
+  "connectionDetailAuthFailure": "服务器响应，但提供的登录详细信息被拒绝。",
+  "connectionDetailBasicAuthFailure": "该服务器受基本身份验证保护。添加或更新用户名和密码，然后重试。",
+  "connectionDetailSpecFailure": "服务器可以访问，但无法干净地获取或解析 OpenAPI 规范。",
+  "connectionDetailUnsupported": "服务器可以访问，但仍然缺少此应用程序所需的功能。",
+  "connectionDetailConnectivityFailure": "无法足够可靠地到达服务器以完成检查。",
+  "endpointReadyStatus": "准备好",
+  "endpointAuthStatus": "授权",
+  "endpointUnsupportedStatus": "不支持的",
+  "endpointFailureStatus": "失败",
+  "endpointUnknownStatus": "未知",
+  "fixtureDiagnosticsTitle": "诊断",
+  "fixtureDiagnosticsSubtitle": "连接检查和状态详细信息位于此处。",
+  "capabilityCanShareSession": "分享会",
+  "capabilityCanForkSession": "派生会话",
+  "capabilityCanSummarizeSession": "总结会议",
+  "capabilityCanRevertSession": "恢复会话",
+  "capabilityHasQuestions": "问题",
+  "capabilityHasPermissions": "权限",
+  "capabilityHasExperimentalTools": "高级工具",
+  "capabilityHasProviderOAuth": "提供商 OAuth",
+  "capabilityHasMcpAuth": "MCP 授权",
+  "capabilityHasTuiControl": "途易控制",
+  "projectSelectionTitle": "选择一个项目",
+  "projectSelectionSubtitle": "从此服务器打开项目、您最近的工作或文件夹路径。",
+  "currentProjectTitle": "当前项目",
+  "currentProjectSubtitle": "如果服务器已位于项目内，则它首先出现在此处。",
+  "serverProjectsTitle": "此服务器上的项目",
+  "serverProjectsSubtitle": "服务器现在可以打开其他项目。",
+  "serverProjectsEmpty": "目前没有可用的服务器项目。您仍然可以打开最近的项目或文件夹路径。",
+  "manualProjectTitle": "打开文件夹路径",
+  "manualProjectSubtitle": "当服务器列表为空或者您确切知道所需的文件夹时，请使用此选项。",
+  "manualProjectPathLabel": "项目目录",
+  "manualProjectPathHint": "/工作区/我的项目",
+  "projectInspectAction": "检查路径",
+  "projectInspectingAction": "正在检查...",
+  "projectBrowseAction": "浏览文件夹",
+  "projectPathSuggestionsLoading": "正在搜索服务器文件夹...",
+  "projectPathSuggestionsEmpty": "在此服务器上找不到匹配的文件夹。",
+  "recentProjectsTitle": "最近的项目",
+  "recentProjectsSubtitle": "您最近打开的项目，以及我们获得它们时的上次会话提示。",
+  "pinnedProjectsTitle": "固定项目",
+  "pinnedProjectsSubtitle": "本地收藏夹保留在顶部，以便快速移动访问。",
+  "projectFilterLabel": "筛选项目",
+  "projectFilterHint": "名称、文件夹、分支或会话",
+  "projectFilterEmpty": "没有项目匹配此过滤器。",
+  "recentProjectsEmpty": "还没有最近的项目。",
+  "projectPreviewTitle": "项目详情",
+  "projectPreviewSubtitle": "在打开下一个工作区之前查看它。",
+  "projectPreviewEmpty": "选择项目、最近的工作空间或文件夹路径以在此处查看详细信息。",
+  "projectDirectoryLabel": "目录",
+  "projectSourceLabel": "来源",
+  "projectVcsLabel": "VCS",
+  "projectBranchLabel": "分支",
+  "projectLastSessionLabel": "最后一次会议",
+  "projectLastStatusLabel": "最后状态",
+  "projectLastSessionUnknown": "尚未捕获",
+  "projectLastStatusUnknown": "尚未捕获",
+  "projectSelectionReadyHint": "打开该项目以继续其会话。",
+  "homeHeaderEyebrow": "工作空间",
+  "homeHeaderSubtitle": "连接服务器，然后打开项目并继续您的会话。",
+  "homeAddServerAction": "添加服务器",
+  "homeBackToServersAction": "返回服务器",
+  "homeConnectServerAction": "连接",
+  "homeEditSelectedServerAction": "编辑选定的服务器",
+  "homeEditServerAction": "编辑服务器",
+  "homeSwitchServerAction": "切换服务器",
+  "homeNextStepsTitle": "后续步骤",
+  "homeNextStepsPinnedServers": "固定您最常使用的服务器，使它们保持在顶部。",
+  "homeNextStepsProjects": "服务器准备就绪后，打开项目并跳转到会话。",
+  "homeNextStepsRetryEdit": "足不出户即可重试或编辑服务器。",
+  "homeMetricSavedServers": "已保存的服务器",
+  "homeMetricRecentActivity": "最近的活动",
+  "homeMetricCurrentFocus": "当前服务器",
+  "homeChooseServerLabel": "选择服务器",
+  "homeResumeLastWorkspaceTitle": "恢复上一个工作区",
+  "homeOpenLastProjectTitle": "打开最后一个项目",
+  "homeResumeLastWorkspaceBody": "继续 {project} 并从上次停下的地方继续。",
+  "@homeResumeLastWorkspaceBody": {
+    "placeholders": {
+      "project": {
+        "type": "String"
+      }
+    }
+  },
+  "homeOpenLastProjectBody": "打开 {project}，然后选择一个会话或开始一个新会话。",
+  "@homeOpenLastProjectBody": {
+    "placeholders": {
+      "project": {
+        "type": "String"
+      }
+    }
+  },
+  "homeResumeLastWorkspaceAction": "恢复工作区",
+  "homeOpenLastProjectAction": "打开项目",
+  "homeResumeMetricProject": "项目",
+  "homeResumeMetricLastSession": "最后一次会议",
+  "homeResumeMetricStatus": "地位",
+  "homeActionCheckingWorkspace": "正在检查工作区...",
+  "homeActionContinue": "继续",
+  "homeActionRetry": "重试",
+  "homeActionCheckingServer": "正在检查服务器...",
+  "homeThisServerLabel": "这个服务器",
+  "homeWorkspaceSectionTitle": "项目和会议",
+  "homeWorkspaceLoadingSubtitle": "加载您保存的服务器和最近的活动。",
+  "homeWorkspaceSelectionHint": "从列表中选择一台服务器或添加新服务器。",
+  "homeWorkspaceConnectHint": "连接所选服务器以加载其项目。",
+  "homeWorkspaceEmptySubtitle": "添加服务器以在此处开始打开项目和会话。",
+  "homeWorkspaceFeatureSaveTitle": "保存服务器一次",
+  "homeWorkspaceFeatureSaveBody": "将服务器放在一处，以便您回来时做好准备。",
+  "homeWorkspaceFeatureChooseTitle": "接下来打开一个项目",
+  "homeWorkspaceFeatureChooseBody": "服务器准备就绪后，选择一个项目并继续。",
+  "homeWorkspaceFeatureRecentTitle": "保留最近的记录",
+  "homeWorkspaceFeatureRecentBody": "保存的服务器和最近的检查一起显示在一个屏幕上。",
+  "homeWorkspaceSubtitleReady": "选择一个项目继续。",
+  "homeWorkspaceSubtitleSignIn": "更新登录详细信息或在项目加载之前重试。",
+  "homeWorkspaceSubtitleOffline": "重试该服务器或确认保存的地址。",
+  "homeWorkspaceSubtitleUpdate": "在项目加载之前更新服务器。",
+  "homeWorkspaceSubtitleUnknown": "在加载项目之前运行快速检查。",
+  "homeWorkspaceTitleChooseServer": "选择已保存的服务器",
+  "homeWorkspaceTitleChecking": "检查 {server}",
+  "@homeWorkspaceTitleChecking": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
+  "homeWorkspaceTitleReady": "准备好项目",
+  "homeWorkspaceTitleSignInRequired": "需要登录",
+  "homeWorkspaceTitleOffline": "离线",
+  "homeWorkspaceTitleUpdate": "需要更新",
+  "homeWorkspaceTitleContinueFromHome": "从家里继续",
+  "homeWorkspaceBodyChecking": "在加载项目和会话之前检查登录和兼容性。",
+  "homeWorkspaceBodyReady": "{server} 已准备就绪，但项目列表仍在加载中。",
+  "@homeWorkspaceBodyReady": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
+  "homeWorkspaceBodySignInRequired": "{server} 已回复，但在加载项目之前需要注意登录详细信息。",
+  "@homeWorkspaceBodySignInRequired": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
+  "homeWorkspaceBodyBasicAuthRequired": "{server} 受基本身份验证保护。在加载项目之前编辑此服务器并添加用户名和密码。",
+  "@homeWorkspaceBodyBasicAuthRequired": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
+  "homeWorkspaceBodyOffline": "刚才无法联系 {server}。重试，或编辑已保存的地址（如果已更改）。",
+  "@homeWorkspaceBodyOffline": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
+  "homeWorkspaceBodyUpdateRequired": "{server} 已回复，但需要更新才能加载项目。",
+  "@homeWorkspaceBodyUpdateRequired": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
+  "homeWorkspaceBodyUnknown": "运行快速检查，然后仅在登录或需要注意地址时编辑详细信息。",
+  "homeNoticeWorkspaceUnavailable": "您的最后一个工作区不再可用。选择一个项目继续。",
+  "homeNoticeWorkspaceResumeFailed": "目前无法重新打开您的上一个工作区。选择下面的项目或重试该服务器。",
+  "homeSavedServersTitle": "已保存的服务器",
+  "homeSavedServersSubtitle": "选择一个服务器，然后继续进行项目和会话。",
+  "homeServerPanelSubtitle": "添加服务器，编辑保存的详细信息，然后在准备好后进行连接。",
+  "homeSavedServersEmptyTitle": "还没有保存的服务器",
+  "homeSavedServersEmptySubtitle": "添加您的第一台服务器以开始打开项目和会话。",
+  "homeRecentActivityTitle": "最近的活动",
+  "homeRecentActivitySubtitle": "您最近检查的服务器的快速记录。",
+  "homeRecentActivityEmptyTitle": "最近还没有活动",
+  "homeRecentActivityEmptySubtitle": "连接或重试服务器后，最近的检查会显示在此处。",
+  "homeRecentActivityNotUsed": "尚未使用",
+  "homeRecentActivityLastUsed": "最后使用 {timestamp}",
+  "@homeRecentActivityLastUsed": {
+    "placeholders": {
+      "timestamp": {
+        "type": "String"
+      }
+    }
+  },
+  "homeCredentialsSaved": "凭证已保存",
+  "homeCredentialsMissing": "未保存凭据",
+  "homeServerCardBodyReady": "准备好在家打开项目和会议。",
+  "homeServerCardBodySignIn": "在加载项目之前重试或更新登录详细信息。",
+  "homeServerCardBodyBasicAuthRequired": "该服务器加载项目之前需要进行基本身份验证。",
+  "homeServerCardBodyOffline": "重试，或编辑保存的地址，然后再继续。",
+  "homeServerCardBodyUpdate": "在继续项目和会话之前更新服务器。",
+  "homeServerCardBodyUnknownWithAuth": "在加载项目之前运行快速检查。",
+  "homeServerCardBodyUnknown": "运行快速检查，然后仅在需要登录时编辑详细信息。",
+  "homeConnectionFailedNotice": "无法连接到 {server}。检查保存的地址或凭据，然后重试。",
+  "@homeConnectionFailedNotice": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
+  "homeConnectionNeedsCredentialsNotice": "该服务器需要用户名和密码才能连接。",
+  "homeStatusNewHome": "新家",
+  "homeStatusChooseServer": "选择服务器",
+  "homeStatusCheckingServer": "检查服务器",
+  "homeStatusReadyForProjects": "准备好项目",
+  "homeStatusSignInRequired": "需要登录",
+  "homeStatusServerOffline": "服务器离线",
+  "homeStatusNeedsAttention": "需要注意",
+  "homeStatusAwaitingSetup": "等待设置",
+  "homeHeroTitleNoServers": "从服务器开始",
+  "homeHeroTitleOneServer": "您的服务器已准备就绪",
+  "homeHeroTitleManyServers": "您的所有服务器都集中在一处",
+  "homeHeroBodyNoServers": "添加服务器一次，然后返回此处打开项目并继续会话。",
+  "homeHeroBodyOneServer": "从家里继续，仅在发生变化时打开服务器详细信息。",
+  "homeHeroBodyManyServers": "选择一个服务器，查看最近的情况，并在需要时运行快速检查。",
+  "homeA11yAddServerAction": "添加服务器",
+  "homeA11yBackToServersAction": "返回服务器选择",
+  "homeA11yEditSelectedServerAction": "编辑选定的服务器",
+  "homeA11yWorkspacePrimaryAction": "工作区主要操作",
+  "homeA11yEditServerAction": "编辑服务器",
+  "homeA11ySwitchServerAction": "切换服务器",
+  "homeA11yResumeWorkspaceAction": "恢复工作区",
+  "homeStatusShortReady": "准备好",
+  "homeStatusShortSignInRequired": "需要登录",
+  "homeStatusShortOffline": "离线",
+  "homeStatusShortNeedsAttention": "需要注意",
+  "homeStatusShortNotCheckedYet": "尚未检查",
+  "projectCatalogUnavailableTitle": "项目清单不可用",
+  "projectCatalogUnavailableBody": "我们刚才无法加载该服务器的项目列表。您仍然可以打开最近的工作区或输入文件夹路径。",
+  "projectOpenAction": "打开项目",
+  "projectPinAction": "引脚项目",
+  "projectUnpinAction": "取消固定项目",
+  "shellProjectRailTitle": "项目和会议",
+  "shellDestinationSessions": "会议",
+  "shellDestinationChat": "聊天",
+  "shellDestinationContext": "语境",
+  "shellDestinationSettings": "设置",
+  "shellAdvancedLabel": "先进的",
+  "shellAdvancedSubtitle": "高级设置和故障排除工具。",
+  "shellAdvancedOverviewSubtitle": "技术选项远离主流。",
+  "shellOpenAdvancedAction": "打开高级",
+  "shellBackToSettingsAction": "返回设置",
+  "shellA11yOpenCacheSettings": "打开缓存设置",
+  "shellA11yOpenAdvanced": "打开高级设置",
+  "shellA11yBackToSettings": "返回设置",
+  "shellA11yBackToProjectsAction": "返回项目",
+  "shellA11yComposerField": "留言栏",
+  "shellA11ySendMessageAction": "发送消息",
+  "shellIntegrationsLastAuthUrlTitle": "上次授权网址",
+  "shellIntegrationsEventsSubtitle": "事件流状态和恢复详细信息。",
+  "shellStreamHealthConnected": "已连接",
+  "shellStreamHealthStale": "陈旧",
+  "shellStreamHealthReconnecting": "重新连接",
+  "shellConfigPreviewUnavailable": "配置视图目前不可用。",
+  "shellNoticeLastSessionUnavailable": "您的最后一个会话不再可用。选择另一个会话或开始一个新会话。",
+  "shellConfigJsonObjectError": "配置必须是 JSON 对象。",
+  "shellRecoveryLogReconnectRequested": "请求重新连接",
+  "shellRecoveryLogReconnectCompleted": "重新连接完成",
+  "shellUnknownLabel": "未知",
+  "shellBackToProjectsAction": "返回项目",
+  "shellSessionsTitle": "会议",
+  "shellSessionCurrent": "当前会话",
+  "shellSessionDraft": "草案分支",
+  "shellSessionReview": "审查分支",
+  "shellStatusActive": "积极的",
+  "shellStatusIdle": "闲置的",
+  "shellStatusError": "错误",
+  "shellChatHeaderTitle": "聊天工作区",
+  "shellThinkingModeLabel": "平衡思维",
+  "shellAgentLabel": "智能体",
+  "shellChatTimelineTitle": "对话",
+  "shellUserMessageTitle": "你",
+  "shellUserMessageBody": "选择一个会话，然后发送消息即可开始。",
+  "shellAssistantMessageTitle": "开放代码",
+  "shellAssistantMessageBody": "你在工作区。查看背景、选择会话并继续工作。",
+  "shellComposerPlaceholder": "写留言",
+  "shellComposerSendAction": "发送",
+  "shellComposerCreatingSession": "创建会话并发送",
+  "shellComposerSending": "正在发送...",
+  "shellComposerModelLabel": "模型",
+  "shellComposerModelDefault": "服务器默认",
+  "shellComposerThinkingLabel": "思维",
+  "shellComposerThinkingLow": "光",
+  "shellComposerThinkingBalanced": "均衡",
+  "shellComposerThinkingDeep": "深的",
+  "shellComposerThinkingMax": "最大限度",
+  "shellRenameSessionTitle": "重命名会话",
+  "shellSessionTitleHint": "会议标题",
+  "shellCancelAction": "取消",
+  "shellSaveAction": "节省",
+  "shellContextTitle": "上下文实用程序",
+  "shellFilesTitle": "文件",
+  "shellFilesSubtitle": "树、状态和搜索都在这里。",
+  "shellDiffTitle": "差异",
+  "shellDiffSubtitle": "补丁和快照审查显示在此处。",
+  "shellTodoTitle": "托多",
+  "shellTodoSubtitle": "任务进度和历史记录在这里可见。",
+  "shellToolsTitle": "工具",
+  "shellToolsSubtitle": "此工作区的有用工具。",
+  "shellTerminalTitle": "终端",
+  "shellTerminalSubtitle": "快速 shell 和附加流落在此处。",
+  "shellInspectorTitle": "督察",
+  "shellConfigTitle": "配置",
+  "shellConfigInvalid": "无效的配置",
+  "shellConfigDraftEmpty": "配置草案为空。",
+  "shellConfigChangedKeys": "更改的键：{count}",
+  "@shellConfigChangedKeys": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "shellConfigApplying": "正在申请...",
+  "shellConfigApplyAction": "应用配置",
+  "shellIntegrationsTitle": "集成",
+  "shellIntegrationsProviders": "供应商",
+  "shellIntegrationsMethods": "方法",
+  "shellIntegrationsStartProviderAuth": "启动提供商身份验证",
+  "shellIntegrationsMcp": "MCP",
+  "shellIntegrationsStartMcpAuth": "启动 MCP 身份验证",
+  "shellIntegrationsLsp": "LSP",
+  "shellIntegrationsFormatter": "格式化程序",
+  "shellIntegrationsEnabled": "已启用",
+  "shellIntegrationsDisabled": "残疾人",
+  "shellIntegrationsRecentEvents": "近期活动",
+  "shellIntegrationsStreamHealth": "流健康状况",
+  "shellIntegrationsRecoveryLog": "恢复日志",
+  "shellWorkspaceEyebrow": "工作空间",
+  "shellSessionsEyebrow": "会议",
+  "shellControlsEyebrow": "控制",
+  "shellActionsTitle": "行动",
+  "shellActionFork": "叉",
+  "shellActionShare": "分享",
+  "shellActionUnshare": "取消分享",
+  "shellActionRename": "重命名",
+  "shellActionDelete": "删除",
+  "shellActionAbort": "中止",
+  "shellActionRevert": "恢复",
+  "shellActionUnrevert": "取消恢复",
+  "shellActionInit": "初始化",
+  "shellActionSummarize": "总结",
+  "shellPrimaryEyebrow": "基本的",
+  "shellTimelineEyebrow": "时间轴",
+  "shellFocusedThreadEyebrow": "聚焦线程",
+  "shellNewSessionDraft": "新会议草案",
+  "shellTimelinePartsInFocus": "{count} 时间轴部分处于焦点",
+  "@shellTimelinePartsInFocus": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "shellReadyToStart": "准备开始",
+  "shellLiveContext": "实时背景",
+  "shellPartsCount": "{count} 零件",
+  "@shellPartsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "shellFocusedThreadSubtitle": "专注于活动线程",
+  "shellConversationSubtitle": "以较长形式的阅读和回复写作为中心",
+  "shellConnectionIssueTitle": "连接问题",
+  "shellUtilitiesEyebrow": "公用事业",
+  "shellFilesSearchHint": "搜索文件、文本或符号",
+  "shellPreviewTitle": "预览",
+  "shellCurrentSelection": "当前选择",
+  "shellMatchesTitle": "火柴",
+  "shellMatchesSubtitle": "相关文字结果",
+  "shellSymbolsTitle": "符号",
+  "shellSymbolsSubtitle": "快速代码地标",
+  "shellTerminalHint": "密码",
+  "shellTerminalRunAction": "运行命令",
+  "shellTerminalRunning": "跑步...",
+  "shellTrackedLabel": "被跟踪的",
+  "shellPendingApprovalsTitle": "待批准",
+  "shellPendingApprovalsSubtitle": "{count} 项等待输入",
+  "@shellPendingApprovalsSubtitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "shellAllowOnceAction": "允许一次",
+  "shellRejectAction": "拒绝",
+  "shellAnswerAction": "回答",
+  "shellConfigPreviewSubtitle": "查看和编辑配置",
+  "shellInspectorSubtitle": "会话和消息元数据快照",
+  "shellIntegrationsLspSubtitle": "语言服务器准备情况",
+  "shellIntegrationsFormatterSubtitle": "格式化可用性",
+  "shellActionsSubtitle": "会话控制和生命周期操作",
+  "shellActiveCount": "{count} 活跃",
+  "@shellActiveCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "shellThreadsCount": "{count} 跨当前项目的线程",
+  "@shellThreadsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chatPartAssistant": "助手",
+  "chatPartUser": "用户",
+  "chatPartThinking": "思维",
+  "chatPartTool": "工具",
+  "chatPartToolNamed": "工具：{name}",
+  "@chatPartToolNamed": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "chatPartFile": "文件",
+  "chatPartStepStart": "步骤开始",
+  "chatPartStepFinish": "步骤完成",
+  "chatPartSnapshot": "快照",
+  "chatPartPatch": "修补",
+  "chatPartRetry": "重试",
+  "chatPartAgent": "智能体",
+  "chatPartSubtask": "子任务",
+  "chatPartCompaction": "压实",
+  "shellUtilitiesToggleTitle": "实用抽屉",
+  "shellUtilitiesToggleBody": "打开底部实用程序抽屉以检查纵向布局上的文件、差异、待办事项、工具和终端面板。",
+  "shellUtilitiesToggleBodyCompact": "打开实用程序以在文件、差异、待办事项、工具和终端面板之间切换。",
+  "shellContextEyebrow": "语境",
+  "shellSecondaryContextSubtitle": "活跃对话的次要背景",
+  "shellSupportRailsSubtitle": "文件、任务、命令和集成的支持轨",
+  "shellModulesCount": "{count} 模块",
+  "@shellModulesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "shellSwipeUtilitiesIntoView": "将实用程序滑入视图",
+  "shellOpenUtilityRail": "打开公用导轨",
+  "shellOpenCodeRemote": "中国银行",
+  "shellContextNearby": "附近的环境",
+  "shellShownCount": "显示 {count}",
+  "@shellShownCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "shellSymbolFallback": "象征",
+  "shellFileStatusSummary": "{status} +{added} -{removed}",
+  "@shellFileStatusSummary": {
+    "placeholders": {
+      "status": {
+        "type": "String"
+      },
+      "added": {
+        "type": "int"
+      },
+      "removed": {
+        "type": "int"
+      }
+    }
+  },
+  "shellNewSession": "新会话",
+  "shellReplying": "正在回复",
+  "shellCompactComposer": "紧凑型编写器",
+  "shellExpandedComposer": "扩展编写器",
+  "shellRetryAttempt": "尝试 {count}",
+  "@shellRetryAttempt": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "shellStatusWithDetails": "{status} - {details}",
+  "@shellStatusWithDetails": {
+    "placeholders": {
+      "status": {
+        "type": "String"
+      },
+      "details": {
+        "type": "String"
+      }
+    }
+  },
+  "shellTodoStatusInProgress": "进行中",
+  "shellTodoStatusPending": "待办的",
+  "shellTodoStatusCompleted": "完全的",
+  "shellTodoStatusUnknown": "未知",
+  "shellQuestionAskedNotification": "提出问题",
+  "shellPermissionAskedNotification": "请求许可",
+  "shellNotificationOpenAction": "打开",
+  "chatPartUnknown": "未知部分：{type}",
+  "@chatPartUnknown": {
+    "placeholders": {
+      "type": {
+        "type": "String"
+      }
+    }
+  }
+}

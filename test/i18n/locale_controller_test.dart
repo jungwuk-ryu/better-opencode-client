@@ -25,6 +25,30 @@ void main() {
   });
 
   testWidgets(
+    'locale controller resolves japanese and chinese system locales',
+    (tester) async {
+      tester.binding.platformDispatcher.localesTestValue = const <Locale>[
+        Locale('ja', 'JP'),
+      ];
+      addTearDown(tester.binding.platformDispatcher.clearLocalesTestValue);
+
+      final japaneseController = LocaleController();
+      addTearDown(japaneseController.dispose);
+
+      expect(japaneseController.locale, const Locale('ja'));
+
+      tester.binding.platformDispatcher.localesTestValue = const <Locale>[
+        Locale('zh', 'CN'),
+      ];
+
+      final chineseController = LocaleController();
+      addTearDown(chineseController.dispose);
+
+      expect(chineseController.locale, const Locale('zh'));
+    },
+  );
+
+  testWidgets(
     'locale controller keeps following system changes until a manual toggle overrides it',
     (tester) async {
       tester.binding.platformDispatcher.localesTestValue = const <Locale>[
@@ -43,11 +67,17 @@ void main() {
       expect(controller.locale, const Locale('ko'));
 
       controller.toggle();
-      expect(controller.locale, const Locale('en'));
+      expect(controller.locale, const Locale('ja'));
 
       tester.binding.platformDispatcher.localesTestValue = const <Locale>[
         Locale('fr', 'FR'),
       ];
+      expect(controller.locale, const Locale('ja'));
+
+      controller.toggle();
+      expect(controller.locale, const Locale('zh'));
+
+      controller.toggle();
       expect(controller.locale, const Locale('en'));
 
       controller.toggle();
@@ -62,7 +92,7 @@ void main() {
     tester,
   ) async {
     SharedPreferences.setMockInitialValues(<String, Object>{
-      'app.locale_mode': 'english',
+      'app.locale_mode': 'japanese',
     });
     tester.binding.platformDispatcher.localesTestValue = const <Locale>[
       Locale('ko', 'KR'),
@@ -76,8 +106,8 @@ void main() {
 
     await controller.load();
 
-    expect(controller.mode, AppLocaleMode.english);
-    expect(controller.locale, const Locale('en'));
+    expect(controller.mode, AppLocaleMode.japanese);
+    expect(controller.locale, const Locale('ja'));
   });
 
   testWidgets('selected app language persists across controller reloads', (
@@ -91,17 +121,17 @@ void main() {
     final controller = LocaleController();
     addTearDown(controller.dispose);
 
-    await controller.setMode(AppLocaleMode.korean);
+    await controller.setMode(AppLocaleMode.chinese);
 
-    expect(controller.mode, AppLocaleMode.korean);
-    expect(controller.locale, const Locale('ko'));
+    expect(controller.mode, AppLocaleMode.chinese);
+    expect(controller.locale, const Locale('zh'));
 
     final restored = LocaleController();
     addTearDown(restored.dispose);
 
     await restored.load();
 
-    expect(restored.mode, AppLocaleMode.korean);
-    expect(restored.locale, const Locale('ko'));
+    expect(restored.mode, AppLocaleMode.chinese);
+    expect(restored.locale, const Locale('zh'));
   });
 }
