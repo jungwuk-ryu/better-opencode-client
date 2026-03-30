@@ -50,3 +50,40 @@ dependencies {
     implementation("androidx.window:window-java:1.0.0")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
+
+val generatedPluginRegistrant = layout.projectDirectory.file(
+    "src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java",
+)
+
+val scrubReleaseGeneratedPluginRegistrant =
+    tasks.register("scrubReleaseGeneratedPluginRegistrant") {
+        inputs.file(generatedPluginRegistrant)
+        outputs.file(generatedPluginRegistrant)
+
+        doLast {
+            val file = generatedPluginRegistrant.asFile
+            if (!file.exists()) {
+                return@doLast
+            }
+
+            val integrationTestRegistration = """
+    try {
+      flutterEngine.getPlugins().add(new dev.flutter.plugins.integration_test.IntegrationTestPlugin());
+    } catch (Exception e) {
+      Log.e(TAG, "Error registering plugin integration_test, dev.flutter.plugins.integration_test.IntegrationTestPlugin", e);
+    }
+"""
+                .trimIndent()
+
+            val source = file.readText()
+            if (!source.contains(integrationTestRegistration)) {
+                return@doLast
+            }
+
+            file.writeText(source.replace("$integrationTestRegistration\n", ""))
+        }
+    }
+
+tasks.matching { it.name.startsWith("compileRelease") }.configureEach {
+    dependsOn(scrubReleaseGeneratedPluginRegistrant)
+}
