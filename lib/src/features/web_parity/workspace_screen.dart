@@ -24,6 +24,7 @@ import '../../design_system/app_spacing.dart';
 import '../../design_system/app_theme.dart';
 import '../../i18n/locale_controller.dart';
 import '../../i18n/locale_scope.dart';
+import '../../i18n/web_parity_localizations.dart';
 import '../chat/chat_models.dart';
 import '../chat/clipboard_image_service.dart';
 import '../chat/prompt_attachment_models.dart';
@@ -190,12 +191,12 @@ class _ResolvedChatSearchState {
   String? get activeMessageId =>
       hasMatches ? matchMessageIds[activeMatchIndex] : null;
 
-  String get statusText {
+  String statusText(BuildContext context) {
     if (!hasQuery) {
-      return 'Type to search';
+      return context.wp('Type to search');
     }
     if (!hasMatches) {
-      return 'No matches';
+      return context.wp('No matches');
     }
     return '${activeMatchIndex + 1} / ${matchMessageIds.length}';
   }
@@ -1872,8 +1873,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       isScrollControlled: true,
       builder: (context) =>
           _GroupedSelectionSheet<WorkspaceComposerModelOption>(
-            title: 'Select Model',
-            searchHint: 'Search models',
+            title: context.wp('Select Model'),
+            searchHint: context.wp('Search models'),
             groups: items,
             selectedValue: controller.selectedModel?.key,
             matchesQuery: (item, query) {
@@ -1890,7 +1891,12 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
             trailingBuilder: (item) => item.reasoningValues.isEmpty
                 ? null
                 : Text(
-                    '${item.reasoningValues.length} variants',
+                    context.wp(
+                      '{count} variants',
+                      args: <String, Object?>{
+                        'count': item.reasoningValues.length,
+                      },
+                    ),
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Theme.of(context).extension<AppSurfaces>()!.muted,
                     ),
@@ -1912,8 +1918,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (context) => _SearchableSelectionSheet<_AgentChoice>(
-        title: 'Select Agent',
-        searchHint: 'Search agents',
+        title: context.wp('Select Agent'),
+        searchHint: context.wp('Search agents'),
         items: agents
             .map(
               (agent) => _AgentChoice(
@@ -1944,13 +1950,15 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     WorkspaceController controller,
   ) async {
     final options = <_ReasoningChoice>[
-      const _ReasoningChoice(
+      _ReasoningChoice(
         value: _PromptComposer._defaultReasoningSentinel,
-        label: 'Default',
+        label: context.wp('Default'),
       ),
       ...controller.availableReasoningValues.map(
-        (value) =>
-            _ReasoningChoice(value: value, label: _reasoningLabel(value)),
+        (value) => _ReasoningChoice(
+          value: value,
+          label: _reasoningLabel(context, value),
+        ),
       ),
     ];
     if (options.length <= 1) {
@@ -1960,8 +1968,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       context: context,
       backgroundColor: Colors.transparent,
       builder: (context) => _SearchableSelectionSheet<_ReasoningChoice>(
-        title: 'Reasoning',
-        searchHint: 'Search variants',
+        title: context.wp('Reasoning'),
+        searchHint: context.wp('Search variants'),
         items: options,
         selectedValue:
             controller.selectedReasoning ??
@@ -2052,7 +2060,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     final project = controller.project;
     if (profile == null || project == null) {
       _showSnackBar(
-        'Wait for the workspace project to finish loading before managing MCPs.',
+        context.wp(
+          'Wait for the workspace project to finish loading before managing MCPs.',
+        ),
         tone: AppSnackBarTone.info,
       );
       return;
@@ -2081,18 +2091,20 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     final commands = <_WorkspaceCommandPaletteCommand>[
       _WorkspaceCommandPaletteCommand(
         id: 'navigation.home',
-        title: 'Back Home',
-        category: 'Navigation',
-        description: 'Return to the server and project home screen.',
+        title: context.wp('Back Home'),
+        category: context.wp('Navigation'),
+        description: context.wp(
+          'Return to the server and project home screen.',
+        ),
         onSelected: () async {
           Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
         },
       ),
       _WorkspaceCommandPaletteCommand(
         id: 'composer.focus',
-        title: 'Focus Composer',
-        category: 'View',
-        description: 'Jump straight to the active prompt input.',
+        title: context.wp('Focus Composer'),
+        category: context.wp('View'),
+        description: context.wp('Jump straight to the active prompt input.'),
         shortcut: 'ctrl+l',
         onSelected: () async {
           _requestPromptComposerFocus();
@@ -2100,11 +2112,13 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       ),
       _WorkspaceCommandPaletteCommand(
         id: _chatSearchVisible ? 'chat-search.close' : 'chat-search.open',
-        title: _chatSearchVisible ? 'Close Chat Search' : 'Search Chat',
-        category: 'View',
+        title: _chatSearchVisible
+            ? context.wp('Close Chat Search')
+            : context.wp('Search Chat'),
+        category: context.wp('View'),
         description: _chatSearchVisible
-            ? 'Hide the in-session search bar.'
-            : 'Search messages in the active session.',
+            ? context.wp('Hide the in-session search bar.')
+            : context.wp('Search messages in the active session.'),
         onSelected: () async {
           if (_chatSearchVisible) {
             _closeChatSearch();
@@ -2115,9 +2129,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       ),
       _WorkspaceCommandPaletteCommand(
         id: 'project.open',
-        title: 'Open Project',
-        category: 'Project',
-        description: 'Choose another project on this server.',
+        title: context.wp('Open Project'),
+        category: context.wp('Project'),
+        description: context.wp('Choose another project on this server.'),
         shortcut: 'mod+o',
         onSelected: () async {
           await _openProjectPickerShortcut();
@@ -2125,10 +2139,11 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       ),
       _WorkspaceCommandPaletteCommand(
         id: 'settings.open',
-        title: 'Open Settings',
-        category: 'Settings',
-        description:
-            'Show workspace appearance, layout, and shortcut settings.',
+        title: context.wp('Open Settings'),
+        category: context.wp('Settings'),
+        description: context.wp(
+          'Show workspace appearance, layout, and shortcut settings.',
+        ),
         shortcut: 'mod+comma',
         onSelected: () async {
           await _openWorkspaceSettingsSheet(appController, controller);
@@ -2136,9 +2151,11 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       ),
       _WorkspaceCommandPaletteCommand(
         id: 'mcp.toggle',
-        title: 'Toggle MCPs',
-        category: 'MCP',
-        description: 'Connect, disconnect, and authenticate MCP servers.',
+        title: context.wp('Toggle MCPs'),
+        category: context.wp('MCP'),
+        description: context.wp(
+          'Connect, disconnect, and authenticate MCP servers.',
+        ),
         shortcut: 'mod+;',
         onSelected: () async {
           await _openMcpPicker(controller);
@@ -2146,9 +2163,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       ),
       _WorkspaceCommandPaletteCommand(
         id: 'sidebar.toggle',
-        title: 'Toggle Sessions Panel',
-        category: 'Panels',
-        description: 'Collapse or reveal the sessions sidebar.',
+        title: context.wp('Toggle Sessions Panel'),
+        category: context.wp('Panels'),
+        description: context.wp('Collapse or reveal the sessions sidebar.'),
         shortcut: 'mod+b',
         onSelected: () async {
           _toggleSessionsSurface(compact: compact);
@@ -2156,9 +2173,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       ),
       _WorkspaceCommandPaletteCommand(
         id: 'panel.review',
-        title: 'Toggle Review Panel',
-        category: 'Panels',
-        description: 'Open or hide the review side panel.',
+        title: context.wp('Toggle Review Panel'),
+        category: context.wp('Panels'),
+        description: context.wp('Open or hide the review side panel.'),
         shortcut: 'mod+shift+r',
         onSelected: () async {
           _toggleSideTab(controller, WorkspaceSideTab.review, compact: compact);
@@ -2166,9 +2183,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       ),
       _WorkspaceCommandPaletteCommand(
         id: 'panel.files',
-        title: 'Toggle Files Panel',
-        category: 'Panels',
-        description: 'Open or hide the files side panel.',
+        title: context.wp('Toggle Files Panel'),
+        category: context.wp('Panels'),
+        description: context.wp('Open or hide the files side panel.'),
         shortcut: 'mod+backslash',
         onSelected: () async {
           _toggleSideTab(controller, WorkspaceSideTab.files, compact: compact);
@@ -2176,9 +2193,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       ),
       _WorkspaceCommandPaletteCommand(
         id: 'panel.context',
-        title: 'Open Context Panel',
-        category: 'Panels',
-        description: 'Inspect context usage and token breakdown.',
+        title: context.wp('Open Context Panel'),
+        category: context.wp('Panels'),
+        description: context.wp('Inspect context usage and token breakdown.'),
         onSelected: () async {
           _toggleSideTab(
             controller,
@@ -2189,11 +2206,13 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       ),
       _WorkspaceCommandPaletteCommand(
         id: _terminalPanelOpen ? 'terminal.hide' : 'terminal.show',
-        title: _terminalPanelOpen ? 'Hide Terminal' : 'Show Terminal',
-        category: 'Terminal',
+        title: _terminalPanelOpen
+            ? context.wp('Hide Terminal')
+            : context.wp('Show Terminal'),
+        category: context.wp('Terminal'),
         description: _terminalPanelOpen
-            ? 'Collapse the terminal drawer.'
-            : 'Open the terminal drawer for this project.',
+            ? context.wp('Collapse the terminal drawer.')
+            : context.wp('Open the terminal drawer for this project.'),
         shortcut: 'ctrl+backquote',
         onSelected: () async {
           await _toggleTerminalPanel();
@@ -2201,9 +2220,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       ),
       _WorkspaceCommandPaletteCommand(
         id: 'terminal.new',
-        title: 'New Terminal Session',
-        category: 'Terminal',
-        description: 'Create a fresh terminal tab for this project.',
+        title: context.wp('New Terminal Session'),
+        category: context.wp('Terminal'),
+        description: context.wp('Create a fresh terminal tab for this project.'),
         shortcut: 'ctrl+alt+t',
         onSelected: () async {
           await _createPtySession();
@@ -2211,9 +2230,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       ),
       _WorkspaceCommandPaletteCommand(
         id: 'session.new',
-        title: 'New Session',
-        category: 'Session',
-        description: 'Create a fresh chat session in this project.',
+        title: context.wp('New Session'),
+        category: context.wp('Session'),
+        description: context.wp('Create a fresh chat session in this project.'),
         shortcut: 'mod+shift+s',
         onSelected: () async {
           await _createNewSession(controller);
@@ -2221,9 +2240,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       ),
       _WorkspaceCommandPaletteCommand(
         id: 'session.previous',
-        title: 'Previous Session',
-        category: 'Session',
-        description: 'Move to the previous visible session.',
+        title: context.wp('Previous Session'),
+        category: context.wp('Session'),
+        description: context.wp('Move to the previous visible session.'),
         shortcut: 'alt+arrowup',
         onSelected: () async {
           await _navigateSessionByOffset(controller, -1, compact: compact);
@@ -2231,9 +2250,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       ),
       _WorkspaceCommandPaletteCommand(
         id: 'session.next',
-        title: 'Next Session',
-        category: 'Session',
-        description: 'Move to the next visible session.',
+        title: context.wp('Next Session'),
+        category: context.wp('Session'),
+        description: context.wp('Move to the next visible session.'),
         shortcut: 'alt+arrowdown',
         onSelected: () async {
           await _navigateSessionByOffset(controller, 1, compact: compact);
@@ -2241,9 +2260,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       ),
       _WorkspaceCommandPaletteCommand(
         id: 'project.previous',
-        title: 'Previous Project',
-        category: 'Project',
-        description: 'Move to the previous project in the sidebar rail.',
+        title: context.wp('Previous Project'),
+        category: context.wp('Project'),
+        description: context.wp('Move to the previous project in the sidebar rail.'),
         shortcut: 'mod+alt+arrowup',
         onSelected: () async {
           await _navigateProjectByOffset(controller, -1, compact: compact);
@@ -2251,9 +2270,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       ),
       _WorkspaceCommandPaletteCommand(
         id: 'project.next',
-        title: 'Next Project',
-        category: 'Project',
-        description: 'Move to the next project in the sidebar rail.',
+        title: context.wp('Next Project'),
+        category: context.wp('Project'),
+        description: context.wp('Move to the next project in the sidebar rail.'),
         shortcut: 'mod+alt+arrowdown',
         onSelected: () async {
           await _navigateProjectByOffset(controller, 1, compact: compact);
@@ -2261,9 +2280,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       ),
       _WorkspaceCommandPaletteCommand(
         id: 'attachments.pick',
-        title: 'Attach Files',
-        category: 'Composer',
-        description: 'Pick files and add them to the active prompt.',
+        title: context.wp('Attach Files'),
+        category: context.wp('Composer'),
+        description: context.wp('Pick files and add them to the active prompt.'),
         shortcut: 'mod+u',
         onSelected: () async {
           await _pickComposerAttachments();
@@ -2271,19 +2290,20 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       ),
       _WorkspaceCommandPaletteCommand(
         id: 'permissions.toggle',
-        title: 'Toggle Permission Auto-Accept',
-        category: 'Composer',
-        description:
-            'Enable or disable permission auto-accept for the active session.',
+        title: context.wp('Toggle Permission Auto-Accept'),
+        category: context.wp('Composer'),
+        description: context.wp(
+          'Enable or disable permission auto-accept for the active session.',
+        ),
         onSelected: () async {
           await _toggleSelectedPermissionAutoAccept();
         },
       ),
       _WorkspaceCommandPaletteCommand(
         id: 'model.choose',
-        title: 'Choose Model',
-        category: 'Model',
-        description: 'Open the grouped model picker.',
+        title: context.wp('Choose Model'),
+        category: context.wp('Model'),
+        description: context.wp('Open the grouped model picker.'),
         shortcut: 'mod+quote',
         onSelected: () async {
           await _showModelShortcutPicker(controller);
@@ -2291,18 +2311,18 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       ),
       _WorkspaceCommandPaletteCommand(
         id: 'agent.choose',
-        title: 'Choose Agent',
-        category: 'Agent',
-        description: 'Open the agent picker for the active composer.',
+        title: context.wp('Choose Agent'),
+        category: context.wp('Agent'),
+        description: context.wp('Open the agent picker for the active composer.'),
         onSelected: () async {
           await _showAgentShortcutPicker(controller);
         },
       ),
       _WorkspaceCommandPaletteCommand(
         id: 'agent.previous',
-        title: 'Previous Agent',
-        category: 'Agent',
-        description: 'Cycle backward through available agents.',
+        title: context.wp('Previous Agent'),
+        category: context.wp('Agent'),
+        description: context.wp('Cycle backward through available agents.'),
         shortcut: 'mod+shift+period',
         onSelected: () async {
           _cycleSelectedAgent(controller, -1);
@@ -2310,9 +2330,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       ),
       _WorkspaceCommandPaletteCommand(
         id: 'agent.next',
-        title: 'Next Agent',
-        category: 'Agent',
-        description: 'Cycle forward through available agents.',
+        title: context.wp('Next Agent'),
+        category: context.wp('Agent'),
+        description: context.wp('Cycle forward through available agents.'),
         shortcut: 'mod+period',
         onSelected: () async {
           _cycleSelectedAgent(controller, 1);
@@ -2320,18 +2340,18 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       ),
       _WorkspaceCommandPaletteCommand(
         id: 'reasoning.choose',
-        title: 'Choose Reasoning',
-        category: 'Reasoning',
-        description: 'Open the reasoning depth picker.',
+        title: context.wp('Choose Reasoning'),
+        category: context.wp('Reasoning'),
+        description: context.wp('Open the reasoning depth picker.'),
         onSelected: () async {
           await _showReasoningShortcutPicker(controller);
         },
       ),
       _WorkspaceCommandPaletteCommand(
         id: 'reasoning.cycle',
-        title: 'Cycle Reasoning Depth',
-        category: 'Reasoning',
-        description: 'Rotate through the available reasoning options.',
+        title: context.wp('Cycle Reasoning Depth'),
+        category: context.wp('Reasoning'),
+        description: context.wp('Rotate through the available reasoning options.'),
         shortcut: 'mod+shift+d',
         onSelected: () async {
           _cycleSelectedReasoning(controller);
@@ -2339,18 +2359,20 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       ),
       _WorkspaceCommandPaletteCommand(
         id: 'theme.cycle',
-        title: 'Cycle Theme',
-        category: 'Theme',
-        description: 'Rotate through the installed theme presets.',
+        title: context.wp('Cycle Theme'),
+        category: context.wp('Theme'),
+        description: context.wp('Rotate through the installed theme presets.'),
         onSelected: () async {
           await appController.cycleThemePreset();
         },
       ),
       _WorkspaceCommandPaletteCommand(
         id: 'theme.color-mode.cycle',
-        title: 'Cycle Color Mode',
-        category: 'Theme',
-        description: 'Rotate between system, light, and dark color modes.',
+        title: context.wp('Cycle Color Mode'),
+        category: context.wp('Theme'),
+        description: context.wp(
+          'Rotate between system, light, and dark color modes.',
+        ),
         onSelected: () async {
           await appController.cycleColorSchemeMode();
         },
@@ -2361,9 +2383,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       commands.add(
         _WorkspaceCommandPaletteCommand(
           id: 'pane.split',
-          title: 'Split Session Pane',
-          category: 'View',
-          description: 'Open another session pane in the desktop layout.',
+          title: context.wp('Split Session Pane'),
+          category: context.wp('View'),
+          description: context.wp('Open another session pane in the desktop layout.'),
           onSelected: () async {
             _splitDesktopSessionPane(controller);
           },
@@ -2375,9 +2397,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       commands.add(
         _WorkspaceCommandPaletteCommand(
           id: 'session.interrupt',
-          title: 'Interrupt Active Session',
-          category: 'Session',
-          description: 'Stop the active model response.',
+          title: context.wp('Interrupt Active Session'),
+          category: context.wp('Session'),
+          description: context.wp('Stop the active model response.'),
           shortcut: 'escape',
           onSelected: () async {
             await _interruptSelectedSession();
@@ -2391,19 +2413,27 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       commands.addAll(<_WorkspaceCommandPaletteCommand>[
         _WorkspaceCommandPaletteCommand(
           id: 'session.rename',
-          title: 'Rename Session',
-          category: 'Session',
-          description:
-              'Rename "${_sessionHeaderTitle(selectedSession, controller.project)}".',
+          title: context.wp('Rename Session'),
+          category: context.wp('Session'),
+          description: context.wp(
+            'Rename "{title}".',
+            args: <String, Object?>{
+              'title': _sessionHeaderTitle(
+                context,
+                selectedSession,
+                controller.project,
+              ),
+            },
+          ),
           onSelected: () async {
             await _renameSelectedSession(controller);
           },
         ),
         _WorkspaceCommandPaletteCommand(
           id: 'session.fork',
-          title: 'Fork Session',
-          category: 'Session',
-          description: 'Create a branched copy of the current session.',
+          title: context.wp('Fork Session'),
+          category: context.wp('Session'),
+          description: context.wp('Create a branched copy of the current session.'),
           onSelected: () async {
             await _forkSelectedSession(controller);
           },
@@ -2411,12 +2441,12 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         _WorkspaceCommandPaletteCommand(
           id: 'session.share',
           title: selectedSession.shareUrl?.trim().isNotEmpty == true
-              ? 'Copy Share Link'
-              : 'Share Session',
-          category: 'Session',
+              ? context.wp('Copy Share Link')
+              : context.wp('Share Session'),
+          category: context.wp('Session'),
           description: selectedSession.shareUrl?.trim().isNotEmpty == true
-              ? 'Copy the existing share link for this session.'
-              : 'Create and copy a share link for this session.',
+              ? context.wp('Copy the existing share link for this session.')
+              : context.wp('Create and copy a share link for this session.'),
           onSelected: () async {
             if (selectedSession.shareUrl?.trim().isNotEmpty == true) {
               await Clipboard.setData(
@@ -2426,7 +2456,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                 return;
               }
               _showSnackBar(
-                'Share link copied to clipboard.',
+                context.wp('Share link copied to clipboard.'),
                 tone: AppSnackBarTone.success,
               );
               return;
@@ -2437,27 +2467,29 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         if (selectedSession.shareUrl?.trim().isNotEmpty == true)
           _WorkspaceCommandPaletteCommand(
             id: 'session.unshare',
-            title: 'Unshare Session',
-            category: 'Session',
-            description: 'Remove the current share link.',
+            title: context.wp('Unshare Session'),
+            category: context.wp('Session'),
+            description: context.wp('Remove the current share link.'),
             onSelected: () async {
               await _unshareSelectedSession(controller);
             },
           ),
         _WorkspaceCommandPaletteCommand(
           id: 'session.compact',
-          title: 'Compact Session',
-          category: 'Session',
-          description: 'Summarize the current session to reduce context size.',
+          title: context.wp('Compact Session'),
+          category: context.wp('Session'),
+          description: context.wp(
+            'Summarize the current session to reduce context size.',
+          ),
           onSelected: () async {
             await _summarizeSelectedSession(controller);
           },
         ),
         _WorkspaceCommandPaletteCommand(
           id: 'session.delete',
-          title: 'Delete Session',
-          category: 'Session',
-          description: 'Delete the current session after confirmation.',
+          title: context.wp('Delete Session'),
+          category: context.wp('Session'),
+          description: context.wp('Delete the current session after confirmation.'),
           onSelected: () async {
             await _deleteSelectedSession(controller);
           },
@@ -2470,10 +2502,16 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       commands.add(
         _WorkspaceCommandPaletteCommand(
           id: 'project.open.${project.directory}',
-          title: 'Open ${project.title}',
-          category: 'Project',
+          title: context.wp(
+            'Open {project}',
+            args: <String, Object?>{'project': project.title},
+          ),
+          category: context.wp('Project'),
           description: isCurrentProject
-              ? '${project.directory} • Current project'
+              ? context.wp(
+                  '{directory} • Current project',
+                  args: <String, Object?>{'directory': project.directory},
+                )
               : project.directory,
           searchTerms: <String>[
             project.title,
@@ -2489,16 +2527,26 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     }
 
     for (final session in controller.visibleSessions) {
-      final sessionTitle = _sessionHeaderTitle(session, controller.project);
+      final sessionTitle = _sessionHeaderTitle(
+        context,
+        session,
+        controller.project,
+      );
       final isCurrentSession = session.id == controller.selectedSessionId;
       commands.add(
         _WorkspaceCommandPaletteCommand(
           id: 'session.open.${session.id}',
-          title: 'Open $sessionTitle',
-          category: 'Session',
+          title: context.wp(
+            'Open {session}',
+            args: <String, Object?>{'session': sessionTitle},
+          ),
+          category: context.wp('Session'),
           description: isCurrentSession
-              ? 'Current session'
-              : 'Switch to session ${session.id}',
+              ? context.wp('Current session')
+              : context.wp(
+                  'Switch to session {id}',
+                  args: <String, Object?>{'id': session.id},
+                ),
           searchTerms: <String>[session.id, session.title],
           onSelected: () async {
             await _selectSessionInPlace(
@@ -2516,10 +2564,16 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       commands.add(
         _WorkspaceCommandPaletteCommand(
           id: 'model.set.${model.key}',
-          title: 'Use ${model.name}',
-          category: 'Model',
+          title: context.wp(
+            'Use {model}',
+            args: <String, Object?>{'model': model.name},
+          ),
+          category: context.wp('Model'),
           description: isCurrentModel
-              ? '${model.providerName} • Current model'
+              ? context.wp(
+                  '{provider} • Current model',
+                  args: <String, Object?>{'provider': model.providerName},
+                )
               : '${model.providerName} • ${model.modelId}',
           searchTerms: <String>[
             model.key,
@@ -2540,11 +2594,23 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       commands.add(
         _WorkspaceCommandPaletteCommand(
           id: 'agent.set.${agent.name}',
-          title: 'Use ${agent.name}',
-          category: 'Agent',
+          title: context.wp(
+            'Use {agent}',
+            args: <String, Object?>{'agent': agent.name},
+          ),
+          category: context.wp('Agent'),
           description: isCurrentAgent
-              ? '${agent.description ?? agent.mode} • Current agent'
-              : agent.description ?? 'Mode: ${agent.mode}',
+              ? context.wp(
+                  '{description} • Current agent',
+                  args: <String, Object?>{
+                    'description': agent.description ?? agent.mode,
+                  },
+                )
+              : agent.description ??
+                    context.wp(
+                      'Mode: {mode}',
+                      args: <String, Object?>{'mode': agent.mode},
+                    ),
           searchTerms: <String>[
             agent.name,
             agent.mode,
@@ -2564,16 +2630,25 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       null,
       ...controller.availableReasoningValues,
     ]) {
-      final label = _reasoningLabel(reasoning);
+      final label = _reasoningLabel(context, reasoning);
       final isCurrentReasoning = reasoning == controller.selectedReasoning;
       commands.add(
         _WorkspaceCommandPaletteCommand(
           id: 'reasoning.set.${reasoning ?? 'default'}',
-          title: 'Use $label Reasoning',
-          category: 'Reasoning',
+          title: context.wp(
+            'Use {label} Reasoning',
+            args: <String, Object?>{'label': label},
+          ),
+          category: context.wp('Reasoning'),
           description: isCurrentReasoning
-              ? '${reasoning ?? 'Default'} • Current selection'
-              : reasoning ?? 'Use the model default reasoning depth.',
+              ? context.wp(
+                  '{label} • Current selection',
+                  args: <String, Object?>{
+                    'label': reasoning ?? context.wp('Default'),
+                  },
+                )
+              : reasoning ??
+                    context.wp('Use the model default reasoning depth.'),
           searchTerms: <String>[label, reasoning ?? 'default'],
           onSelected: () async {
             controller.selectReasoning(reasoning);
@@ -2587,10 +2662,16 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       commands.add(
         _WorkspaceCommandPaletteCommand(
           id: 'theme.set.${preset.storageValue}',
-          title: 'Switch to ${definition.label}',
-          category: 'Theme',
+          title: context.wp(
+            'Switch to {theme}',
+            args: <String, Object?>{'theme': definition.label},
+          ),
+          category: context.wp('Theme'),
           description: appController.themePreset == preset
-              ? '${definition.summary} • Current theme'
+              ? context.wp(
+                  '{summary} • Current theme',
+                  args: <String, Object?>{'summary': definition.summary},
+                )
               : definition.summary,
           searchTerms: <String>[
             definition.label,
@@ -2606,19 +2687,28 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
 
     for (final mode in AppColorSchemeMode.values) {
       final label = switch (mode) {
-        AppColorSchemeMode.system => 'System',
-        AppColorSchemeMode.light => 'Light',
-        AppColorSchemeMode.dark => 'Dark',
+        AppColorSchemeMode.system => context.wp('System'),
+        AppColorSchemeMode.light => context.wp('Light'),
+        AppColorSchemeMode.dark => context.wp('Dark'),
       };
       commands.add(
         _WorkspaceCommandPaletteCommand(
           id: 'theme.color-mode.${mode.storageValue}',
-          title: 'Use $label Color Mode',
-          category: 'Theme',
+          title: context.wp(
+            'Use {label} Color Mode',
+            args: <String, Object?>{'label': label},
+          ),
+          category: context.wp('Theme'),
           description: appController.colorSchemeMode == mode
-              ? '$label palette selection • Current mode'
-              : 'Switch the app to $label color mode.',
-          searchTerms: <String>[label, mode.storageValue, 'theme scheme'],
+              ? context.wp(
+                  '{label} palette selection • Current mode',
+                  args: <String, Object?>{'label': label},
+                )
+              : context.wp(
+                  'Switch the app to {label} color mode.',
+                  args: <String, Object?>{'label': label},
+                ),
+          searchTerms: <String>[label, mode.storageValue, context.wp('Theme')],
           onSelected: () async {
             await appController.setColorSchemeMode(mode);
           },
@@ -2631,10 +2721,13 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         _WorkspaceCommandPaletteCommand(
           id: 'command.${command.name}',
           title: '/${command.name}',
-          category: 'Commands',
+          category: context.wp('Commands'),
           description: command.description?.trim().isNotEmpty == true
               ? command.description!.trim()
-              : 'Insert /${command.name} into the composer.',
+              : context.wp(
+                  'Insert /{command} into the composer.',
+                  args: <String, Object?>{'command': command.name},
+                ),
           searchTerms: <String>[
             command.name,
             command.source ?? '',
@@ -3651,7 +3744,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   void _splitDesktopSessionPane(WorkspaceController controller) {
     if (_desktopSessionPanes.length >= _maxDesktopSessionPanes) {
       _showSnackBar(
-        'You can open up to 8 session panes.',
+        context.wp('You can open up to 8 session panes.'),
         tone: AppSnackBarTone.warning,
       );
       return;
@@ -3871,7 +3964,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
           ? ' and ${result.rejectedNames.length - 3} more'
           : '';
       _showSnackBar(
-        'Only images, PDFs, and text files are supported. Skipped: $names$overflow',
+        context.wp(
+          'Only images, PDFs, and text files are supported. Skipped: {names}{overflow}',
+          args: <String, Object?>{'names': names, 'overflow': overflow},
+        ),
         tone: AppSnackBarTone.warning,
       );
     }
@@ -3919,7 +4015,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         return;
       }
       _showSnackBar(
-        'Failed to attach dropped files: $error',
+        context.wp(
+          'Failed to attach dropped files: {error}',
+          args: <String, Object?>{'error': error},
+        ),
         tone: AppSnackBarTone.danger,
       );
     }
@@ -3978,7 +4077,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     final scopeKey = _activeComposerScopeKey;
     if (scopeKey == null) {
       _showSnackBar(
-        'Open a session composer before adding review context.',
+        context.wp('Open a session composer before adding review context.'),
         tone: AppSnackBarTone.warning,
       );
       return;
@@ -3991,7 +4090,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     );
     if (!added) {
       _showSnackBar(
-        'This review comment is already in the composer context.',
+        context.wp('This review comment is already in the composer context.'),
         tone: AppSnackBarTone.warning,
       );
       return;
@@ -4001,7 +4100,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         _compactPane = _CompactWorkspacePane.session;
       });
     }
-    _showSnackBar('Added review comment to composer context.');
+    _showSnackBar(context.wp('Added review comment to composer context.'));
   }
 
   PromptAttachment _buildReviewCommentAttachment(
@@ -4010,15 +4109,25 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     final comment = submission.comment.trim();
     final target = submission.target;
     final payload = StringBuffer()
-      ..writeln('Review comment context')
+      ..writeln(context.wp('Review comment context'))
       ..writeln()
-      ..writeln('File: ${target.path}')
-      ..writeln('Location: ${target.locationLabel}')
+      ..writeln(
+        context.wp(
+          'File: {path}',
+          args: <String, Object?>{'path': target.path},
+        ),
+      )
+      ..writeln(
+        context.wp(
+          'Location: {location}',
+          args: <String, Object?>{'location': target.locationLabel(context)},
+        ),
+      )
       ..writeln()
-      ..writeln('Comment:')
+      ..writeln(context.wp('Comment:'))
       ..writeln(comment)
       ..writeln()
-      ..writeln('Diff excerpt:')
+      ..writeln(context.wp('Diff excerpt:'))
       ..writeln(target.preview.trimRight());
     final digest = base64Url
         .encode(
@@ -4029,7 +4138,13 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         .replaceAll('=', '');
     return PromptAttachment(
       id: 'review-comment-$digest',
-      filename: 'Review · ${target.path} · ${target.locationLabel}.txt',
+      filename: context.wp(
+        'Review · {path} · {location}.txt',
+        args: <String, Object?>{
+          'path': target.path,
+          'location': target.locationLabel(context),
+        },
+      ),
       mime: 'text/plain',
       url:
           'data:text/plain;base64,${base64Encode(utf8.encode(payload.toString().trimRight()))}',
@@ -4229,12 +4344,18 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         return;
       }
       final targetLabel = sessionId == null || sessionId.trim().isEmpty
-          ? 'this project'
-          : 'this session';
+          ? context.wp('this project')
+          : context.wp('this session');
       _showSnackBar(
         enabled
-            ? 'Permission auto-accept enabled for $targetLabel.'
-            : 'Permission auto-accept disabled for $targetLabel.',
+            ? context.wp(
+                'Permission auto-accept enabled for {target}.',
+                args: <String, Object?>{'target': targetLabel},
+              )
+            : context.wp(
+                'Permission auto-accept disabled for {target}.',
+                args: <String, Object?>{'target': targetLabel},
+              ),
         tone: enabled ? AppSnackBarTone.success : AppSnackBarTone.info,
       );
     } catch (error) {
@@ -4242,7 +4363,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         return;
       }
       _showSnackBar(
-        'Failed to update permission auto-accept: $error',
+        context.wp(
+          'Failed to update permission auto-accept: {error}',
+          args: <String, Object?>{'error': error},
+        ),
         tone: AppSnackBarTone.danger,
       );
     }
@@ -4364,7 +4488,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         );
       }
       _showSnackBar(
-        'Failed to send message: $error',
+        context.wp(
+          'Failed to send message: {error}',
+          args: <String, Object?>{'error': error},
+        ),
         tone: AppSnackBarTone.danger,
       );
     } finally {
@@ -4441,7 +4568,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         return;
       }
       _showSnackBar(
-        'Failed to send queued message: $error',
+        context.wp(
+          'Failed to send queued message: {error}',
+          args: <String, Object?>{'error': error},
+        ),
         tone: AppSnackBarTone.danger,
       );
     }
@@ -4462,7 +4592,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         return;
       }
       _showSnackBar(
-        'Failed to interrupt the session: $error',
+        context.wp(
+          'Failed to interrupt the session: {error}',
+          args: <String, Object?>{'error': error},
+        ),
         tone: AppSnackBarTone.danger,
       );
     }
@@ -4486,7 +4619,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         return;
       }
       _showSnackBar(
-        'Renamed session to "${updated.title}".',
+        context.wp(
+          'Renamed session to "{title}".',
+          args: <String, Object?>{'title': updated.title},
+        ),
         tone: AppSnackBarTone.success,
       );
     } catch (error) {
@@ -4494,7 +4630,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         return;
       }
       _showSnackBar(
-        'Failed to rename session: $error',
+        context.wp(
+          'Failed to rename session: {error}',
+          args: <String, Object?>{'error': error},
+        ),
         tone: AppSnackBarTone.danger,
       );
     }
@@ -4508,7 +4647,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         return;
       }
       _showSnackBar(
-        'Forked into "${forked.title}".',
+        context.wp(
+          'Forked into "{title}".',
+          args: <String, Object?>{'title': forked.title},
+        ),
         tone: AppSnackBarTone.success,
       );
     } catch (error) {
@@ -4516,7 +4658,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         return;
       }
       _showSnackBar(
-        'Failed to fork session: $error',
+        context.wp(
+          'Failed to fork session: {error}',
+          args: <String, Object?>{'error': error},
+        ),
         tone: AppSnackBarTone.danger,
       );
     }
@@ -4540,7 +4685,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         _timelineJumpEpoch += 1;
       });
       _showSnackBar(
-        'Forked from this message into "${forked.title}".',
+        context.wp(
+          'Forked from this message into "{title}".',
+          args: <String, Object?>{'title': forked.title},
+        ),
         tone: AppSnackBarTone.success,
       );
     } catch (error) {
@@ -4548,7 +4696,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         return;
       }
       _showSnackBar(
-        'Failed to fork from this message: $error',
+        context.wp(
+          'Failed to fork from this message: {error}',
+          args: <String, Object?>{'error': error},
+        ),
         tone: AppSnackBarTone.danger,
       );
     }
@@ -4574,7 +4725,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         _timelineJumpEpoch += 1;
       });
       _showSnackBar(
-        'Reverted the session to this message.',
+        context.wp('Reverted the session to this message.'),
         tone: AppSnackBarTone.success,
       );
     } catch (error) {
@@ -4582,7 +4733,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         return;
       }
       _showSnackBar(
-        'Failed to revert to this message: $error',
+        context.wp(
+          'Failed to revert to this message: {error}',
+          args: <String, Object?>{'error': error},
+        ),
         tone: AppSnackBarTone.danger,
       );
     }
@@ -4605,7 +4759,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         return;
       }
       _showSnackBar(
-        'Failed to create session: $error',
+        context.wp(
+          'Failed to create session: {error}',
+          args: <String, Object?>{'error': error},
+        ),
         tone: AppSnackBarTone.danger,
       );
     }
@@ -4624,18 +4781,24 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
           return;
         }
         _showSnackBar(
-          'Share link copied to clipboard.',
+          context.wp('Share link copied to clipboard.'),
           tone: AppSnackBarTone.success,
         );
         return;
       }
-      _showSnackBar('Session shared.', tone: AppSnackBarTone.success);
+      _showSnackBar(
+        context.wp('Session shared.'),
+        tone: AppSnackBarTone.success,
+      );
     } catch (error) {
       if (!mounted) {
         return;
       }
       _showSnackBar(
-        'Failed to share session: $error',
+        context.wp(
+          'Failed to share session: {error}',
+          args: <String, Object?>{'error': error},
+        ),
         tone: AppSnackBarTone.danger,
       );
     }
@@ -4647,13 +4810,19 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       if (!mounted || updated == null) {
         return;
       }
-      _showSnackBar('Share link removed.', tone: AppSnackBarTone.info);
+      _showSnackBar(
+        context.wp('Share link removed.'),
+        tone: AppSnackBarTone.info,
+      );
     } catch (error) {
       if (!mounted) {
         return;
       }
       _showSnackBar(
-        'Failed to unshare session: $error',
+        context.wp(
+          'Failed to unshare session: {error}',
+          args: <String, Object?>{'error': error},
+        ),
         tone: AppSnackBarTone.danger,
       );
     }
@@ -4667,7 +4836,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         return;
       }
       _showSnackBar(
-        'Failed to compact session: $error',
+        context.wp(
+          'Failed to compact session: {error}',
+          args: <String, Object?>{'error': error},
+        ),
         tone: AppSnackBarTone.danger,
       );
     }
@@ -4681,18 +4853,25 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Session'),
+        title: Text(context.wp('Delete Session')),
         content: Text(
-          'Delete "${selected.title.trim().isEmpty ? 'this session' : selected.title.trim()}"? This action cannot be undone.',
+          context.wp(
+            'Delete "{title}"? This action cannot be undone.',
+            args: <String, Object?>{
+              'title': selected.title.trim().isEmpty
+                  ? context.wp('this session')
+                  : selected.title.trim(),
+            },
+          ),
         ),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
+            child: Text(context.wp('Cancel')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Delete'),
+            child: Text(context.wp('Delete')),
           ),
         ],
       ),
@@ -4708,15 +4887,21 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         return;
       }
       final message = nextSession == null
-          ? 'Session deleted.'
-          : 'Session deleted. Opened "${nextSession.title}".';
+          ? context.wp('Session deleted.')
+          : context.wp(
+              'Session deleted. Opened "{title}".',
+              args: <String, Object?>{'title': nextSession.title},
+            );
       _showSnackBar(message, tone: AppSnackBarTone.warning);
     } catch (error) {
       if (!mounted) {
         return;
       }
       _showSnackBar(
-        'Failed to delete session: $error',
+        context.wp(
+          'Failed to delete session: {error}',
+          args: <String, Object?>{'error': error},
+        ),
         tone: AppSnackBarTone.danger,
       );
     }
@@ -5148,12 +5333,14 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 Text(
-                  'Select a server first',
+                  context.wp('Select a server first'),
                   style: Theme.of(context).textTheme.headlineSmall,
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 Text(
-                  'Return to the home screen and choose a server before opening a project.',
+                  context.wp(
+                    'Return to the home screen and choose a server before opening a project.',
+                  ),
                   style: Theme.of(
                     context,
                   ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
@@ -5164,7 +5351,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                   onPressed: () => Navigator.of(
                     context,
                   ).pushNamedAndRemoveUntil('/', (route) => false),
-                  child: const Text('Back Home'),
+                  child: Text(context.wp('Back Home')),
                 ),
               ],
             ),
@@ -5480,7 +5667,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                               chatSearchVisible: _chatSearchVisible,
                               chatSearchController: _chatSearchController,
                               chatSearchFocusNode: _chatSearchFocusNode,
-                              chatSearchStatusText: chatSearch.statusText,
+                              chatSearchStatusText: chatSearch.statusText(
+                                context,
+                              ),
                               chatSearchNavigationEnabled:
                                   chatSearch.hasMatches,
                               onOpenCommandPalette: () {
@@ -5502,6 +5691,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                               sessionsPanelVisible: desktopSidebarVisible,
                               sidePanelVisible: desktopSidePanelVisible,
                               sidePanelLabel: _desktopSidePanelLabel(
+                                context,
                                 controller,
                               ),
                               onToggleSessionsPanel: compact
@@ -5981,7 +6171,7 @@ class _WorkspaceTopBar extends StatelessWidget {
         session!.id != rootSession.id &&
         onBackToMainSession != null;
     final busy = _isActiveSessionStatus(status);
-    final title = _sessionHeaderTitle(session, project);
+    final title = _sessionHeaderTitle(context, session, project);
     final contextSnapshot = contextMetrics.context;
     final titleStyle = compact
         ? theme.textTheme.titleMedium?.copyWith(
@@ -6027,14 +6217,14 @@ class _WorkspaceTopBar extends StatelessWidget {
         if (compact)
           _SessionOverflowMenuAction(
             id: 'home',
-            label: 'Back Home',
+            label: context.wp('Back Home'),
             icon: Icons.home_rounded,
             onSelected: onBackHome,
           ),
         if (canReturnToMain)
           _SessionOverflowMenuAction(
             id: 'main',
-            label: 'Back to Main Session',
+            label: context.wp('Back to Main Session'),
             icon: Icons.subdirectory_arrow_left_rounded,
             onSelected: onBackToMainSession,
           ),
@@ -6042,7 +6232,7 @@ class _WorkspaceTopBar extends StatelessWidget {
       <_SessionOverflowMenuAction>[
         _SessionOverflowMenuAction(
           id: 'shell-display-collapsed',
-          label: 'Shell details off',
+          label: context.wp('Shell details off'),
           icon: Icons.terminal_rounded,
           checked: shellToolDisplayMode == ShellToolDisplayMode.collapsed,
           onSelected: () {
@@ -6053,7 +6243,7 @@ class _WorkspaceTopBar extends StatelessWidget {
         ),
         _SessionOverflowMenuAction(
           id: 'shell-display-auto-collapse',
-          label: 'Shell auto collapse',
+          label: context.wp('Shell auto collapse'),
           icon: Icons.unfold_less_rounded,
           checked: shellToolDisplayMode == ShellToolDisplayMode.autoCollapse,
           onSelected: () {
@@ -6064,7 +6254,7 @@ class _WorkspaceTopBar extends StatelessWidget {
         ),
         _SessionOverflowMenuAction(
           id: 'shell-display-always-expanded',
-          label: 'Shell always expanded',
+          label: context.wp('Shell always expanded'),
           icon: Icons.unfold_more_rounded,
           checked: shellToolDisplayMode == ShellToolDisplayMode.alwaysExpanded,
           onSelected: () {
@@ -6075,7 +6265,7 @@ class _WorkspaceTopBar extends StatelessWidget {
         ),
         _SessionOverflowMenuAction(
           id: 'timeline-progress-details',
-          label: 'Show to-do details in timeline',
+          label: context.wp('Show to-do details in timeline'),
           icon: Icons.checklist_rtl_rounded,
           checked: timelineProgressDetailsVisible,
           onSelected: () {
@@ -6090,27 +6280,27 @@ class _WorkspaceTopBar extends StatelessWidget {
       <_SessionOverflowMenuAction>[
         _SessionOverflowMenuAction(
           id: 'mcp',
-          label: 'Toggle MCPs',
+          label: context.wp('Toggle MCPs'),
           icon: Icons.extension_rounded,
           onSelected: onOpenMcpPicker,
         ),
         _SessionOverflowMenuAction(
           id: 'rename',
-          label: 'Rename Session',
+          label: context.wp('Rename Session'),
           icon: Icons.edit_rounded,
           enabled: onRename != null,
           onSelected: onRename,
         ),
         _SessionOverflowMenuAction(
           id: 'fork',
-          label: 'Fork Session',
+          label: context.wp('Fork Session'),
           icon: Icons.call_split_rounded,
           enabled: onFork != null,
           onSelected: onFork,
         ),
         _SessionOverflowMenuAction(
           id: 'share',
-          label: 'Share Session',
+          label: context.wp('Share Session'),
           icon: Icons.ios_share_rounded,
           enabled: onShare != null,
           onSelected: onShare,
@@ -6119,7 +6309,7 @@ class _WorkspaceTopBar extends StatelessWidget {
       <_SessionOverflowMenuAction>[
         _SessionOverflowMenuAction(
           id: 'delete',
-          label: 'Delete Session',
+          label: context.wp('Delete Session'),
           icon: Icons.delete_outline_rounded,
           destructive: true,
           enabled: onDelete != null,
@@ -6131,11 +6321,15 @@ class _WorkspaceTopBar extends StatelessWidget {
       if (onToggleSessionsPanel != null)
         _WorkspacePanelToggleChip(
           key: const ValueKey<String>('workspace-toggle-sessions-panel-button'),
-          label: 'Sessions',
+          label: context.wp('Sessions'),
           icon: Icons.view_sidebar_rounded,
           active: sessionsPanelVisible,
           tooltip:
-              '${sessionsPanelVisible ? 'Hide sessions panel' : 'Show sessions panel'} (${_formatWorkspaceShortcutLabel('mod+b')})',
+              '${context.wp(
+                sessionsPanelVisible
+                    ? 'Hide sessions panel'
+                    : 'Show sessions panel',
+              )} (${_formatWorkspaceShortcutLabel('mod+b')})',
           onTap: onToggleSessionsPanel!,
         ),
       if (onToggleSidePanel != null)
@@ -6145,19 +6339,30 @@ class _WorkspaceTopBar extends StatelessWidget {
           icon: Icons.dashboard_rounded,
           active: sidePanelVisible,
           tooltip: sidePanelVisible
-              ? 'Hide $sidePanelLabel panel'
-              : 'Show $sidePanelLabel panel',
+              ? context.wp(
+                  'Hide {label} panel',
+                  args: <String, Object?>{'label': sidePanelLabel},
+                )
+              : context.wp(
+                  'Show {label} panel',
+                  args: <String, Object?>{'label': sidePanelLabel},
+                ),
           onTap: onToggleSidePanel!,
         ),
       if (onSplitSessionPane != null)
         _WorkspaceActionChip(
           key: const ValueKey<String>('workspace-split-session-pane-button'),
-          label: sessionPaneCount > 1 ? 'Split ($sessionPaneCount)' : 'Split',
+          label: sessionPaneCount > 1
+              ? context.wp(
+                  'Split ({count})',
+                  args: <String, Object?>{'count': sessionPaneCount},
+                )
+              : context.wp('Split'),
           icon: Icons.splitscreen_rounded,
           enabled: canSplitSessionPane,
           tooltip: canSplitSessionPane
-              ? 'Split the chat area into another session pane'
-              : 'Maximum number of session panes open',
+              ? context.wp('Split the chat area into another session pane')
+              : context.wp('Maximum number of session panes open'),
           onTap: onSplitSessionPane,
         ),
     ];
@@ -6202,7 +6407,7 @@ class _WorkspaceTopBar extends StatelessWidget {
                           key: const ValueKey<String>(
                             'workspace-back-to-main-session-button',
                           ),
-                          tooltip: 'Back to main session',
+                          tooltip: context.wp('Back to main session'),
                           onPressed: onBackToMainSession,
                           icon: const Icon(
                             Icons.subdirectory_arrow_left_rounded,
@@ -6271,7 +6476,7 @@ class _WorkspaceTopBar extends StatelessWidget {
                         onPressed: onOpenCommandPalette,
                         icon: const Icon(Icons.apps_rounded, size: 18),
                         tooltip:
-                            'Command palette (${_formatWorkspaceShortcutLabel('mod+k')})',
+                            '${context.wp('Command palette')} (${_formatWorkspaceShortcutLabel('mod+k')})',
                         splashRadius: 18,
                       ),
                       IconButton(
@@ -6281,7 +6486,7 @@ class _WorkspaceTopBar extends StatelessWidget {
                         onPressed: onOpenMcpPicker,
                         icon: const Icon(Icons.extension_rounded, size: 18),
                         tooltip:
-                            'Toggle MCPs (${_formatWorkspaceShortcutLabel('mod+;')})',
+                            '${context.wp('Toggle MCPs')} (${_formatWorkspaceShortcutLabel('mod+;')})',
                         splashRadius: 18,
                       ),
                       IconButton(
@@ -6290,7 +6495,7 @@ class _WorkspaceTopBar extends StatelessWidget {
                         ),
                         onPressed: onOpenChatSearch,
                         icon: const Icon(Icons.search_rounded, size: 18),
-                        tooltip: 'Search chat',
+                        tooltip: context.wp('Search chat'),
                         splashRadius: 18,
                       ),
                       IconButton(
@@ -6302,8 +6507,8 @@ class _WorkspaceTopBar extends StatelessWidget {
                           size: 18,
                         ),
                         tooltip: terminalOpen
-                            ? 'Hide terminal'
-                            : 'Show terminal',
+                            ? context.wp('Hide terminal')
+                            : context.wp('Show terminal'),
                         splashRadius: 18,
                       ),
                     ],
@@ -6381,7 +6586,7 @@ class _WorkspaceTopBar extends StatelessWidget {
                       onPressed: onOpenCommandPalette,
                       icon: const Icon(Icons.apps_rounded),
                       tooltip:
-                          'Command palette (${_formatWorkspaceShortcutLabel('mod+k')})',
+                          '${context.wp('Command palette')} (${_formatWorkspaceShortcutLabel('mod+k')})',
                     ),
                     IconButton(
                       key: const ValueKey<String>(
@@ -6390,7 +6595,7 @@ class _WorkspaceTopBar extends StatelessWidget {
                       onPressed: onOpenMcpPicker,
                       icon: const Icon(Icons.extension_rounded),
                       tooltip:
-                          'Toggle MCPs (${_formatWorkspaceShortcutLabel('mod+;')})',
+                          '${context.wp('Toggle MCPs')} (${_formatWorkspaceShortcutLabel('mod+;')})',
                     ),
                     IconButton(
                       key: const ValueKey<String>(
@@ -6398,7 +6603,7 @@ class _WorkspaceTopBar extends StatelessWidget {
                       ),
                       onPressed: onOpenChatSearch,
                       icon: const Icon(Icons.search_rounded),
-                      tooltip: 'Search chat',
+                      tooltip: context.wp('Search chat'),
                     ),
                     IconButton(
                       onPressed: onToggleTerminal,
@@ -6407,7 +6612,9 @@ class _WorkspaceTopBar extends StatelessWidget {
                             ? Icons.terminal_rounded
                             : Icons.terminal_outlined,
                       ),
-                      tooltip: terminalOpen ? 'Hide terminal' : 'Show terminal',
+                      tooltip: terminalOpen
+                          ? context.wp('Hide terminal')
+                          : context.wp('Show terminal'),
                     ),
                     _SessionOverflowMenuButton(sections: menuSections),
                   ],
@@ -6561,7 +6768,9 @@ class _WorkspaceSessionHeaderBackLink extends StatelessWidget {
               ),
               const SizedBox(width: AppSpacing.xxs),
               Text(
-                rootSessionTitle.isNotEmpty ? rootSessionTitle : 'Main session',
+                rootSessionTitle.isNotEmpty
+                    ? rootSessionTitle
+                    : context.wp('Main session'),
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: surfaces.muted,
                   fontWeight: FontWeight.w700,
@@ -6719,7 +6928,7 @@ class _WorkspaceChatSearchBar extends StatelessWidget {
                     decoration: InputDecoration(
                       isDense: true,
                       border: InputBorder.none,
-                      hintText: 'Search this chat',
+                      hintText: context.wp('Search this chat'),
                       hintStyle: theme.textTheme.bodyMedium?.copyWith(
                         color: surfaces.muted,
                       ),
@@ -6731,7 +6940,7 @@ class _WorkspaceChatSearchBar extends StatelessWidget {
                     'workspace-chat-search-close-button',
                   ),
                   onPressed: onClose,
-                  tooltip: 'Close search',
+                  tooltip: context.wp('Close search'),
                   splashRadius: 16,
                   icon: const Icon(Icons.close_rounded),
                 ),
@@ -6771,7 +6980,7 @@ class _WorkspaceChatSearchBar extends StatelessWidget {
                     'workspace-chat-search-previous-button',
                   ),
                   onPressed: navigationEnabled ? onPreviousMatch : null,
-                  tooltip: 'Previous match',
+                  tooltip: context.wp('Previous match'),
                   splashRadius: 16,
                   icon: const Icon(Icons.keyboard_arrow_up_rounded),
                 ),
@@ -6780,7 +6989,7 @@ class _WorkspaceChatSearchBar extends StatelessWidget {
                     'workspace-chat-search-next-button',
                   ),
                   onPressed: navigationEnabled ? onNextMatch : null,
-                  tooltip: 'Next match',
+                  tooltip: context.wp('Next match'),
                   splashRadius: 16,
                   icon: const Icon(Icons.keyboard_arrow_down_rounded),
                 ),
@@ -6818,7 +7027,7 @@ class _WorkspaceChatSearchBar extends StatelessWidget {
               decoration: InputDecoration(
                 isDense: true,
                 border: InputBorder.none,
-                hintText: 'Search this chat',
+                hintText: context.wp('Search this chat'),
                 hintStyle: theme.textTheme.bodyMedium?.copyWith(
                   color: surfaces.muted,
                 ),
@@ -6853,21 +7062,21 @@ class _WorkspaceChatSearchBar extends StatelessWidget {
               'workspace-chat-search-previous-button',
             ),
             onPressed: navigationEnabled ? onPreviousMatch : null,
-            tooltip: 'Previous match',
+            tooltip: context.wp('Previous match'),
             splashRadius: compact ? 16 : 18,
             icon: const Icon(Icons.keyboard_arrow_up_rounded),
           ),
           IconButton(
             key: const ValueKey<String>('workspace-chat-search-next-button'),
             onPressed: navigationEnabled ? onNextMatch : null,
-            tooltip: 'Next match',
+            tooltip: context.wp('Next match'),
             splashRadius: compact ? 16 : 18,
             icon: const Icon(Icons.keyboard_arrow_down_rounded),
           ),
           IconButton(
             key: const ValueKey<String>('workspace-chat-search-close-button'),
             onPressed: onClose,
-            tooltip: 'Close search',
+            tooltip: context.wp('Close search'),
             splashRadius: compact ? 16 : 18,
             icon: const Icon(Icons.close_rounded),
           ),
@@ -7108,7 +7317,7 @@ class _SessionOverflowMenuButtonState
         key: const ValueKey<String>('session-header-overflow-menu-button'),
         onPressed: _openMenu,
         icon: Icon(Icons.more_horiz_rounded, size: widget.compact ? 18 : 20),
-        tooltip: 'Show menu',
+        tooltip: context.wp('Show menu'),
         splashRadius: 18,
       ),
     );
@@ -7385,7 +7594,10 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
       }
       showAppSnackBar(
         context,
-        message: 'Failed to refresh server status: $error',
+        message: context.wp(
+          'Failed to refresh server status: {error}',
+          args: <String, Object?>{'error': error},
+        ),
         tone: AppSnackBarTone.danger,
       );
     } finally {
@@ -7415,7 +7627,10 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
       }
       showAppSnackBar(
         context,
-        message: 'Failed to update tool permissions: $error',
+        message: context.wp(
+          'Failed to update tool permissions: {error}',
+          args: <String, Object?>{'error': error},
+        ),
         tone: AppSnackBarTone.danger,
       );
     } finally {
@@ -7448,6 +7663,7 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
         final report = widget.appController.selectedReport ?? widget.report;
         final localeController = AppLocaleScope.maybeOf(context);
         final statusMeta = _workspaceSettingsStatusMeta(
+          context,
           theme,
           surfaces,
           report,
@@ -7538,7 +7754,7 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                           CrossAxisAlignment.start,
                                       children: <Widget>[
                                         Text(
-                                          'Workspace Settings',
+                                          context.wp('Workspace Settings'),
                                           style: theme.textTheme.titleLarge
                                               ?.copyWith(
                                                 fontWeight: FontWeight.w700,
@@ -7546,7 +7762,9 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                         ),
                                         const SizedBox(height: AppSpacing.xxs),
                                         Text(
-                                          'Adjust workspace behavior and inspect the current server connection.',
+                                          context.wp(
+                                            'Adjust workspace behavior and inspect the current server connection.',
+                                          ),
                                           style: theme.textTheme.bodyMedium
                                               ?.copyWith(color: surfaces.muted),
                                         ),
@@ -7557,7 +7775,7 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                     onPressed: () =>
                                         Navigator.of(context).pop(),
                                     icon: const Icon(Icons.close_rounded),
-                                    tooltip: 'Close settings',
+                                    tooltip: context.wp('Close settings'),
                                   ),
                                 ],
                               ),
@@ -7573,7 +7791,7 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                               ),
                               children: <Widget>[
                                 _WorkspaceSettingsSection(
-                                  title: 'Server',
+                                  title: context.wp('Server'),
                                   child: _WorkspaceSettingsCard(
                                     child: Column(
                                       crossAxisAlignment:
@@ -7590,7 +7808,9 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                                 children: <Widget>[
                                                   Text(
                                                     profile?.effectiveLabel ??
-                                                        'No server selected',
+                                                        context.wp(
+                                                          'No server selected',
+                                                        ),
                                                     style: theme
                                                         .textTheme
                                                         .titleMedium
@@ -7606,7 +7826,9 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                                     report?.summary ??
                                                         profile
                                                             ?.normalizedBaseUrl ??
-                                                        'Return to Home to choose a server.',
+                                                        context.wp(
+                                                          'Return to Home to choose a server.',
+                                                        ),
                                                     style: theme
                                                         .textTheme
                                                         .bodyMedium
@@ -7629,7 +7851,7 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                         if (currentProject != null) ...<Widget>[
                                           const SizedBox(height: AppSpacing.md),
                                           _WorkspaceSettingsMetaRow(
-                                            label: 'Project',
+                                            label: context.wp('Project'),
                                             value: currentProject.directory,
                                           ),
                                         ],
@@ -7657,8 +7879,8 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                                     : const Icon(
                                                         Icons.refresh_rounded,
                                                       ),
-                                                label: const Text(
-                                                  'Refresh Status',
+                                                label: Text(
+                                                  context.wp('Refresh Status'),
                                                 ),
                                               ),
                                               FilledButton.icon(
@@ -7670,8 +7892,8 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                                 icon: const Icon(
                                                   Icons.storage_rounded,
                                                 ),
-                                                label: const Text(
-                                                  'Manage Servers',
+                                                label: Text(
+                                                  context.wp('Manage Servers'),
                                                 ),
                                               ),
                                             ],
@@ -7683,7 +7905,7 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                 ),
                                 SizedBox(height: sectionGap),
                                 _WorkspaceSettingsSection(
-                                  title: 'Timeline',
+                                  title: context.wp('Timeline'),
                                   child: _WorkspaceSettingsCard(
                                     child: Column(
                                       children: <Widget>[
@@ -7708,10 +7930,12 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                           key: const ValueKey<String>(
                                             'workspace-settings-progress-toggle',
                                           ),
-                                          title:
-                                              'Show to-do details in timeline',
-                                          subtitle:
-                                              'Display to-do updates directly in the chat stream.',
+                                          title: context.wp(
+                                            'Show to-do details in timeline',
+                                          ),
+                                          subtitle: context.wp(
+                                            'Display to-do updates directly in the chat stream.',
+                                          ),
                                           value: widget
                                               .appController
                                               .timelineProgressDetailsVisible,
@@ -7729,9 +7953,12 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                           key: const ValueKey<String>(
                                             'workspace-settings-code-highlight-toggle',
                                           ),
-                                          title: 'Highlight chat code blocks',
-                                          subtitle:
-                                              'Apply language-aware syntax colors to fenced code blocks in the timeline.',
+                                          title: context.wp(
+                                            'Highlight chat code blocks',
+                                          ),
+                                          subtitle: context.wp(
+                                            'Apply language-aware syntax colors to fenced code blocks in the timeline.',
+                                          ),
                                           value: widget
                                               .appController
                                               .chatCodeBlockHighlightingEnabled,
@@ -7750,7 +7977,7 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                 ),
                                 SizedBox(height: sectionGap),
                                 _WorkspaceSettingsSection(
-                                  title: 'Session loading',
+                                  title: context.wp('Session loading'),
                                   child: _WorkspaceSettingsCard(
                                     child: Column(
                                       children: <Widget>[
@@ -7793,7 +8020,7 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                 ),
                                 SizedBox(height: sectionGap),
                                 _WorkspaceSettingsSection(
-                                  title: 'Composer',
+                                  title: context.wp('Composer'),
                                   child: _WorkspaceSettingsCard(
                                     child: Column(
                                       children: <Widget>[
@@ -7834,7 +8061,7 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                 ),
                                 SizedBox(height: sectionGap),
                                 _WorkspaceSettingsSection(
-                                  title: 'Permissions',
+                                  title: context.wp('Permissions'),
                                   child: _WorkspaceSettingsCard(
                                     key: const ValueKey<String>(
                                       'workspace-settings-permissions-card',
@@ -7844,7 +8071,9 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                           CrossAxisAlignment.start,
                                       children: <Widget>[
                                         Text(
-                                          'Control what tools the server can use by default.',
+                                          context.wp(
+                                            'Control what tools the server can use by default.',
+                                          ),
                                           style: theme.textTheme.bodyMedium
                                               ?.copyWith(color: surfaces.muted),
                                         ),
@@ -7853,7 +8082,9 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                         >[
                                           const SizedBox(height: AppSpacing.sm),
                                           Text(
-                                            'Path-specific permission rules already in config are preserved when you change a default here.',
+                                            context.wp(
+                                              'Path-specific permission rules already in config are preserved when you change a default here.',
+                                            ),
                                             style: theme.textTheme.bodySmall
                                                 ?.copyWith(
                                                   color: surfaces.muted,
@@ -7899,7 +8130,7 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                 ),
                                 SizedBox(height: sectionGap),
                                 _WorkspaceSettingsSection(
-                                  title: 'Appearance',
+                                  title: context.wp('Appearance'),
                                   child: _WorkspaceSettingsCard(
                                     child: Column(
                                       children: <Widget>[
@@ -7996,7 +8227,7 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                 ),
                                 SizedBox(height: sectionGap),
                                 _WorkspaceSettingsSection(
-                                  title: "What's New",
+                                  title: context.wp("What's New"),
                                   child: _WorkspaceSettingsCard(
                                     child: Column(
                                       crossAxisAlignment:
@@ -8007,7 +8238,9 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                             'workspace-settings-release-notes-toggle',
                                           ),
                                           title:
-                                              "Show What's New after updates",
+                                              context.wp(
+                                                "Show What's New after updates",
+                                              ),
                                           subtitle:
                                               'Automatically open release highlights when the bundled app version changes.',
                                           value: widget
@@ -8052,8 +8285,18 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                                                   .appController
                                                                   .currentReleaseNotes ==
                                                               null
-                                                          ? 'No release notes are bundled yet.'
-                                                          : 'Latest bundled highlights: ${widget.appController.currentReleaseNotes!.versionLabel}',
+                                                          ? context.wp(
+                                                              'No release notes are bundled yet.',
+                                                            )
+                                                          : context.wp(
+                                                              'Latest bundled highlights: {version}',
+                                                              args: <String, Object?>{
+                                                                'version': widget
+                                                                    .appController
+                                                                    .currentReleaseNotes!
+                                                                    .versionLabel,
+                                                              },
+                                                            ),
                                                       style: theme
                                                           .textTheme
                                                           .bodyMedium
@@ -8066,7 +8309,9 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                                       height: AppSpacing.xxs,
                                                     ),
                                                     Text(
-                                                      'Open the current release notes again at any time from here.',
+                                                      context.wp(
+                                                        'Open the current release notes again at any time from here.',
+                                                      ),
                                                       style: theme
                                                           .textTheme
                                                           .bodySmall
@@ -8099,8 +8344,8 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                                 icon: const Icon(
                                                   Icons.auto_awesome_rounded,
                                                 ),
-                                                label: const Text(
-                                                  "Open What's New",
+                                                label: Text(
+                                                  context.wp("Open What's New"),
                                                 ),
                                               ),
                                             ],
@@ -8112,21 +8357,24 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                 ),
                                 SizedBox(height: sectionGap),
                                 _WorkspaceSettingsSection(
-                                  title: 'Keyboard',
+                                  title: context.wp('Keyboard'),
                                   child:
                                       const _WorkspaceKeyboardShortcutsCard(),
                                 ),
                                 SizedBox(height: sectionGap),
                                 _WorkspaceSettingsSection(
-                                  title: 'Sidebar',
+                                  title: context.wp('Sidebar'),
                                   child: _WorkspaceSettingsCard(
                                     child: _WorkspaceSettingsToggleRow(
                                       key: const ValueKey<String>(
                                         'workspace-settings-sidebar-child-sessions-toggle',
                                       ),
-                                      title: 'Show sub-sessions in sidebar',
-                                      subtitle:
-                                          'Display nested agent sessions under their root session in the session list.',
+                                      title: context.wp(
+                                        'Show sub-sessions in sidebar',
+                                      ),
+                                      subtitle: context.wp(
+                                        'Display nested agent sessions under their root session in the session list.',
+                                      ),
                                       value: widget
                                           .appController
                                           .sidebarChildSessionsVisible,
@@ -8304,14 +8552,16 @@ class _WorkspaceSettingsShellDisplayModeRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Text(
-            'Shell timeline details',
+            context.wp('Shell timeline details'),
             style: Theme.of(
               context,
             ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: AppSpacing.xxs),
           Text(
-            'Show the command first, keep a live 6-line shell preview, and choose whether full logs stay expanded.',
+            context.wp(
+              'Show the command first, keep a live 6-line shell preview, and choose whether full logs stay expanded.',
+            ),
             style: Theme.of(
               context,
             ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
@@ -8324,20 +8574,20 @@ class _WorkspaceSettingsShellDisplayModeRow extends StatelessWidget {
                 'workspace-settings-shell-display-mode-segments',
               ),
               showSelectedIcon: false,
-              segments: const <ButtonSegment<ShellToolDisplayMode>>[
+              segments: <ButtonSegment<ShellToolDisplayMode>>[
                 ButtonSegment<ShellToolDisplayMode>(
                   value: ShellToolDisplayMode.collapsed,
-                  label: Text('Off'),
+                  label: Text(context.wp('Off')),
                   icon: Icon(Icons.unfold_less_rounded),
                 ),
                 ButtonSegment<ShellToolDisplayMode>(
                   value: ShellToolDisplayMode.autoCollapse,
-                  label: Text('Auto'),
+                  label: Text(context.wp('Auto')),
                   icon: Icon(Icons.sync_alt_rounded),
                 ),
                 ButtonSegment<ShellToolDisplayMode>(
                   value: ShellToolDisplayMode.alwaysExpanded,
-                  label: Text('Always'),
+                  label: Text(context.wp('Always')),
                   icon: Icon(Icons.unfold_more_rounded),
                 ),
               ],
@@ -8379,14 +8629,16 @@ class _WorkspaceSettingsSessionHistoryPageSizeRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Text(
-            'Initial session history size',
+            context.wp('Initial session history size'),
             style: Theme.of(
               context,
             ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: AppSpacing.xxs),
           Text(
-            'Choose how many messages to request when opening a session. Lower values reduce memory spikes on large histories.',
+            context.wp(
+              'Choose how many messages to request when opening a session. Lower values reduce memory spikes on large histories.',
+            ),
             style: Theme.of(
               context,
             ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
@@ -8446,14 +8698,16 @@ class _WorkspaceSettingsOversizedSessionBehaviorRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Text(
-            'Oversized session action',
+            context.wp('Oversized session action'),
             style: Theme.of(
               context,
             ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: AppSpacing.xxs),
           Text(
-            'When a session exceeds the safe response size, keep Retry or let the pane open without loading history.',
+            context.wp(
+              'When a session exceeds the safe response size, keep Retry or let the pane open without loading history.',
+            ),
             style: Theme.of(
               context,
             ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
@@ -8466,15 +8720,15 @@ class _WorkspaceSettingsOversizedSessionBehaviorRow extends StatelessWidget {
                 'workspace-settings-oversized-session-behavior-segments',
               ),
               showSelectedIcon: false,
-              segments: const <ButtonSegment<OversizedSessionBehavior>>[
+              segments: <ButtonSegment<OversizedSessionBehavior>>[
                 ButtonSegment<OversizedSessionBehavior>(
                   value: OversizedSessionBehavior.retry,
-                  label: Text('Retry'),
+                  label: Text(context.wp('Retry')),
                   icon: Icon(Icons.refresh_rounded),
                 ),
                 ButtonSegment<OversizedSessionBehavior>(
                   value: OversizedSessionBehavior.openWithoutHistory,
-                  label: Text('Open'),
+                  label: Text(context.wp('Open')),
                   icon: Icon(Icons.folder_open_rounded),
                 ),
               ],
@@ -8509,8 +8763,9 @@ class _WorkspaceSettingsPermissionRow extends StatelessWidget {
     final surfaces = theme.extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
     final notes = <String>[
-      if (policy.inheritedFromWildcard) 'Inherited from global default',
-      if (policy.hasCustomPatterns) 'Custom patterns preserved',
+      if (policy.inheritedFromWildcard)
+        context.wp('Inherited from global default'),
+      if (policy.hasCustomPatterns) context.wp('Custom patterns preserved'),
     ];
     return Container(
       padding: EdgeInsets.all(density.inset(AppSpacing.md)),
@@ -8614,14 +8869,16 @@ class _WorkspaceSettingsFollowupModeRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Text(
-            'Default busy follow-up mode',
+            context.wp('Default busy follow-up mode'),
             style: Theme.of(
               context,
             ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: AppSpacing.xxs),
           Text(
-            'Choose what a normal send does while the current agent is still working.',
+            context.wp(
+              'Choose what a normal send does while the current agent is still working.',
+            ),
             style: Theme.of(
               context,
             ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
@@ -8634,15 +8891,15 @@ class _WorkspaceSettingsFollowupModeRow extends StatelessWidget {
                 'workspace-settings-followup-mode-segments',
               ),
               showSelectedIcon: false,
-              segments: const <ButtonSegment<WorkspaceFollowupMode>>[
+              segments: <ButtonSegment<WorkspaceFollowupMode>>[
                 ButtonSegment<WorkspaceFollowupMode>(
                   value: WorkspaceFollowupMode.queue,
-                  label: Text('Queue'),
+                  label: Text(context.wp('Queue')),
                   icon: Icon(Icons.schedule_send_rounded),
                 ),
                 ButtonSegment<WorkspaceFollowupMode>(
                   value: WorkspaceFollowupMode.steer,
-                  label: Text('Steer'),
+                  label: Text(context.wp('Steer')),
                   icon: Icon(Icons.arrow_upward_rounded),
                 ),
               ],
@@ -8696,14 +8953,19 @@ class _WorkspaceSettingsThemeRow extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Text(
-                      'Theme',
+                      context.wp('Theme'),
                       style: theme.textTheme.bodyMedium?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
                     ),
                     const SizedBox(height: AppSpacing.xxs),
                     Text(
-                      'Choose the global app theme. ${activeDefinition.label} is active now.',
+                      context.wp(
+                        'Choose the global app theme. {theme} is active now.',
+                        args: <String, Object?>{
+                          'theme': activeDefinition.label,
+                        },
+                      ),
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: surfaces.muted,
                       ),
@@ -8718,7 +8980,7 @@ class _WorkspaceSettingsThemeRow extends StatelessWidget {
                 ),
                 onPressed: onCycle,
                 icon: const Icon(Icons.palette_outlined),
-                label: const Text('Next theme'),
+                label: Text(context.wp('Next theme')),
               ),
             ],
           ),
@@ -8771,14 +9033,17 @@ class _WorkspaceSettingsColorSchemeRow extends StatelessWidget {
     final surfaces = theme.extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
     final effectiveMode = switch (theme.brightness) {
-      Brightness.light => 'Light',
-      Brightness.dark => 'Dark',
+      Brightness.light => context.wp('Light'),
+      Brightness.dark => context.wp('Dark'),
     };
     final subtitle = switch (value) {
       AppColorSchemeMode.system =>
-        'Follow the device setting. Currently $effectiveMode.',
-      AppColorSchemeMode.light => 'Always use the light palette.',
-      AppColorSchemeMode.dark => 'Always use the dark palette.',
+        context.wp(
+          'Follow the device setting. Currently {mode}.',
+          args: <String, Object?>{'mode': effectiveMode},
+        ),
+      AppColorSchemeMode.light => context.wp('Always use the light palette.'),
+      AppColorSchemeMode.dark => context.wp('Always use the dark palette.'),
     };
     return Container(
       padding: EdgeInsets.all(density.inset(AppSpacing.md)),
@@ -8798,7 +9063,7 @@ class _WorkspaceSettingsColorSchemeRow extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Text(
-                      'Color mode',
+                      context.wp('Color mode'),
                       style: theme.textTheme.bodyMedium?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
@@ -8820,7 +9085,7 @@ class _WorkspaceSettingsColorSchemeRow extends StatelessWidget {
                 ),
                 onPressed: onCycle,
                 icon: const Icon(Icons.brightness_6_rounded),
-                label: const Text('Next mode'),
+                label: Text(context.wp('Next mode')),
               ),
             ],
           ),
@@ -8832,20 +9097,20 @@ class _WorkspaceSettingsColorSchemeRow extends StatelessWidget {
                 'workspace-settings-color-mode-segments',
               ),
               showSelectedIcon: false,
-              segments: const <ButtonSegment<AppColorSchemeMode>>[
+              segments: <ButtonSegment<AppColorSchemeMode>>[
                 ButtonSegment<AppColorSchemeMode>(
                   value: AppColorSchemeMode.system,
-                  label: Text('System'),
+                  label: Text(context.wp('System')),
                   icon: Icon(Icons.settings_suggest_rounded),
                 ),
                 ButtonSegment<AppColorSchemeMode>(
                   value: AppColorSchemeMode.light,
-                  label: Text('Light'),
+                  label: Text(context.wp('Light')),
                   icon: Icon(Icons.light_mode_rounded),
                 ),
                 ButtonSegment<AppColorSchemeMode>(
                   value: AppColorSchemeMode.dark,
-                  label: Text('Dark'),
+                  label: Text(context.wp('Dark')),
                   icon: Icon(Icons.dark_mode_rounded),
                 ),
               ],
@@ -8887,7 +9152,10 @@ class _WorkspaceThemePreviewCard extends StatelessWidget {
     return Semantics(
       button: true,
       selected: selected,
-      label: 'Switch theme to ${definition.label}',
+      label: context.wp(
+        'Switch theme to {theme}',
+        args: <String, Object?>{'theme': definition.label},
+      ),
       child: InkWell(
         key: ValueKey<String>(
           'workspace-settings-theme-option-${preset.storageValue}',
@@ -9032,14 +9300,17 @@ class _WorkspaceSettingsLanguageRow extends StatelessWidget {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
     final effectiveLanguageLabel = switch (effectiveLocale.languageCode) {
-      'ko' => 'Korean',
-      _ => 'English',
+      'ko' => context.wp('Korean'),
+      _ => context.wp('English'),
     };
     final subtitle = switch (value) {
       AppLocaleMode.system =>
-        'Follow the device language. Currently $effectiveLanguageLabel.',
-      AppLocaleMode.english => 'Always use English in the app.',
-      AppLocaleMode.korean => 'Always use Korean in the app.',
+        context.wp(
+          'Follow the device language. Currently {language}.',
+          args: <String, Object?>{'language': effectiveLanguageLabel},
+        ),
+      AppLocaleMode.english => context.wp('Always use English in the app.'),
+      AppLocaleMode.korean => context.wp('Always use Korean in the app.'),
     };
     return Container(
       padding: EdgeInsets.all(density.inset(AppSpacing.md)),
@@ -9052,7 +9323,7 @@ class _WorkspaceSettingsLanguageRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Text(
-            'App language',
+            context.wp('App language'),
             style: Theme.of(
               context,
             ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
@@ -9072,15 +9343,15 @@ class _WorkspaceSettingsLanguageRow extends StatelessWidget {
                 'workspace-settings-language-segments',
               ),
               showSelectedIcon: false,
-              segments: const <ButtonSegment<AppLocaleMode>>[
+              segments: <ButtonSegment<AppLocaleMode>>[
                 ButtonSegment<AppLocaleMode>(
                   value: AppLocaleMode.system,
-                  label: Text('System'),
+                  label: Text(context.wp('System')),
                   icon: Icon(Icons.settings_suggest_rounded),
                 ),
                 ButtonSegment<AppLocaleMode>(
                   value: AppLocaleMode.english,
-                  label: Text('English'),
+                  label: Text(context.wp('English')),
                   icon: Icon(Icons.language_rounded),
                 ),
                 ButtonSegment<AppLocaleMode>(
@@ -9127,14 +9398,16 @@ class _WorkspaceSettingsLayoutDensityRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Text(
-            'Layout density',
+            context.wp('Layout density'),
             style: Theme.of(
               context,
             ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: AppSpacing.xxs),
           Text(
-            'Reduce workspace padding and margins to fit more information on screen.',
+            context.wp(
+              'Reduce workspace padding and margins to fit more information on screen.',
+            ),
             style: Theme.of(
               context,
             ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
@@ -9147,15 +9420,15 @@ class _WorkspaceSettingsLayoutDensityRow extends StatelessWidget {
                 'workspace-settings-layout-density-segments',
               ),
               showSelectedIcon: false,
-              segments: const <ButtonSegment<WorkspaceLayoutDensity>>[
+              segments: <ButtonSegment<WorkspaceLayoutDensity>>[
                 ButtonSegment<WorkspaceLayoutDensity>(
                   value: WorkspaceLayoutDensity.normal,
-                  label: Text('Normal'),
+                  label: Text(context.wp('Normal')),
                   icon: Icon(Icons.crop_din_rounded),
                 ),
                 ButtonSegment<WorkspaceLayoutDensity>(
                   value: WorkspaceLayoutDensity.compact,
-                  label: Text('Compact'),
+                  label: Text(context.wp('Compact')),
                   icon: Icon(Icons.view_compact_alt_rounded),
                 ),
               ],
@@ -9197,14 +9470,16 @@ class _WorkspaceSettingsMultiPaneComposerModeRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Text(
-            'Split pane composer layout',
+            context.wp('Split pane composer layout'),
             style: Theme.of(
               context,
             ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: AppSpacing.xxs),
           Text(
-            'Keep one shared composer at the bottom, or place a separate composer under each pane when working with wide split layouts.',
+            context.wp(
+              'Keep one shared composer at the bottom, or place a separate composer under each pane when working with wide split layouts.',
+            ),
             style: Theme.of(
               context,
             ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
@@ -9217,15 +9492,15 @@ class _WorkspaceSettingsMultiPaneComposerModeRow extends StatelessWidget {
                 'workspace-settings-multi-pane-composer-mode-segments',
               ),
               showSelectedIcon: false,
-              segments: const <ButtonSegment<WorkspaceMultiPaneComposerMode>>[
+              segments: <ButtonSegment<WorkspaceMultiPaneComposerMode>>[
                 ButtonSegment<WorkspaceMultiPaneComposerMode>(
                   value: WorkspaceMultiPaneComposerMode.shared,
-                  label: Text('Shared'),
+                  label: Text(context.wp('Shared')),
                   icon: Icon(Icons.vertical_align_bottom_rounded),
                 ),
                 ButtonSegment<WorkspaceMultiPaneComposerMode>(
                   value: WorkspaceMultiPaneComposerMode.perPane,
-                  label: Text('Per Pane'),
+                  label: Text(context.wp('Per Pane')),
                   icon: Icon(Icons.splitscreen_rounded),
                 ),
               ],
@@ -9275,14 +9550,16 @@ class _WorkspaceSettingsTextScaleRow extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Text(
-                      'Text size',
+                      context.wp('Text size'),
                       style: theme.textTheme.bodyMedium?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
                     ),
                     const SizedBox(height: AppSpacing.xxs),
                     Text(
-                      'Scale text across the app without changing layout density.',
+                      context.wp(
+                        'Scale text across the app without changing layout density.',
+                      ),
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: surfaces.muted,
                       ),
@@ -9365,7 +9642,7 @@ class _WorkspaceSettingsTextScaleRow extends StatelessWidget {
             child: Row(
               children: <Widget>[
                 Text(
-                  'Preview',
+                  context.wp('Preview'),
                   style: theme.textTheme.labelMedium?.copyWith(
                     color: surfaces.muted,
                   ),
@@ -9373,7 +9650,7 @@ class _WorkspaceSettingsTextScaleRow extends StatelessWidget {
                 SizedBox(width: density.inset(AppSpacing.sm)),
                 Expanded(
                   child: Text(
-                    'Readable session summaries and messages',
+                    context.wp('Readable session summaries and messages'),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodyLarge?.copyWith(
@@ -9402,92 +9679,117 @@ class _WorkspaceShortcutSpec {
   final String shortcut;
 }
 
-const List<_WorkspaceShortcutSpec> _workspaceKeyboardShortcuts =
+List<_WorkspaceShortcutSpec> _workspaceKeyboardShortcuts(BuildContext context) =>
     <_WorkspaceShortcutSpec>[
       _WorkspaceShortcutSpec(
-        title: 'Open command palette',
-        description:
-            'Search and run workspace, theme, model, and custom commands.',
+        title: context.wp('Open command palette'),
+        description: context.wp(
+          'Search and run workspace, theme, model, and custom commands.',
+        ),
         shortcut: 'mod+k',
       ),
       _WorkspaceShortcutSpec(
-        title: 'Open project',
-        description: 'Bring up the server project picker.',
+        title: context.wp('Open project'),
+        description: context.wp('Bring up the server project picker.'),
         shortcut: 'mod+o',
       ),
       _WorkspaceShortcutSpec(
-        title: 'Open settings',
-        description: 'Show workspace settings and the shortcut reference.',
+        title: context.wp('Open settings'),
+        description: context.wp(
+          'Show workspace settings and the shortcut reference.',
+        ),
         shortcut: 'mod+comma',
       ),
       _WorkspaceShortcutSpec(
-        title: 'Toggle MCPs',
-        description: 'Open the session MCP picker and connect integrations.',
+        title: context.wp('Toggle MCPs'),
+        description: context.wp(
+          'Open the session MCP picker and connect integrations.',
+        ),
         shortcut: 'mod+;',
       ),
       _WorkspaceShortcutSpec(
-        title: 'Toggle sessions panel',
-        description: 'Collapse or reveal the left sessions sidebar.',
+        title: context.wp('Toggle sessions panel'),
+        description: context.wp(
+          'Collapse or reveal the left sessions sidebar.',
+        ),
         shortcut: 'mod+b',
       ),
       _WorkspaceShortcutSpec(
-        title: 'Toggle review panel',
-        description: 'Show or hide the review tab in the side panel.',
+        title: context.wp('Toggle review panel'),
+        description: context.wp(
+          'Show or hide the review tab in the side panel.',
+        ),
         shortcut: 'mod+shift+r',
       ),
       _WorkspaceShortcutSpec(
-        title: 'Toggle files panel',
-        description: 'Show or hide the files tab in the side panel.',
+        title: context.wp('Toggle files panel'),
+        description: context.wp(
+          'Show or hide the files tab in the side panel.',
+        ),
         shortcut: 'mod+backslash',
       ),
       _WorkspaceShortcutSpec(
-        title: 'Focus composer',
-        description: 'Jump straight to the chat input.',
+        title: context.wp('Focus composer'),
+        description: context.wp('Jump straight to the chat input.'),
         shortcut: 'ctrl+l',
       ),
       _WorkspaceShortcutSpec(
-        title: 'New session',
-        description: 'Create a fresh session in the current project.',
+        title: context.wp('New session'),
+        description: context.wp(
+          'Create a fresh session in the current project.',
+        ),
         shortcut: 'mod+shift+s',
       ),
       _WorkspaceShortcutSpec(
-        title: 'Attach files',
-        description: 'Open the file picker for prompt attachments.',
+        title: context.wp('Attach files'),
+        description: context.wp(
+          'Open the file picker for prompt attachments.',
+        ),
         shortcut: 'mod+u',
       ),
       _WorkspaceShortcutSpec(
-        title: 'Previous / next session',
-        description: 'Move across root sessions in the sidebar order.',
+        title: context.wp('Previous / next session'),
+        description: context.wp(
+          'Move across root sessions in the sidebar order.',
+        ),
         shortcut: 'alt+arrowup / alt+arrowdown',
       ),
       _WorkspaceShortcutSpec(
-        title: 'Previous / next project',
-        description: 'Move across projects in the left rail order.',
+        title: context.wp('Previous / next project'),
+        description: context.wp('Move across projects in the left rail order.'),
         shortcut: 'mod+alt+arrowup / mod+alt+arrowdown',
       ),
       _WorkspaceShortcutSpec(
-        title: 'Choose model',
-        description: 'Open the model picker from anywhere in the workspace.',
+        title: context.wp('Choose model'),
+        description: context.wp(
+          'Open the model picker from anywhere in the workspace.',
+        ),
         shortcut: 'mod+quote',
       ),
       _WorkspaceShortcutSpec(
-        title: 'Cycle agent',
-        description: 'Rotate the active agent selection.',
+        title: context.wp('Cycle agent'),
+        description: context.wp('Rotate the active agent selection.'),
         shortcut: 'mod+period / mod+shift+period',
       ),
       _WorkspaceShortcutSpec(
-        title: 'Cycle reasoning',
-        description: 'Rotate the available reasoning depth options.',
+        title: context.wp('Cycle reasoning'),
+        description: context.wp(
+          'Rotate the available reasoning depth options.',
+        ),
         shortcut: 'mod+shift+d',
       ),
       _WorkspaceShortcutSpec(
-        title: 'Toggle terminal / new terminal',
-        description: 'Open the terminal panel or create a new terminal tab.',
+        title: context.wp('Toggle terminal / new terminal'),
+        description: context.wp(
+          'Open the terminal panel or create a new terminal tab.',
+        ),
         shortcut: 'ctrl+backquote / ctrl+alt+t',
       ),
       _WorkspaceShortcutSpec(
-        title: 'Stop running session',
-        description: 'Interrupt the active response when the composer is idle.',
+        title: context.wp('Stop running session'),
+        description: context.wp(
+          'Interrupt the active response when the composer is idle.',
+        ),
         shortcut: 'escape',
       ),
     ];
@@ -9568,14 +9870,15 @@ class _WorkspaceKeyboardShortcutsCard extends StatelessWidget {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
+    final shortcuts = _workspaceKeyboardShortcuts(context);
     final rows = <Widget>[];
     for (
       var index = 0;
-      index < _workspaceKeyboardShortcuts.length;
+      index < shortcuts.length;
       index += 1
     ) {
-      rows.add(_WorkspaceShortcutRow(spec: _workspaceKeyboardShortcuts[index]));
-      if (index != _workspaceKeyboardShortcuts.length - 1) {
+      rows.add(_WorkspaceShortcutRow(spec: shortcuts[index]));
+      if (index != shortcuts.length - 1) {
         rows.add(SizedBox(height: density.inset(AppSpacing.sm)));
       }
     }
@@ -9884,15 +10187,17 @@ class _WorkspaceCommandPaletteSheetState
                       autofocus: true,
                       textInputAction: TextInputAction.search,
                       onSubmitted: (_) => _submitHighlighted(),
-                      decoration: const InputDecoration(
-                        hintText: 'Type a command or search',
-                        prefixIcon: Icon(Icons.search_rounded),
+                      decoration: InputDecoration(
+                        hintText: context.wp('Type a command or search'),
+                        prefixIcon: const Icon(Icons.search_rounded),
                         isDense: true,
                       ),
                     ),
                     const SizedBox(height: AppSpacing.sm),
                     Text(
-                      'Enter runs the highlighted command. Tab or arrow keys move the selection.',
+                      context.wp(
+                        'Enter runs the highlighted command. Tab or arrow keys move the selection.',
+                      ),
                       style: theme.textTheme.labelMedium?.copyWith(
                         color: surfaces.muted,
                       ),
@@ -9913,12 +10218,14 @@ class _WorkspaceCommandPaletteSheetState
                                   ),
                                   const SizedBox(height: AppSpacing.sm),
                                   Text(
-                                    'No matching commands',
+                                    context.wp('No matching commands'),
                                     style: theme.textTheme.titleSmall,
                                   ),
                                   const SizedBox(height: AppSpacing.xxs),
                                   Text(
-                                    'Try a project name, session title, theme, model, or slash command.',
+                                    context.wp(
+                                      'Try a project name, session title, theme, model, or slash command.',
+                                    ),
                                     textAlign: TextAlign.center,
                                     style: theme.textTheme.bodySmall?.copyWith(
                                       color: surfaces.muted,
@@ -10306,8 +10613,14 @@ class _WorkspaceMcpPickerSheetState extends State<_WorkspaceMcpPickerSheet> {
         showAppSnackBar(
           context,
           message: copiedToClipboard
-              ? 'MCP auth URL copied for $name.'
-              : 'MCP auth URL is ready for $name.',
+              ? context.wp(
+                  'MCP auth URL copied for {name}.',
+                  args: <String, Object?>{'name': name},
+                )
+              : context.wp(
+                  'MCP auth URL is ready for {name}.',
+                  args: <String, Object?>{'name': name},
+                ),
           tone: copiedToClipboard
               ? AppSnackBarTone.success
               : AppSnackBarTone.info,
@@ -10315,7 +10628,10 @@ class _WorkspaceMcpPickerSheetState extends State<_WorkspaceMcpPickerSheet> {
       } else {
         showAppSnackBar(
           context,
-          message: 'No MCP auth URL was returned for $name.',
+          message: context.wp(
+            'No MCP auth URL was returned for {name}.',
+            args: <String, Object?>{'name': name},
+          ),
           tone: AppSnackBarTone.info,
         );
       }
@@ -10388,14 +10704,20 @@ class _WorkspaceMcpPickerSheetState extends State<_WorkspaceMcpPickerSheet> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: <Widget>[
                             Text(
-                              'MCPs',
+                              context.wp('MCPs'),
                               style: theme.textTheme.titleLarge?.copyWith(
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
                             const SizedBox(height: AppSpacing.xxs),
                             Text(
-                              '$enabledCount of ${_mcpDetails.length} enabled in this workspace.',
+                              context.wp(
+                                '{count} of {total} enabled in this workspace.',
+                                args: <String, Object?>{
+                                  'count': enabledCount,
+                                  'total': _mcpDetails.length,
+                                },
+                              ),
                               style: theme.textTheme.bodySmall?.copyWith(
                                 color: surfaces.muted,
                               ),
@@ -10407,7 +10729,7 @@ class _WorkspaceMcpPickerSheetState extends State<_WorkspaceMcpPickerSheet> {
                         key: const ValueKey<String>(
                           'workspace-mcp-picker-refresh-button',
                         ),
-                        tooltip: 'Refresh MCP status',
+                        tooltip: context.wp('Refresh MCP status'),
                         onPressed: _loading ? null : () => _loadMcpDetails(),
                         icon: const Icon(Icons.refresh_rounded),
                       ),
@@ -10420,8 +10742,8 @@ class _WorkspaceMcpPickerSheetState extends State<_WorkspaceMcpPickerSheet> {
                     focusNode: _queryFocusNode,
                     autofocus: true,
                     textInputAction: TextInputAction.search,
-                    decoration: const InputDecoration(
-                      hintText: 'Search MCP servers',
+                    decoration: InputDecoration(
+                      hintText: context.wp('Search MCP servers'),
                       prefixIcon: Icon(Icons.search_rounded),
                       isDense: true,
                     ),
@@ -10440,7 +10762,7 @@ class _WorkspaceMcpPickerSheetState extends State<_WorkspaceMcpPickerSheet> {
                       icon: Icons.link_rounded,
                       message: _lastAuthUrl!,
                       toneColor: theme.colorScheme.primary,
-                      actionLabel: 'Copy URL',
+                      actionLabel: context.wp('Copy URL'),
                       onAction: () async {
                         await Clipboard.setData(
                           ClipboardData(text: _lastAuthUrl!.trim()),
@@ -10448,11 +10770,11 @@ class _WorkspaceMcpPickerSheetState extends State<_WorkspaceMcpPickerSheet> {
                         if (!context.mounted) {
                           return;
                         }
-                        showAppSnackBar(
-                          context,
-                          message: 'Authorization URL copied.',
-                          tone: AppSnackBarTone.success,
-                        );
+      showAppSnackBar(
+        context,
+        message: context.wp('Authorization URL copied.'),
+        tone: AppSnackBarTone.success,
+      );
                       },
                     ),
                   ],
@@ -10466,7 +10788,7 @@ class _WorkspaceMcpPickerSheetState extends State<_WorkspaceMcpPickerSheet> {
                                 const CircularProgressIndicator(),
                                 const SizedBox(height: AppSpacing.md),
                                 Text(
-                                  'Loading MCP status...',
+                                  context.wp('Loading MCP status...'),
                                   style: theme.textTheme.bodyMedium?.copyWith(
                                     color: surfaces.muted,
                                   ),
@@ -10477,16 +10799,18 @@ class _WorkspaceMcpPickerSheetState extends State<_WorkspaceMcpPickerSheet> {
                         : _mcpDetails.isEmpty
                         ? _WorkspaceMcpEmptyState(
                             icon: Icons.extension_off_rounded,
-                            title: 'No MCPs configured',
-                            body:
-                                'This workspace does not expose any MCP servers yet.',
+                            title: context.wp('No MCPs configured'),
+                            body: context.wp(
+                              'This workspace does not expose any MCP servers yet.',
+                            ),
                           )
                         : filtered.isEmpty
                         ? _WorkspaceMcpEmptyState(
                             icon: Icons.search_off_rounded,
-                            title: 'No MCPs match this search',
-                            body:
-                                'Try a server name or status like connected or needs auth.',
+                            title: context.wp('No MCPs match this search'),
+                            body: context.wp(
+                              'Try a server name or status like connected or needs auth.',
+                            ),
                           )
                         : ListView.separated(
                             itemCount: filtered.length,
@@ -10546,7 +10870,7 @@ class _WorkspaceMcpPickerTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
-    final statusMeta = _workspaceMcpStatusMeta(theme, detail.status);
+    final statusMeta = _workspaceMcpStatusMeta(context, theme, detail.status);
     final busy = togglePending || authPending;
     return InkWell(
       onTap: busy ? null : onTap,
@@ -10601,7 +10925,9 @@ class _WorkspaceMcpPickerTile extends StatelessWidget {
                       ),
                       if (togglePending || authPending)
                         Text(
-                          togglePending ? 'Updating...' : 'Starting auth...',
+                          togglePending
+                              ? context.wp('Updating...')
+                              : context.wp('Starting auth...'),
                           style: theme.textTheme.labelMedium?.copyWith(
                             color: surfaces.muted,
                           ),
@@ -10629,7 +10955,9 @@ class _WorkspaceMcpPickerTile extends StatelessWidget {
                         size: 16,
                       ),
                       label: Text(
-                        authPending ? 'Starting auth...' : 'Start auth',
+                        authPending
+                            ? context.wp('Starting auth...')
+                            : context.wp('Start auth'),
                       ),
                     ),
                   ],
@@ -10768,24 +11096,25 @@ String _workspaceMcpStatusLabel(String status) {
 }
 
 _WorkspaceMcpStatusMeta _workspaceMcpStatusMeta(
+  BuildContext context,
   ThemeData theme,
   String status,
 ) {
   return switch (status.trim().toLowerCase()) {
     'connected' => _WorkspaceMcpStatusMeta(
-      label: 'connected',
+      label: context.wp('connected'),
       color: Colors.teal.shade400,
     ),
     'failed' => _WorkspaceMcpStatusMeta(
-      label: 'failed',
+      label: context.wp('failed'),
       color: theme.colorScheme.error,
     ),
     'needs_auth' => _WorkspaceMcpStatusMeta(
-      label: 'needs auth',
+      label: context.wp('needs auth'),
       color: Colors.amber.shade700,
     ),
     'disabled' => _WorkspaceMcpStatusMeta(
-      label: 'disabled',
+      label: context.wp('disabled'),
       color: Colors.blueGrey.shade400,
     ),
     _ => _WorkspaceMcpStatusMeta(
@@ -10847,6 +11176,7 @@ class _WorkspaceSettingsStatusMeta {
 }
 
 _WorkspaceSettingsStatusMeta _workspaceSettingsStatusMeta(
+  BuildContext context,
   ThemeData theme,
   AppSurfaces surfaces,
   ServerProbeReport? report,
@@ -10854,23 +11184,26 @@ _WorkspaceSettingsStatusMeta _workspaceSettingsStatusMeta(
   final classification = report?.classification;
   return switch (classification) {
     ConnectionProbeClassification.ready => _WorkspaceSettingsStatusMeta(
-      label: 'Ready',
+      label: context.wp('Ready'),
       color: theme.colorScheme.primary,
     ),
     ConnectionProbeClassification.authFailure => _WorkspaceSettingsStatusMeta(
-      label: 'Auth Required',
+      label: context.wp('Auth Required'),
       color: surfaces.warning,
     ),
     ConnectionProbeClassification.unsupportedCapabilities =>
-      _WorkspaceSettingsStatusMeta(label: 'Partial', color: surfaces.warning),
+      _WorkspaceSettingsStatusMeta(
+        label: context.wp('Partial'),
+        color: surfaces.warning,
+      ),
     ConnectionProbeClassification.specFetchFailure ||
     ConnectionProbeClassification.connectivityFailure =>
       _WorkspaceSettingsStatusMeta(
-        label: 'Unavailable',
+        label: context.wp('Unavailable'),
         color: surfaces.danger,
       ),
     null => _WorkspaceSettingsStatusMeta(
-      label: 'Unknown',
+      label: context.wp('Unknown'),
       color: surfaces.muted,
     ),
   };
@@ -11386,7 +11719,7 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
                   ),
                   onPressed: widget.onAddProject,
                   icon: const Icon(Icons.add_rounded),
-                  tooltip: 'Add project',
+                  tooltip: context.wp('Add project'),
                 ),
                 IconButton(
                   key: const ValueKey<String>(
@@ -11395,7 +11728,7 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
                   onPressed: widget.onOpenSettings,
                   icon: const Icon(Icons.settings_rounded),
                   tooltip:
-                      'Workspace settings (${_formatWorkspaceShortcutLabel('mod+comma')})',
+                      '${context.wp('Workspace settings')} (${_formatWorkspaceShortcutLabel('mod+comma')})',
                 ),
                 SizedBox(height: panelPadding),
               ],
@@ -11485,7 +11818,7 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
                           ? null
                           : widget.onNewSession,
                       icon: const Icon(Icons.edit_note_rounded, size: 18),
-                      label: const Text('New session'),
+                      label: Text(context.wp('New session')),
                     ),
                   ),
                   SizedBox(height: panelPadding),
@@ -11494,7 +11827,7 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
                         ? const _SidebarSessionLoadingState()
                         : sessionEntries.isEmpty
                         ? Text(
-                            'Start a new session to begin.',
+                            context.wp('Start a new session to begin.'),
                             style: theme.textTheme.bodyMedium?.copyWith(
                               color: surfaces.muted,
                             ),
@@ -11615,7 +11948,7 @@ Future<_ProjectMenuAction?> _showProjectContextMenu({
   return showGeneralDialog<_ProjectMenuAction>(
     context: context,
     barrierDismissible: true,
-    barrierLabel: 'Dismiss project menu',
+    barrierLabel: context.wp('Dismiss project menu'),
     barrierColor: Colors.transparent,
     transitionDuration: const Duration(milliseconds: 160),
     pageBuilder: (dialogContext, animation, secondaryAnimation) {
@@ -11650,7 +11983,7 @@ class _SidebarProjectMenuButton extends StatelessWidget {
       builder: (buttonContext) {
         return IconButton(
           key: const ValueKey<String>('workspace-sidebar-project-menu-button'),
-          tooltip: 'Project menu',
+          tooltip: context.wp('Project menu'),
           onPressed: () async {
             final renderObject = buttonContext.findRenderObject();
             if (renderObject is! RenderBox) {
@@ -11801,11 +12134,18 @@ class _WorkspaceSidebarNotificationBadge extends StatelessWidget {
         : Theme.of(context).colorScheme.primary;
     final tooltip = switch (state.unseenCount) {
       0 => null,
-      1 when state.hasError => '1 unseen update, including an error',
-      1 => '1 unseen update',
+      1 when state.hasError =>
+        context.wp('1 unseen update, including an error'),
+      1 => context.wp('1 unseen update'),
       final count when state.hasError =>
-        '$count unseen updates, including an error',
-      final count => '$count unseen updates',
+        context.wp(
+          '{count} unseen updates, including an error',
+          args: <String, Object?>{'count': count},
+        ),
+      final count => context.wp(
+        '{count} unseen updates',
+        args: <String, Object?>{'count': count},
+      ),
     };
     final size = compact ? 10.0 : 8.0;
 
@@ -11916,7 +12256,7 @@ class _SidebarSessionTreeRowState extends State<_SidebarSessionTreeRow> {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
     final title = widget.entry.session.title.trim().isEmpty
-        ? 'Untitled session'
+        ? context.wp('Untitled session')
         : widget.entry.session.title.trim();
     final active = widget.entry.active;
     final isRoot = widget.entry.depth == 0;
@@ -12089,7 +12429,7 @@ class _SidebarSessionHoverPreviewPanel extends StatelessWidget {
               const SizedBox(width: AppSpacing.xxs),
               Expanded(
                 child: Text(
-                  'Recent prompts',
+                  context.wp('Recent prompts'),
                   style: theme.textTheme.labelLarge?.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
@@ -12133,7 +12473,7 @@ class _SidebarSessionHoverPreviewPanel extends StatelessWidget {
           ] else if (!state.loading) ...<Widget>[
             const SizedBox(height: AppSpacing.sm),
             Text(
-              'Hover to load the latest prompts for this session.',
+              context.wp('Hover to load the latest prompts for this session.'),
               style: theme.textTheme.bodySmall?.copyWith(color: surfaces.muted),
             ),
           ],
@@ -12305,13 +12645,13 @@ class _ProjectContextMenuPanel extends StatelessWidget {
                   ),
                 ),
                 _ProjectContextMenuItem(
-                  label: 'Edit project',
+                  label: context.wp('Edit project'),
                   icon: Icons.edit_rounded,
                   onTap: () =>
                       Navigator.of(context).pop(_ProjectMenuAction.edit),
                 ),
                 _ProjectContextMenuItem(
-                  label: 'Delete project',
+                  label: context.wp('Delete project'),
                   icon: Icons.delete_outline_rounded,
                   destructive: true,
                   onTap: () =>
@@ -12422,9 +12762,9 @@ class _EditProjectDialogState extends State<_EditProjectDialog> {
     });
     try {
       final image = await openFile(
-        acceptedTypeGroups: const <XTypeGroup>[
+        acceptedTypeGroups: <XTypeGroup>[
           XTypeGroup(
-            label: 'Images',
+            label: context.wp('Images'),
             extensions: <String>[
               'png',
               'jpg',
@@ -12511,29 +12851,31 @@ class _EditProjectDialogState extends State<_EditProjectDialog> {
                       children: <Widget>[
                         Expanded(
                           child: Text(
-                            'Edit project',
+                            context.wp('Edit project'),
                             style: theme.textTheme.titleLarge,
                           ),
                         ),
                         IconButton(
                           onPressed: () => Navigator.of(context).pop(),
                           icon: const Icon(Icons.close_rounded),
-                          tooltip: 'Close',
+                          tooltip: context.wp('Close'),
                         ),
                       ],
                     ),
                     const SizedBox(height: AppSpacing.lg),
                     TextField(
                       controller: _nameController,
-                      decoration: const InputDecoration(labelText: 'Name'),
+                      decoration: InputDecoration(
+                        labelText: context.wp('Name'),
+                      ),
                       autofocus: true,
                     ),
                     const SizedBox(height: AppSpacing.lg),
-                    Text(
-                      'Icon',
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        color: surfaces.muted,
-                      ),
+                      Text(
+                        context.wp('Icon'),
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: surfaces.muted,
+                        ),
                     ),
                     const SizedBox(height: AppSpacing.sm),
                     Row(
@@ -12611,13 +12953,13 @@ class _EditProjectDialogState extends State<_EditProjectDialog> {
                               children: <Widget>[
                                 Text(
                                   _pickingIcon
-                                      ? 'Loading image...'
-                                      : 'Click to choose an image',
+                                      ? context.wp('Loading image...')
+                                      : context.wp('Click to choose an image'),
                                   style: theme.textTheme.bodyMedium,
                                 ),
                                 const SizedBox(height: AppSpacing.xxs),
                                 Text(
-                                  'Recommended: 128x128px',
+                                  context.wp('Recommended: 128x128px'),
                                   style: theme.textTheme.bodySmall,
                                 ),
                               ],
@@ -12629,7 +12971,7 @@ class _EditProjectDialogState extends State<_EditProjectDialog> {
                     if (!hasCustomIcon) ...<Widget>[
                       const SizedBox(height: AppSpacing.lg),
                       Text(
-                        'Color',
+                        context.wp('Color'),
                         style: theme.textTheme.labelLarge?.copyWith(
                           color: surfaces.muted,
                         ),
@@ -12713,11 +13055,12 @@ class _EditProjectDialogState extends State<_EditProjectDialog> {
                       controller: _startupController,
                       maxLines: 3,
                       minLines: 3,
-                      decoration: const InputDecoration(
-                        labelText: 'Workspace startup script',
-                        hintText: 'e.g. bun install',
-                        helperText:
-                            'Runs after creating a new workspace (worktree).',
+                      decoration: InputDecoration(
+                        labelText: context.wp('Workspace startup script'),
+                        hintText: context.wp('e.g. bun install'),
+                        helperText: context.wp(
+                          'Runs after creating a new workspace (worktree).',
+                        ),
                       ),
                     ),
                     const SizedBox(height: AppSpacing.xl),
@@ -12726,12 +13069,12 @@ class _EditProjectDialogState extends State<_EditProjectDialog> {
                       children: <Widget>[
                         TextButton(
                           onPressed: () => Navigator.of(context).pop(),
-                          child: const Text('Cancel'),
+                          child: Text(context.wp('Cancel')),
                         ),
                         const SizedBox(width: AppSpacing.sm),
                         FilledButton(
                           onPressed: _submit,
-                          child: const Text('Save'),
+                          child: Text(context.wp('Save')),
                         ),
                       ],
                     ),
@@ -13100,7 +13443,11 @@ bool _sessionTreeIsActive(
   return false;
 }
 
-String _sessionHeaderTitle(SessionSummary? session, ProjectTarget? project) {
+String _sessionHeaderTitle(
+  BuildContext context,
+  SessionSummary? session,
+  ProjectTarget? project,
+) {
   final sessionTitle = session?.title.trim();
   if (sessionTitle != null && sessionTitle.isNotEmpty) {
     return sessionTitle;
@@ -13109,7 +13456,7 @@ String _sessionHeaderTitle(SessionSummary? session, ProjectTarget? project) {
   if (projectLabel != null && projectLabel.isNotEmpty) {
     return projectLabel;
   }
-  return 'Session';
+  return context.wp('Session');
 }
 
 class _RenameSessionDialog extends StatefulWidget {
@@ -13135,22 +13482,24 @@ class _RenameSessionDialogState extends State<_RenameSessionDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Rename Session'),
+      title: Text(context.wp('Rename Session')),
       content: TextField(
         controller: _titleController,
         autofocus: true,
-        decoration: const InputDecoration(labelText: 'Session title'),
+        decoration: InputDecoration(
+          labelText: context.wp('Session title'),
+        ),
         onSubmitted: (value) => Navigator.of(context).pop(value.trim()),
       ),
       actions: <Widget>[
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: Text(context.wp('Cancel')),
         ),
         FilledButton(
           onPressed: () =>
               Navigator.of(context).pop(_titleController.text.trim()),
-          child: const Text('Save'),
+          child: Text(context.wp('Save')),
         ),
       ],
     );
@@ -13440,7 +13789,7 @@ class _WorkspaceBody extends StatelessWidget {
         children: <Widget>[
           _CompactPaneSwitcher(
             activePane: compactPane,
-            sideLabel: _compactSideLabel(controller),
+            sideLabel: _compactSideLabel(context, controller),
             onChanged: onCompactPaneChanged,
           ),
           Expanded(
@@ -13534,22 +13883,25 @@ class _DesktopResizeHandle extends StatelessWidget {
   }
 }
 
-String _compactSideLabel(WorkspaceController controller) {
+String _compactSideLabel(BuildContext context, WorkspaceController controller) {
   final reviewCount = controller.reviewStatuses.length;
   return switch (controller.sideTab) {
     WorkspaceSideTab.review when reviewCount > 0 =>
-      '$reviewCount Files Changed',
-    WorkspaceSideTab.review => 'Review',
-    WorkspaceSideTab.files => 'Files',
-    WorkspaceSideTab.context => 'Context',
+      context.wp(
+        '{count} Files Changed',
+        args: <String, Object?>{'count': reviewCount},
+      ),
+    WorkspaceSideTab.review => context.wp('Review'),
+    WorkspaceSideTab.files => context.wp('Files'),
+    WorkspaceSideTab.context => context.wp('Context'),
   };
 }
 
-String _desktopSidePanelLabel(WorkspaceController controller) {
+String _desktopSidePanelLabel(BuildContext context, WorkspaceController controller) {
   return switch (controller.sideTab) {
-    WorkspaceSideTab.review => 'Review',
-    WorkspaceSideTab.files => 'Files',
-    WorkspaceSideTab.context => 'Context',
+    WorkspaceSideTab.review => context.wp('Review'),
+    WorkspaceSideTab.files => context.wp('Files'),
+    WorkspaceSideTab.context => context.wp('Context'),
   };
 }
 
@@ -13754,7 +14106,7 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
     final session = _sessionById(controller.sessions, sessionId);
     final timelineState = controller.timelineStateForSession(sessionId);
     final busy = controller.sessionBusyForSession(sessionId);
-    final title = _sessionHeaderTitle(session, project);
+    final title = _sessionHeaderTitle(context, session, project);
     final projectLabel = (() {
       final label = project?.label.trim();
       if (label != null && label.isNotEmpty) {
@@ -13769,12 +14121,24 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
         sessionId == controller.selectedSessionId &&
         chatSearchQuery.trim().isNotEmpty;
     final subtitle = controller.loading && sessionId == null
-        ? '$projectLabel · Connecting to this project'
+        ? context.wp(
+            '{project} · Connecting to this project',
+            args: <String, Object?>{'project': projectLabel},
+          )
         : sessionId == null
-        ? '$projectLabel · New session draft'
+        ? context.wp(
+            '{project} · New session draft',
+            args: <String, Object?>{'project': projectLabel},
+          )
         : selected
-        ? '$projectLabel · Sidebar, side panel, and composer follow this pane'
-        : '$projectLabel · Click to focus this session';
+        ? context.wp(
+            '{project} · Sidebar, side panel, and composer follow this pane',
+            args: <String, Object?>{'project': projectLabel},
+          )
+        : context.wp(
+            '{project} · Click to focus this session',
+            args: <String, Object?>{'project': projectLabel},
+          );
     final normalizedSessionId = sessionId == null || sessionId.isEmpty
         ? 'new'
         : sessionId;
@@ -13922,7 +14286,7 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                             'workspace-session-pane-close-${pane.id}',
                           ),
                           onPressed: () => onClosePane(pane.id),
-                          tooltip: 'Close pane',
+                          tooltip: context.wp('Close pane'),
                           icon: Icon(
                             Icons.close_rounded,
                             size: useCompactCloseButton ? 14 : 18,
@@ -14109,12 +14473,19 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                                     size: 22,
                                   ),
                                   title:
-                                      'Couldn\'t load ${projectLabel.isEmpty ? 'this project' : projectLabel}',
+                                      context.wp(
+                                        "Couldn't load {project}",
+                                        args: <String, Object?>{
+                                          'project': projectLabel.isEmpty
+                                              ? context.wp('this project')
+                                              : projectLabel,
+                                        },
+                                      ),
                                   message: controller.error!,
                                   action: OutlinedButton(
                                     onPressed: () =>
                                         unawaited(handleRetryWorkspace()),
-                                    child: const Text('Retry'),
+                                    child: Text(context.wp('Retry')),
                                   ),
                                 ),
                               )
@@ -14884,7 +15255,10 @@ class _ActiveSubSessionCountBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final label = '$count running';
+    final label = context.wp(
+      '{count} running',
+      args: <String, Object?>{'count': count},
+    );
     return Container(
       key: const ValueKey<String>('active-subsessions-count-badge'),
       padding: EdgeInsets.symmetric(
@@ -14997,12 +15371,12 @@ class _NewSessionView extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             Text(
-              project?.label ?? 'New Session',
+              project?.label ?? context.wp('New Session'),
               style: Theme.of(context).textTheme.headlineSmall,
             ),
             SizedBox(height: density.inset(AppSpacing.sm, min: AppSpacing.xs)),
             Text(
-              'Send a prompt to create a session for this worktree.',
+              context.wp('Send a prompt to create a session for this worktree.'),
               style: Theme.of(
                 context,
               ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
@@ -15087,7 +15461,14 @@ class _WorkspaceProjectLoadingView extends StatelessWidget {
                             const SizedBox(width: AppSpacing.sm),
                             Expanded(
                               child: Text(
-                                'Loading ${title.isEmpty ? 'project' : title}...',
+                                context.wp(
+                                  'Loading {title}...',
+                                  args: <String, Object?>{
+                                    'title': title.isEmpty
+                                        ? context.wp('project')
+                                        : title,
+                                  },
+                                ),
                                 style: Theme.of(context).textTheme.titleLarge
                                     ?.copyWith(fontWeight: FontWeight.w700),
                               ),
@@ -15096,7 +15477,9 @@ class _WorkspaceProjectLoadingView extends StatelessWidget {
                         ),
                         const SizedBox(height: AppSpacing.sm),
                         Text(
-                          'Keeping the current workspace shell in place while the new project sessions and timeline load.',
+                          context.wp(
+                            'Keeping the current workspace shell in place while the new project sessions and timeline load.',
+                          ),
                           style: Theme.of(context).textTheme.bodyMedium
                               ?.copyWith(color: surfaces.muted),
                         ),
@@ -15798,14 +16181,16 @@ class _MessageTimelineState extends State<_MessageTimeline> {
       _syncTimelinePosition();
     });
     if (widget.loading && widget.messages.isEmpty) {
-      return const _TimelineStatusCard(
+      return _TimelineStatusCard(
         icon: SizedBox(
           width: 20,
           height: 20,
           child: CircularProgressIndicator(strokeWidth: 2),
         ),
-        title: 'Loading messages...',
-        message: 'Connecting to the server and loading this session.',
+        title: context.wp('Loading messages...'),
+        message: context.wp(
+          'Connecting to the server and loading this session.',
+        ),
       );
     }
     if (widget.error != null && widget.messages.isEmpty) {
@@ -15815,7 +16200,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
           color: theme.colorScheme.error,
           size: 22,
         ),
-        title: 'Couldn\'t load this session',
+        title: context.wp("Couldn't load this session"),
         message: widget.error!,
         action:
             _oversizedSessionError &&
@@ -15823,18 +16208,18 @@ class _MessageTimelineState extends State<_MessageTimeline> {
                     OversizedSessionBehavior.openWithoutHistory
             ? OutlinedButton(
                 onPressed: widget.onIgnoreOversizedSession,
-                child: const Text('Open without history'),
+                child: Text(context.wp('Open without history')),
               )
             : OutlinedButton(
                 onPressed: () => unawaited(widget.onRetry()),
-                child: const Text('Retry'),
+                child: Text(context.wp('Retry')),
               ),
       );
     }
     if (widget.messages.isEmpty && !showThinkingPlaceholder) {
       return Center(
         child: Text(
-          'No messages yet.',
+          context.wp('No messages yet.'),
           style: theme.textTheme.bodyMedium?.copyWith(color: surfaces.muted),
         ),
       );
@@ -15847,16 +16232,17 @@ class _MessageTimelineState extends State<_MessageTimeline> {
             key: const ValueKey<String>('timeline-cached-refresh-banner'),
             compact: widget.compact,
             shimmering: true,
-            title: 'Refreshing cached messages...',
-            message:
-                'Showing the last saved snapshot while the server loads newer messages.',
+            title: context.wp('Refreshing cached messages...'),
+            message: context.wp(
+              'Showing the last saved snapshot while the server loads newer messages.',
+            ),
           )
         else if (widget.showingCachedMessages && widget.error != null)
           _TimelineCachedRefreshBanner(
             key: const ValueKey<String>('timeline-cached-refresh-banner'),
             compact: widget.compact,
             shimmering: false,
-            title: 'Showing cached messages',
+            title: context.wp('Showing cached messages'),
             message: widget.error!,
             action:
                 _oversizedSessionError &&
@@ -15864,11 +16250,11 @@ class _MessageTimelineState extends State<_MessageTimeline> {
                         OversizedSessionBehavior.openWithoutHistory
                 ? OutlinedButton(
                     onPressed: widget.onIgnoreOversizedSession,
-                    child: const Text('Open without history'),
+                    child: Text(context.wp('Open without history')),
                   )
                 : OutlinedButton(
                     onPressed: () => unawaited(widget.onRetry()),
-                    child: const Text('Retry'),
+                    child: Text(context.wp('Retry')),
                   ),
           ),
         Expanded(
@@ -16045,13 +16431,16 @@ class _TimelineLoadOlderIndicator extends StatelessWidget {
     final surfaces = theme.extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
     final label = loading
-        ? 'Loading earlier messages...'
+        ? context.wp('Loading earlier messages...')
         : hiddenCount > 0
-        ? '$hiddenCount earlier messages'
+        ? context.wp(
+            '{count} earlier messages',
+            args: <String, Object?>{'count': hiddenCount},
+          )
         : serverMore
-        ? 'Earlier messages available'
-        : 'Load earlier messages';
-    final hint = loading ? null : 'Scroll up or tap to load more';
+        ? context.wp('Earlier messages available')
+        : context.wp('Load earlier messages');
+    final hint = loading ? null : context.wp('Scroll up or tap to load more');
     final content = Container(
       key: const ValueKey<String>('timeline-load-older-indicator'),
       padding: EdgeInsets.symmetric(
@@ -16329,7 +16718,10 @@ class _TimelineThinkingPlaceholder extends StatelessWidget {
                     'timeline-thinking-placeholder-title',
                   ),
                   active: true,
-                  text: TextSpan(text: 'Thinking', style: titleStyle),
+                  text: TextSpan(
+                    text: context.wp('Thinking'),
+                    style: titleStyle,
+                  ),
                 ),
                 SizedBox(height: compact ? AppSpacing.xxs : AppSpacing.xs),
                 _ShimmeringRichText(
@@ -16338,7 +16730,7 @@ class _TimelineThinkingPlaceholder extends StatelessWidget {
                   ),
                   active: true,
                   text: TextSpan(
-                    text: 'The agent is preparing a response.',
+                    text: context.wp('The agent is preparing a response.'),
                     style: summaryStyle,
                   ),
                 ),
@@ -16774,113 +17166,119 @@ class _PromptComposerState extends State<_PromptComposer> {
 
   List<_ComposerSlashCommand> get _slashCommands {
     final commands = <_ComposerSlashCommand>[
-      const _ComposerSlashCommand(
+      _ComposerSlashCommand(
         id: 'builtin.new',
         trigger: 'new',
-        title: 'New session',
-        description: 'Create a new session',
+        title: context.wp('New session'),
+        description: context.wp('Create a new session'),
         type: _ComposerSlashCommandType.builtin,
         action: _ComposerBuiltinSlashAction.newSession,
       ),
       if (widget.onShareSession != null)
-        const _ComposerSlashCommand(
+        _ComposerSlashCommand(
           id: 'builtin.share',
           trigger: 'share',
-          title: 'Share session',
-          description: 'Share this session',
+          title: context.wp('Share session'),
+          description: context.wp('Share this session'),
           type: _ComposerSlashCommandType.builtin,
           action: _ComposerBuiltinSlashAction.shareSession,
         ),
       if (widget.onUnshareSession != null)
-        const _ComposerSlashCommand(
+        _ComposerSlashCommand(
           id: 'builtin.unshare',
           trigger: 'unshare',
-          title: 'Unshare session',
-          description: 'Remove the current share link',
+          title: context.wp('Unshare session'),
+          description: context.wp('Remove the current share link'),
           type: _ComposerSlashCommandType.builtin,
           action: _ComposerBuiltinSlashAction.unshareSession,
         ),
       if (widget.onSummarizeSession != null)
-        const _ComposerSlashCommand(
+        _ComposerSlashCommand(
           id: 'builtin.compact',
           trigger: 'compact',
-          title: 'Compact session',
-          description: 'Summarize the session to reduce context size',
+          title: context.wp('Compact session'),
+          description: context.wp(
+            'Summarize the session to reduce context size',
+          ),
           type: _ComposerSlashCommandType.builtin,
           action: _ComposerBuiltinSlashAction.compactSession,
         ),
       if (widget.models.isNotEmpty)
-        const _ComposerSlashCommand(
+        _ComposerSlashCommand(
           id: 'builtin.model',
           trigger: 'model',
-          title: 'Switch model',
-          description: 'Select a different model',
+          title: context.wp('Switch model'),
+          description: context.wp('Select a different model'),
           type: _ComposerSlashCommandType.builtin,
           action: _ComposerBuiltinSlashAction.modelPicker,
         ),
       if (widget.agents.isNotEmpty)
-        const _ComposerSlashCommand(
+        _ComposerSlashCommand(
           id: 'builtin.agent',
           trigger: 'agent',
-          title: 'Switch agent',
-          description: 'Select a different agent',
+          title: context.wp('Switch agent'),
+          description: context.wp('Select a different agent'),
           type: _ComposerSlashCommandType.builtin,
           action: _ComposerBuiltinSlashAction.agentPicker,
         ),
       if (widget.selectedModel != null)
-        const _ComposerSlashCommand(
+        _ComposerSlashCommand(
           id: 'builtin.reasoning',
           trigger: 'reasoning',
-          title: 'Adjust reasoning',
-          description: 'Choose a different reasoning depth',
+          title: context.wp('Adjust reasoning'),
+          description: context.wp('Choose a different reasoning depth'),
           type: _ComposerSlashCommandType.builtin,
           action: _ComposerBuiltinSlashAction.reasoningPicker,
         ),
-      const _ComposerSlashCommand(
+      _ComposerSlashCommand(
         id: 'builtin.permissions',
         trigger: 'permissions',
-        title: 'Toggle permission auto-accept',
-        description: 'Enable or disable auto-accept for this session',
+        title: context.wp('Toggle permission auto-accept'),
+        description: context.wp(
+          'Enable or disable auto-accept for this session',
+        ),
         type: _ComposerSlashCommandType.builtin,
         action: _ComposerBuiltinSlashAction.permissionAutoAccept,
       ),
-      const _ComposerSlashCommand(
+      _ComposerSlashCommand(
         id: 'builtin.mcp',
         trigger: 'mcp',
-        title: 'Toggle MCPs',
-        description: 'Connect or disconnect MCP servers for this session',
+        title: context.wp('Toggle MCPs'),
+        description: context.wp(
+          'Connect or disconnect MCP servers for this session',
+        ),
         type: _ComposerSlashCommandType.builtin,
         action: _ComposerBuiltinSlashAction.mcpPicker,
       ),
-      const _ComposerSlashCommand(
+      _ComposerSlashCommand(
         id: 'builtin.terminal',
         trigger: 'terminal',
-        title: 'Open terminal',
-        description: 'Toggle the terminal panel',
+        title: context.wp('Open terminal'),
+        description: context.wp('Toggle the terminal panel'),
         type: _ComposerSlashCommandType.builtin,
         action: _ComposerBuiltinSlashAction.terminal,
       ),
-      const _ComposerSlashCommand(
+      _ComposerSlashCommand(
         id: 'builtin.review',
         trigger: 'review',
-        title: 'Open review',
-        description: 'Show the review panel',
+        title: context.wp('Open review'),
+        description: context.wp('Show the review panel'),
         type: _ComposerSlashCommandType.builtin,
         action: _ComposerBuiltinSlashAction.reviewTab,
       ),
-      const _ComposerSlashCommand(
+      _ComposerSlashCommand(
         id: 'builtin.files',
         trigger: 'files',
-        title: 'Open files',
-        description: 'Show the files panel',
+        title: context.wp('Open files'),
+        description: context.wp('Show the files panel'),
         type: _ComposerSlashCommandType.builtin,
         action: _ComposerBuiltinSlashAction.filesTab,
       ),
-      const _ComposerSlashCommand(
+      _ComposerSlashCommand(
         id: 'builtin.context',
         trigger: 'context',
-        title: 'Open context',
-        description: 'Show the context panel',
+        title: context.wp('Open context'),
+        description: context.wp('Show the context panel'),
         type: _ComposerSlashCommandType.builtin,
         action: _ComposerBuiltinSlashAction.contextTab,
       ),
@@ -17143,7 +17541,7 @@ class _PromptComposerState extends State<_PromptComposer> {
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
-    final reasoningLabel = _reasoningLabel(widget.selectedReasoning);
+    final reasoningLabel = _reasoningLabel(context, widget.selectedReasoning);
     final slashCommands = _filteredSlashCommands;
     final isCompact = widget.compact || density.compact;
     final submitIcon = _showsInterruptAction
@@ -17411,12 +17809,12 @@ class _PromptComposerState extends State<_PromptComposer> {
                                     );
                                   },
                                 ),
-                            decoration: const InputDecoration(
+                            decoration: InputDecoration(
                               border: InputBorder.none,
                               enabledBorder: InputBorder.none,
                               focusedBorder: InputBorder.none,
                               filled: false,
-                              hintText: 'Ask anything...',
+                              hintText: context.wp('Ask anything...'),
                               contentPadding: EdgeInsets.zero,
                             ),
                             style: Theme.of(
@@ -17478,7 +17876,9 @@ class _PromptComposerState extends State<_PromptComposer> {
                                 children: <Widget>[
                                   _ComposerSelectionPill(
                                     compact: isCompact,
-                                    label: widget.selectedAgentName ?? 'Agent',
+                                    label:
+                                        widget.selectedAgentName ??
+                                        context.wp('Agent'),
                                     onTap: widget.agents.isEmpty
                                         ? null
                                         : () async {
@@ -17500,7 +17900,8 @@ class _PromptComposerState extends State<_PromptComposer> {
                                   _ComposerSelectionPill(
                                     compact: isCompact,
                                     label:
-                                        widget.selectedModel?.name ?? 'Model',
+                                        widget.selectedModel?.name ??
+                                        context.wp('Model'),
                                     onTap: widget.models.isEmpty
                                         ? null
                                         : () async {
@@ -17608,7 +18009,7 @@ class _PromptComposerState extends State<_PromptComposer> {
                             ),
                           ),
                           child: Text(
-                            'Drop files or images to attach',
+                            context.wp('Drop files or images to attach'),
                             style: Theme.of(context).textTheme.titleMedium
                                 ?.copyWith(fontWeight: FontWeight.w600),
                           ),
@@ -17630,8 +18031,8 @@ class _PromptComposerState extends State<_PromptComposer> {
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (context) => _SearchableSelectionSheet<_AgentChoice>(
-        title: 'Select Agent',
-        searchHint: 'Search agents',
+        title: context.wp('Select Agent'),
+        searchHint: context.wp('Search agents'),
         items: widget.agents
             .map(
               (agent) => _AgentChoice(
@@ -17691,8 +18092,8 @@ class _PromptComposerState extends State<_PromptComposer> {
       isScrollControlled: true,
       builder: (context) =>
           _GroupedSelectionSheet<WorkspaceComposerModelOption>(
-            title: 'Select Model',
-            searchHint: 'Search models',
+            title: context.wp('Select Model'),
+            searchHint: context.wp('Search models'),
             groups: items,
             selectedValue: widget.selectedModel?.key,
             matchesQuery: (item, query) {
@@ -17709,7 +18110,12 @@ class _PromptComposerState extends State<_PromptComposer> {
             trailingBuilder: (item) => item.reasoningValues.isEmpty
                 ? null
                 : Text(
-                    '${item.reasoningValues.length} variants',
+                    context.wp(
+                      '{count} variants',
+                      args: <String, Object?>{
+                        'count': item.reasoningValues.length,
+                      },
+                    ),
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Theme.of(context).extension<AppSurfaces>()!.muted,
                     ),
@@ -17720,21 +18126,23 @@ class _PromptComposerState extends State<_PromptComposer> {
 
   Future<String?> _showReasoningPicker(BuildContext context) {
     final options = <_ReasoningChoice>[
-      const _ReasoningChoice(
+      _ReasoningChoice(
         value: _PromptComposer._defaultReasoningSentinel,
-        label: 'Default',
+        label: context.wp('Default'),
       ),
       ...widget.reasoningValues.map(
-        (value) =>
-            _ReasoningChoice(value: value, label: _reasoningLabel(value)),
+        (value) => _ReasoningChoice(
+          value: value,
+          label: _reasoningLabel(context, value),
+        ),
       ),
     ];
     return showModalBottomSheet<String?>(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (context) => _SearchableSelectionSheet<_ReasoningChoice>(
-        title: 'Reasoning',
-        searchHint: 'Search variants',
+        title: context.wp('Reasoning'),
+        searchHint: context.wp('Search variants'),
         items: options,
         selectedValue:
             widget.selectedReasoning ??
@@ -17840,7 +18248,7 @@ class _ComposerAttachmentTile extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  _attachmentLabel(attachment.mime),
+                  _attachmentLabel(context, attachment.mime),
                   style: Theme.of(
                     context,
                   ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
@@ -17994,7 +18402,7 @@ class _PendingQuestionComposerNotice extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
                       Text(
-                        'Question pending in the active session',
+                        context.wp('Question pending in the active session'),
                         style:
                             (compact
                                     ? theme.textTheme.titleSmall
@@ -18008,7 +18416,9 @@ class _PendingQuestionComposerNotice extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        'Answer it in the session panel to continue.',
+                        context.wp(
+                          'Answer it in the session panel to continue.',
+                        ),
                         maxLines: compact ? 2 : 3,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.bodyMedium?.copyWith(
@@ -18086,7 +18496,7 @@ class _PendingPermissionComposerNotice extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
                       Text(
-                        'Permission required in the active session',
+                        context.wp('Permission required in the active session'),
                         style:
                             (compact
                                     ? theme.textTheme.titleSmall
@@ -18101,8 +18511,15 @@ class _PendingPermissionComposerNotice extends StatelessWidget {
                       ),
                       Text(
                         request.permission.trim().isEmpty
-                            ? 'Approve or reject it in the session panel to continue.'
-                            : 'Approve or reject ${request.permission} in the session panel to continue.',
+                            ? context.wp(
+                                'Approve or reject it in the session panel to continue.',
+                              )
+                            : context.wp(
+                                'Approve or reject {permission} in the session panel to continue.',
+                                args: <String, Object?>{
+                                  'permission': request.permission,
+                                },
+                              ),
                         maxLines: compact ? 2 : 3,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.bodyMedium?.copyWith(
@@ -18541,8 +18958,8 @@ class _QuestionPromptDockState extends State<_QuestionPromptDock> {
                         ),
                         Text(
                           question.multiple
-                              ? 'Select one or more answers.'
-                              : 'Select one answer.',
+                              ? context.wp('Select one or more answers.')
+                              : context.wp('Select one answer.'),
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: surfaces.muted,
                           ),
@@ -18568,9 +18985,9 @@ class _QuestionPromptDockState extends State<_QuestionPromptDock> {
                             key: ValueKey<String>(
                               'question-dock-custom-option-$_tab',
                             ),
-                            title: 'Other',
+                            title: context.wp('Other'),
                             subtitle: customValue.isEmpty
-                                ? 'Type your own answer'
+                                ? context.wp('Type your own answer')
                                 : customValue,
                             selected: customSelected,
                             multiple: question.multiple,
@@ -18594,7 +19011,7 @@ class _QuestionPromptDockState extends State<_QuestionPromptDock> {
                             minLines: 1,
                             maxLines: 4,
                             decoration: InputDecoration(
-                              hintText: 'Type your answer...',
+                              hintText: context.wp('Type your answer...'),
                               filled: true,
                               fillColor: surfaces.panelMuted,
                               border: OutlineInputBorder(
@@ -18633,7 +19050,7 @@ class _QuestionPromptDockState extends State<_QuestionPromptDock> {
                   children: <Widget>[
                     TextButton(
                       onPressed: _submitting ? null : _dismiss,
-                      child: const Text('Dismiss'),
+                      child: Text(context.wp('Dismiss')),
                     ),
                     const Spacer(),
                     if (_tab > 0) ...<Widget>[
@@ -18641,7 +19058,7 @@ class _QuestionPromptDockState extends State<_QuestionPromptDock> {
                         onPressed: _submitting
                             ? null
                             : () => setState(() => _tab -= 1),
-                        child: const Text('Back'),
+                        child: Text(context.wp('Back')),
                       ),
                       const SizedBox(width: AppSpacing.sm),
                     ],
@@ -18658,7 +19075,11 @@ class _QuestionPromptDockState extends State<_QuestionPromptDock> {
                               height: 16,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : Text(_isLastQuestion ? 'Submit' : 'Next'),
+                          : Text(
+                              _isLastQuestion
+                                  ? context.wp('Submit')
+                                  : context.wp('Next'),
+                            ),
                     ),
                   ],
                 ),
@@ -18755,7 +19176,7 @@ class _PermissionPromptDock extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
                           Text(
-                            'Permission Request',
+                            context.wp('Permission Request'),
                             style:
                                 (compact
                                         ? theme.textTheme.titleMedium
@@ -18770,7 +19191,9 @@ class _PermissionPromptDock extends StatelessWidget {
                           ),
                           Text(
                             request.permission.trim().isEmpty
-                                ? 'A tool is asking for permission.'
+                                ? context.wp(
+                                    'A tool is asking for permission.',
+                                  )
                                 : request.permission,
                             style: theme.textTheme.bodyMedium?.copyWith(
                               color: surfaces.muted,
@@ -18818,7 +19241,7 @@ class _PermissionPromptDock extends StatelessWidget {
                       onPressed: responding
                           ? null
                           : () => unawaited(decide('reject')),
-                      child: const Text('Deny'),
+                      child: Text(context.wp('Deny')),
                     );
                     final alwaysButton = OutlinedButton(
                       key: const ValueKey<String>(
@@ -18827,7 +19250,7 @@ class _PermissionPromptDock extends StatelessWidget {
                       onPressed: responding
                           ? null
                           : () => unawaited(decide('always')),
-                      child: const Text('Allow Always'),
+                      child: Text(context.wp('Allow Always')),
                     );
                     final onceButton = FilledButton(
                       key: const ValueKey<String>('permission-dock-allow-once'),
@@ -18840,7 +19263,7 @@ class _PermissionPromptDock extends StatelessWidget {
                               height: 16,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Text('Allow Once'),
+                          : Text(context.wp('Allow Once')),
                     );
                     if (!narrow) {
                       return Row(
@@ -19591,7 +20014,7 @@ class _CompactPaneSwitcher extends StatelessWidget {
         children: <Widget>[
           Expanded(
             child: _CompactPaneButton(
-              label: 'Session',
+              label: context.wp('Session'),
               selected: activePane == _CompactWorkspacePane.session,
               onTap: () => onChanged(_CompactWorkspacePane.session),
             ),
@@ -19956,7 +20379,7 @@ class _UserTimelineMessageState extends State<_UserTimelineMessage> {
     }
     showAppSnackBar(
       context,
-      message: 'Message copied.',
+      message: context.wp('Message copied.'),
       tone: AppSnackBarTone.success,
     );
   }
@@ -20033,7 +20456,7 @@ class _UserTimelineMessageState extends State<_UserTimelineMessage> {
                     'timeline-user-action-sheet-fork-${widget.message.info.id}',
                   ),
                   leading: const Icon(Icons.call_split_rounded),
-                  title: const Text('Fork to New Session'),
+                  title: Text(context.wp('Fork to New Session')),
                   onTap: () {
                     Navigator.of(sheetContext).pop();
                     unawaited(
@@ -20050,7 +20473,7 @@ class _UserTimelineMessageState extends State<_UserTimelineMessage> {
                     'timeline-user-action-sheet-revert-${widget.message.info.id}',
                   ),
                   leading: const Icon(Icons.undo_rounded),
-                  title: const Text('Revert Message'),
+                  title: Text(context.wp('Revert Message')),
                   onTap: () {
                     Navigator.of(sheetContext).pop();
                     unawaited(
@@ -20067,7 +20490,7 @@ class _UserTimelineMessageState extends State<_UserTimelineMessage> {
                     'timeline-user-action-sheet-copy-${widget.message.info.id}',
                   ),
                   leading: const Icon(Icons.content_copy_rounded),
-                  title: const Text('Copy Message'),
+                  title: Text(context.wp('Copy Message')),
                   onTap: () {
                     Navigator.of(sheetContext).pop();
                     unawaited(_copyMessage());
@@ -20294,7 +20717,7 @@ class _UserMessageHoverBar extends StatelessWidget {
                     'timeline-user-action-fork-${message.info.id}',
                   ),
                   icon: Icons.call_split_rounded,
-                  label: 'Fork to New Session',
+                  label: context.wp('Fork to New Session'),
                   busy: runningActionId == 'fork',
                   onTap: onFork,
                 ),
@@ -20304,7 +20727,7 @@ class _UserMessageHoverBar extends StatelessWidget {
                     'timeline-user-action-revert-${message.info.id}',
                   ),
                   icon: Icons.undo_rounded,
-                  label: 'Revert Message',
+                  label: context.wp('Revert Message'),
                   busy: runningActionId == 'revert',
                   onTap: onRevert,
                 ),
@@ -20314,7 +20737,7 @@ class _UserMessageHoverBar extends StatelessWidget {
                     'timeline-user-action-copy-${message.info.id}',
                   ),
                   icon: Icons.content_copy_rounded,
-                  label: 'Copy Message',
+                  label: context.wp('Copy Message'),
                   onTap: onCopy,
                 ),
             ],
@@ -20426,15 +20849,15 @@ class _TimelinePart extends StatelessWidget {
     if (part.type == 'compaction') {
       return _TimelineCompactionDivider(
         key: ValueKey<String>('timeline-compaction-${part.id}'),
-        label: _partTitle(part),
+        label: _partDisplayTitle(context, part),
       );
     }
-    final body = _partText(part);
+    final body = _partDisplayText(context, part);
     final linkedSession = _partLinkedSession(
       part,
       sessions: sessions,
       currentSessionId: currentSessionId,
-      fallbackSummary: _partSummary(part, body),
+      fallbackSummary: _partDisplaySummary(context, part, body),
     );
     if (_isAttachmentFilePart(part)) {
       return _UserMessageAttachmentTile(part: part);
@@ -20443,7 +20866,7 @@ class _TimelinePart extends StatelessWidget {
       return _ShellTimelinePart(
         key: ValueKey<String>('timeline-shell-${part.id}'),
         partId: part.id,
-        title: _partTitle(part),
+        title: _partDisplayTitle(context, part),
         subtitle: _shellToolSubtitle(part),
         command: _shellToolCommand(part),
         output: _shellToolOutput(part),
@@ -20458,8 +20881,8 @@ class _TimelinePart extends StatelessWidget {
       return _TimelineActivityPart(
         key: ValueKey<String>('timeline-activity-${part.id}'),
         shimmerKey: ValueKey<String>('timeline-activity-shimmer-${part.id}'),
-        title: _partTitle(part),
-        summary: linkedSession?.label ?? _partSummary(part, body),
+        title: _partDisplayTitle(context, part),
+        summary: linkedSession?.label ?? _partDisplaySummary(context, part, body),
         body: body,
         shimmerActive: shimmerActive,
         searchTerms: searchTerms,
@@ -20565,7 +20988,7 @@ class _UserMessageAttachmentTile extends StatelessWidget {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final url = _attachmentPartUrl(part);
     final mime = _attachmentPartMime(part) ?? 'application/octet-stream';
-    final filename = _attachmentPartFilename(part);
+    final filename = _attachmentDisplayFilename(context, part);
     final previewBytes = url == null ? null : _attachmentDataBytes(url);
     return Container(
       width: compact
@@ -20621,7 +21044,7 @@ class _UserMessageAttachmentTile extends StatelessWidget {
           ),
           const SizedBox(height: 2),
           Text(
-            _attachmentLabel(mime),
+            _attachmentLabel(context, mime),
             style: Theme.of(
               context,
             ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
@@ -20888,7 +21311,9 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
                     Padding(
                       padding: const EdgeInsets.only(left: AppSpacing.sm),
                       child: Tooltip(
-                        message: _copied ? 'Copied' : 'Copy',
+                        message: _copied
+                            ? context.wp('Copied')
+                            : context.wp('Copy'),
                         waitDuration: const Duration(milliseconds: 100),
                         child: DecoratedBox(
                           decoration: BoxDecoration(
@@ -20909,7 +21334,9 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
                             ),
                             visualDensity: VisualDensity.compact,
                             splashRadius: 18,
-                            tooltip: _copied ? 'Copied' : 'Copy',
+                            tooltip: _copied
+                                ? context.wp('Copied')
+                                : context.wp('Copy'),
                           ),
                         ),
                       ),
@@ -20988,7 +21415,7 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
                 )
               else if (pending)
                 Text(
-                  'Waiting for shell output…',
+                  context.wp('Waiting for shell output…'),
                   style: monoStyle.copyWith(color: surfaces.muted),
                 ),
             ],
@@ -21301,8 +21728,10 @@ class _TimelineExploredContextPartState
     final surfaces = theme.extension<AppSurfaces>()!;
     final summary = _contextToolSummary(widget.parts);
     final pending = widget.parts.any(_isPendingContextToolPart);
-    final label = pending ? 'Exploring' : 'Explored';
-    final summaryText = _contextToolSummaryLabel(summary);
+    final label = pending
+        ? context.wp('Exploring')
+        : context.wp('Explored');
+    final summaryText = _contextToolSummaryLabel(context, summary);
     final titleStyle = theme.textTheme.titleSmall?.copyWith(
       fontWeight: FontWeight.w600,
       color: theme.colorScheme.onSurface.withValues(alpha: 0.92),
@@ -21380,7 +21809,7 @@ class _TimelineExploredContextPartState
                                 TextSpan(
                                   style: detailStyle,
                                   children: _buildSearchHighlightedTextSpans(
-                                    text: _contextToolDetailLine(part),
+                                    text: _contextToolDetailLine(context, part),
                                     style: detailStyle,
                                     terms: widget.searchTerms,
                                     highlightColor: _searchTextHighlightColor(
@@ -22089,7 +22518,7 @@ class _StructuredCodeFenceBlockState extends State<_StructuredCodeFenceBlock> {
     });
     showAppSnackBar(
       context,
-      message: 'Code block copied.',
+      message: context.wp('Code block copied.'),
       tone: AppSnackBarTone.success,
     );
     _copiedTimer = Timer(const Duration(seconds: 2), () {
@@ -22142,6 +22571,7 @@ class _StructuredCodeFenceBlockState extends State<_StructuredCodeFenceBlock> {
           _cachedSearchTermsSignature != searchTermsSignature ||
           _cachedSearchActive != widget.searchActive) {
         final syntaxSpans = _buildHighlightedCodeBlockSpans(
+          context: context,
           code: widget.code,
           language: language,
           syntaxTheme: syntaxTheme,
@@ -22185,7 +22615,9 @@ class _StructuredCodeFenceBlockState extends State<_StructuredCodeFenceBlock> {
                     : const SizedBox.shrink(),
               ),
               Tooltip(
-                message: _copied ? 'Copied' : 'Copy code',
+                message: _copied
+                    ? context.wp('Copied')
+                    : context.wp('Copy code'),
                 waitDuration: const Duration(milliseconds: 100),
                 child: DecoratedBox(
                   decoration: BoxDecoration(
@@ -22206,7 +22638,9 @@ class _StructuredCodeFenceBlockState extends State<_StructuredCodeFenceBlock> {
                     ),
                     visualDensity: VisualDensity.compact,
                     splashRadius: 18,
-                    tooltip: _copied ? 'Copied' : 'Copy code',
+                    tooltip: _copied
+                        ? context.wp('Copied')
+                        : context.wp('Copy code'),
                   ),
                 ),
               ),
@@ -22708,9 +23142,12 @@ class _ComposerQueuedPromptDock extends StatelessWidget {
             children: <Widget>[
               Expanded(
                 child: Text(
-                  queuedPrompts.length == 1
-                      ? '1 queued follow-up'
-                      : '${queuedPrompts.length} queued follow-ups',
+                  context.wp(
+                    queuedPrompts.length == 1
+                        ? '1 queued follow-up'
+                        : '{count} queued follow-ups',
+                    args: <String, Object?>{'count': queuedPrompts.length},
+                  ),
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
@@ -22726,7 +23163,7 @@ class _ComposerQueuedPromptDock extends StatelessWidget {
                     ),
                     const SizedBox(width: AppSpacing.xs),
                     Text(
-                      'Sending',
+                      context.wp('Sending'),
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: surfaces.muted,
                         fontWeight: FontWeight.w600,
@@ -22825,10 +23262,14 @@ class _ComposerQueuedPromptRow extends StatelessWidget {
                 const SizedBox(height: AppSpacing.xxs),
                 Text(
                   failed
-                      ? 'Could not send automatically. Edit, delete, or send again.'
+                      ? context.wp(
+                          'Could not send automatically. Edit, delete, or send again.',
+                        )
                       : busy
-                      ? 'Waiting behind the current run.'
-                      : 'Will send as soon as the session is ready.',
+                      ? context.wp('Waiting behind the current run.')
+                      : context.wp(
+                          'Will send as soon as the session is ready.',
+                        ),
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: muted,
                     height: 1.45,
@@ -22862,7 +23303,7 @@ class _ComposerQueuedPromptRow extends StatelessWidget {
                       : () {
                           unawaited(onSendQueuedPromptNow(queuedPrompt.id));
                         },
-                  child: Text(busy ? 'Steer' : 'Send'),
+                  child: Text(context.wp(busy ? 'Steer' : 'Send')),
                 ),
                 IconButton(
                   key: ValueKey<String>(
@@ -22873,7 +23314,7 @@ class _ComposerQueuedPromptRow extends StatelessWidget {
                       : () {
                           unawaited(onEditQueuedPrompt(queuedPrompt.id));
                         },
-                  tooltip: 'Edit queued message',
+                  tooltip: context.wp('Edit queued message'),
                   icon: const Icon(Icons.edit_rounded),
                 ),
                 IconButton(
@@ -22885,7 +23326,7 @@ class _ComposerQueuedPromptRow extends StatelessWidget {
                       : () {
                           unawaited(onDeleteQueuedPrompt(queuedPrompt.id));
                         },
-                  tooltip: 'Delete queued message',
+                  tooltip: context.wp('Delete queued message'),
                   icon: const Icon(Icons.delete_outline_rounded),
                 ),
               ],
@@ -22910,8 +23351,8 @@ class _ComposerSubmitModeSheet extends StatelessWidget {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
     final defaultLabel = switch (defaultMode) {
-      WorkspaceFollowupMode.queue => 'Queue',
-      WorkspaceFollowupMode.steer => 'Steer',
+      WorkspaceFollowupMode.queue => context.wp('Queue'),
+      WorkspaceFollowupMode.steer => context.wp('Steer'),
     };
     return SafeArea(
       child: Padding(
@@ -22934,14 +23375,17 @@ class _ComposerSubmitModeSheet extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Text(
-                  'Send this message',
+                  context.wp('Send this message'),
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
                 ),
                 const SizedBox(height: AppSpacing.xxs),
                 Text(
-                  'Default while busy: $defaultLabel',
+                  context.wp(
+                    'Default while busy: {mode}',
+                    args: <String, Object?>{'mode': defaultLabel},
+                  ),
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: surfaces.muted,
                   ),
@@ -22949,10 +23393,14 @@ class _ComposerSubmitModeSheet extends StatelessWidget {
                 const SizedBox(height: AppSpacing.md),
                 _ComposerSubmitModeTile(
                   key: const ValueKey<String>('composer-submit-mode-queue'),
-                  title: 'Queue',
+                  title: context.wp('Queue'),
                   subtitle: busy
-                      ? 'Keep this follow-up waiting and send it automatically when the current run finishes.'
-                      : 'Send normally now, and keep this mode queued by default when the session is already busy.',
+                      ? context.wp(
+                          'Keep this follow-up waiting and send it automatically when the current run finishes.',
+                        )
+                      : context.wp(
+                          'Send normally now, and keep this mode queued by default when the session is already busy.',
+                        ),
                   icon: Icons.schedule_send_rounded,
                   onTap: () => Navigator.of(
                     context,
@@ -22961,10 +23409,12 @@ class _ComposerSubmitModeSheet extends StatelessWidget {
                 const SizedBox(height: AppSpacing.sm),
                 _ComposerSubmitModeTile(
                   key: const ValueKey<String>('composer-submit-mode-steer'),
-                  title: 'Steer',
+                  title: context.wp('Steer'),
                   subtitle: busy
-                      ? 'Send immediately to the running agent instead of waiting in the queue.'
-                      : 'Send immediately without queueing.',
+                      ? context.wp(
+                          'Send immediately to the running agent instead of waiting in the queue.',
+                        )
+                      : context.wp('Send immediately without queueing.'),
                   icon: Icons.arrow_upward_rounded,
                   onTap: () => Navigator.of(
                     context,
@@ -23448,14 +23898,14 @@ class _SelectionTile extends StatelessWidget {
   }
 }
 
-String _reasoningLabel(String? value) {
+String _reasoningLabel(BuildContext context, String? value) {
   return switch (value?.trim().toLowerCase()) {
-    null || '' => 'Default',
-    'none' => 'None',
-    'low' => 'Low',
-    'medium' => 'Medium',
-    'high' => 'High',
-    'xhigh' || 'max' => 'Xhigh',
+    null || '' => context.wp('Default'),
+    'none' => context.wp('None'),
+    'low' => context.wp('Low'),
+    'medium' => context.wp('Medium'),
+    'high' => context.wp('High'),
+    'xhigh' || 'max' => context.wp('Xhigh'),
     final other => _titleCase(other),
   };
 }
@@ -23627,12 +24077,6 @@ String _partText(ChatPart part) {
   if (part.type == 'text') {
     return _resolvedRawPartText(part);
   }
-  if (_isQuestionToolPart(part)) {
-    final formatted = _questionToolBody(part);
-    if (formatted.isNotEmpty) {
-      return formatted;
-    }
-  }
 
   final candidates = <Object?>[
     part.text,
@@ -23661,6 +24105,16 @@ String _partText(ChatPart part) {
     }
   }
   return lines.join('\n');
+}
+
+String _partDisplayText(BuildContext context, ChatPart part) {
+  if (_isQuestionToolPart(part)) {
+    final formatted = _questionToolBody(context, part);
+    if (formatted.isNotEmpty) {
+      return formatted;
+    }
+  }
+  return _partText(part);
 }
 
 String _partSummary(ChatPart part, String body) {
@@ -23729,6 +24183,28 @@ String _partSummary(ChatPart part, String body) {
   return _truncateSummary(value ?? '');
 }
 
+String _partDisplaySummary(BuildContext context, ChatPart part, String body) {
+  if (_isQuestionToolPart(part)) {
+    final questions = _questionToolQuestions(part);
+    final count = questions.length;
+    if (count > 0) {
+      final answers = _questionToolAnswers(part);
+      return answers.isNotEmpty
+          ? context.wp(
+              count == 1
+                  ? '{count} answered question'
+                  : '{count} answered questions',
+              args: <String, Object?>{'count': count},
+            )
+          : context.wp(
+              count == 1 ? '{count} question' : '{count} questions',
+              args: <String, Object?>{'count': count},
+            );
+    }
+  }
+  return _partSummary(part, body);
+}
+
 bool _isToolLikePart(ChatPart part) {
   return switch (part.type) {
     'tool' ||
@@ -23761,6 +24237,22 @@ String _partTitle(ChatPart part) {
   };
 }
 
+String _partDisplayTitle(BuildContext context, ChatPart part) {
+  return switch (part.type) {
+    'tool' => _toolDisplayTitle(context, part),
+    'reasoning' => context.wp('Thinking'),
+    'step-start' => context.wp('Step'),
+    'step-finish' => context.wp('Step Result'),
+    'patch' => context.wp('Patch'),
+    'snapshot' => context.wp('Snapshot'),
+    'retry' => context.wp('Retry'),
+    'agent' => context.wp('Agent'),
+    'subtask' => context.wp('Subtask'),
+    'compaction' => context.wp('Session compacted'),
+    _ => part.type,
+  };
+}
+
 String _toolTitle(ChatPart part) {
   final value = part.tool?.trim().toLowerCase();
   return switch (value) {
@@ -23774,6 +24266,23 @@ String _toolTitle(ChatPart part) {
     'codesearch' => 'Code Search',
     'todowrite' => 'To-dos',
     'skill' => _skillToolName(part) ?? 'Skill',
+    final other => _titleCase(other),
+  };
+}
+
+String _toolDisplayTitle(BuildContext context, ChatPart part) {
+  final value = part.tool?.trim().toLowerCase();
+  return switch (value) {
+    null || '' => context.wp('Tool'),
+    'bash' => context.wp('Shell'),
+    'question' => context.wp('Questions'),
+    'task' => context.wp('Agent'),
+    'apply_patch' => context.wp('Patch'),
+    'websearch' => context.wp('Web Search'),
+    'webfetch' => context.wp('Web Fetch'),
+    'codesearch' => context.wp('Code Search'),
+    'todowrite' => context.wp('To-dos'),
+    'skill' => _skillToolName(part) ?? context.wp('Skill'),
     final other => _titleCase(other),
   };
 }
@@ -23960,6 +24469,18 @@ String _attachmentPartFilename(ChatPart part) {
   return 'Attachment';
 }
 
+String _attachmentDisplayFilename(BuildContext context, ChatPart part) {
+  final value = part.filename?.trim();
+  if (value != null && value.isNotEmpty) {
+    return value;
+  }
+  final metadataValue = part.metadata['filename']?.toString().trim();
+  if (metadataValue != null && metadataValue.isNotEmpty) {
+    return metadataValue;
+  }
+  return context.wp('Attachment');
+}
+
 Uint8List? _attachmentDataBytes(String url) {
   final cached = _attachmentPreviewBytesCache.get(url);
   if (cached != null || _attachmentPreviewBytesCache.containsKey(url)) {
@@ -23984,15 +24505,15 @@ Uint8List? _attachmentDataBytes(String url) {
   }
 }
 
-String _attachmentLabel(String mime) {
+String _attachmentLabel(BuildContext context, String mime) {
   if (mime.startsWith('image/')) {
     return mime.replaceFirst('image/', '').toUpperCase();
   }
   if (mime == 'application/pdf') {
-    return 'PDF';
+    return context.wp('PDF');
   }
   if (mime == 'text/plain') {
-    return 'Text file';
+    return context.wp('Text file');
   }
   return mime;
 }
@@ -24064,17 +24585,28 @@ _ContextToolSummary _contextToolSummary(List<ChatPart> parts) {
   return _ContextToolSummary(read: read, search: search, list: list);
 }
 
-String _contextToolSummaryLabel(_ContextToolSummary summary) {
+String _contextToolSummaryLabel(BuildContext context, _ContextToolSummary summary) {
   final segments = <String>[
-    if (summary.read > 0) '${summary.read} read${summary.read == 1 ? '' : 's'}',
+    if (summary.read > 0)
+      context.wp(
+        summary.read == 1 ? '{count} read' : '{count} reads',
+        args: <String, Object?>{'count': summary.read},
+      ),
     if (summary.search > 0)
-      '${summary.search} search${summary.search == 1 ? '' : 'es'}',
-    if (summary.list > 0) '${summary.list} list${summary.list == 1 ? '' : 's'}',
+      context.wp(
+        summary.search == 1 ? '{count} search' : '{count} searches',
+        args: <String, Object?>{'count': summary.search},
+      ),
+    if (summary.list > 0)
+      context.wp(
+        summary.list == 1 ? '{count} list' : '{count} lists',
+        args: <String, Object?>{'count': summary.list},
+      ),
   ];
   return segments.join(', ');
 }
 
-String _contextToolDetailLine(ChatPart part) {
+String _contextToolDetailLine(BuildContext context, ChatPart part) {
   final tool = part.tool?.trim().toLowerCase();
   switch (tool) {
     case 'read':
@@ -24112,13 +24644,21 @@ String _contextToolDetailLine(ChatPart part) {
         _nestedValue(part.metadata, const <String>['limit'])?.toString(),
       ]);
       return _joinContextToolDetail(
-        'Read',
+        context.wp('Read'),
         _basename(filePath ?? '').trim().isEmpty
-            ? 'file'
+            ? context.wp('file')
             : _basename(filePath ?? '').trim(),
         <String>[
-          if (offset != null) 'offset=$offset',
-          if (limit != null) 'limit=$limit',
+          if (offset != null)
+            context.wp(
+              'offset={offset}',
+              args: <String, Object?>{'offset': offset},
+            ),
+          if (limit != null)
+            context.wp(
+              'limit={limit}',
+              args: <String, Object?>{'limit': limit},
+            ),
         ],
       );
     case 'list':
@@ -24128,7 +24668,7 @@ String _contextToolDetailLine(ChatPart part) {
         _nestedString(part.metadata, const <String>['path']),
       ]);
       return _joinContextToolDetail(
-        'List',
+        context.wp('List'),
         _dirname(path ?? '/'),
         const <String>[],
       );
@@ -24147,8 +24687,12 @@ String _contextToolDetailLine(ChatPart part) {
         _nestedString(part.metadata, const <String>['input', 'pattern']),
         _nestedString(part.metadata, const <String>['pattern']),
       ]);
-      return _joinContextToolDetail('Search', _dirname(path ?? '/'), <String>[
-        if (pattern != null && pattern.isNotEmpty) 'pattern=$pattern',
+      return _joinContextToolDetail(context.wp('Search'), _dirname(path ?? '/'), <String>[
+        if (pattern != null && pattern.isNotEmpty)
+          context.wp(
+            'pattern={pattern}',
+            args: <String, Object?>{'pattern': pattern},
+          ),
       ]);
     case 'grep':
       final path = _firstNonEmpty(<String?>[
@@ -24174,12 +24718,20 @@ String _contextToolDetailLine(ChatPart part) {
         _nestedString(part.metadata, const <String>['input', 'include']),
         _nestedString(part.metadata, const <String>['include']),
       ]);
-      return _joinContextToolDetail('Search', _dirname(path ?? '/'), <String>[
-        if (pattern != null && pattern.isNotEmpty) 'pattern=$pattern',
-        if (include != null && include.isNotEmpty) 'include=$include',
+      return _joinContextToolDetail(context.wp('Search'), _dirname(path ?? '/'), <String>[
+        if (pattern != null && pattern.isNotEmpty)
+          context.wp(
+            'pattern={pattern}',
+            args: <String, Object?>{'pattern': pattern},
+          ),
+        if (include != null && include.isNotEmpty)
+          context.wp(
+            'include={include}',
+            args: <String, Object?>{'include': include},
+          ),
       ]);
     default:
-      return _partSummary(part, _partText(part));
+      return _partDisplaySummary(context, part, _partDisplayText(context, part));
   }
 }
 
@@ -24279,7 +24831,7 @@ List<List<String>> _questionToolAnswers(ChatPart part) {
       .toList(growable: false);
 }
 
-String _questionToolBody(ChatPart part) {
+String _questionToolBody(BuildContext context, ChatPart part) {
   final questions = _questionToolQuestions(part);
   final answers = _questionToolAnswers(part);
   if (questions.isEmpty && answers.isEmpty) {
@@ -24293,12 +24845,24 @@ String _questionToolBody(ChatPart part) {
   for (var index = 0; index < count; index += 1) {
     final prompt = index < questions.length
         ? questions[index].question.trim()
-        : 'Question ${index + 1}';
+        : context.wp(
+            'Question {index}',
+            args: <String, Object?>{'index': index + 1},
+          );
     final answerList = index < answers.length
         ? answers[index]
         : const <String>[];
-    lines.add(prompt.isEmpty ? 'Question ${index + 1}' : prompt);
-    lines.add(answerList.isEmpty ? 'Unanswered' : answerList.join(', '));
+    lines.add(
+      prompt.isEmpty
+          ? context.wp(
+              'Question {index}',
+              args: <String, Object?>{'index': index + 1},
+            )
+          : prompt,
+    );
+    lines.add(
+      answerList.isEmpty ? context.wp('Unanswered') : answerList.join(', '),
+    );
   }
   return lines.join('\n\n').trim();
 }
@@ -24606,22 +25170,24 @@ class _SidePanel extends StatelessWidget {
               _WorkspaceSideTabItem(
                 tab: WorkspaceSideTab.review,
                 icon: Icons.rate_review_rounded,
-                title: 'Review',
-                subtitle: reviewCount > 0 ? 'Diffs' : 'No changes',
+                title: context.wp('Review'),
+                subtitle: context.wp(reviewCount > 0 ? 'Diffs' : 'No changes'),
                 badge: reviewCount > 0 ? '$reviewCount' : null,
               ),
               _WorkspaceSideTabItem(
                 tab: WorkspaceSideTab.files,
                 icon: Icons.folder_copy_rounded,
-                title: 'Files',
-                subtitle: 'Browse',
+                title: context.wp('Files'),
+                subtitle: context.wp('Browse'),
                 badge: fileCount > 0 ? '$fileCount' : null,
               ),
               _WorkspaceSideTabItem(
                 tab: WorkspaceSideTab.context,
                 icon: Icons.tune_rounded,
-                title: 'Context',
-                subtitle: contextUsage != null ? 'Tokens' : 'Session',
+                title: context.wp('Context'),
+                subtitle: context.wp(
+                  contextUsage != null ? 'Tokens' : 'Session',
+                ),
                 badge: contextUsage != null
                     ? '${contextUsage.clamp(0, 999)}%'
                     : (messageCount > 0 ? '$messageCount' : null),
@@ -25051,6 +25617,7 @@ class _ReviewPanelState extends State<_ReviewPanel> {
     final diffModeHint = parsedDiff == null
         ? null
         : _reviewDiffModeHint(
+            context,
             splitEnabled: splitEnabled,
             compactMode: compactMode,
           );
@@ -25075,7 +25642,7 @@ class _ReviewPanelState extends State<_ReviewPanel> {
                   ),
                   SizedBox(height: density.inset(AppSpacing.sm)),
                   Text(
-                    'Create a Git repository',
+                    context.wp('Create a Git repository'),
                     key: const ValueKey<String>('review-no-vcs-title'),
                     textAlign: TextAlign.center,
                     style: theme.textTheme.titleMedium?.copyWith(
@@ -25084,7 +25651,9 @@ class _ReviewPanelState extends State<_ReviewPanel> {
                   ),
                   SizedBox(height: density.inset(AppSpacing.xs)),
                   Text(
-                    'Initialize Git for this project to unlock review diffs and tracked file changes.',
+                    context.wp(
+                      'Initialize Git for this project to unlock review diffs and tracked file changes.',
+                    ),
                     key: const ValueKey<String>('review-no-vcs-message'),
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodyMedium?.copyWith(
@@ -25106,8 +25675,8 @@ class _ReviewPanelState extends State<_ReviewPanel> {
                         : const Icon(Icons.add_link_rounded),
                     label: Text(
                       widget.initializingGitRepository
-                          ? 'Creating repository...'
-                          : 'Create Git repository',
+                          ? context.wp('Creating repository...')
+                          : context.wp('Create Git repository'),
                     ),
                   ),
                 ],
@@ -25132,7 +25701,7 @@ class _ReviewPanelState extends State<_ReviewPanel> {
                   ),
                   SizedBox(height: density.inset(AppSpacing.sm)),
                   Text(
-                    'Snapshot tracking is disabled',
+                    context.wp('Snapshot tracking is disabled'),
                     key: const ValueKey<String>('review-no-snapshot-title'),
                     textAlign: TextAlign.center,
                     style: theme.textTheme.titleMedium?.copyWith(
@@ -25141,7 +25710,9 @@ class _ReviewPanelState extends State<_ReviewPanel> {
                   ),
                   SizedBox(height: density.inset(AppSpacing.xs)),
                   Text(
-                    'Snapshot tracking is disabled in config, so session changes are unavailable.',
+                    context.wp(
+                      'Snapshot tracking is disabled in config, so session changes are unavailable.',
+                    ),
                     key: const ValueKey<String>('review-no-snapshot-message'),
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodyMedium?.copyWith(
@@ -25170,7 +25741,7 @@ class _ReviewPanelState extends State<_ReviewPanel> {
       }
       return Center(
         child: Text(
-          'No file changes yet.',
+          context.wp('No file changes yet.'),
           style: Theme.of(
             context,
           ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
@@ -25339,12 +25910,12 @@ class _ReviewPanelState extends State<_ReviewPanel> {
                                     segments: <ButtonSegment<_ReviewDiffMode>>[
                                       ButtonSegment<_ReviewDiffMode>(
                                         value: _ReviewDiffMode.unified,
-                                        label: Text('Unified'),
+                                        label: Text(context.wp('Unified')),
                                         icon: Icon(Icons.view_stream_rounded),
                                       ),
                                       ButtonSegment<_ReviewDiffMode>(
                                         value: _ReviewDiffMode.split,
-                                        label: Text('Split'),
+                                        label: Text(context.wp('Split')),
                                         icon: Icon(Icons.view_week_rounded),
                                         enabled: splitEnabled,
                                       ),
@@ -25401,7 +25972,7 @@ class _ReviewPanelState extends State<_ReviewPanel> {
                                   : widget.diff == null || widget.diff!.isEmpty
                                   ? Center(
                                       child: Text(
-                                        'No diff output for this file.',
+                                        context.wp('No diff output for this file.'),
                                         style: theme.textTheme.bodyMedium
                                             ?.copyWith(color: surfaces.muted),
                                       ),
@@ -25464,18 +26035,27 @@ bool _reviewDiffShouldUseCompactMode({
       contentLength > _reviewDiffCompactContentLengthLimit;
 }
 
-String? _reviewDiffModeHint({
+String? _reviewDiffModeHint(
+  BuildContext context, {
   required bool splitEnabled,
   required bool compactMode,
 }) {
   if (compactMode && !splitEnabled) {
-    return 'Large diff detected. Showing the first $_reviewDiffCompactRenderedLineLimit lines in unified mode; split view is disabled.';
+    return context.wp(
+      'Large diff detected. Showing the first {count} lines in unified mode; split view is disabled.',
+      args: <String, Object?>{'count': _reviewDiffCompactRenderedLineLimit},
+    );
   }
   if (compactMode) {
-    return 'Large diff detected. Showing the first $_reviewDiffCompactRenderedLineLimit lines to keep the review panel responsive.';
+    return context.wp(
+      'Large diff detected. Showing the first {count} lines to keep the review panel responsive.',
+      args: <String, Object?>{'count': _reviewDiffCompactRenderedLineLimit},
+    );
   }
   if (!splitEnabled) {
-    return 'Split view is disabled for large diffs to keep the review panel responsive.';
+    return context.wp(
+      'Split view is disabled for large diffs to keep the review panel responsive.',
+    );
   }
   return null;
 }
@@ -25539,6 +26119,7 @@ class _ReviewDiffView extends StatelessWidget {
                   : null;
               if (mode == _ReviewDiffMode.unified) {
                 final rows = _buildReviewUnifiedRowModels(
+                  context,
                   parsedDiff,
                   maxRenderedLines: maxRenderedLines,
                   totalLineCount: lineCount,
@@ -25562,6 +26143,7 @@ class _ReviewDiffView extends StatelessWidget {
                 );
               }
               final rows = _buildReviewSplitRowModels(
+                context,
                 parsedDiff,
                 maxRenderedLines: maxRenderedLines,
                 totalLineCount: lineCount,
@@ -25848,7 +26430,7 @@ class _ReviewSplitSideHeader extends StatelessWidget {
               ),
               border: Border.all(color: surfaces.lineSoft),
             ),
-            child: Text('Before', style: labelStyle),
+            child: Text(context.wp('Before'), style: labelStyle),
           ),
         ),
         const SizedBox(width: 1),
@@ -25865,7 +26447,7 @@ class _ReviewSplitSideHeader extends StatelessWidget {
               ),
               border: Border.all(color: surfaces.lineSoft),
             ),
-            child: Text('After', style: labelStyle),
+            child: Text(context.wp('After'), style: labelStyle),
           ),
         ),
       ],
@@ -25941,6 +26523,7 @@ class _ReviewDiffRowModel {
 }
 
 List<_ReviewDiffRowModel> _buildReviewUnifiedRowModels(
+  BuildContext context,
   _ParsedReviewDiff diff, {
   required int totalLineCount,
   int? maxRenderedLines,
@@ -25990,7 +26573,13 @@ List<_ReviewDiffRowModel> _buildReviewUnifiedRowModels(
       ..add(const _ReviewDiffRowModel.spacerSmall())
       ..add(
         _ReviewDiffRowModel.notice(
-          'Showing the first $renderedLines of $totalLineCount diff lines.',
+          context.wp(
+            'Showing the first {rendered} of {total} diff lines.',
+            args: <String, Object?>{
+              'rendered': renderedLines,
+              'total': totalLineCount,
+            },
+          ),
         ),
       );
   }
@@ -25999,6 +26588,7 @@ List<_ReviewDiffRowModel> _buildReviewUnifiedRowModels(
 }
 
 List<_ReviewDiffRowModel> _buildReviewSplitRowModels(
+  BuildContext context,
   _ParsedReviewDiff diff, {
   required int totalLineCount,
   int? maxRenderedLines,
@@ -26050,7 +26640,13 @@ List<_ReviewDiffRowModel> _buildReviewSplitRowModels(
       ..add(const _ReviewDiffRowModel.spacerSmall())
       ..add(
         _ReviewDiffRowModel.notice(
-          'Showing the first $renderedLines of $totalLineCount diff lines.',
+          context.wp(
+            'Showing the first {rendered} of {total} diff lines.',
+            args: <String, Object?>{
+              'rendered': renderedLines,
+              'total': totalLineCount,
+            },
+          ),
         ),
       );
   }
@@ -26349,7 +26945,10 @@ class _ReviewLineCommentButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Tooltip(
-      message: 'Add review comment for ${target.locationLabel}',
+      message: context.wp(
+        'Add review comment for {location}',
+        args: <String, Object?>{'location': target.locationLabel(context)},
+      ),
       child: IconButton(
         key: ValueKey<String>(_reviewCommentTargetButtonKey(target)),
         onPressed: onPressed,
@@ -26393,14 +26992,14 @@ class _ReviewLineCommentEditor extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Text(
-            'Add to composer context',
+            context.wp('Add to composer context'),
             style: theme.textTheme.titleSmall?.copyWith(
               fontWeight: FontWeight.w700,
             ),
           ),
           const SizedBox(height: AppSpacing.xxs),
           Text(
-            '${target.path} · ${target.locationLabel}',
+            '${target.path} · ${target.locationLabel(context)}',
             style: theme.textTheme.bodySmall?.copyWith(color: surfaces.muted),
           ),
           const SizedBox(height: AppSpacing.xxs),
@@ -26421,8 +27020,10 @@ class _ReviewLineCommentEditor extends StatelessWidget {
             autofocus: true,
             minLines: 1,
             maxLines: 2,
-            decoration: const InputDecoration(
-              hintText: 'Explain what you want the model to focus on.',
+            decoration: InputDecoration(
+              hintText: context.wp(
+                'Explain what you want the model to focus on.',
+              ),
             ),
             onSubmitted: (_) {
               if (controller.text.trim().isEmpty) {
@@ -26441,11 +27042,14 @@ class _ReviewLineCommentEditor extends StatelessWidget {
                 overflowAlignment: OverflowBarAlignment.end,
                 spacing: AppSpacing.xs,
                 children: <Widget>[
-                  TextButton(onPressed: onCancel, child: const Text('Cancel')),
+                  TextButton(
+                    onPressed: onCancel,
+                    child: Text(context.wp('Cancel')),
+                  ),
                   FilledButton(
                     key: const ValueKey<String>('review-line-comment-submit'),
                     onPressed: canSubmit ? onSubmit : null,
-                    child: const Text('Add to composer'),
+                    child: Text(context.wp('Add to composer')),
                   ),
                 ],
               );
@@ -26470,20 +27074,35 @@ class _ReviewCommentTarget {
   final int? oldLineNumber;
   final int? newLineNumber;
 
-  String get locationLabel {
+  String locationLabel(BuildContext context) {
     if (oldLineNumber != null && newLineNumber != null) {
       if (oldLineNumber == newLineNumber) {
-        return 'line $newLineNumber';
+        return context.wp(
+          'line {line}',
+          args: <String, Object?>{'line': newLineNumber},
+        );
       }
-      return 'old $oldLineNumber / new $newLineNumber';
+      return context.wp(
+        'old {old} / new {new}',
+        args: <String, Object?>{
+          'old': oldLineNumber,
+          'new': newLineNumber,
+        },
+      );
     }
     if (newLineNumber != null) {
-      return 'new line $newLineNumber';
+      return context.wp(
+        'new line {line}',
+        args: <String, Object?>{'line': newLineNumber},
+      );
     }
     if (oldLineNumber != null) {
-      return 'old line $oldLineNumber';
+      return context.wp(
+        'old line {line}',
+        args: <String, Object?>{'line': oldLineNumber},
+      );
     }
-    return 'selected lines';
+    return context.wp('selected lines');
   }
 }
 
@@ -26827,7 +27446,7 @@ class _FilesPanelState extends State<_FilesPanel> {
       }
       return Center(
         child: Text(
-          'Files are unavailable.',
+          context.wp('Files are unavailable.'),
           style: Theme.of(
             context,
           ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
@@ -26996,7 +27615,9 @@ class _FilesPanelState extends State<_FilesPanel> {
                                   : bundle.preview == null
                                   ? Center(
                                       child: Text(
-                                        'Preview unavailable for this item.',
+                                        context.wp(
+                                          'Preview unavailable for this item.',
+                                        ),
                                         style: Theme.of(context)
                                             .textTheme
                                             .bodyMedium
@@ -27186,7 +27807,7 @@ class _WorkspaceSafeFilePreviewState extends State<_WorkspaceSafeFilePreview> {
     final canExpand =
         widget.content.length > _workspaceFilePreviewCollapsedCharacterLimit;
     final visibleContent = !_expanded && canExpand
-        ? '${widget.content.substring(0, _workspaceFilePreviewCollapsedCharacterLimit)}\n\n[Preview collapsed to keep rendering responsive. Use Show more to inspect the rest of the safe preview.]'
+        ? '${widget.content.substring(0, _workspaceFilePreviewCollapsedCharacterLimit)}\n\n${context.wp('[Preview collapsed to keep rendering responsive. Use Show more to inspect the rest of the safe preview.]')}'
         : widget.content;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -27206,8 +27827,14 @@ class _WorkspaceSafeFilePreviewState extends State<_WorkspaceSafeFilePreview> {
                 Expanded(
                   child: Text(
                     _expanded
-                        ? 'Showing the full safe preview payload.'
-                        : 'Showing the first $_workspaceFilePreviewCollapsedCharacterLimit characters to keep the preview responsive.',
+                        ? context.wp('Showing the full safe preview payload.')
+                        : context.wp(
+                            'Showing the first {count} characters to keep the preview responsive.',
+                            args: <String, Object?>{
+                              'count':
+                                  _workspaceFilePreviewCollapsedCharacterLimit,
+                            },
+                          ),
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: surfaces.muted,
                     ),
@@ -27220,7 +27847,9 @@ class _WorkspaceSafeFilePreviewState extends State<_WorkspaceSafeFilePreview> {
                       _expanded = !_expanded;
                     });
                   },
-                  child: Text(_expanded ? 'Show less' : 'Show more'),
+                  child: Text(
+                    context.wp(_expanded ? 'Show less' : 'Show more'),
+                  ),
                 ),
               ],
             ),
@@ -27267,6 +27896,7 @@ class _HighlightedFilePreviewState extends State<_HighlightedFilePreview> {
         _cachedContent != widget.content ||
         _cachedThemeSignature != themeSignature) {
       _cachedSpans = _buildHighlightedFilePreviewSpans(
+        context: context,
         content: widget.content,
         path: widget.path,
         syntaxTheme: syntaxTheme,
@@ -27402,6 +28032,7 @@ int _syntaxThemeSignature(ThemeData theme, AppSurfaces surfaces) {
 }
 
 List<InlineSpan> _buildHighlightedFilePreviewSpans({
+  required BuildContext context,
   required String content,
   required String? path,
   required _FilePreviewSyntaxTheme syntaxTheme,
@@ -27414,9 +28045,9 @@ List<InlineSpan> _buildHighlightedFilePreviewSpans({
   if (content.length > highlightLimit) {
     return <InlineSpan>[
       TextSpan(text: content.substring(0, highlightLimit)),
-      const TextSpan(
+      TextSpan(
         text:
-            '\n\n[Syntax highlighting paused for the rest of this preview because the file is very large.]',
+            '\n\n${context.wp('[Syntax highlighting paused for the rest of this preview because the file is very large.]')}',
       ),
     ];
   }
@@ -27692,6 +28323,7 @@ List<_FilePreviewHighlightPattern> _filePreviewHighlightPatterns(
 }
 
 List<InlineSpan> _buildHighlightedCodeBlockSpans({
+  required BuildContext context,
   required String code,
   required String? language,
   required _FilePreviewSyntaxTheme syntaxTheme,
@@ -27704,9 +28336,9 @@ List<InlineSpan> _buildHighlightedCodeBlockSpans({
   if (code.length > highlightLimit) {
     return <InlineSpan>[
       TextSpan(text: code.substring(0, highlightLimit)),
-      const TextSpan(
+      TextSpan(
         text:
-            '\n\n[Syntax highlighting paused for the rest of this code block because it is very large.]',
+            '\n\n${context.wp('[Syntax highlighting paused for the rest of this code block because it is very large.]')}',
       ),
     ];
   }
@@ -27937,68 +28569,71 @@ class _ContextPanelState extends State<_ContextPanel> {
     final breakdown = widget.breakdown;
     final stats = <_ContextStatEntry>[
       _ContextStatEntry(
-        label: 'Session',
+        label: context.wp('Session'),
         value: widget.session?.title.trim().isNotEmpty == true
             ? widget.session!.title.trim()
             : (widget.session?.id ?? '—'),
       ),
       _ContextStatEntry(
-        label: 'Messages',
+        label: context.wp('Messages'),
         value: decimal.format(widget.messages.length),
       ),
       _ContextStatEntry(
-        label: 'Provider',
+        label: context.wp('Provider'),
         value: snapshot?.providerLabel ?? '—',
       ),
-      _ContextStatEntry(label: 'Model', value: snapshot?.modelLabel ?? '—'),
       _ContextStatEntry(
-        label: 'Context Limit',
+        label: context.wp('Model'),
+        value: snapshot?.modelLabel ?? '—',
+      ),
+      _ContextStatEntry(
+        label: context.wp('Context Limit'),
         value: _formatContextNumber(snapshot?.contextLimit, decimal),
       ),
       _ContextStatEntry(
-        label: 'Total Tokens',
+        label: context.wp('Total Tokens'),
         value: _formatContextNumber(snapshot?.totalTokens, decimal),
       ),
       _ContextStatEntry(
-        label: 'Usage',
+        label: context.wp('Usage'),
         value: _formatContextPercent(snapshot?.usagePercent, decimal),
       ),
       _ContextStatEntry(
-        label: 'Input Tokens',
+        label: context.wp('Input Tokens'),
         value: _formatContextNumber(snapshot?.inputTokens, decimal),
       ),
       _ContextStatEntry(
-        label: 'Output Tokens',
+        label: context.wp('Output Tokens'),
         value: _formatContextNumber(snapshot?.outputTokens, decimal),
       ),
       _ContextStatEntry(
-        label: 'Reasoning Tokens',
+        label: context.wp('Reasoning Tokens'),
         value: _formatContextNumber(snapshot?.reasoningTokens, decimal),
       ),
       _ContextStatEntry(
-        label: 'Cache Tokens (read/write)',
+        label: context.wp('Cache Tokens (read/write)'),
         value:
             '${_formatContextNumber(snapshot?.cacheReadTokens, decimal)} / '
             '${_formatContextNumber(snapshot?.cacheWriteTokens, decimal)}',
       ),
       _ContextStatEntry(
-        label: 'User Messages',
+        label: context.wp('User Messages'),
         value: decimal.format(widget.userMessageCount),
       ),
       _ContextStatEntry(
-        label: 'Assistant Messages',
+        label: context.wp('Assistant Messages'),
         value: decimal.format(widget.assistantMessageCount),
       ),
       _ContextStatEntry(
-        label: 'Total Cost',
+        label: context.wp('Total Cost'),
         value: currency.format(metrics.totalCost),
       ),
       _ContextStatEntry(
-        label: 'Session Created',
+        label: context.wp('Session Created'),
         value: _formatContextTime(widget.session?.createdAt, locale),
       ),
       _ContextStatEntry(
-        label: 'Last Activity',
+        label: context.wp('Last Activity'),
         value: _formatContextTime(snapshot?.message.info.createdAt, locale),
       ),
     ];
@@ -28043,7 +28678,7 @@ class _ContextPanelState extends State<_ContextPanel> {
             if (breakdown.isNotEmpty) ...<Widget>[
               const SizedBox(height: AppSpacing.xxl),
               Text(
-                'Context Breakdown',
+                context.wp('Context Breakdown'),
                 style: theme.textTheme.labelMedium?.copyWith(
                   color: surfaces.muted,
                 ),
@@ -28069,7 +28704,7 @@ class _ContextPanelState extends State<_ContextPanel> {
                           ),
                           const SizedBox(width: AppSpacing.xs),
                           Text(
-                            '${_breakdownLabel(segment.key)} '
+                            '${_breakdownLabel(context, segment.key)} '
                             '${segment.labelPercent.toStringAsFixed(1)}%',
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: surfaces.muted,
@@ -28084,7 +28719,7 @@ class _ContextPanelState extends State<_ContextPanel> {
             if (systemPrompt != null) ...<Widget>[
               const SizedBox(height: AppSpacing.xxl),
               Text(
-                'System Prompt',
+                context.wp('System Prompt'),
                 style: theme.textTheme.labelMedium?.copyWith(
                   color: surfaces.muted,
                 ),
@@ -28109,7 +28744,7 @@ class _ContextPanelState extends State<_ContextPanel> {
             ],
             const SizedBox(height: AppSpacing.xxl),
             Text(
-              'Raw messages',
+              context.wp('Raw messages'),
               style: theme.textTheme.labelMedium?.copyWith(
                 color: surfaces.muted,
               ),
@@ -28124,7 +28759,7 @@ class _ContextPanelState extends State<_ContextPanel> {
                   border: Border.all(color: surfaces.lineSoft),
                 ),
                 child: Text(
-                  'No raw messages yet.',
+                  context.wp('No raw messages yet.'),
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: surfaces.muted,
                   ),
@@ -28402,13 +29037,13 @@ String _formatContextTime(DateTime? value, String locale) {
   return DateFormat.yMMMd(locale).add_jm().format(value.toLocal());
 }
 
-String _breakdownLabel(SessionContextBreakdownKey key) {
+String _breakdownLabel(BuildContext context, SessionContextBreakdownKey key) {
   return switch (key) {
-    SessionContextBreakdownKey.system => 'System',
-    SessionContextBreakdownKey.user => 'User',
-    SessionContextBreakdownKey.assistant => 'Assistant',
-    SessionContextBreakdownKey.tool => 'Tool Calls',
-    SessionContextBreakdownKey.other => 'Other',
+    SessionContextBreakdownKey.system => context.wp('System'),
+    SessionContextBreakdownKey.user => context.wp('User'),
+    SessionContextBreakdownKey.assistant => context.wp('Assistant'),
+    SessionContextBreakdownKey.tool => context.wp('Tool Calls'),
+    SessionContextBreakdownKey.other => context.wp('Other'),
   };
 }
 
@@ -28485,7 +29120,7 @@ class _WorkspaceError extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             Text(
-              'Failed to load workspace',
+              context.wp('Failed to load workspace'),
               style: Theme.of(context).textTheme.headlineSmall,
             ),
             const SizedBox(height: AppSpacing.sm),
@@ -28497,7 +29132,10 @@ class _WorkspaceError extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: AppSpacing.lg),
-            FilledButton(onPressed: onBackHome, child: const Text('Back Home')),
+            FilledButton(
+              onPressed: onBackHome,
+              child: Text(context.wp('Back Home')),
+            ),
           ],
         ),
       ),

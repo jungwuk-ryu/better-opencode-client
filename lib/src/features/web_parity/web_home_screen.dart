@@ -12,6 +12,7 @@ import '../../design_system/app_snack_bar.dart';
 import '../../design_system/app_spacing.dart';
 import '../../design_system/app_theme.dart';
 import '../../i18n/locale_controller.dart';
+import '../../i18n/web_parity_localizations.dart';
 import '../projects/project_catalog_service.dart';
 import '../projects/project_models.dart';
 import '../projects/project_store.dart';
@@ -415,7 +416,10 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
     }
     showAppSnackBar(
       context,
-      message: 'Saved "${savedProfile.effectiveLabel}" and refreshed status.',
+      message: context.wp(
+        'Saved "{label}" and refreshed status.',
+        args: <String, Object?>{'label': savedProfile.effectiveLabel},
+      ),
       tone: AppSnackBarTone.success,
     );
   }
@@ -427,18 +431,21 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete server?'),
+        title: Text(context.wp('Delete server?')),
         content: Text(
-          'Remove "${profile.effectiveLabel}" from saved servers? This keeps the rest of your home screen intact.',
+          context.wp(
+            'Remove "{label}" from saved servers? This keeps the rest of your home screen intact.',
+            args: <String, Object?>{'label': profile.effectiveLabel},
+          ),
         ),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
+            child: Text(context.wp('Cancel')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Delete'),
+            child: Text(context.wp('Delete')),
           ),
         ],
       ),
@@ -452,7 +459,10 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
     }
     showAppSnackBar(
       context,
-      message: 'Removed "${profile.effectiveLabel}".',
+      message: context.wp(
+        'Removed "{label}".',
+        args: <String, Object?>{'label': profile.effectiveLabel},
+      ),
       tone: AppSnackBarTone.warning,
     );
   }
@@ -542,7 +552,9 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
         lastWorkspace?.lastSession?.title?.trim().isNotEmpty == true) {
       return lastWorkspace!.lastSession!.title!.trim();
     }
-    return sessionId == null || sessionId.isEmpty ? 'New session' : sessionId;
+    return sessionId == null || sessionId.isEmpty
+        ? context.wp('New session')
+        : sessionId;
   }
 
   String? _sessionStatusForPane(
@@ -717,10 +729,11 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
       return <_HomePaneSnapshot>[
         _HomePaneSnapshot(
           paneId: 'last_workspace',
-          label: 'Last workspace',
+          label: context.wp('Last workspace'),
           projectLabel: lastWorkspace.title,
           directory: lastWorkspace.directory,
-          sessionTitle: lastWorkspace.lastSession?.title ?? 'New session',
+          sessionTitle:
+              lastWorkspace.lastSession?.title ?? context.wp('New session'),
           status: lastWorkspace.lastSession?.status,
           active: true,
         ),
@@ -734,7 +747,10 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
       );
       return _HomePaneSnapshot(
         paneId: pane.id,
-        label: 'Pane ${index + 1}',
+        label: context.wp(
+          'Pane {index}',
+          args: <String, Object?>{'index': index + 1},
+        ),
         projectLabel: _projectLabelForDirectory(
           controller,
           profile,
@@ -894,7 +910,7 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
                                           CrossAxisAlignment.start,
                                       children: <Widget>[
                                         Text(
-                                          'Servers',
+                                          context.wp('Servers'),
                                           style: Theme.of(context)
                                               .textTheme
                                               .headlineSmall
@@ -906,7 +922,9 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
                                           height: AppSpacing.xxs,
                                         ),
                                         Text(
-                                          'Choose a server, inspect its current status, and jump back into the exact workspace layout you were using last.',
+                                          context.wp(
+                                            'Choose a server, inspect its current status, and jump back into the exact workspace layout you were using last.',
+                                          ),
                                           style: Theme.of(context)
                                               .textTheme
                                               .bodyLarge
@@ -933,7 +951,9 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
                                               icon: const Icon(
                                                 Icons.storage_rounded,
                                               ),
-                                              label: const Text('See Servers'),
+                                              label: Text(
+                                                context.wp('See Servers'),
+                                              ),
                                             ),
                                           ],
                                         ),
@@ -949,7 +969,7 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
                                                 CrossAxisAlignment.start,
                                             children: <Widget>[
                                               Text(
-                                                'Servers',
+                                                context.wp('Servers'),
                                                 style: Theme.of(context)
                                                     .textTheme
                                                     .headlineSmall
@@ -962,7 +982,9 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
                                                 height: AppSpacing.xxs,
                                               ),
                                               Text(
-                                                'Choose a server, inspect its current status, and jump back into the exact workspace layout you were using last.',
+                                                context.wp(
+                                                  'Choose a server, inspect its current status, and jump back into the exact workspace layout you were using last.',
+                                                ),
                                                 style: Theme.of(context)
                                                     .textTheme
                                                     .bodyLarge
@@ -990,7 +1012,9 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
                                               icon: const Icon(
                                                 Icons.storage_rounded,
                                               ),
-                                              label: const Text('See Servers'),
+                                              label: Text(
+                                                context.wp('See Servers'),
+                                              ),
                                             ),
                                           ],
                                         ),
@@ -1189,10 +1213,15 @@ class _HomeServerListPanel extends StatelessWidget {
               final titleBlock = Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  Text('Servers', style: Theme.of(context).textTheme.titleLarge),
+                  Text(
+                    context.wp('Servers'),
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
                   const SizedBox(height: AppSpacing.xxs),
                   Text(
-                    'Saved servers stay visible here, with status and workspace summaries attached.',
+                    context.wp(
+                      'Saved servers stay visible here, with status and workspace summaries attached.',
+                    ),
                     style: Theme.of(
                       context,
                     ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
@@ -1206,13 +1235,13 @@ class _HomeServerListPanel extends StatelessWidget {
                   OutlinedButton.icon(
                     onPressed: onOpenServers,
                     icon: const Icon(Icons.tune_rounded),
-                    label: const Text('Manage'),
+                    label: Text(context.wp('Manage')),
                   ),
                   FilledButton.icon(
                     key: const ValueKey<String>('home-add-server-button'),
                     onPressed: () => unawaited(onAddServer()),
                     icon: const Icon(Icons.add_rounded),
-                    label: const Text('Add Server'),
+                    label: Text(context.wp('Add Server')),
                   ),
                 ],
               );
@@ -1240,7 +1269,9 @@ class _HomeServerListPanel extends StatelessWidget {
             Expanded(
               child: Center(
                 child: Text(
-                  'No saved servers yet. Add your first server to start tracking its workspace.',
+                  context.wp(
+                    'No saved servers yet. Add your first server to start tracking its workspace.',
+                  ),
                   style: Theme.of(
                     context,
                   ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
@@ -1301,22 +1332,33 @@ class _HomeServerCardFooter extends StatelessWidget {
       if (summary.paneCount > 0)
         _ServerMetaBadge(
           icon: Icons.splitscreen_rounded,
-          label:
-              '${summary.paneCount} pane${summary.paneCount == 1 ? '' : 's'}',
+          label: context.wp(
+            summary.paneCount == 1 ? '{count} pane' : '{count} panes',
+            args: <String, Object?>{'count': summary.paneCount},
+          ),
           tint: Theme.of(context).colorScheme.primary,
         ),
       if (summary.runningSessionCount > 0)
         _ServerMetaBadge(
           icon: Icons.bolt_rounded,
-          label:
-              '${summary.runningSessionCount} running session${summary.runningSessionCount == 1 ? '' : 's'}',
+          label: context.wp(
+            summary.runningSessionCount == 1
+                ? '{count} running session'
+                : '{count} running sessions',
+            args: <String, Object?>{'count': summary.runningSessionCount},
+          ),
           tint: surfaces.success,
         ),
       if (summary.totalTodoCount > 0)
         _ServerMetaBadge(
           icon: Icons.checklist_rtl_rounded,
-          label:
-              '${summary.completedTodoCount}/${summary.totalTodoCount} todos',
+          label: context.wp(
+            '{done}/{total} todos',
+            args: <String, Object?>{
+              'done': summary.completedTodoCount,
+              'total': summary.totalTodoCount,
+            },
+          ),
           tint: surfaces.warning,
         ),
       if ((summary.activeDirectory ?? '').isNotEmpty)
@@ -1371,7 +1413,9 @@ class _HomeServerDetailPanel extends StatelessWidget {
       return _HomeSectionCard(
         child: Center(
           child: Text(
-            'Select a server to inspect its status and restore its workspace.',
+            context.wp(
+              'Select a server to inspect its status and restore its workspace.',
+            ),
             style: Theme.of(
               context,
             ).textTheme.bodyLarge?.copyWith(color: surfaces.muted),
@@ -1430,12 +1474,15 @@ class _HomeServerDetailPanel extends StatelessWidget {
                   ),
                 const SizedBox(height: AppSpacing.lg),
                 _HomeDetailSection(
-                  title: 'Workspace',
-                  subtitle:
-                      'This is the last remembered pane layout for the selected server.',
+                  title: context.wp('Workspace'),
+                  subtitle: context.wp(
+                    'This is the last remembered pane layout for the selected server.',
+                  ),
                   child: paneSnapshots.isEmpty
                       ? Text(
-                          'No remembered workspace yet. Open a project and the layout will appear here.',
+                          context.wp(
+                            'No remembered workspace yet. Open a project and the layout will appear here.',
+                          ),
                           style: Theme.of(context).textTheme.bodyMedium
                               ?.copyWith(color: surfaces.muted),
                         )
@@ -1449,9 +1496,10 @@ class _HomeServerDetailPanel extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.lg),
                 _HomeDetailSection(
-                  title: 'Running Now',
-                  subtitle:
-                      'Best-effort activity from the projects in your remembered workspace.',
+                  title: context.wp('Running Now'),
+                  subtitle: context.wp(
+                    'Best-effort activity from the projects in your remembered workspace.',
+                  ),
                   child: activityLoading
                       ? const Padding(
                           padding: EdgeInsets.symmetric(
@@ -1461,7 +1509,9 @@ class _HomeServerDetailPanel extends StatelessWidget {
                         )
                       : runningSessions.isEmpty
                       ? Text(
-                          'No active agent sessions were found in the remembered projects.',
+                          context.wp(
+                            'No active agent sessions were found in the remembered projects.',
+                          ),
                           style: Theme.of(context).textTheme.bodyMedium
                               ?.copyWith(color: surfaces.muted),
                         )
@@ -1482,9 +1532,10 @@ class _HomeServerDetailPanel extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.lg),
                 _HomeDetailSection(
-                  title: 'Projects',
-                  subtitle:
-                      'Jump into a project directly, or add another one from the server like a quick action tile.',
+                  title: context.wp('Projects'),
+                  subtitle: context.wp(
+                    'Jump into a project directly, or add another one from the server like a quick action tile.',
+                  ),
                   child: Wrap(
                     spacing: AppSpacing.sm,
                     runSpacing: AppSpacing.sm,
@@ -1596,13 +1647,18 @@ class _HomeServerDetailActions extends StatelessWidget {
           onPressed: onResumeWorkspace,
           icon: const Icon(Icons.play_arrow_rounded),
           label: Text(
-            paneCount > 1 ? 'Resume $paneCount Panes' : 'Resume Workspace',
+            paneCount > 1
+                ? context.wp(
+                    'Resume {count} Panes',
+                    args: <String, Object?>{'count': paneCount},
+                  )
+                : context.wp('Resume Workspace'),
           ),
         ),
         OutlinedButton.icon(
           onPressed: onEditServer,
           icon: const Icon(Icons.edit_outlined),
-          label: const Text('Edit Server'),
+          label: Text(context.wp('Edit Server')),
         ),
       ],
     );
@@ -1705,7 +1761,7 @@ class _HomePaneCard extends StatelessWidget {
               if (pane.active)
                 _ServerMetaBadge(
                   icon: Icons.radio_button_checked_rounded,
-                  label: 'Active',
+                  label: context.wp('Active'),
                   tint: Theme.of(context).colorScheme.primary,
                 ),
             ],
@@ -1737,7 +1793,7 @@ class _HomePaneCard extends StatelessWidget {
             const SizedBox(height: AppSpacing.sm),
             _ServerMetaBadge(
               icon: Icons.timelapse_rounded,
-              label: _statusTextForSession(pane.status),
+              label: _statusTextForSession(context, pane.status),
               tint: _sessionStatusTint(context, pane.status),
             ),
           ],
@@ -1792,7 +1848,7 @@ class _HomeRunningSessionCard extends StatelessWidget {
               ),
               _ServerMetaBadge(
                 icon: Icons.bolt_rounded,
-                label: _statusTextForSession(session.status),
+                label: _statusTextForSession(context, session.status),
                 tint: _sessionStatusTint(context, session.status),
               ),
             ],
@@ -1806,7 +1862,13 @@ class _HomeRunningSessionCard extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.xs),
             Text(
-              '${session.completedTodoCount}/${session.totalTodoCount} todos complete',
+              context.wp(
+                '{done}/{total} todos complete',
+                args: <String, Object?>{
+                  'done': session.completedTodoCount,
+                  'total': session.totalTodoCount,
+                },
+              ),
               style: Theme.of(
                 context,
               ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
@@ -1905,7 +1967,7 @@ class _ServerPill extends StatelessWidget {
               decoration: BoxDecoration(color: color, shape: BoxShape.circle),
             ),
             const SizedBox(width: AppSpacing.sm),
-            Text(profile?.effectiveLabel ?? 'Select Server'),
+            Text(profile?.effectiveLabel ?? context.wp('Select Server')),
           ],
         ),
       ),
@@ -1945,7 +2007,10 @@ class _ServersSheetState extends State<_ServersSheet> {
     }
     showAppSnackBar(
       context,
-      message: 'Saved "${savedProfile.effectiveLabel}" and refreshed status.',
+      message: context.wp(
+        'Saved "{label}" and refreshed status.',
+        args: <String, Object?>{'label': savedProfile.effectiveLabel},
+      ),
       tone: AppSnackBarTone.success,
     );
   }
@@ -1954,18 +2019,21 @@ class _ServersSheetState extends State<_ServersSheet> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete server?'),
+        title: Text(context.wp('Delete server?')),
         content: Text(
-          'Remove "${profile.effectiveLabel}" from saved servers? This keeps the rest of your home screen intact.',
+          context.wp(
+            'Remove "{label}" from saved servers? This keeps the rest of your home screen intact.',
+            args: <String, Object?>{'label': profile.effectiveLabel},
+          ),
         ),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
+            child: Text(context.wp('Cancel')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Delete'),
+            child: Text(context.wp('Delete')),
           ),
         ],
       ),
@@ -1979,7 +2047,10 @@ class _ServersSheetState extends State<_ServersSheet> {
     }
     showAppSnackBar(
       context,
-      message: 'Removed "${profile.effectiveLabel}".',
+      message: context.wp(
+        'Removed "{label}".',
+        args: <String, Object?>{'label': profile.effectiveLabel},
+      ),
       tone: AppSnackBarTone.warning,
     );
   }
@@ -1997,7 +2068,7 @@ class _ServersSheetState extends State<_ServersSheet> {
     }
     showAppSnackBar(
       context,
-      message: 'Refreshed saved server status.',
+      message: context.wp('Refreshed saved server status.'),
       tone: AppSnackBarTone.info,
     );
   }
@@ -2019,17 +2090,17 @@ class _ServersSheetState extends State<_ServersSheet> {
                 children: <Widget>[
                   Expanded(
                     child: Text(
-                      'See Servers',
+                      context.wp('See Servers'),
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
                   ),
                   IconButton(
-                    tooltip: 'Close',
+                    tooltip: context.wp('Close'),
                     onPressed: () => Navigator.of(context).pop(),
                     icon: const Icon(Icons.close_rounded),
                   ),
                   IconButton(
-                    tooltip: 'Refresh all statuses',
+                    tooltip: context.wp('Refresh all statuses'),
                     onPressed: profiles.isEmpty ? null : _refreshAll,
                     icon: const Icon(Icons.refresh_rounded),
                   ),
@@ -2038,13 +2109,15 @@ class _ServersSheetState extends State<_ServersSheet> {
                     key: const ValueKey<String>('servers-sheet-add-button'),
                     onPressed: _openServerEditor,
                     icon: const Icon(Icons.add_rounded),
-                    label: const Text('Add Server'),
+                    label: Text(context.wp('Add Server')),
                   ),
                 ],
               ),
               const SizedBox(height: AppSpacing.xs),
               Text(
-                'Choose the active server, edit saved entries, reorder them, and keep connection status visible here.',
+                context.wp(
+                  'Choose the active server, edit saved entries, reorder them, and keep connection status visible here.',
+                ),
                 style: Theme.of(
                   context,
                 ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
@@ -2063,12 +2136,14 @@ class _ServersSheetState extends State<_ServersSheet> {
                             ),
                             const SizedBox(height: AppSpacing.sm),
                             Text(
-                              'No saved servers yet.',
+                              context.wp('No saved servers yet.'),
                               style: Theme.of(context).textTheme.titleMedium,
                             ),
                             const SizedBox(height: AppSpacing.xs),
                             Text(
-                              'Add your first OpenCode server here and it will immediately be ready for project browsing.',
+                              context.wp(
+                                'Add your first OpenCode server here and it will immediately be ready for project browsing.',
+                              ),
                               style: Theme.of(context).textTheme.bodyMedium
                                   ?.copyWith(color: surfaces.muted),
                               textAlign: TextAlign.center,
@@ -2216,7 +2291,7 @@ class _ServerManagementCard extends StatelessWidget {
                                   if (selected)
                                     _ServerMetaBadge(
                                       icon: Icons.check_circle_rounded,
-                                      label: 'Active',
+                                      label: context.wp('Active'),
                                       tint: Theme.of(context).colorScheme.primary,
                                     ),
                                 ],
@@ -2278,7 +2353,7 @@ class _ServerManagementCard extends StatelessWidget {
                         key: ValueKey<String>(
                           '$keyNamespace-refresh-${profile.id}',
                         ),
-                        tooltip: 'Refresh status',
+                        tooltip: context.wp('Refresh status'),
                         onPressed: isRefreshing ? null : onRefresh,
                         icon: isRefreshing
                             ? const SizedBox.square(
@@ -2293,7 +2368,7 @@ class _ServerManagementCard extends StatelessWidget {
                         key: ValueKey<String>(
                           '$keyNamespace-move-up-${profile.id}',
                         ),
-                        tooltip: 'Move up',
+                        tooltip: context.wp('Move up'),
                         onPressed: onMoveUp,
                         icon: const Icon(Icons.arrow_upward_rounded),
                       ),
@@ -2301,7 +2376,7 @@ class _ServerManagementCard extends StatelessWidget {
                         key: ValueKey<String>(
                           '$keyNamespace-move-down-${profile.id}',
                         ),
-                        tooltip: 'Move down',
+                        tooltip: context.wp('Move down'),
                         onPressed: onMoveDown,
                         icon: const Icon(Icons.arrow_downward_rounded),
                       ),
@@ -2309,7 +2384,7 @@ class _ServerManagementCard extends StatelessWidget {
                         key: ValueKey<String>(
                           '$keyNamespace-edit-${profile.id}',
                         ),
-                        tooltip: 'Edit server',
+                        tooltip: context.wp('Edit server'),
                         onPressed: onEdit,
                         icon: const Icon(Icons.edit_outlined),
                       ),
@@ -2317,7 +2392,7 @@ class _ServerManagementCard extends StatelessWidget {
                         key: ValueKey<String>(
                           '$keyNamespace-delete-${profile.id}',
                         ),
-                        tooltip: 'Delete server',
+                        tooltip: context.wp('Delete server'),
                         onPressed: onDelete,
                         icon: const Icon(Icons.delete_outline_rounded),
                       ),
@@ -2337,7 +2412,9 @@ class _ServerManagementCard extends StatelessWidget {
                                   : Icons.radio_button_unchecked_rounded,
                             ),
                             label: Text(
-                              selected ? 'Selected' : 'Use This Server',
+                              selected
+                                  ? context.wp('Selected')
+                                  : context.wp('Use This Server'),
                             ),
                           ),
                           Align(
@@ -2366,7 +2443,9 @@ class _ServerManagementCard extends StatelessWidget {
                                     : Icons.radio_button_unchecked_rounded,
                               ),
                               label: Text(
-                                selected ? 'Selected' : 'Use This Server',
+                                selected
+                                    ? context.wp('Selected')
+                                    : context.wp('Use This Server'),
                               ),
                             ),
                           ),
@@ -2447,7 +2526,7 @@ class _ServerEditorSheetState extends State<_ServerEditorSheet> {
     final draft = ServerProfile(id: 'draft', label: '', baseUrl: value ?? '');
     final uri = draft.uriOrNull;
     if (uri == null || uri.host.isEmpty) {
-      return 'Enter a valid server address.';
+      return context.wp('Enter a valid server address.');
     }
     return null;
   }
@@ -2468,12 +2547,16 @@ class _ServerEditorSheetState extends State<_ServerEditorSheet> {
         child: ListView(
           children: <Widget>[
             Text(
-              editingExisting ? 'Edit Server' : 'Add Server',
+              editingExisting
+                  ? context.wp('Edit Server')
+                  : context.wp('Add Server'),
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: AppSpacing.xs),
             Text(
-              'Save the server here and its status will be checked immediately.',
+              context.wp(
+                'Save the server here and its status will be checked immediately.',
+              ),
               style: Theme.of(
                 context,
               ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
@@ -2482,9 +2565,9 @@ class _ServerEditorSheetState extends State<_ServerEditorSheet> {
             TextFormField(
               key: const ValueKey<String>('servers-editor-label-field'),
               controller: _labelController,
-              decoration: const InputDecoration(
-                labelText: 'Label',
-                hintText: 'Studio',
+              decoration: InputDecoration(
+                labelText: context.wp('Label'),
+                hintText: context.wp('Studio'),
               ),
             ),
             const SizedBox(height: AppSpacing.md),
@@ -2492,9 +2575,9 @@ class _ServerEditorSheetState extends State<_ServerEditorSheet> {
               key: const ValueKey<String>('servers-editor-url-field'),
               controller: _baseUrlController,
               keyboardType: TextInputType.url,
-              decoration: const InputDecoration(
-                labelText: 'Server URL',
-                hintText: 'https://studio.example.com',
+              decoration: InputDecoration(
+                labelText: context.wp('Server URL'),
+                hintText: context.wp('https://studio.example.com'),
               ),
               validator: _validateAddress,
             ),
@@ -2502,9 +2585,9 @@ class _ServerEditorSheetState extends State<_ServerEditorSheet> {
             TextFormField(
               key: const ValueKey<String>('servers-editor-username-field'),
               controller: _usernameController,
-              decoration: const InputDecoration(
-                labelText: 'Username',
-                hintText: 'Optional',
+              decoration: InputDecoration(
+                labelText: context.wp('Username'),
+                hintText: context.wp('Optional'),
               ),
             ),
             const SizedBox(height: AppSpacing.md),
@@ -2513,8 +2596,8 @@ class _ServerEditorSheetState extends State<_ServerEditorSheet> {
               controller: _passwordController,
               obscureText: !_showPassword,
               decoration: InputDecoration(
-                labelText: 'Password',
-                hintText: 'Optional',
+                labelText: context.wp('Password'),
+                hintText: context.wp('Optional'),
                 suffixIcon: IconButton(
                   onPressed: () {
                     setState(() {
@@ -2533,7 +2616,7 @@ class _ServerEditorSheetState extends State<_ServerEditorSheet> {
                 Expanded(
                   child: OutlinedButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Cancel'),
+                    child: Text(context.wp('Cancel')),
                   ),
                 ),
                 const SizedBox(width: AppSpacing.sm),
@@ -2543,7 +2626,9 @@ class _ServerEditorSheetState extends State<_ServerEditorSheet> {
                     onPressed: _submit,
                     icon: const Icon(Icons.save_outlined),
                     label: Text(
-                      editingExisting ? 'Save Changes' : 'Save Server',
+                      editingExisting
+                          ? context.wp('Save Changes')
+                          : context.wp('Save Server'),
                     ),
                   ),
                 ),
@@ -2617,7 +2702,7 @@ class _ServerStatusBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     return _ServerMetaBadge(
       icon: _statusIconData(report),
-      label: _statusLabel(report),
+      label: _statusLabel(context, report),
       tint: _statusColor(context, report),
     );
   }
@@ -2672,7 +2757,10 @@ List<_ServerMetaItem> _serverMetaItems(
     items.add(
       _ServerMetaItem(
         icon: Icons.tag_rounded,
-        label: 'v$version',
+        label: context.wp(
+          'v{version}',
+          args: <String, Object?>{'version': version},
+        ),
         tint: Theme.of(context).colorScheme.primary,
       ),
     );
@@ -2690,7 +2778,7 @@ List<_ServerMetaItem> _serverMetaItems(
     items.add(
       _ServerMetaItem(
         icon: Icons.lock_outline_rounded,
-        label: 'Basic Auth',
+        label: context.wp('Basic Auth'),
         tint: Theme.of(context).colorScheme.secondary,
       ),
     );
@@ -2707,7 +2795,7 @@ List<_ServerMetaItem> _serverMetaItems(
     items.add(
       _ServerMetaItem(
         icon: Icons.schedule_rounded,
-        label: 'Not checked yet',
+        label: context.wp('Not checked yet'),
         tint: surfaces.muted,
       ),
     );
@@ -2715,14 +2803,15 @@ List<_ServerMetaItem> _serverMetaItems(
   return items;
 }
 
-String _statusLabel(ServerProbeReport? report) {
+String _statusLabel(BuildContext context, ServerProbeReport? report) {
   return switch (report?.classification) {
-    ConnectionProbeClassification.ready => 'Ready',
-    ConnectionProbeClassification.authFailure => 'Sign In',
-    ConnectionProbeClassification.unsupportedCapabilities => 'Needs Update',
-    ConnectionProbeClassification.specFetchFailure => 'Unavailable',
-    ConnectionProbeClassification.connectivityFailure => 'Offline',
-    null => 'Unknown',
+    ConnectionProbeClassification.ready => context.wp('Ready'),
+    ConnectionProbeClassification.authFailure => context.wp('Sign In'),
+    ConnectionProbeClassification.unsupportedCapabilities =>
+      context.wp('Needs Update'),
+    ConnectionProbeClassification.specFetchFailure => context.wp('Unavailable'),
+    ConnectionProbeClassification.connectivityFailure => context.wp('Offline'),
+    null => context.wp('Unknown'),
   };
 }
 
@@ -2753,21 +2842,21 @@ Color _statusColor(BuildContext context, ServerProbeReport? report) {
   };
 }
 
-String _statusTextForSession(String? status) {
+String _statusTextForSession(BuildContext context, String? status) {
   final normalized = status?.trim().toLowerCase() ?? 'idle';
   return switch (normalized) {
-    'running' => 'Running',
-    'completed' => 'Completed',
-    'error' => 'Error',
-    'pending' => 'Pending',
-    'queued' => 'Queued',
-    'starting' => 'Starting',
-    'steering' => 'Steering',
-    'waiting' => 'Waiting',
-    'idle' => 'Idle',
+    'running' => context.wp('Running'),
+    'completed' => context.wp('Completed'),
+    'error' => context.wp('Error'),
+    'pending' => context.wp('Pending'),
+    'queued' => context.wp('Queued'),
+    'starting' => context.wp('Starting'),
+    'steering' => context.wp('Steering'),
+    'waiting' => context.wp('Waiting'),
+    'idle' => context.wp('Idle'),
     _ =>
       normalized.isEmpty
-          ? 'Idle'
+          ? context.wp('Idle')
           : '${normalized[0].toUpperCase()}${normalized.substring(1)}',
   };
 }
@@ -2785,5 +2874,8 @@ Color _sessionStatusTint(BuildContext context, String? status) {
 String _checkedAtLabel(BuildContext context, DateTime checkedAt) {
   final localizations = MaterialLocalizations.of(context);
   final time = TimeOfDay.fromDateTime(checkedAt);
-  return 'Checked ${localizations.formatTimeOfDay(time)}';
+  return context.wp(
+    'Checked {time}',
+    args: <String, Object?>{'time': localizations.formatTimeOfDay(time)},
+  );
 }
