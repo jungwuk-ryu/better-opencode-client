@@ -1,6 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:better_opencode_client/l10n/app_localizations.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:better_opencode_client/src/app/app_controller.dart';
@@ -22,6 +23,8 @@ import 'package:better_opencode_client/src/features/web_parity/workspace_control
 import 'package:better_opencode_client/src/features/web_parity/workspace_screen.dart';
 import 'package:better_opencode_client/src/i18n/locale_controller.dart';
 import 'package:better_opencode_client/src/i18n/locale_scope.dart';
+import 'package:better_opencode_client/src/i18n/web_parity_localizations_ja.dart';
+import 'package:better_opencode_client/src/i18n/web_parity_localizations_zh.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -509,7 +512,10 @@ void main() {
     );
 
     await tester.tap(
-      find.descendant(of: languageRow, matching: find.text('System')),
+      find.descendant(
+        of: languageRow,
+        matching: find.text(zhWebParityText['System']!),
+      ),
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 220));
@@ -638,6 +644,133 @@ void main() {
 
     expect(appController.themePreset, AppThemePreset.amoled);
   });
+
+  testWidgets(
+    'workspace settings sheet localizes chrome for japanese and chinese',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final cases =
+          <
+            ({AppLocaleMode mode, Map<String, String> copy, String subtitleKey})
+          >[
+            (
+              mode: AppLocaleMode.japanese,
+              copy: jaWebParityText,
+              subtitleKey: 'Always use Japanese in the app.',
+            ),
+            (
+              mode: AppLocaleMode.chinese,
+              copy: zhWebParityText,
+              subtitleKey: 'Always use Chinese in the app.',
+            ),
+          ];
+
+      for (final testCase in cases) {
+        final profile = ServerProfile(
+          id: 'server-${testCase.mode.name}',
+          label: 'Mock',
+          baseUrl: 'http://localhost:3000',
+        );
+        final appController = _StaticAppController(
+          profile: profile,
+          report: _readyReport,
+          workspaceControllerFactory:
+              ({required profile, required directory, initialSessionId}) {
+                return _SidebarWorkspaceController(
+                  profile: profile,
+                  directory: directory,
+                  initialSessionId: initialSessionId,
+                );
+              },
+        );
+        final localeController = LocaleController();
+        await localeController.setMode(testCase.mode);
+
+        await tester.pumpWidget(
+          _WorkspaceRouteHarness(
+            controller: appController,
+            initialRoute: buildWorkspaceRoute(
+              '/workspace/demo',
+              sessionId: 'ses_1',
+            ),
+            localeController: localeController,
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 200));
+
+        await tester.tap(
+          find.byKey(
+            const ValueKey<String>('workspace-sidebar-settings-button'),
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 240));
+
+        expect(
+          find.text(testCase.copy['Workspace Settings']!),
+          findsOneWidget,
+          reason: testCase.mode.name,
+        );
+        expect(
+          find.text(testCase.copy['Manage Servers']!),
+          findsOneWidget,
+          reason: testCase.mode.name,
+        );
+        expect(
+          find.text(testCase.copy['Ready']!),
+          findsOneWidget,
+          reason: testCase.mode.name,
+        );
+
+        final settingsListView = find
+            .descendant(
+              of: find.byKey(
+                const ValueKey<String>('workspace-settings-sheet'),
+              ),
+              matching: find.byType(ListView),
+            )
+            .first;
+        await tester.dragUntilVisible(
+          find.byKey(const ValueKey<String>('workspace-settings-language-row')),
+          settingsListView,
+          const Offset(0, -160),
+        );
+        await tester.pump();
+        final languageRow = find.byKey(
+          const ValueKey<String>('workspace-settings-language-row'),
+        );
+
+        expect(
+          find.text(testCase.copy['App language']!),
+          findsOneWidget,
+          reason: testCase.mode.name,
+        );
+        expect(
+          find.descendant(
+            of: languageRow,
+            matching: find.text(testCase.copy['System']!),
+          ),
+          findsOneWidget,
+          reason: testCase.mode.name,
+        );
+        expect(
+          find.text(testCase.copy[testCase.subtitleKey]!),
+          findsOneWidget,
+          reason: testCase.mode.name,
+        );
+
+        await tester.pumpWidget(const SizedBox.shrink());
+        appController.dispose();
+        localeController.dispose();
+        await tester.pump();
+      }
+    },
+  );
 
   testWidgets(
     'sidebar add project button opens the home project picker sheet',
@@ -1031,6 +1164,8 @@ class _WorkspaceRouteHarness extends StatelessWidget {
           Widget app = MaterialApp(
             theme: controller.themeData.copyWith(platform: platform),
             locale: localeController?.locale,
+            supportedLocales: AppLocalizations.supportedLocales,
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
             initialRoute: initialRoute,
             onGenerateRoute: (settings) {
               final route = AppRouteData.parse(settings.name);

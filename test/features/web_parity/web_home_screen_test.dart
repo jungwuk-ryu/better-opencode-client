@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:better_opencode_client/l10n/app_localizations.dart';
 import 'package:better_opencode_client/src/app/app_controller.dart';
 import 'package:better_opencode_client/src/app/app_routes.dart';
 import 'package:better_opencode_client/src/app/app_scope.dart';
@@ -17,6 +18,8 @@ import 'package:better_opencode_client/src/features/web_parity/web_home_screen.d
 import 'package:better_opencode_client/src/features/web_parity/workspace_controller.dart';
 import 'package:better_opencode_client/src/features/web_parity/workspace_layout_store.dart';
 import 'package:better_opencode_client/src/i18n/locale_controller.dart';
+import 'package:better_opencode_client/src/i18n/web_parity_localizations_ja.dart';
+import 'package:better_opencode_client/src/i18n/web_parity_localizations_zh.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../test_helpers/responsive_viewports.dart';
@@ -267,6 +270,83 @@ void main() {
       );
     },
   );
+
+  testWidgets('home localizes server actions for japanese and chinese', (
+    tester,
+  ) async {
+    _setLargeSurface(tester);
+
+    final cases = <({AppLocaleMode mode, Map<String, String> copy})>[
+      (mode: AppLocaleMode.japanese, copy: jaWebParityText),
+      (mode: AppLocaleMode.chinese, copy: zhWebParityText),
+    ];
+
+    for (final testCase in cases) {
+      final profile = ServerProfile(
+        id: 'server-${testCase.mode.name}',
+        label: 'Mock',
+        baseUrl: 'https://example.com',
+      );
+      final controller = _MutableHomeAppController(
+        profiles: <ServerProfile>[profile],
+        selected: profile,
+        reports: <String, ServerProbeReport>{
+          profile.storageKey: _probeReport(profile, version: '1.0.0'),
+        },
+      );
+      final localeController = LocaleController();
+      await localeController.setMode(testCase.mode);
+
+      await tester.pumpWidget(
+        AppScope(
+          controller: controller,
+          child: MaterialApp(
+            theme: AppTheme.dark(),
+            locale: localeController.locale,
+            supportedLocales: AppLocalizations.supportedLocales,
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            home: WebParityHomeScreen(
+              flavor: AppFlavor.debug,
+              localeController: localeController,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.widgetWithText(OutlinedButton, testCase.copy['See Servers']!),
+        findsOneWidget,
+        reason: testCase.mode.name,
+      );
+      expect(
+        find.text(testCase.copy['Ready']!),
+        findsWidgets,
+        reason: testCase.mode.name,
+      );
+
+      await tester.tap(
+        find.widgetWithText(OutlinedButton, testCase.copy['See Servers']!),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey<String>('servers-sheet-add-button')),
+        findsOneWidget,
+        reason: testCase.mode.name,
+      );
+      expect(
+        find.text(testCase.copy['Add Server']!),
+        findsWidgets,
+        reason: testCase.mode.name,
+      );
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+      localeController.dispose();
+      await tester.pump();
+    }
+  });
 
   testWidgets('see servers sheet can add delete and reorder servers', (
     tester,

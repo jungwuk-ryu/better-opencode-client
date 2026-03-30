@@ -357,6 +357,8 @@ const Map<String, String> zhWebParityText = <String, String>{
   "Always": "总是",
   "Always use English in the app.": "在应用程序中始终使用英语。",
   "Always use Korean in the app.": "在应用程序中始终使用韩语。",
+  "Always use Japanese in the app.": "在应用程序中始终使用日语。",
+  "Always use Chinese in the app.": "在应用程序中始终使用中文。",
   "Always use the dark palette.": "始终使用深色调色板。",
   "Always use the light palette.": "始终使用浅色调色板。",
   "Appearance": "外貌",

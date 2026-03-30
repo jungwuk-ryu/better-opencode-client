@@ -428,6 +428,8 @@ const Map<String, String> _koWebParityText = <String, String>{
   'Always': '항상',
   'Always use English in the app.': '앱에서 항상 영어를 사용합니다.',
   'Always use Korean in the app.': '앱에서 항상 한국어를 사용합니다.',
+  'Always use Japanese in the app.': '앱에서 항상 일본어를 사용합니다.',
+  'Always use Chinese in the app.': '앱에서 항상 중국어를 사용합니다.',
   'Always use the dark palette.': '항상 다크 팔레트를 사용합니다.',
   'Always use the light palette.': '항상 라이트 팔레트를 사용합니다.',
   'Appearance': '모양',

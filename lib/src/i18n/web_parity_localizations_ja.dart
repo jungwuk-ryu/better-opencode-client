@@ -372,6 +372,8 @@ const Map<String, String> jaWebParityText = <String, String>{
   "Always": "いつも",
   "Always use English in the app.": "アプリでは常に英語を使用してください。",
   "Always use Korean in the app.": "アプリでは常に韓国語を使用してください。",
+  "Always use Japanese in the app.": "アプリでは常に日本語を使用してください。",
+  "Always use Chinese in the app.": "アプリでは常に中国語を使用してください。",
   "Always use the dark palette.": "常に暗いパレットを使用してください。",
   "Always use the light palette.": "常に明るいパレットを使用してください。",
   "Appearance": "外観",
