@@ -7,6 +7,7 @@ import '../../l10n/app_localizations.dart';
 import '../features/web_parity/web_home_screen.dart';
 import '../features/web_parity/workspace_screen.dart';
 import '../i18n/locale_controller.dart';
+import '../i18n/locale_scope.dart';
 import 'app_controller.dart';
 import 'app_release_notes_dialog.dart';
 import 'app_routes.dart';
@@ -43,6 +44,7 @@ class _OpenCodeRemoteAppState extends State<OpenCodeRemoteApp> {
   @override
   void initState() {
     super.initState();
+    unawaited(_localeController.load());
     if (widget.autoLoadAppController) {
       unawaited(_appController.load());
     }
@@ -97,62 +99,65 @@ class _OpenCodeRemoteAppState extends State<OpenCodeRemoteApp> {
       builder: (context, child) {
         return AppScope(
           controller: _appController,
-          child: MaterialApp(
-            navigatorKey: _navigatorKey,
-            onGenerateTitle: (context) =>
-                AppLocalizations.of(context)!.appTitle,
-            debugShowCheckedModeBanner: false,
-            theme: _appController.lightThemeData,
-            darkTheme: _appController.darkThemeData,
-            themeMode: _appController.themeMode,
-            builder: (context, child) {
-              _scheduleReleaseNotesDialog(context);
-              final mediaQuery = MediaQuery.maybeOf(context);
-              if (mediaQuery == null) {
-                return child ?? const SizedBox.shrink();
-              }
-              return MediaQuery(
-                data: mediaQuery.copyWith(
-                  textScaler: _ScaledTextScaler(
-                    base: mediaQuery.textScaler,
-                    multiplier: _appController.effectiveTextScaleFactor,
-                  ),
-                ),
-                child: child ?? const SizedBox.shrink(),
-              );
-            },
-            locale: _localeController.locale,
-            supportedLocales: AppLocalizations.supportedLocales,
-            localizationsDelegates: const [
-              AppLocalizations.delegate,
-              GlobalMaterialLocalizations.delegate,
-              GlobalCupertinoLocalizations.delegate,
-              GlobalWidgetsLocalizations.delegate,
-            ],
-            initialRoute: '/',
-            onGenerateRoute: (settings) {
-              final route = AppRouteData.parse(settings.name);
-              return MaterialPageRoute<void>(
-                settings: RouteSettings(
-                  name: settings.name ?? '/',
-                  arguments: settings.arguments,
-                ),
-                builder: (context) {
-                  return switch (route) {
-                    HomeRouteData() => WebParityHomeScreen(
-                      flavor: _flavor,
-                      localeController: _localeController,
+          child: AppLocaleScope(
+            controller: _localeController,
+            child: MaterialApp(
+              navigatorKey: _navigatorKey,
+              onGenerateTitle: (context) =>
+                  AppLocalizations.of(context)!.appTitle,
+              debugShowCheckedModeBanner: false,
+              theme: _appController.lightThemeData,
+              darkTheme: _appController.darkThemeData,
+              themeMode: _appController.themeMode,
+              builder: (context, child) {
+                _scheduleReleaseNotesDialog(context);
+                final mediaQuery = MediaQuery.maybeOf(context);
+                if (mediaQuery == null) {
+                  return child ?? const SizedBox.shrink();
+                }
+                return MediaQuery(
+                  data: mediaQuery.copyWith(
+                    textScaler: _ScaledTextScaler(
+                      base: mediaQuery.textScaler,
+                      multiplier: _appController.effectiveTextScaleFactor,
                     ),
-                    WorkspaceRouteData(:final directory, :final sessionId) =>
-                      WebParityWorkspaceScreen(
-                        key: ValueKey<String>('workspace-$directory'),
-                        directory: directory,
-                        sessionId: sessionId,
+                  ),
+                  child: child ?? const SizedBox.shrink(),
+                );
+              },
+              locale: _localeController.locale,
+              supportedLocales: AppLocalizations.supportedLocales,
+              localizationsDelegates: const [
+                AppLocalizations.delegate,
+                GlobalMaterialLocalizations.delegate,
+                GlobalCupertinoLocalizations.delegate,
+                GlobalWidgetsLocalizations.delegate,
+              ],
+              initialRoute: '/',
+              onGenerateRoute: (settings) {
+                final route = AppRouteData.parse(settings.name);
+                return MaterialPageRoute<void>(
+                  settings: RouteSettings(
+                    name: settings.name ?? '/',
+                    arguments: settings.arguments,
+                  ),
+                  builder: (context) {
+                    return switch (route) {
+                      HomeRouteData() => WebParityHomeScreen(
+                        flavor: _flavor,
+                        localeController: _localeController,
                       ),
-                  };
-                },
-              );
-            },
+                      WorkspaceRouteData(:final directory, :final sessionId) =>
+                        WebParityWorkspaceScreen(
+                          key: ValueKey<String>('workspace-$directory'),
+                          directory: directory,
+                          sessionId: sessionId,
+                        ),
+                    };
+                  },
+                );
+              },
+            ),
           ),
         );
       },

@@ -1,10 +1,39 @@
+import 'dart:async';
 import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../l10n/app_localizations.dart';
 
+enum AppLocaleMode {
+  system,
+  english,
+  korean;
+
+  static const _englishLocale = Locale('en');
+  static const _koreanLocale = Locale('ko');
+
+  String get storageValue => name;
+
+  Locale? get overrideLocale => switch (this) {
+    AppLocaleMode.system => null,
+    AppLocaleMode.english => _englishLocale,
+    AppLocaleMode.korean => _koreanLocale,
+  };
+
+  static AppLocaleMode fromStorage(String? value) {
+    return switch (value?.trim().toLowerCase()) {
+      'english' || 'en' => AppLocaleMode.english,
+      'korean' || 'ko' => AppLocaleMode.korean,
+      _ => AppLocaleMode.system,
+    };
+  }
+}
+
 class LocaleController extends ChangeNotifier with WidgetsBindingObserver {
+  static const _localeModeKey = 'app.locale_mode';
+
   LocaleController({
     WidgetsBinding? binding,
     PlatformDispatcher? platformDispatcher,
@@ -21,20 +50,36 @@ class LocaleController extends ChangeNotifier with WidgetsBindingObserver {
   final WidgetsBinding _binding;
   final PlatformDispatcher _platformDispatcher;
   Locale _systemLocale;
-  Locale? _localeOverride;
+  AppLocaleMode _mode = AppLocaleMode.system;
 
-  Locale get locale => _localeOverride ?? _systemLocale;
+  Locale get locale => _mode.overrideLocale ?? _systemLocale;
+  AppLocaleMode get mode => _mode;
+
+  Future<void> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final nextMode = AppLocaleMode.fromStorage(prefs.getString(_localeModeKey));
+    if (_mode == nextMode) {
+      return;
+    }
+    _mode = nextMode;
+    notifyListeners();
+  }
+
+  Future<void> setMode(AppLocaleMode value) async {
+    if (_mode == value) {
+      return;
+    }
+    _mode = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_localeModeKey, value.storageValue);
+  }
 
   void toggle() {
-    final supportedLocales = AppLocalizations.supportedLocales;
-    final currentIndex = supportedLocales.indexWhere(
-      (candidate) => _sameLocale(candidate, locale),
-    );
-    final nextIndex =
-        currentIndex == -1 ? 0 : (currentIndex + 1) % supportedLocales.length;
-    final nextLocale = supportedLocales[nextIndex];
-    _localeOverride = _sameLocale(nextLocale, _systemLocale) ? null : nextLocale;
-    notifyListeners();
+    final nextMode = locale.languageCode == 'ko'
+        ? AppLocaleMode.english
+        : AppLocaleMode.korean;
+    unawaited(setMode(nextMode));
   }
 
   @override
@@ -46,7 +91,7 @@ class LocaleController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     _systemLocale = nextSystemLocale;
-    if (_localeOverride == null) {
+    if (_mode == AppLocaleMode.system) {
       notifyListeners();
     }
   }

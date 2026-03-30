@@ -22,6 +22,8 @@ import '../../core/network/opencode_server_probe.dart';
 import '../../design_system/app_snack_bar.dart';
 import '../../design_system/app_spacing.dart';
 import '../../design_system/app_theme.dart';
+import '../../i18n/locale_controller.dart';
+import '../../i18n/locale_scope.dart';
 import '../chat/chat_models.dart';
 import '../chat/clipboard_image_service.dart';
 import '../chat/prompt_attachment_models.dart';
@@ -4448,7 +4450,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   Future<void> _interruptSelectedSession() async {
     final controller = _controller;
     if (controller == null ||
-        controller.sessionInterruptingForSession(controller.selectedSessionId)) {
+        controller.sessionInterruptingForSession(
+          controller.selectedSessionId,
+        )) {
       return;
     }
     try {
@@ -5727,15 +5731,15 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                           compact || !desktopSidePanelVisible
                                           ? null
                                           : (delta) {
-                                            _resizeDesktopSidePanel(
-                                              widthDelta: -delta,
-                                              totalWidth: totalWidth,
-                                              sidebarVisible:
-                                                  desktopSidebarVisible,
-                                              currentWidth:
-                                                  _desktopSidePanelWidth,
-                                            );
-                                          },
+                                              _resizeDesktopSidePanel(
+                                                widthDelta: -delta,
+                                                totalWidth: totalWidth,
+                                                sidebarVisible:
+                                                    desktopSidebarVisible,
+                                                currentWidth:
+                                                    _desktopSidePanelWidth,
+                                              );
+                                            },
                                       onFinishResizeSidePanel:
                                           compact || !desktopSidePanelVisible
                                           ? null
@@ -6297,8 +6301,9 @@ class _WorkspaceTopBar extends StatelessWidget {
                               : Icons.terminal_outlined,
                           size: 18,
                         ),
-                        tooltip:
-                            terminalOpen ? 'Hide terminal' : 'Show terminal',
+                        tooltip: terminalOpen
+                            ? 'Hide terminal'
+                            : 'Show terminal',
                         splashRadius: 18,
                       ),
                     ],
@@ -6744,7 +6749,9 @@ class _WorkspaceChatSearchBar extends StatelessWidget {
                     ),
                     decoration: BoxDecoration(
                       color: surfaces.panelMuted.withValues(alpha: 0.92),
-                      borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
+                      borderRadius: BorderRadius.circular(
+                        AppSpacing.pillRadius,
+                      ),
                       border: Border.all(color: surfaces.lineSoft),
                     ),
                     child: Text(
@@ -7439,6 +7446,7 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
       builder: (context, _) {
         final profile = widget.appController.selectedProfile ?? widget.profile;
         final report = widget.appController.selectedReport ?? widget.report;
+        final localeController = AppLocaleScope.maybeOf(context);
         final statusMeta = _workspaceSettingsStatusMeta(
           theme,
           surfaces,
@@ -7895,6 +7903,23 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                   child: _WorkspaceSettingsCard(
                                     child: Column(
                                       children: <Widget>[
+                                        if (localeController !=
+                                            null) ...<Widget>[
+                                          _WorkspaceSettingsLanguageRow(
+                                            key: const ValueKey<String>(
+                                              'workspace-settings-language-row',
+                                            ),
+                                            value: localeController.mode,
+                                            effectiveLocale:
+                                                localeController.locale,
+                                            onChanged: (value) {
+                                              unawaited(
+                                                localeController.setMode(value),
+                                              );
+                                            },
+                                          ),
+                                          SizedBox(height: sectionGap),
+                                        ],
                                         _WorkspaceSettingsThemeRow(
                                           key: const ValueKey<String>(
                                             'workspace-settings-theme-row',
@@ -8441,19 +8466,18 @@ class _WorkspaceSettingsOversizedSessionBehaviorRow extends StatelessWidget {
                 'workspace-settings-oversized-session-behavior-segments',
               ),
               showSelectedIcon: false,
-              segments:
-                  const <ButtonSegment<OversizedSessionBehavior>>[
-                    ButtonSegment<OversizedSessionBehavior>(
-                      value: OversizedSessionBehavior.retry,
-                      label: Text('Retry'),
-                      icon: Icon(Icons.refresh_rounded),
-                    ),
-                    ButtonSegment<OversizedSessionBehavior>(
-                      value: OversizedSessionBehavior.openWithoutHistory,
-                      label: Text('Open'),
-                      icon: Icon(Icons.folder_open_rounded),
-                    ),
-                  ],
+              segments: const <ButtonSegment<OversizedSessionBehavior>>[
+                ButtonSegment<OversizedSessionBehavior>(
+                  value: OversizedSessionBehavior.retry,
+                  label: Text('Retry'),
+                  icon: Icon(Icons.refresh_rounded),
+                ),
+                ButtonSegment<OversizedSessionBehavior>(
+                  value: OversizedSessionBehavior.openWithoutHistory,
+                  label: Text('Open'),
+                  icon: Icon(Icons.folder_open_rounded),
+                ),
+              ],
               selected: <OversizedSessionBehavior>{value},
               onSelectionChanged: (selection) {
                 final next = selection.isEmpty ? value : selection.first;
@@ -8987,6 +9011,93 @@ class _WorkspaceThemePreviewDot extends StatelessWidget {
       height: 8,
       width: 8,
       decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+    );
+  }
+}
+
+class _WorkspaceSettingsLanguageRow extends StatelessWidget {
+  const _WorkspaceSettingsLanguageRow({
+    required this.value,
+    required this.effectiveLocale,
+    required this.onChanged,
+    super.key,
+  });
+
+  final AppLocaleMode value;
+  final Locale effectiveLocale;
+  final ValueChanged<AppLocaleMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final density = _workspaceDensity(context);
+    final effectiveLanguageLabel = switch (effectiveLocale.languageCode) {
+      'ko' => 'Korean',
+      _ => 'English',
+    };
+    final subtitle = switch (value) {
+      AppLocaleMode.system =>
+        'Follow the device language. Currently $effectiveLanguageLabel.',
+      AppLocaleMode.english => 'Always use English in the app.',
+      AppLocaleMode.korean => 'Always use Korean in the app.',
+    };
+    return Container(
+      padding: EdgeInsets.all(density.inset(AppSpacing.md)),
+      decoration: BoxDecoration(
+        color: surfaces.panelMuted.withValues(alpha: 0.52),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            'App language',
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            subtitle,
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
+          ),
+          SizedBox(height: density.inset(AppSpacing.md)),
+          SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<AppLocaleMode>(
+              key: const ValueKey<String>(
+                'workspace-settings-language-segments',
+              ),
+              showSelectedIcon: false,
+              segments: const <ButtonSegment<AppLocaleMode>>[
+                ButtonSegment<AppLocaleMode>(
+                  value: AppLocaleMode.system,
+                  label: Text('System'),
+                  icon: Icon(Icons.settings_suggest_rounded),
+                ),
+                ButtonSegment<AppLocaleMode>(
+                  value: AppLocaleMode.english,
+                  label: Text('English'),
+                  icon: Icon(Icons.language_rounded),
+                ),
+                ButtonSegment<AppLocaleMode>(
+                  value: AppLocaleMode.korean,
+                  label: Text('한국어'),
+                  icon: Icon(Icons.translate_rounded),
+                ),
+              ],
+              selected: <AppLocaleMode>{value},
+              onSelectionChanged: (selection) {
+                final next = selection.isEmpty ? value : selection.first;
+                onChanged(next);
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -14035,8 +14146,7 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                                     ? controller.selectedSession
                                     : session,
                                 configSnapshot: controller.configSnapshot,
-                                shellToolDisplayMode:
-                                    shellToolDisplayMode,
+                                shellToolDisplayMode: shellToolDisplayMode,
                                 timelineProgressDetailsVisible:
                                     timelineProgressDetailsVisible,
                                 searchQuery: searchScoped
@@ -14065,10 +14175,9 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                                 onRetry: handleRetry,
                                 onIgnoreOversizedSession:
                                     handleIgnoreOversizedSession,
-                                oversizedSessionBehavior:
-                                    AppScope
-                                        .of(context)
-                                        .oversizedSessionBehavior,
+                                oversizedSessionBehavior: AppScope.of(
+                                  context,
+                                ).oversizedSessionBehavior,
                                 onLoadMore: handleLoadMoreHistory,
                                 jumpToBottomEpoch: searchScoped
                                     ? timelineJumpEpoch
@@ -14479,8 +14588,7 @@ class _ActiveSubSessionPanelBody extends StatelessWidget {
                                                         .textTheme
                                                         .bodySmall
                                                         ?.copyWith(
-                                                          color:
-                                                              surfaces.muted,
+                                                          color: surfaces.muted,
                                                           height: 1.2,
                                                         ),
                                                   ),
@@ -14518,9 +14626,7 @@ class _ActiveSubSessionPanelBody extends StatelessWidget {
                                       height: 38,
                                     ),
                                     splashRadius: 19,
-                                    tooltip: collapsed
-                                        ? 'Expand'
-                                        : 'Collapse',
+                                    tooltip: collapsed ? 'Expand' : 'Collapse',
                                   ),
                                 ],
                               ),
@@ -20589,16 +20695,10 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
 
   Timer? _copiedTimer;
   late final ScrollController _logScrollController = ScrollController();
-  late bool _expanded = _desiredExpanded(
-    widget.displayMode,
-    widget.running,
-  );
+  late bool _expanded = _desiredExpanded(widget.displayMode, widget.running);
   bool _copied = false;
 
-  static bool _desiredExpanded(
-    ShellToolDisplayMode mode,
-    bool running,
-  ) {
+  static bool _desiredExpanded(ShellToolDisplayMode mode, bool running) {
     return switch (mode) {
       ShellToolDisplayMode.collapsed => false,
       ShellToolDisplayMode.autoCollapse => running,
@@ -20678,7 +20778,9 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
         if (!mounted || !_expanded || !_logScrollController.hasClients) {
           return;
         }
-        _logScrollController.jumpTo(_logScrollController.position.maxScrollExtent);
+        _logScrollController.jumpTo(
+          _logScrollController.position.maxScrollExtent,
+        );
       });
       return;
     }
@@ -20686,7 +20788,9 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
       if (!mounted || !_logScrollController.hasClients) {
         return;
       }
-      _logScrollController.jumpTo(_logScrollController.position.maxScrollExtent);
+      _logScrollController.jumpTo(
+        _logScrollController.position.maxScrollExtent,
+      );
     });
   }
 
@@ -20857,7 +20961,9 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
                       ),
                     ),
                   ),
-                  key: ValueKey<String>('timeline-shell-command-${widget.partId}'),
+                  key: ValueKey<String>(
+                    'timeline-shell-command-${widget.partId}',
+                  ),
                 ),
               if (hasCommand && hasOutput)
                 const SizedBox(height: AppSpacing.sm),
@@ -24212,7 +24318,11 @@ String? _shellToolSubtitle(ChatPart part) {
 
 String _shellToolCommand(ChatPart part) {
   return _firstNonEmpty(<String?>[
-        _nestedString(part.metadata, const <String>['state', 'input', 'command']),
+        _nestedString(part.metadata, const <String>[
+          'state',
+          'input',
+          'command',
+        ]),
         _nestedString(part.metadata, const <String>['input', 'command']),
         _nestedString(part.metadata, const <String>['command']),
       ]) ??
@@ -24918,20 +25028,26 @@ class _ReviewPanelState extends State<_ReviewPanel> {
     final parsedDiff = currentDiff == null || currentDiff.isEmpty
         ? null
         : _cachedParsedReviewDiff(currentDiff.content);
-    final diffLineCount = parsedDiff == null ? 0 : _reviewDiffLineCount(parsedDiff);
-    final splitEnabled = parsedDiff != null &&
+    final diffLineCount = parsedDiff == null
+        ? 0
+        : _reviewDiffLineCount(parsedDiff);
+    final splitEnabled =
+        parsedDiff != null &&
         currentDiff != null &&
         _reviewDiffSupportsSplit(
           lineCount: diffLineCount,
           contentLength: currentDiff.content.length,
         );
-    final compactMode = parsedDiff != null &&
+    final compactMode =
+        parsedDiff != null &&
         currentDiff != null &&
         _reviewDiffShouldUseCompactMode(
           lineCount: diffLineCount,
           contentLength: currentDiff.content.length,
         );
-    final effectiveDiffMode = splitEnabled ? _diffMode : _ReviewDiffMode.unified;
+    final effectiveDiffMode = splitEnabled
+        ? _diffMode
+        : _ReviewDiffMode.unified;
     final diffModeHint = parsedDiff == null
         ? null
         : _reviewDiffModeHint(
@@ -25220,22 +25336,19 @@ class _ReviewPanelState extends State<_ReviewPanel> {
                                       'review-diff-mode-toggle',
                                     ),
                                     showSelectedIcon: false,
-                                    segments:
-                                        <ButtonSegment<_ReviewDiffMode>>[
-                                          ButtonSegment<_ReviewDiffMode>(
-                                            value: _ReviewDiffMode.unified,
-                                            label: Text('Unified'),
-                                            icon: Icon(
-                                              Icons.view_stream_rounded,
-                                            ),
-                                          ),
-                                          ButtonSegment<_ReviewDiffMode>(
-                                            value: _ReviewDiffMode.split,
-                                            label: Text('Split'),
-                                            icon: Icon(Icons.view_week_rounded),
-                                            enabled: splitEnabled,
-                                          ),
-                                        ],
+                                    segments: <ButtonSegment<_ReviewDiffMode>>[
+                                      ButtonSegment<_ReviewDiffMode>(
+                                        value: _ReviewDiffMode.unified,
+                                        label: Text('Unified'),
+                                        icon: Icon(Icons.view_stream_rounded),
+                                      ),
+                                      ButtonSegment<_ReviewDiffMode>(
+                                        value: _ReviewDiffMode.split,
+                                        label: Text('Split'),
+                                        icon: Icon(Icons.view_week_rounded),
+                                        enabled: splitEnabled,
+                                      ),
+                                    ],
                                     selected: <_ReviewDiffMode>{
                                       effectiveDiffMode,
                                     },

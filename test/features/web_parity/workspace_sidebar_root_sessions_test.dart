@@ -20,6 +20,8 @@ import 'package:better_opencode_client/src/features/terminal/pty_service.dart';
 import 'package:better_opencode_client/src/features/tools/todo_models.dart';
 import 'package:better_opencode_client/src/features/web_parity/workspace_controller.dart';
 import 'package:better_opencode_client/src/features/web_parity/workspace_screen.dart';
+import 'package:better_opencode_client/src/i18n/locale_controller.dart';
+import 'package:better_opencode_client/src/i18n/locale_scope.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -242,6 +244,10 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
+    tester.binding.platformDispatcher.localesTestValue = const <Locale>[
+      Locale('en', 'US'),
+    ];
+    addTearDown(tester.binding.platformDispatcher.clearLocalesTestValue);
 
     final profile = ServerProfile(
       id: 'server',
@@ -264,7 +270,9 @@ void main() {
             );
           },
     );
+    final localeController = LocaleController();
     addTearDown(appController.dispose);
+    addTearDown(localeController.dispose);
 
     await tester.pumpWidget(
       _WorkspaceRouteHarness(
@@ -273,6 +281,7 @@ void main() {
           '/workspace/demo',
           sessionId: 'ses_1',
         ),
+        localeController: localeController,
       ),
     );
     await tester.pump();
@@ -305,10 +314,14 @@ void main() {
     final shellDisplaySegments = find.descendant(
       of: find.byKey(const ValueKey<String>('workspace-settings-shell-toggle')),
       matching: find.byKey(
-        const ValueKey<String>('workspace-settings-shell-display-mode-segments'),
+        const ValueKey<String>(
+          'workspace-settings-shell-display-mode-segments',
+        ),
       ),
     );
-    await tester.tap(find.descendant(of: shellDisplaySegments, matching: find.text('Off')));
+    await tester.tap(
+      find.descendant(of: shellDisplaySegments, matching: find.text('Off')),
+    );
     await tester.pump();
 
     expect(appController.shellToolDisplayMode, ShellToolDisplayMode.collapsed);
@@ -442,6 +455,44 @@ void main() {
           )
           .width,
       lessThan(initialSidebarWidth),
+    );
+
+    await tester.dragUntilVisible(
+      find.byKey(const ValueKey<String>('workspace-settings-language-row')),
+      settingsListView,
+      const Offset(0, -160),
+    );
+    await tester.pump();
+
+    final languageRow = find.byKey(
+      const ValueKey<String>('workspace-settings-language-row'),
+    );
+    expect(languageRow, findsOneWidget);
+
+    await tester.tap(
+      find.descendant(of: languageRow, matching: find.text('한국어')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    expect(localeController.mode, AppLocaleMode.korean);
+    expect(localeController.locale, const Locale('ko'));
+    expect(
+      tester.widget<MaterialApp>(find.byType(MaterialApp)).locale,
+      const Locale('ko'),
+    );
+
+    await tester.tap(
+      find.descendant(of: languageRow, matching: find.text('System')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    expect(localeController.mode, AppLocaleMode.system);
+    expect(localeController.locale, const Locale('en'));
+    expect(
+      tester.widget<MaterialApp>(find.byType(MaterialApp)).locale,
+      const Locale('en'),
     );
 
     await tester.dragUntilVisible(
@@ -932,38 +983,53 @@ class _WorkspaceRouteHarness extends StatelessWidget {
     required this.initialRoute,
     this.projectCatalogService,
     this.platform = TargetPlatform.macOS,
+    this.localeController,
   });
 
   final WebParityAppController controller;
   final String initialRoute;
   final ProjectCatalogService? projectCatalogService;
   final TargetPlatform platform;
+  final LocaleController? localeController;
 
   @override
   Widget build(BuildContext context) {
+    final animation = localeController == null
+        ? controller
+        : Listenable.merge(<Listenable>[controller, localeController!]);
     return AppScope(
       controller: controller,
-      child: MaterialApp(
-        theme: controller.themeData.copyWith(platform: platform),
-        initialRoute: initialRoute,
-        onGenerateRoute: (settings) {
-          final route = AppRouteData.parse(settings.name);
-          return MaterialPageRoute<void>(
-            settings: settings,
-            builder: (context) {
-              return switch (route) {
-                HomeRouteData() => const SizedBox.shrink(),
-                WorkspaceRouteData(:final directory, :final sessionId) =>
-                  WebParityWorkspaceScreen(
-                    key: ValueKey<String>('workspace-$directory'),
-                    directory: directory,
-                    sessionId: sessionId,
-                    ptyServiceFactory: _FakePtyService.new,
-                    projectCatalogService: projectCatalogService,
-                  ),
-              };
+      child: AnimatedBuilder(
+        animation: animation,
+        builder: (context, child) {
+          Widget app = MaterialApp(
+            theme: controller.themeData.copyWith(platform: platform),
+            locale: localeController?.locale,
+            initialRoute: initialRoute,
+            onGenerateRoute: (settings) {
+              final route = AppRouteData.parse(settings.name);
+              return MaterialPageRoute<void>(
+                settings: settings,
+                builder: (context) {
+                  return switch (route) {
+                    HomeRouteData() => const SizedBox.shrink(),
+                    WorkspaceRouteData(:final directory, :final sessionId) =>
+                      WebParityWorkspaceScreen(
+                        key: ValueKey<String>('workspace-$directory'),
+                        directory: directory,
+                        sessionId: sessionId,
+                        ptyServiceFactory: _FakePtyService.new,
+                        projectCatalogService: projectCatalogService,
+                      ),
+                  };
+                },
+              );
             },
           );
+          if (localeController != null) {
+            app = AppLocaleScope(controller: localeController!, child: app);
+          }
+          return app;
         },
       ),
     );
