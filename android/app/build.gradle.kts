@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.jungwuk.boc"
+    namespace = "com.jungwuk.opencodeclient"
     compileSdk = maxOf(flutter.compileSdkVersion, 36)
     ndkVersion = flutter.ndkVersion
 
@@ -22,7 +22,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.jungwuk.boc"
+        applicationId = "com.jungwuk.opencodeclient"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         multiDexEnabled = true

@@ -1,4 +1,4 @@
-package com.jungwuk.boc
+package com.jungwuk.opencodeclient
 
 import android.content.ClipDescription
 import android.content.ClipboardManager
