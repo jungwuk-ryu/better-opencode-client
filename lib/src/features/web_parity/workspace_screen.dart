@@ -14540,9 +14540,7 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
       done: paneTodosDone,
       live: paneTodoLive,
     );
-    final compactTodoCount =
-        paneTodoDockState == _TodoDockState.open ||
-            paneTodoDockState == _TodoDockState.close
+    final compactTodoCount = paneTodoDockState == _TodoDockState.open
         ? paneTodos.length
         : 0;
     if (compact &&
