@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:better_opencode_client/src/features/chat/prompt_attachment_service.dart';
 
@@ -72,5 +73,22 @@ void main() {
 
     expect(result.attachments, isEmpty);
     expect(result.rejectedNames, <String>['unnamed file']);
+  });
+
+  test('uses an unfiltered picker group on iOS', () {
+    final group = PromptAttachmentService.pickerTypeGroupForPlatform(
+      TargetPlatform.iOS,
+    );
+
+    expect(group.allowsAny, isTrue);
+  });
+
+  test('keeps extension filters on non-iOS platforms', () {
+    final group = PromptAttachmentService.pickerTypeGroupForPlatform(
+      TargetPlatform.android,
+    );
+
+    expect(group.allowsAny, isFalse);
+    expect(group.extensions, PromptAttachmentService.acceptedFileExtensions);
   });
 }

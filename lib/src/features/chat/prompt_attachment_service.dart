@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'prompt_attachment_models.dart';
@@ -59,10 +60,21 @@ class PromptAttachmentService {
     'zsh',
   ];
 
-  static final XTypeGroup pickerTypeGroup = XTypeGroup(
-    label: 'Attachments',
-    extensions: acceptedFileExtensions,
-  );
+  static XTypeGroup pickerTypeGroupForPlatform(TargetPlatform platform) {
+    if (platform == TargetPlatform.iOS) {
+      // file_selector on iOS requires uniformTypeIdentifiers for filtered
+      // groups. We allow picking any file here and keep validation in the
+      // attachment loader so unsupported files are still skipped consistently.
+      return const XTypeGroup(label: 'Attachments');
+    }
+    return const XTypeGroup(
+      label: 'Attachments',
+      extensions: acceptedFileExtensions,
+    );
+  }
+
+  static XTypeGroup get pickerTypeGroup =>
+      pickerTypeGroupForPlatform(defaultTargetPlatform);
 
   static const int _textSampleSize = 4096;
   static const List<String> supportedImageMimeTypes = <String>[
