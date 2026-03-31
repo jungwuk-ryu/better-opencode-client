@@ -6,7 +6,11 @@ import 'dart:ui' as ui;
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart' show DragStartBehavior;
+import 'package:flutter/gestures.dart'
+    show
+        DelayedMultiDragGestureRecognizer,
+        DragStartBehavior,
+        MultiDragGestureRecognizer;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -5539,64 +5543,66 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
             resizeToAvoidBottomInset: !compact,
             drawer: compact
                 ? Drawer(
-                    child: _WorkspaceSidebar(
-                      width: _desktopSidebarDefaultWidth,
-                      currentDirectory: _currentDirectory,
-                      currentSessionId: showProjectLoadingShell
-                          ? null
-                          : controller.selectedSessionId,
-                      project: displayProject,
-                      projects: displayProjects,
-                      sessions: displaySessions,
-                      allSessions: displayAllSessions,
-                      statuses: displayStatuses,
-                      showSubsessions:
-                          appController.sidebarChildSessionsVisible,
-                      loadingProjectContents: showProjectLoadingShell,
-                      onSelectProject: (project) => unawaited(
-                        _selectProjectInPlace(project, compact: compact),
-                      ),
-                      onEditProject: (project) =>
-                          unawaited(_editProject(project)),
-                      onRemoveProject: (project) => unawaited(
-                        _removeProject(controller, project, compact: compact),
-                      ),
-                      onReorderProjects: (projects) =>
-                          _reorderProjects(appController, projects),
-                      onSelectSession: (sessionId) {
-                        unawaited(
-                          _selectSessionInPlace(
-                            controller,
-                            sessionId,
-                            compact: compact,
-                          ),
-                        );
-                      },
-                      projectNotificationStateForDirectory:
-                          controller.projectNotificationForDirectory,
-                      sessionNotificationStateForSession:
-                          controller.sessionNotificationForSession,
-                      hoverPreviewStateForSession:
-                          controller.sessionHoverPreviewForSession,
-                      onPrefetchSessionHoverPreview:
-                          controller.prefetchSessionHoverPreview,
-                      onFocusSessionMessage: (sessionId, messageId) {
-                        unawaited(
-                          _selectSessionInPlace(
-                            controller,
-                            sessionId,
-                            compact: compact,
-                            focusMessageId: messageId,
-                          ),
-                        );
-                      },
-                      onAddProject: () {
-                        unawaited(_openProjectPickerShortcut());
-                      },
-                      onNewSession: () => _createNewSession(controller),
-                      onOpenSettings: () => _openWorkspaceSettingsSheet(
-                        appController,
-                        controller,
+                    child: SafeArea(
+                      child: _WorkspaceSidebar(
+                        width: _desktopSidebarDefaultWidth,
+                        currentDirectory: _currentDirectory,
+                        currentSessionId: showProjectLoadingShell
+                            ? null
+                            : controller.selectedSessionId,
+                        project: displayProject,
+                        projects: displayProjects,
+                        sessions: displaySessions,
+                        allSessions: displayAllSessions,
+                        statuses: displayStatuses,
+                        showSubsessions:
+                            appController.sidebarChildSessionsVisible,
+                        loadingProjectContents: showProjectLoadingShell,
+                        onSelectProject: (project) => unawaited(
+                          _selectProjectInPlace(project, compact: compact),
+                        ),
+                        onEditProject: (project) =>
+                            unawaited(_editProject(project)),
+                        onRemoveProject: (project) => unawaited(
+                          _removeProject(controller, project, compact: compact),
+                        ),
+                        onReorderProjects: (projects) =>
+                            _reorderProjects(appController, projects),
+                        onSelectSession: (sessionId) {
+                          unawaited(
+                            _selectSessionInPlace(
+                              controller,
+                              sessionId,
+                              compact: compact,
+                            ),
+                          );
+                        },
+                        projectNotificationStateForDirectory:
+                            controller.projectNotificationForDirectory,
+                        sessionNotificationStateForSession:
+                            controller.sessionNotificationForSession,
+                        hoverPreviewStateForSession:
+                            controller.sessionHoverPreviewForSession,
+                        onPrefetchSessionHoverPreview:
+                            controller.prefetchSessionHoverPreview,
+                        onFocusSessionMessage: (sessionId, messageId) {
+                          unawaited(
+                            _selectSessionInPlace(
+                              controller,
+                              sessionId,
+                              compact: compact,
+                              focusMessageId: messageId,
+                            ),
+                          );
+                        },
+                        onAddProject: () {
+                          unawaited(_openProjectPickerShortcut());
+                        },
+                        onNewSession: () => _createNewSession(controller),
+                        onOpenSettings: () => _openWorkspaceSettingsSheet(
+                          appController,
+                          controller,
+                        ),
                       ),
                     ),
                   )
@@ -11539,6 +11545,40 @@ class _WorkspaceSidebar extends StatefulWidget {
   State<_WorkspaceSidebar> createState() => _WorkspaceSidebarState();
 }
 
+void _triggerProjectReorderHapticFeedback() {
+  unawaited(
+    HapticFeedback.selectionClick().catchError((Object _, StackTrace __) {
+      return;
+    }),
+  );
+}
+
+class _HapticDelayedMultiDragGestureRecognizer
+    extends DelayedMultiDragGestureRecognizer {
+  _HapticDelayedMultiDragGestureRecognizer({super.debugOwner});
+
+  @override
+  void acceptGesture(int pointer) {
+    _triggerProjectReorderHapticFeedback();
+    super.acceptGesture(pointer);
+  }
+}
+
+class _HapticReorderableDelayedDragStartListener
+    extends ReorderableDelayedDragStartListener {
+  const _HapticReorderableDelayedDragStartListener({
+    super.key,
+    required super.child,
+    required super.index,
+    super.enabled,
+  });
+
+  @override
+  MultiDragGestureRecognizer createRecognizer() {
+    return _HapticDelayedMultiDragGestureRecognizer(debugOwner: this);
+  }
+}
+
 class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
   List<ProjectTarget> _orderedProjects = const <ProjectTarget>[];
 
@@ -11623,6 +11663,8 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final compactLayout =
+        MediaQuery.sizeOf(context).width < AppSpacing.wideLayoutBreakpoint;
     final hoverPreviewEnabled = switch (theme.platform) {
       TargetPlatform.macOS ||
       TargetPlatform.windows ||
@@ -11708,10 +11750,15 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
                         onRemove: () => widget.onRemoveProject(project),
                       );
                       final reorderableTile = projects.length > 1
-                          ? ReorderableDragStartListener(
-                              index: index,
-                              child: tile,
-                            )
+                          ? compactLayout
+                                ? _HapticReorderableDelayedDragStartListener(
+                                    index: index,
+                                    child: tile,
+                                  )
+                                : ReorderableDragStartListener(
+                                    index: index,
+                                    child: tile,
+                                  )
                           : tile;
                       return Padding(
                         key: ValueKey<String>(

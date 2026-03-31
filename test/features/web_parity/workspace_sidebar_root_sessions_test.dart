@@ -1135,6 +1135,139 @@ void main() {
       greaterThan(tester.getTopLeft(labTile).dy),
     );
   });
+
+  testWidgets('compact drawer applies safe area insets', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    tester.view.padding = const FakeViewPadding(top: 36, bottom: 20);
+    tester.view.viewPadding = const FakeViewPadding(top: 36, bottom: 20);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPadding);
+    addTearDown(tester.view.resetViewPadding);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _SidebarWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    await tester.tap(find.byIcon(Icons.menu_rounded).first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 240));
+
+    final demoTile = find.byKey(
+      const ValueKey<String>('workspace-project-/workspace/demo'),
+    );
+    final addProjectButton = find.byKey(
+      const ValueKey<String>('workspace-sidebar-add-project-button'),
+    );
+
+    expect(demoTile, findsOneWidget);
+    expect(addProjectButton, findsOneWidget);
+    expect(tester.getTopLeft(demoTile).dy, greaterThanOrEqualTo(36));
+    expect(tester.getBottomRight(addProjectButton).dy, lessThanOrEqualTo(824));
+  });
+
+  testWidgets('compact project rail uses a delayed reorder start', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    late _EditableSidebarWorkspaceController controllerInstance;
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            controllerInstance = _EditableSidebarWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+            return controllerInstance;
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    await tester.tap(find.byIcon(Icons.menu_rounded).first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 240));
+
+    final demoTile = find.byKey(
+      const ValueKey<String>('workspace-project-/workspace/demo'),
+    );
+    final labTile = find.byKey(
+      const ValueKey<String>('workspace-project-/workspace/lab'),
+    );
+    expect(demoTile, findsOneWidget);
+    expect(labTile, findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is ReorderableDelayedDragStartListener,
+      ),
+      findsAtLeastNWidgets(2),
+    );
+
+    final quickGesture = await tester.startGesture(
+      tester.getCenter(demoTile),
+      kind: PointerDeviceKind.touch,
+    );
+    await quickGesture.moveTo(tester.getCenter(labTile));
+    await quickGesture.up();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 420));
+
+    expect(
+      controllerInstance.availableProjects
+          .map((project) => project.directory)
+          .toList(growable: false),
+      const <String>['/workspace/demo', '/workspace/lab'],
+    );
+  });
 }
 
 class _WorkspaceRouteHarness extends StatelessWidget {
