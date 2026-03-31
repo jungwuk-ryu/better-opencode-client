@@ -2184,7 +2184,7 @@ void main() {
   });
 
   testWidgets(
-    'split panes keep each session todo and sub-agent panels visible without focus',
+    'session switches preserve todo state per session and default sub-agents to collapsed',
     (tester) async {
       tester.view.physicalSize = const Size(1600, 1000);
       tester.view.devicePixelRatio = 1;
@@ -2224,28 +2224,62 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
 
+      expect(find.text('todo for one'), findsOneWidget);
+      expect(find.text('Plan anomaly feature (@plan subagent)'), findsNothing);
+
       await tester.tap(
-        find.byKey(
-          const ValueKey<String>('workspace-split-session-pane-button'),
-        ),
+        find.byKey(const ValueKey<String>('session-todo-toggle-button')),
       );
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump(const Duration(milliseconds: 250));
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('active-subsessions-toggle-button')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      expect(
+        find.byKey(const ValueKey<String>('session-todo-list')),
+        findsNothing,
+      );
+      expect(
+        find.text('Plan anomaly feature (@plan subagent)'),
+        findsOneWidget,
+      );
 
       await tester.tap(find.text('Session Two'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
 
+      expect(find.text('todo for two'), findsOneWidget);
+      expect(
+        find.text('Find validation hook (@explore subagent)'),
+        findsNothing,
+      );
+
+      await tester.tap(find.text('Session One'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(
+        find.byKey(const ValueKey<String>('session-todo-list')),
+        findsNothing,
+      );
       expect(
         find.text('Plan anomaly feature (@plan subagent)'),
         findsOneWidget,
       );
+
+      await tester.tap(find.text('Session Two'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.text('todo for two'), findsOneWidget);
       expect(
         find.text('Find validation hook (@explore subagent)'),
-        findsOneWidget,
+        findsNothing,
       );
-      expect(find.text('todo for one'), findsOneWidget);
-      expect(find.text('todo for two'), findsOneWidget);
     },
   );
 

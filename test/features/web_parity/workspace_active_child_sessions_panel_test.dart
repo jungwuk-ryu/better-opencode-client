@@ -18,7 +18,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-    'compact active sub-session panel shows busy children, collapses, opens, and hides when idle',
+    'compact active sub-session panel starts collapsed, opens, collapses, and hides when idle',
     (tester) async {
       tester.view.physicalSize = const Size(430, 932);
       tester.view.devicePixelRatio = 1;
@@ -66,6 +66,18 @@ void main() {
       );
       expect(find.text('Sub-agents Running'), findsOneWidget);
       expect(find.text('2 running'), findsOneWidget);
+      expect(find.text('Bootstrap repo tooling'), findsNothing);
+      expect(find.text('Review release checklist'), findsNothing);
+      expect(find.text('Running bootstrap command'), findsNothing);
+      expect(find.text('Task: Compare release checklist'), findsNothing);
+      expect(find.text('Idle child session'), findsNothing);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('active-subsessions-toggle-button')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
       expect(find.text('Bootstrap repo tooling'), findsOneWidget);
       expect(find.text('Review release checklist'), findsOneWidget);
       expect(find.text('Running bootstrap command'), findsOneWidget);

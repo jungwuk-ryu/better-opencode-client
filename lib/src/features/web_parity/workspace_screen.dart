@@ -315,6 +315,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       const <String, String>{};
   Map<String, int> _focusedTimelineMessageRevisionByScope =
       const <String, int>{};
+  Map<String, bool> _todoDockCollapsedByScope = const <String, bool>{};
+  Map<String, bool> _subAgentPanelCollapsedByScope = const <String, bool>{};
   Map<WorkspaceController, Set<String>> _pendingWatchedSessionIdsByController =
       const <WorkspaceController, Set<String>>{};
   Map<WorkspaceController, Set<String>> _syncedWatchedSessionIdsByController =
@@ -398,6 +400,38 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
 
   int _focusedTimelineMessageRevisionForScope(String scopeKey) {
     return _focusedTimelineMessageRevisionByScope[scopeKey] ?? 0;
+  }
+
+  bool _todoDockCollapsedForScope(String scopeKey) {
+    return _todoDockCollapsedByScope[scopeKey] ?? false;
+  }
+
+  void _setTodoDockCollapsedForScope(String scopeKey, bool collapsed) {
+    if (_todoDockCollapsedByScope[scopeKey] == collapsed) {
+      return;
+    }
+    setState(() {
+      _todoDockCollapsedByScope = <String, bool>{
+        ..._todoDockCollapsedByScope,
+        scopeKey: collapsed,
+      };
+    });
+  }
+
+  bool _subAgentPanelCollapsedForScope(String scopeKey) {
+    return _subAgentPanelCollapsedByScope[scopeKey] ?? true;
+  }
+
+  void _setSubAgentPanelCollapsedForScope(String scopeKey, bool collapsed) {
+    if (_subAgentPanelCollapsedByScope[scopeKey] == collapsed) {
+      return;
+    }
+    setState(() {
+      _subAgentPanelCollapsedByScope = <String, bool>{
+        ..._subAgentPanelCollapsedByScope,
+        scopeKey: collapsed,
+      };
+    });
   }
 
   void _requestTimelineMessageFocus({
@@ -5846,6 +5880,14 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                           _focusedTimelineMessageIdForScope,
                                       focusedTimelineMessageRevisionForScope:
                                           _focusedTimelineMessageRevisionForScope,
+                                      todoDockCollapsedForScope:
+                                          _todoDockCollapsedForScope,
+                                      onTodoDockCollapsedChanged:
+                                          _setTodoDockCollapsedForScope,
+                                      subAgentPanelCollapsedForScope:
+                                          _subAgentPanelCollapsedForScope,
+                                      onSubAgentPanelCollapsedChanged:
+                                          _setSubAgentPanelCollapsedForScope,
                                       onForkMessage: (message) =>
                                           _forkMessageIntoSession(
                                             controller,
@@ -13544,6 +13586,10 @@ class _WorkspaceBody extends StatelessWidget {
     required this.timelineJumpEpoch,
     required this.focusedTimelineMessageIdForScope,
     required this.focusedTimelineMessageRevisionForScope,
+    required this.todoDockCollapsedForScope,
+    required this.onTodoDockCollapsedChanged,
+    required this.subAgentPanelCollapsedForScope,
+    required this.onSubAgentPanelCollapsedChanged,
     required this.onForkMessage,
     required this.onRevertMessage,
     required this.onCompactPaneChanged,
@@ -13606,6 +13652,12 @@ class _WorkspaceBody extends StatelessWidget {
   final int timelineJumpEpoch;
   final String? Function(String scopeKey) focusedTimelineMessageIdForScope;
   final int Function(String scopeKey) focusedTimelineMessageRevisionForScope;
+  final bool Function(String scopeKey) todoDockCollapsedForScope;
+  final void Function(String scopeKey, bool collapsed)
+  onTodoDockCollapsedChanged;
+  final bool Function(String scopeKey) subAgentPanelCollapsedForScope;
+  final void Function(String scopeKey, bool collapsed)
+  onSubAgentPanelCollapsedChanged;
   final Future<void> Function(ChatMessage message) onForkMessage;
   final Future<void> Function(ChatMessage message) onRevertMessage;
   final ValueChanged<_CompactWorkspacePane> onCompactPaneChanged;
@@ -13680,6 +13732,10 @@ class _WorkspaceBody extends StatelessWidget {
                   focusedTimelineMessageIdForScope,
               focusedTimelineMessageRevisionForScope:
                   focusedTimelineMessageRevisionForScope,
+              todoDockCollapsedForScope: todoDockCollapsedForScope,
+              onTodoDockCollapsedChanged: onTodoDockCollapsedChanged,
+              subAgentPanelCollapsedForScope: subAgentPanelCollapsedForScope,
+              onSubAgentPanelCollapsedChanged: onSubAgentPanelCollapsedChanged,
               onSelectPane: onSelectSessionPane,
               onClosePane: onCloseSessionPane,
               onForkMessage: onForkMessage,
@@ -13966,6 +14022,10 @@ class _WorkspaceSessionPaneDeck extends StatelessWidget {
     required this.timelineJumpEpoch,
     required this.focusedTimelineMessageIdForScope,
     required this.focusedTimelineMessageRevisionForScope,
+    required this.todoDockCollapsedForScope,
+    required this.onTodoDockCollapsedChanged,
+    required this.subAgentPanelCollapsedForScope,
+    required this.onSubAgentPanelCollapsedChanged,
     required this.onSelectPane,
     required this.onClosePane,
     required this.onForkMessage,
@@ -13987,6 +14047,12 @@ class _WorkspaceSessionPaneDeck extends StatelessWidget {
   final int timelineJumpEpoch;
   final String? Function(String scopeKey) focusedTimelineMessageIdForScope;
   final int Function(String scopeKey) focusedTimelineMessageRevisionForScope;
+  final bool Function(String scopeKey) todoDockCollapsedForScope;
+  final void Function(String scopeKey, bool collapsed)
+  onTodoDockCollapsedChanged;
+  final bool Function(String scopeKey) subAgentPanelCollapsedForScope;
+  final void Function(String scopeKey, bool collapsed)
+  onSubAgentPanelCollapsedChanged;
   final Future<void> Function(String paneId) onSelectPane;
   final ValueChanged<String> onClosePane;
   final Future<void> Function(ChatMessage message) onForkMessage;
@@ -14040,6 +14106,11 @@ class _WorkspaceSessionPaneDeck extends StatelessWidget {
                     focusedTimelineMessageIdForScope,
                 focusedTimelineMessageRevisionForScope:
                     focusedTimelineMessageRevisionForScope,
+                todoDockCollapsedForScope: todoDockCollapsedForScope,
+                onTodoDockCollapsedChanged: onTodoDockCollapsedChanged,
+                subAgentPanelCollapsedForScope: subAgentPanelCollapsedForScope,
+                onSubAgentPanelCollapsedChanged:
+                    onSubAgentPanelCollapsedChanged,
                 onSelectPane: onSelectPane,
                 onClosePane: onClosePane,
                 onForkMessage: onForkMessage,
@@ -14073,6 +14144,10 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
     required this.timelineJumpEpoch,
     required this.focusedTimelineMessageIdForScope,
     required this.focusedTimelineMessageRevisionForScope,
+    required this.todoDockCollapsedForScope,
+    required this.onTodoDockCollapsedChanged,
+    required this.subAgentPanelCollapsedForScope,
+    required this.onSubAgentPanelCollapsedChanged,
     required this.onSelectPane,
     required this.onClosePane,
     required this.onForkMessage,
@@ -14096,6 +14171,12 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
   final int timelineJumpEpoch;
   final String? Function(String scopeKey) focusedTimelineMessageIdForScope;
   final int Function(String scopeKey) focusedTimelineMessageRevisionForScope;
+  final bool Function(String scopeKey) todoDockCollapsedForScope;
+  final void Function(String scopeKey, bool collapsed)
+  onTodoDockCollapsedChanged;
+  final bool Function(String scopeKey) subAgentPanelCollapsedForScope;
+  final void Function(String scopeKey, bool collapsed)
+  onSubAgentPanelCollapsedChanged;
   final Future<void> Function(String paneId) onSelectPane;
   final ValueChanged<String> onClosePane;
   final Future<void> Function(ChatMessage message) onForkMessage;
@@ -14157,6 +14238,10 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
     final normalizedSessionId = sessionId == null || sessionId.isEmpty
         ? 'new'
         : sessionId;
+    final sessionUiScopeKey = _workspaceScopedSessionKey(
+      directory: pane.directory,
+      sessionId: sessionId,
+    );
     final sessionFocusScopeKey = _workspaceScopedSessionKey(
       directory: pane.directory,
       sessionId: sessionId,
@@ -14454,6 +14539,14 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                           previewBySessionId: activeChildSessionPreviewById,
                           currentSessionId: sessionId,
                           compact: compact,
+                          collapsed: subAgentPanelCollapsedForScope(
+                            sessionUiScopeKey,
+                          ),
+                          onCollapsedChanged: (collapsed) =>
+                              onSubAgentPanelCollapsedChanged(
+                                sessionUiScopeKey,
+                                collapsed,
+                              ),
                           onOpenSession: handleOpenSession,
                         ),
                       Expanded(
@@ -14603,6 +14696,14 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                               paneQuestionRequest != null ||
                               panePermissionRequest != null,
                           compact: compact,
+                          collapsed: todoDockCollapsedForScope(
+                            sessionUiScopeKey,
+                          ),
+                          onCollapsedChanged: (collapsed) =>
+                              onTodoDockCollapsedChanged(
+                                sessionUiScopeKey,
+                                collapsed,
+                              ),
                           onClearStale: () =>
                               controller.clearTodosForSession(sessionId),
                         ),
@@ -14624,13 +14725,15 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
   }
 }
 
-class _ActiveSubSessionPanel extends StatefulWidget {
+class _ActiveSubSessionPanel extends StatelessWidget {
   const _ActiveSubSessionPanel({
     required this.rootSessionId,
     required this.sessions,
     required this.previewBySessionId,
     required this.currentSessionId,
     required this.compact,
+    required this.collapsed,
+    required this.onCollapsedChanged,
     required this.onOpenSession,
     super.key,
   });
@@ -14640,34 +14743,13 @@ class _ActiveSubSessionPanel extends StatefulWidget {
   final Map<String, String> previewBySessionId;
   final String? currentSessionId;
   final bool compact;
+  final bool collapsed;
+  final ValueChanged<bool> onCollapsedChanged;
   final ValueChanged<String> onOpenSession;
 
   @override
-  State<_ActiveSubSessionPanel> createState() => _ActiveSubSessionPanelState();
-}
-
-class _ActiveSubSessionPanelState extends State<_ActiveSubSessionPanel> {
-  bool _collapsed = false;
-
-  @override
-  void didUpdateWidget(covariant _ActiveSubSessionPanel oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    final becameVisible =
-        oldWidget.sessions.isEmpty && widget.sessions.isNotEmpty;
-    if (oldWidget.rootSessionId != widget.rootSessionId || becameVisible) {
-      _collapsed = false;
-    }
-  }
-
-  void _toggleCollapsed() {
-    setState(() {
-      _collapsed = !_collapsed;
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final shouldShow = widget.sessions.isNotEmpty;
+    final shouldShow = sessions.isNotEmpty;
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 220),
       switchInCurve: Curves.easeOutCubic,
@@ -14692,13 +14774,13 @@ class _ActiveSubSessionPanelState extends State<_ActiveSubSessionPanel> {
             )
           : _ActiveSubSessionPanelBody(
               key: const ValueKey<String>('active-subsessions-panel'),
-              sessions: widget.sessions,
-              previewBySessionId: widget.previewBySessionId,
-              currentSessionId: widget.currentSessionId,
-              compact: widget.compact,
-              collapsed: _collapsed,
-              onToggleCollapsed: _toggleCollapsed,
-              onOpenSession: widget.onOpenSession,
+              sessions: sessions,
+              previewBySessionId: previewBySessionId,
+              currentSessionId: currentSessionId,
+              compact: compact,
+              collapsed: collapsed,
+              onToggleCollapsed: () => onCollapsedChanged(!collapsed),
+              onOpenSession: onOpenSession,
             ),
     );
   }
@@ -19425,6 +19507,8 @@ class _SessionTodoDock extends StatefulWidget {
     required this.live,
     required this.blocked,
     required this.compact,
+    required this.collapsed,
+    required this.onCollapsedChanged,
     required this.onClearStale,
     super.key,
   });
@@ -19434,6 +19518,8 @@ class _SessionTodoDock extends StatefulWidget {
   final bool live;
   final bool blocked;
   final bool compact;
+  final bool collapsed;
+  final ValueChanged<bool> onCollapsedChanged;
   final VoidCallback onClearStale;
 
   @override
@@ -19451,7 +19537,6 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
   Timer? _closeTimer;
   bool _visible = false;
   bool _closing = false;
-  bool _collapsed = false;
   bool _stuck = false;
   bool _clearQueued = false;
   String? _dismissedCompletedSignature;
@@ -19470,7 +19555,6 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
     final previousSignature = _todoSignatureFor(oldWidget.todos);
     final nextSignature = _todoSignature;
     if (oldWidget.sessionId != widget.sessionId) {
-      _collapsed = false;
       _stuck = false;
       _clearQueued = false;
       _dismissedCompletedSignature = null;
@@ -19591,7 +19675,7 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
           _closing = false;
         });
       }
-      if (!_collapsed) {
+      if (!widget.collapsed) {
         _scheduleEnsureVisible();
       }
       return;
@@ -19609,7 +19693,7 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
       });
     }
     _scheduleClose(todoSignature);
-    if (initial && !_collapsed) {
+    if (initial && !widget.collapsed) {
       _scheduleEnsureVisible();
     }
   }
@@ -19661,7 +19745,7 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final activeTodo = _activeTodo;
       if (!mounted ||
-          _collapsed ||
+          widget.collapsed ||
           !_visible ||
           widget.blocked ||
           activeTodo == null) {
@@ -19693,10 +19777,9 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
   }
 
   void _toggleCollapsed() {
-    setState(() {
-      _collapsed = !_collapsed;
-    });
-    if (!_collapsed) {
+    final nextCollapsed = !widget.collapsed;
+    widget.onCollapsedChanged(nextCollapsed);
+    if (!nextCollapsed) {
       _scheduleEnsureVisible();
     }
   }
@@ -19750,7 +19833,7 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
                             child: Row(
                               children: <Widget>[
                                 Expanded(
-                                  child: _collapsed && preview.isNotEmpty
+                                  child: widget.collapsed && preview.isNotEmpty
                                       ? Row(
                                           children: <Widget>[
                                             Flexible(
@@ -19818,7 +19901,7 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
                                   ),
                                   onPressed: _toggleCollapsed,
                                   icon: AnimatedRotation(
-                                    turns: _collapsed ? 0.5 : 0,
+                                    turns: widget.collapsed ? 0.5 : 0,
                                     duration: const Duration(milliseconds: 180),
                                     child: Icon(
                                       Icons.keyboard_arrow_down_rounded,
@@ -19826,7 +19909,9 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
                                     ),
                                   ),
                                   splashRadius: isCompact ? 16 : 18,
-                                  tooltip: _collapsed ? 'Expand' : 'Collapse',
+                                  tooltip: widget.collapsed
+                                      ? 'Expand'
+                                      : 'Collapse',
                                 ),
                               ],
                             ),
@@ -19836,7 +19921,7 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
                           child: AnimatedSize(
                             duration: const Duration(milliseconds: 220),
                             curve: Curves.easeOutCubic,
-                            child: _collapsed
+                            child: widget.collapsed
                                 ? const SizedBox.shrink()
                                 : Stack(
                                     children: <Widget>[
