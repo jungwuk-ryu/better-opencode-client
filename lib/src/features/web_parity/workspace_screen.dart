@@ -21027,6 +21027,9 @@ class _CompactPaneSwitcher extends StatelessWidget {
         children: <Widget>[
           Expanded(
             child: _CompactPaneButton(
+              key: const ValueKey<String>(
+                'workspace-compact-pane-session-button',
+              ),
               label: context.wp('Session'),
               selected: activePane == _CompactWorkspacePane.session,
               onTap: () => onChanged(_CompactWorkspacePane.session),
@@ -21035,6 +21038,7 @@ class _CompactPaneSwitcher extends StatelessWidget {
           Container(width: 1, color: surfaces.lineSoft),
           Expanded(
             child: _CompactPaneButton(
+              key: const ValueKey<String>('workspace-compact-pane-side-button'),
               label: sideLabel,
               selected: activePane == _CompactWorkspacePane.side,
               onTap: () => onChanged(_CompactWorkspacePane.side),
@@ -21048,6 +21052,7 @@ class _CompactPaneSwitcher extends StatelessWidget {
 
 class _CompactPaneButton extends StatelessWidget {
   const _CompactPaneButton({
+    super.key,
     required this.label,
     required this.selected,
     required this.onTap,
@@ -26287,27 +26292,33 @@ class _WorkspaceSideTabSwitcher extends StatelessWidget {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
     final switcherPadding = density.inset(6, min: 4);
+    final compact = density.compact;
     return Container(
       key: const ValueKey<String>('workspace-side-tab-switcher'),
       padding: EdgeInsets.all(switcherPadding),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: <Color>[
-            surfaces.panelMuted.withValues(alpha: 0.88),
-            surfaces.panelRaised.withValues(alpha: 0.97),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(22),
+        color: compact ? surfaces.panelRaised.withValues(alpha: 0.96) : null,
+        gradient: compact
+            ? null
+            : LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: <Color>[
+                  surfaces.panelMuted.withValues(alpha: 0.88),
+                  surfaces.panelRaised.withValues(alpha: 0.97),
+                ],
+              ),
+        borderRadius: BorderRadius.circular(compact ? 18 : 22),
         border: Border.all(color: surfaces.lineSoft),
-        boxShadow: <BoxShadow>[
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.16),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
-          ),
-        ],
+        boxShadow: compact
+            ? const <BoxShadow>[]
+            : <BoxShadow>[
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.16),
+                  blurRadius: 20,
+                  offset: const Offset(0, 10),
+                ),
+              ],
       ),
       child: Row(
         children: <Widget>[
@@ -26344,6 +26355,7 @@ class _WorkspaceSideTabButton extends StatelessWidget {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
+    final compact = density.compact;
     final accent = _workspaceSideTabAccent(item.tab, theme, surfaces);
     final titleColor = selected
         ? theme.colorScheme.onSurface
@@ -26357,38 +26369,49 @@ class _WorkspaceSideTabButton extends StatelessWidget {
       child: InkWell(
         key: ValueKey<String>('workspace-side-tab-${item.tab.name}-button'),
         onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(compact ? 14 : 18),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           curve: Curves.easeOutCubic,
-          constraints: BoxConstraints(minHeight: density.inset(78, min: 66)),
+          constraints: BoxConstraints(
+            minHeight: density.inset(compact ? 56 : 78, min: compact ? 50 : 66),
+          ),
           padding: EdgeInsets.fromLTRB(
-            density.inset(AppSpacing.sm),
-            density.inset(AppSpacing.sm),
-            density.inset(AppSpacing.sm),
-            density.inset(AppSpacing.sm),
+            density.inset(compact ? 10 : AppSpacing.sm, min: 8),
+            density.inset(compact ? 10 : AppSpacing.sm, min: 8),
+            density.inset(compact ? 10 : AppSpacing.sm, min: 8),
+            density.inset(compact ? 10 : AppSpacing.sm, min: 8),
           ),
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: selected
-                  ? <Color>[
-                      accent.withValues(alpha: 0.18),
-                      accent.withValues(alpha: 0.07),
-                    ]
-                  : <Color>[
-                      surfaces.panelRaised.withValues(alpha: 0.94),
-                      surfaces.panel.withValues(alpha: 0.72),
-                    ],
-            ),
-            borderRadius: BorderRadius.circular(18),
+            color: compact
+                ? (selected
+                      ? accent.withValues(alpha: 0.14)
+                      : Colors.transparent)
+                : null,
+            gradient: compact
+                ? null
+                : LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: selected
+                        ? <Color>[
+                            accent.withValues(alpha: 0.18),
+                            accent.withValues(alpha: 0.07),
+                          ]
+                        : <Color>[
+                            surfaces.panelRaised.withValues(alpha: 0.94),
+                            surfaces.panel.withValues(alpha: 0.72),
+                          ],
+                  ),
+            borderRadius: BorderRadius.circular(compact ? 14 : 18),
             border: Border.all(
               color: selected
-                  ? accent.withValues(alpha: 0.34)
-                  : Colors.white.withValues(alpha: 0.04),
+                  ? accent.withValues(alpha: compact ? 0.22 : 0.34)
+                  : (compact
+                        ? Colors.transparent
+                        : Colors.white.withValues(alpha: 0.04)),
             ),
-            boxShadow: selected
+            boxShadow: selected && !compact
                 ? <BoxShadow>[
                     BoxShadow(
                       color: accent.withValues(alpha: 0.14),
@@ -26398,89 +26421,150 @@ class _WorkspaceSideTabButton extends StatelessWidget {
                   ]
                 : const <BoxShadow>[],
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Row(
-                children: <Widget>[
-                  Container(
-                    width: density.inset(28, min: 24),
-                    height: density.inset(28, min: 24),
-                    decoration: BoxDecoration(
-                      color: accent.withValues(alpha: selected ? 0.18 : 0.12),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: accent.withValues(alpha: selected ? 0.3 : 0.18),
+          child: compact
+              ? Row(
+                  children: <Widget>[
+                    Container(
+                      width: density.inset(24, min: 22),
+                      height: density.inset(24, min: 22),
+                      decoration: BoxDecoration(
+                        color: accent.withValues(alpha: selected ? 0.16 : 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(item.icon, size: 14, color: accent),
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    Expanded(
+                      child: Text(
+                        item.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: titleColor,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                     ),
-                    child: Icon(item.icon, size: 16, color: accent),
-                  ),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: item.badge == null
-                          ? const SizedBox.shrink()
-                          : FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: AppSpacing.xs,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: selected
-                                      ? accent.withValues(alpha: 0.16)
-                                      : surfaces.panelEmphasis.withValues(
-                                          alpha: 0.58,
-                                        ),
-                                  borderRadius: BorderRadius.circular(
-                                    AppSpacing.pillRadius,
-                                  ),
-                                  border: Border.all(
-                                    color: selected
-                                        ? accent.withValues(alpha: 0.28)
-                                        : surfaces.lineSoft,
-                                  ),
-                                ),
-                                child: Text(
-                                  item.badge!,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: theme.textTheme.labelSmall?.copyWith(
-                                    color: selected ? accent : surfaces.muted,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
+                    if (item.badge != null) ...<Widget>[
+                      const SizedBox(width: AppSpacing.xs),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.xs,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? accent.withValues(alpha: 0.14)
+                              : surfaces.panelEmphasis.withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(
+                            AppSpacing.pillRadius,
+                          ),
+                        ),
+                        child: Text(
+                          item.badge!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: selected ? accent : surfaces.muted,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Row(
+                      children: <Widget>[
+                        Container(
+                          width: density.inset(28, min: 24),
+                          height: density.inset(28, min: 24),
+                          decoration: BoxDecoration(
+                            color: accent.withValues(
+                              alpha: selected ? 0.18 : 0.12,
+                            ),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: accent.withValues(
+                                alpha: selected ? 0.3 : 0.18,
                               ),
                             ),
+                          ),
+                          child: Icon(item.icon, size: 16, color: accent),
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Align(
+                            alignment: Alignment.centerRight,
+                            child: item.badge == null
+                                ? const SizedBox.shrink()
+                                : FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: AppSpacing.xs,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: selected
+                                            ? accent.withValues(alpha: 0.16)
+                                            : surfaces.panelEmphasis.withValues(
+                                                alpha: 0.58,
+                                              ),
+                                        borderRadius: BorderRadius.circular(
+                                          AppSpacing.pillRadius,
+                                        ),
+                                        border: Border.all(
+                                          color: selected
+                                              ? accent.withValues(alpha: 0.28)
+                                              : surfaces.lineSoft,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        item.badge!,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: theme.textTheme.labelSmall
+                                            ?.copyWith(
+                                              color: selected
+                                                  ? accent
+                                                  : surfaces.muted,
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                      ),
+                                    ),
+                                  ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
-              ),
-              SizedBox(height: density.inset(AppSpacing.xs, min: 4)),
-              Text(
-                item.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.titleSmall?.copyWith(
-                  color: titleColor,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.15,
+                    SizedBox(height: density.inset(AppSpacing.xs, min: 4)),
+                    Text(
+                      item.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: titleColor,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.15,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      item.subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: subtitleColor,
+                        fontWeight: selected
+                            ? FontWeight.w700
+                            : FontWeight.w500,
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                item.subtitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: subtitleColor,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
         ),
       ),
     );
@@ -26545,13 +26629,38 @@ class _ReviewPanelState extends State<_ReviewPanel> {
     super.dispose();
   }
 
-  void _resizePreview(double deltaDy, double availableHeight) {
-    final maxPreviewHeight = (availableHeight - _minListHeight).clamp(
-      _minPreviewHeight,
+  double _defaultPreviewHeightForDensity(_WorkspaceDensity density) {
+    return density.compact ? 420 : _defaultPreviewHeight;
+  }
+
+  double _minPreviewHeightForDensity(_WorkspaceDensity density) {
+    return density.compact ? 240 : _minPreviewHeight;
+  }
+
+  double _minListHeightForDensity(_WorkspaceDensity density) {
+    return density.compact ? 132 : _minListHeight;
+  }
+
+  double _resolvedPreviewHeightValue(_WorkspaceDensity density) {
+    if (density.compact && _previewHeight == _defaultPreviewHeight) {
+      return _defaultPreviewHeightForDensity(density);
+    }
+    return _previewHeight;
+  }
+
+  void _resizePreview(
+    double deltaDy,
+    double availableHeight, {
+    required _WorkspaceDensity density,
+  }) {
+    final minPreviewHeight = _minPreviewHeightForDensity(density);
+    final minListHeight = _minListHeightForDensity(density);
+    final maxPreviewHeight = (availableHeight - minListHeight).clamp(
+      minPreviewHeight,
       availableHeight,
     );
-    final next = (_previewHeight - deltaDy).clamp(
-      _minPreviewHeight,
+    final next = (_resolvedPreviewHeightValue(density) - deltaDy).clamp(
+      minPreviewHeight,
       maxPreviewHeight,
     );
     if (next == _previewHeight) {
@@ -26765,11 +26874,13 @@ class _ReviewPanelState extends State<_ReviewPanel> {
         final availableHeight = constraints.maxHeight.isFinite
             ? constraints.maxHeight
             : 700.0;
+        final minPreviewHeight = _minPreviewHeightForDensity(density);
+        final minListHeight = _minListHeightForDensity(density);
         final previewHeight = hasPreview
-            ? _previewHeight.clamp(
-                _minPreviewHeight,
-                (availableHeight - _minListHeight).clamp(
-                  _minPreviewHeight,
+            ? _resolvedPreviewHeightValue(density).clamp(
+                minPreviewHeight,
+                (availableHeight - minListHeight).clamp(
+                  minPreviewHeight,
                   availableHeight,
                 ),
               )
@@ -26864,7 +26975,11 @@ class _ReviewPanelState extends State<_ReviewPanel> {
                       ),
                       behavior: HitTestBehavior.opaque,
                       onVerticalDragUpdate: (details) {
-                        _resizePreview(details.delta.dy, availableHeight);
+                        _resizePreview(
+                          details.delta.dy,
+                          availableHeight,
+                          density: density,
+                        );
                       },
                       child: MouseRegion(
                         cursor: SystemMouseCursors.resizeUpDown,
@@ -27327,11 +27442,12 @@ class _ReviewDiffMetaRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final density = _workspaceDensity(context);
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: 6,
+      padding: EdgeInsets.symmetric(
+        horizontal: density.inset(AppSpacing.sm),
+        vertical: density.compact ? 4 : 6,
       ),
       decoration: BoxDecoration(
         color: surfaces.panelMuted.withValues(alpha: 0.72),
@@ -27359,11 +27475,12 @@ class _ReviewDiffHunkHeaderRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final density = _workspaceDensity(context);
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: 6,
+      padding: EdgeInsets.symmetric(
+        horizontal: density.inset(AppSpacing.sm),
+        vertical: density.compact ? 4 : 6,
       ),
       decoration: BoxDecoration(
         color: theme.colorScheme.primary.withValues(alpha: 0.12),
@@ -27394,11 +27511,12 @@ class _ReviewDiffNoticeRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final density = _workspaceDensity(context);
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: 8,
+      padding: EdgeInsets.symmetric(
+        horizontal: density.inset(AppSpacing.sm),
+        vertical: density.compact ? 6 : 8,
       ),
       decoration: BoxDecoration(
         color: surfaces.warning.withValues(alpha: 0.12),
@@ -27424,6 +27542,7 @@ class _ReviewSplitSideHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final density = _workspaceDensity(context);
     final labelStyle = theme.textTheme.labelMedium?.copyWith(
       color: surfaces.muted,
       fontFamily: 'monospace',
@@ -27432,9 +27551,9 @@ class _ReviewSplitSideHeader extends StatelessWidget {
       children: <Widget>[
         Expanded(
           child: Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.sm,
-              vertical: 6,
+            padding: EdgeInsets.symmetric(
+              horizontal: density.inset(AppSpacing.sm),
+              vertical: density.compact ? 4 : 6,
             ),
             decoration: BoxDecoration(
               color: surfaces.panelMuted.withValues(alpha: 0.62),
@@ -27449,9 +27568,9 @@ class _ReviewSplitSideHeader extends StatelessWidget {
         const SizedBox(width: 1),
         Expanded(
           child: Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.sm,
-              vertical: 6,
+            padding: EdgeInsets.symmetric(
+              horizontal: density.inset(AppSpacing.sm),
+              vertical: density.compact ? 4 : 6,
             ),
             decoration: BoxDecoration(
               color: surfaces.panelMuted.withValues(alpha: 0.62),
@@ -27759,6 +27878,10 @@ class _ReviewUnifiedLineRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final density = _workspaceDensity(context);
+    final lineNumberWidth = density.compact ? 32.0 : 40.0;
+    final verticalPadding = density.compact ? 2.0 : 4.0;
+    final lineTextHeight = density.compact ? 1.25 : 1.45;
     final backgroundColor = switch (line.kind) {
       _ParsedReviewLineKind.insert => surfaces.success.withValues(alpha: 0.08),
       _ParsedReviewLineKind.delete => surfaces.danger.withValues(alpha: 0.08),
@@ -27781,15 +27904,15 @@ class _ReviewUnifiedLineRow extends StatelessWidget {
     );
     return Container(
       color: backgroundColor,
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: 4,
+      padding: EdgeInsets.symmetric(
+        horizontal: density.inset(AppSpacing.sm),
+        vertical: verticalPadding,
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           SizedBox(
-            width: 40,
+            width: lineNumberWidth,
             child: Text(
               line.oldNumber?.toString() ?? '',
               textAlign: TextAlign.right,
@@ -27801,7 +27924,7 @@ class _ReviewUnifiedLineRow extends StatelessWidget {
           ),
           const SizedBox(width: AppSpacing.xs),
           SizedBox(
-            width: 40,
+            width: lineNumberWidth,
             child: Text(
               line.newNumber?.toString() ?? '',
               textAlign: TextAlign.right,
@@ -27823,7 +27946,7 @@ class _ReviewUnifiedLineRow extends StatelessWidget {
               softWrap: false,
               style: theme.textTheme.bodySmall?.copyWith(
                 fontFamily: 'monospace',
-                height: 1.45,
+                height: lineTextHeight,
                 color: textColor,
               ),
             ),
@@ -27857,6 +27980,12 @@ class _ReviewSplitLineCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final density = _workspaceDensity(context);
+    final lineNumberWidth = density.compact ? 40.0 : 46.0;
+    final prefixWidth = density.compact ? 10.0 : 12.0;
+    final commentWidth = density.compact ? 22.0 : 26.0;
+    final verticalPadding = density.compact ? 2.0 : 4.0;
+    final lineTextHeight = density.compact ? 1.25 : 1.45;
     final lineKind = line?.kind;
     final backgroundColor = switch (lineKind) {
       _ParsedReviewLineKind.insert => surfaces.success.withValues(alpha: 0.08),
@@ -27888,16 +28017,16 @@ class _ReviewSplitLineCell extends StatelessWidget {
     final showCommentButton =
         commentTarget != null && _canCommentOnSplitLine(line: line, side: side);
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: 4,
+      padding: EdgeInsets.symmetric(
+        horizontal: density.inset(AppSpacing.sm),
+        vertical: verticalPadding,
       ),
       color: backgroundColor,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           SizedBox(
-            width: 46,
+            width: lineNumberWidth,
             child: Text(
               lineNumber?.toString() ?? '',
               textAlign: TextAlign.right,
@@ -27909,7 +28038,7 @@ class _ReviewSplitLineCell extends StatelessWidget {
           ),
           const SizedBox(width: AppSpacing.xs),
           SizedBox(
-            width: 12,
+            width: prefixWidth,
             child: Text(
               line == null ? '' : prefix,
               style: theme.textTheme.bodySmall?.copyWith(
@@ -27920,7 +28049,7 @@ class _ReviewSplitLineCell extends StatelessWidget {
           ),
           const SizedBox(width: AppSpacing.xs),
           SizedBox(
-            width: 26,
+            width: commentWidth,
             child: !showCommentButton
                 ? const SizedBox.shrink()
                 : _ReviewLineCommentButton(
@@ -27935,7 +28064,7 @@ class _ReviewSplitLineCell extends StatelessWidget {
               softWrap: false,
               style: theme.textTheme.bodySmall?.copyWith(
                 fontFamily: 'monospace',
-                height: 1.45,
+                height: lineTextHeight,
                 color: textColor,
               ),
             ),
@@ -27957,6 +28086,8 @@ class _ReviewLineCommentButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final density = _workspaceDensity(context);
+    final buttonSize = density.compact ? 20.0 : 24.0;
     return Tooltip(
       message: context.wp(
         'Add review comment for {location}',
@@ -27965,9 +28096,12 @@ class _ReviewLineCommentButton extends StatelessWidget {
       child: IconButton(
         key: ValueKey<String>(_reviewCommentTargetButtonKey(target)),
         onPressed: onPressed,
-        icon: const Icon(Icons.add_comment_rounded, size: 16),
+        icon: Icon(Icons.add_comment_rounded, size: density.compact ? 14 : 16),
         padding: EdgeInsets.zero,
-        constraints: const BoxConstraints.tightFor(width: 24, height: 24),
+        constraints: BoxConstraints.tightFor(
+          width: buttonSize,
+          height: buttonSize,
+        ),
         visualDensity: VisualDensity.compact,
         splashRadius: 18,
       ),
