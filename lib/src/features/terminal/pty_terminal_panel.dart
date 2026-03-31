@@ -503,6 +503,8 @@ class _PtyTerminalViewState extends State<_PtyTerminalView> {
   int _cursor = 0;
   int? _lastCols;
   int? _lastRows;
+  bool _specialKeyPanelVisible = false;
+  double _lastObservedKeyboardInset = 0;
 
   bool get _showsSpecialKeyPalette =>
       _showsTerminalSpecialKeyPalette(defaultTargetPlatform);
@@ -752,6 +754,14 @@ class _PtyTerminalViewState extends State<_PtyTerminalView> {
     }
   }
 
+  Future<void> _hideSystemKeyboard() {
+    return SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+  }
+
+  Future<void> _showSystemKeyboard() {
+    return SystemChannels.textInput.invokeMethod<void>('TextInput.show');
+  }
+
   void _scrollTerminalToBottom() {
     if (!_scrollController.hasClients) {
       return;
@@ -776,6 +786,9 @@ class _PtyTerminalViewState extends State<_PtyTerminalView> {
     }
     _scrollTerminalToBottom();
     _triggerTerminalSpecialKeyHapticFeedback();
+    if (_specialKeyPanelVisible) {
+      unawaited(_hideSystemKeyboard());
+    }
   }
 
   void _sendSpecialTerminalChar(
@@ -800,6 +813,9 @@ class _PtyTerminalViewState extends State<_PtyTerminalView> {
     }
     _scrollTerminalToBottom();
     _triggerTerminalSpecialKeyHapticFeedback();
+    if (_specialKeyPanelVisible) {
+      unawaited(_hideSystemKeyboard());
+    }
   }
 
   List<_TerminalSpecialKeyAction> _commonSpecialKeyActions() {
@@ -957,70 +973,33 @@ class _PtyTerminalViewState extends State<_PtyTerminalView> {
     ];
   }
 
-  Future<void> _showSpecialKeyPaletteSheet() async {
+  double _resolvedSpecialKeyPanelHeight(
+    BuildContext context,
+    BoxConstraints constraints,
+  ) {
+    final mediaQuery = MediaQuery.of(context);
+    final desiredHeight =
+        (_lastObservedKeyboardInset > 0
+                ? _lastObservedKeyboardInset
+                : math.min(mediaQuery.size.height * 0.34, 236.0))
+            .toDouble();
+    final maxAllowed = math.max(148.0, constraints.maxHeight - 88.0);
+    return desiredHeight.clamp(148.0, maxAllowed);
+  }
+
+  Future<void> _toggleSpecialKeyPanel() async {
     if (!_showsSpecialKeyPalette) {
       return;
     }
     _focusTerminal();
-    final theme = Theme.of(context);
-    final surfaces = theme.extension<AppSurfaces>()!;
-    await showModalBottomSheet<void>(
-      context: context,
-      useSafeArea: true,
-      isScrollControlled: true,
-      showDragHandle: true,
-      backgroundColor: surfaces.panelRaised,
-      builder: (sheetContext) {
-        final mediaQuery = MediaQuery.of(sheetContext);
-        return SafeArea(
-          top: false,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight: math.min(mediaQuery.size.height * 0.72, 520),
-            ),
-            child: SingleChildScrollView(
-              key: const ValueKey<String>('pty-terminal-special-keys-sheet'),
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.md,
-                0,
-                AppSpacing.md,
-                AppSpacing.lg,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text('Terminal keys', style: theme.textTheme.titleMedium),
-                  const SizedBox(height: AppSpacing.xs),
-                  Text(
-                    'Send function keys, navigation keys, and common control shortcuts from touch devices.',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: surfaces.muted,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  _TerminalSpecialKeySection(
-                    title: 'Common',
-                    actions: _commonSpecialKeyActions(),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  _TerminalSpecialKeySection(
-                    title: 'Navigation',
-                    actions: _navigationSpecialKeyActions(),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  _TerminalSpecialKeySection(
-                    title: 'Function keys',
-                    actions: _functionSpecialKeyActions(),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-    if (mounted) {
-      _focusTerminal();
+    final nextVisible = !_specialKeyPanelVisible;
+    setState(() {
+      _specialKeyPanelVisible = nextVisible;
+    });
+    if (nextVisible) {
+      await _hideSystemKeyboard();
+    } else {
+      await _showSystemKeyboard();
     }
   }
 
@@ -1033,6 +1012,10 @@ class _PtyTerminalViewState extends State<_PtyTerminalView> {
     final connectionTone = _reconnecting
         ? Theme.of(context).colorScheme.primary
         : surfaces.warning;
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    if (keyboardInset > 0) {
+      _lastObservedKeyboardInset = keyboardInset;
+    }
 
     return DecoratedBox(
       decoration: BoxDecoration(color: surfaces.panel),
@@ -1080,7 +1063,8 @@ class _PtyTerminalViewState extends State<_PtyTerminalView> {
                         ),
                         if (_showsSpecialKeyPalette)
                           _TerminalSpecialKeyPaletteButton(
-                            onTap: _showSpecialKeyPaletteSheet,
+                            active: _specialKeyPanelVisible,
+                            onTap: () => unawaited(_toggleSpecialKeyPanel()),
                           ),
                       ],
                     ),
@@ -1090,29 +1074,88 @@ class _PtyTerminalViewState extends State<_PtyTerminalView> {
             ),
           ),
           Expanded(
-            child: TerminalView(
-              _terminal,
-              controller: _terminalController,
-              scrollController: _scrollController,
-              autoResize: true,
-              autofocus: true,
-              focusNode: _terminalFocusNode,
-              backgroundOpacity: 1,
-              theme: _buildTheme(context),
-              textStyle: TerminalStyle(
-                fontFamily: GoogleFonts.ibmPlexMono().fontFamily ?? 'Menlo',
-                fontFamilyFallback: const <String>[
-                  'Menlo',
-                  'Monaco',
-                  'Consolas',
-                  'Courier New',
-                  'monospace',
-                ],
-                fontSize: 13,
-                height: 1.25,
-              ),
-              onSecondaryTapDown: (details, offset) {
-                unawaited(_handleSecondaryTap());
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final specialPanelHeight = _resolvedSpecialKeyPanelHeight(
+                  context,
+                  constraints,
+                );
+                return Column(
+                  children: <Widget>[
+                    Expanded(
+                      child: Listener(
+                        behavior: HitTestBehavior.translucent,
+                        onPointerDown: (_) {
+                          if (!_specialKeyPanelVisible || !mounted) {
+                            return;
+                          }
+                          setState(() {
+                            _specialKeyPanelVisible = false;
+                          });
+                          unawaited(_showSystemKeyboard());
+                        },
+                        child: TerminalView(
+                          _terminal,
+                          controller: _terminalController,
+                          scrollController: _scrollController,
+                          autoResize: true,
+                          autofocus: true,
+                          focusNode: _terminalFocusNode,
+                          backgroundOpacity: 1,
+                          theme: _buildTheme(context),
+                          textStyle: TerminalStyle(
+                            fontFamily:
+                                GoogleFonts.ibmPlexMono().fontFamily ?? 'Menlo',
+                            fontFamilyFallback: const <String>[
+                              'Menlo',
+                              'Monaco',
+                              'Consolas',
+                              'Courier New',
+                              'monospace',
+                            ],
+                            fontSize: 13,
+                            height: 1.25,
+                          ),
+                          onSecondaryTapDown: (details, offset) {
+                            unawaited(_handleSecondaryTap());
+                          },
+                        ),
+                      ),
+                    ),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 180),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      transitionBuilder: (child, animation) {
+                        return FadeTransition(
+                          opacity: animation,
+                          child: SizeTransition(
+                            sizeFactor: animation,
+                            axisAlignment: 1,
+                            child: child,
+                          ),
+                        );
+                      },
+                      child: _showsSpecialKeyPalette && _specialKeyPanelVisible
+                          ? _InlineTerminalSpecialKeyPanel(
+                              key: const ValueKey<String>(
+                                'pty-terminal-special-keys-panel',
+                              ),
+                              height: specialPanelHeight,
+                              commonActions: _commonSpecialKeyActions(),
+                              navigationActions: _navigationSpecialKeyActions(),
+                              functionActions: _functionSpecialKeyActions(),
+                              onClose: () =>
+                                  unawaited(_toggleSpecialKeyPanel()),
+                            )
+                          : const SizedBox.shrink(
+                              key: ValueKey<String>(
+                                'pty-terminal-special-keys-hidden',
+                              ),
+                            ),
+                    ),
+                  ],
+                );
               },
             ),
           ),
@@ -1224,6 +1267,92 @@ class _TerminalSpecialKeySection extends StatelessWidget {
   }
 }
 
+class _InlineTerminalSpecialKeyPanel extends StatelessWidget {
+  const _InlineTerminalSpecialKeyPanel({
+    required this.height,
+    required this.commonActions,
+    required this.navigationActions,
+    required this.functionActions,
+    required this.onClose,
+    super.key,
+  });
+
+  final double height;
+  final List<_TerminalSpecialKeyAction> commonActions;
+  final List<_TerminalSpecialKeyAction> navigationActions;
+  final List<_TerminalSpecialKeyAction> functionActions;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+
+    return Container(
+      height: height,
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: surfaces.panelRaised,
+        border: Border(top: BorderSide(color: surfaces.lineSoft)),
+      ),
+      child: SingleChildScrollView(
+        key: const ValueKey<String>('pty-terminal-special-keys-scroll'),
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.md,
+          AppSpacing.sm,
+          AppSpacing.md,
+          AppSpacing.lg,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text('Terminal keys', style: theme.textTheme.titleMedium),
+                      const SizedBox(height: AppSpacing.xxs),
+                      Text(
+                        'Use touch controls for function keys, navigation keys, and common control shortcuts.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: surfaces.muted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                IconButton(
+                  key: const ValueKey<String>(
+                    'pty-terminal-special-keys-close',
+                  ),
+                  onPressed: onClose,
+                  icon: const Icon(Icons.keyboard_hide_rounded),
+                  tooltip: 'Return to keyboard',
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            _TerminalSpecialKeySection(title: 'Common', actions: commonActions),
+            const SizedBox(height: AppSpacing.md),
+            _TerminalSpecialKeySection(
+              title: 'Navigation',
+              actions: navigationActions,
+            ),
+            const SizedBox(height: AppSpacing.md),
+            _TerminalSpecialKeySection(
+              title: 'Function keys',
+              actions: functionActions,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _TerminalSpecialKeyButton extends StatelessWidget {
   const _TerminalSpecialKeyButton({required this.action});
 
@@ -1251,16 +1380,20 @@ class _TerminalSpecialKeyButton extends StatelessWidget {
 }
 
 class _TerminalSpecialKeyPaletteButton extends StatelessWidget {
-  const _TerminalSpecialKeyPaletteButton({required this.onTap});
+  const _TerminalSpecialKeyPaletteButton({
+    required this.onTap,
+    this.active = false,
+  });
 
   final VoidCallback onTap;
+  final bool active;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     return Material(
-      color: colorScheme.primary.withValues(alpha: 0.14),
+      color: colorScheme.primary.withValues(alpha: active ? 0.22 : 0.14),
       borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
       child: InkWell(
         key: const ValueKey<String>('pty-terminal-special-keys-button'),

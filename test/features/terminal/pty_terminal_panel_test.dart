@@ -8,6 +8,7 @@ import 'package:better_opencode_client/src/features/terminal/pty_models.dart';
 import 'package:better_opencode_client/src/features/terminal/pty_service.dart';
 import 'package:better_opencode_client/src/features/terminal/pty_terminal_panel.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:xterm/xterm.dart';
 
 void main() {
   const profile = ServerProfile(
@@ -125,7 +126,7 @@ void main() {
   });
 
   testWidgets(
-    'shows the mobile special key palette on iOS',
+    'shows the mobile special key panel inline on iOS',
     (tester) async {
       final service = _FakePtyService();
       addTearDown(service.dispose);
@@ -153,13 +154,15 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.byKey(const ValueKey<String>('pty-terminal-special-keys-sheet')),
+        find.byKey(const ValueKey<String>('pty-terminal-special-keys-panel')),
         findsOneWidget,
       );
       expect(
         find.byKey(const ValueKey<String>('pty-terminal-special-key-f10')),
         findsOneWidget,
       );
+      expect(find.byType(BottomSheet), findsNothing);
+      expect(find.byType(TerminalView), findsOneWidget);
     },
     variant: TargetPlatformVariant.only(TargetPlatform.iOS),
   );
@@ -187,10 +190,18 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      await tester.ensureVisible(
+        find.byKey(const ValueKey<String>('pty-terminal-special-key-f10')),
+      );
+      await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const ValueKey<String>('pty-terminal-special-key-f10')),
       );
       await tester.pump();
+      await tester.ensureVisible(
+        find.byKey(const ValueKey<String>('pty-terminal-special-key-ctrl-c')),
+      );
+      await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const ValueKey<String>('pty-terminal-special-key-ctrl-c')),
       );
