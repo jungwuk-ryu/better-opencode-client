@@ -1,14 +1,27 @@
 import 'dart:convert';
 
+import '../features/connection/connection_profile_import.dart';
+
 sealed class AppRouteData {
   const AppRouteData();
 
   factory AppRouteData.parse(String? location) {
     final uri = Uri.tryParse(location ?? '/') ?? Uri(path: '/');
-    final segments = uri.pathSegments.where((segment) => segment.isNotEmpty);
+    final routeSegments = <String>[
+      if (_usesHostAsTopLevelRoute(uri)) uri.host,
+      ...uri.pathSegments.where((segment) => segment.isNotEmpty),
+    ];
+    final segments = routeSegments.where((segment) => segment.isNotEmpty);
     final parts = List<String>.from(segments);
     if (parts.isEmpty) {
       return const HomeRouteData();
+    }
+
+    final topLevelRoute = parts.first.toLowerCase();
+    if (topLevelRoute == 'connect' || topLevelRoute == 'connection') {
+      return HomeRouteData(
+        connectionImport: ConnectionImportRouteData.fromUri(uri),
+      );
     }
 
     final directory = decodeDirectorySegment(parts.first);
@@ -31,8 +44,18 @@ sealed class AppRouteData {
   }
 }
 
+bool _usesHostAsTopLevelRoute(Uri uri) {
+  final scheme = uri.scheme.trim().toLowerCase();
+  if (scheme.isEmpty) {
+    return false;
+  }
+  return scheme != 'http' && scheme != 'https' && uri.host.trim().isNotEmpty;
+}
+
 class HomeRouteData extends AppRouteData {
-  const HomeRouteData();
+  const HomeRouteData({this.connectionImport});
+
+  final ConnectionImportRouteData? connectionImport;
 }
 
 class WorkspaceRouteData extends AppRouteData {

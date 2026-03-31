@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../app/app_controller.dart';
 import '../../app/app_routes.dart';
@@ -13,6 +14,8 @@ import '../../design_system/app_spacing.dart';
 import '../../design_system/app_theme.dart';
 import '../../i18n/locale_controller.dart';
 import '../../i18n/web_parity_localizations.dart';
+import '../connection/connection_profile_import.dart';
+import '../connection/connection_profile_import_sheet.dart';
 import '../projects/project_catalog_service.dart';
 import '../projects/project_models.dart';
 import '../projects/project_store.dart';
@@ -26,6 +29,7 @@ class WebParityHomeScreen extends StatefulWidget {
   const WebParityHomeScreen({
     required this.flavor,
     required this.localeController,
+    this.connectionImport,
     this.projectStore,
     this.projectCatalogService,
     super.key,
@@ -33,6 +37,7 @@ class WebParityHomeScreen extends StatefulWidget {
 
   final AppFlavor flavor;
   final LocaleController localeController;
+  final ConnectionImportRouteData? connectionImport;
   final ProjectStore? projectStore;
   final ProjectCatalogService? projectCatalogService;
 
@@ -53,6 +58,116 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
   String _lastWorkspaceStateSignature = '';
   String _inFlightWorkspaceStateSignature = '';
   int _workspaceStateSyncRevision = 0;
+  final Set<String> _handledConnectionImportPayloads = <String>{};
+
+  void _scheduleConnectionImportPromptIfNeeded(
+    WebParityAppController controller,
+  ) {
+    final routeData = widget.connectionImport;
+    if (controller.loading || routeData == null) {
+      return;
+    }
+    final rawPayload = routeData.rawPayload.trim();
+    if (rawPayload.isEmpty ||
+        !_handledConnectionImportPayloads.add(rawPayload)) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      unawaited(_presentConnectionImport(controller, routeData));
+    });
+  }
+
+  ServerProfile? _existingProfileForImport(
+    WebParityAppController controller,
+    ConnectionImportRouteData routeData,
+  ) {
+    final imported = routeData.payload.toServerProfile();
+    for (final profile in controller.profiles) {
+      if (profile.storageKey == imported.storageKey) {
+        return profile;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _presentConnectionImport(
+    WebParityAppController controller,
+    ConnectionImportRouteData routeData,
+  ) async {
+    final existingProfile = _existingProfileForImport(controller, routeData);
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => FractionallySizedBox(
+        heightFactor: 0.74,
+        child: ConnectionProfileImportSheet(
+          routeData: routeData,
+          existingProfile: existingProfile,
+        ),
+      ),
+    );
+    if (!mounted) {
+      return;
+    }
+    final currentRoute = ModalRoute.of(context)?.settings.name ?? '/';
+    if (confirmed == true && routeData.hasValidPayload) {
+      final savedProfile = await controller.saveProfile(
+        routeData.payload.toServerProfile(id: existingProfile?.id),
+      );
+      if (!mounted) {
+        return;
+      }
+      showAppSnackBar(
+        context,
+        message: existingProfile == null
+            ? context.wp(
+                'Imported "{label}" and refreshed its connection status.',
+                args: <String, Object?>{'label': savedProfile.effectiveLabel},
+              )
+            : context.wp(
+                'Updated "{label}" from the shared connection link.',
+                args: <String, Object?>{'label': savedProfile.effectiveLabel},
+              ),
+        tone: AppSnackBarTone.success,
+      );
+    }
+    if (!mounted || currentRoute == '/') {
+      return;
+    }
+    Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+  }
+
+  String _connectionImportLinkForProfile(ServerProfile profile) {
+    final payload = ConnectionProfileImportPayload.fromProfile(
+      profile,
+      issuedAt: DateTime.now(),
+      expiresIn: const Duration(days: 7),
+    );
+    return buildConnectionImportDeepLink(
+      rawPayload: payload.toToken(),
+    ).toString();
+  }
+
+  Future<void> _copyConnectionImportLink(ServerProfile profile) async {
+    final link = _connectionImportLinkForProfile(profile);
+    await Clipboard.setData(ClipboardData(text: link));
+    if (!mounted) {
+      return;
+    }
+    showAppSnackBar(
+      context,
+      message: context.wp(
+        'Copied a reusable connection link for "{label}".',
+        args: <String, Object?>{'label': profile.effectiveLabel},
+      ),
+      tone: AppSnackBarTone.info,
+    );
+  }
 
   Future<ProjectTarget> _resolveNavigationTarget(
     WebParityAppController controller,
@@ -837,6 +952,7 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
     return AnimatedBuilder(
       animation: controller,
       builder: (context, _) {
+        _scheduleConnectionImportPromptIfNeeded(controller);
         _scheduleWorkspaceStateSyncIfNeeded(controller);
         final selectedProfile = controller.selectedProfile;
         final selectedReport = controller.selectedReport;
@@ -937,6 +1053,11 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
                                         controller,
                                         profile: selectedProfile,
                                       ),
+                                onCopyConnectLink: selectedProfile == null
+                                    ? null
+                                    : () => _copyConnectionImportLink(
+                                        selectedProfile,
+                                      ),
                                 onOpenProjectPicker: selectedProfile == null
                                     ? null
                                     : () => _openProjectPicker(
@@ -965,9 +1086,7 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
                                                 fontWeight: FontWeight.w800,
                                               ),
                                         ),
-                                        const SizedBox(
-                                          height: AppSpacing.xxs,
-                                        ),
+                                        const SizedBox(height: AppSpacing.xxs),
                                         Text(
                                           context.wp(
                                             'Choose a server, inspect its current status, and jump back into the exact workspace layout you were using last.',
@@ -975,13 +1094,9 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
                                           style: Theme.of(context)
                                               .textTheme
                                               .bodyLarge
-                                              ?.copyWith(
-                                                color: surfaces.muted,
-                                              ),
+                                              ?.copyWith(color: surfaces.muted),
                                         ),
-                                        const SizedBox(
-                                          height: AppSpacing.md,
-                                        ),
+                                        const SizedBox(height: AppSpacing.md),
                                         Wrap(
                                           spacing: AppSpacing.sm,
                                           runSpacing: AppSpacing.sm,
@@ -1075,10 +1190,7 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
                                           child: serverListPanel,
                                         ),
                                         const SizedBox(width: AppSpacing.lg),
-                                        Flexible(
-                                          flex: 6,
-                                          child: detailPanel,
-                                        ),
+                                        Flexible(flex: 6, child: detailPanel),
                                       ],
                                     )
                                   : Column(
@@ -1087,20 +1199,15 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
                                           flex: 4,
                                           child: serverListPanel,
                                         ),
-                                        const SizedBox(
-                                          height: AppSpacing.lg,
-                                        ),
-                                        Expanded(
-                                          flex: 6,
-                                          child: detailPanel,
-                                        ),
+                                        const SizedBox(height: AppSpacing.lg),
+                                        Expanded(flex: 6, child: detailPanel),
                                       ],
                                     );
                               if (compactHome) {
-                                final listPanelHeight = (constraints.maxHeight *
-                                        0.7)
-                                    .clamp(320.0, 440.0)
-                                    .toDouble();
+                                final listPanelHeight =
+                                    (constraints.maxHeight * 0.7)
+                                        .clamp(320.0, 440.0)
+                                        .toDouble();
                                 final detailPanelHeight =
                                     (constraints.maxHeight * 1.05)
                                         .clamp(460.0, 760.0)
@@ -1437,6 +1544,7 @@ class _HomeServerDetailPanel extends StatelessWidget {
     required this.projectTargets,
     required this.onResumeWorkspace,
     required this.onEditServer,
+    required this.onCopyConnectLink,
     required this.onOpenProjectPicker,
     required this.onOpenProject,
   });
@@ -1450,6 +1558,7 @@ class _HomeServerDetailPanel extends StatelessWidget {
   final List<ProjectTarget> projectTargets;
   final VoidCallback? onResumeWorkspace;
   final VoidCallback? onEditServer;
+  final VoidCallback? onCopyConnectLink;
   final VoidCallback? onOpenProjectPicker;
   final ValueChanged<ProjectTarget>? onOpenProject;
 
@@ -1496,6 +1605,7 @@ class _HomeServerDetailPanel extends StatelessWidget {
                         paneCount: summary?.paneCount ?? 0,
                         onResumeWorkspace: onResumeWorkspace,
                         onEditServer: onEditServer,
+                        onCopyConnectLink: onCopyConnectLink,
                       ),
                     ],
                   )
@@ -1516,6 +1626,7 @@ class _HomeServerDetailPanel extends StatelessWidget {
                         paneCount: summary?.paneCount ?? 0,
                         onResumeWorkspace: onResumeWorkspace,
                         onEditServer: onEditServer,
+                        onCopyConnectLink: onCopyConnectLink,
                       ),
                     ],
                   ),
@@ -1675,12 +1786,14 @@ class _HomeServerDetailActions extends StatelessWidget {
     required this.paneCount,
     required this.onResumeWorkspace,
     required this.onEditServer,
+    required this.onCopyConnectLink,
   });
 
   final String profileId;
   final int paneCount;
   final VoidCallback? onResumeWorkspace;
   final VoidCallback? onEditServer;
+  final VoidCallback? onCopyConnectLink;
 
   @override
   Widget build(BuildContext context) {
@@ -1706,6 +1819,11 @@ class _HomeServerDetailActions extends StatelessWidget {
           onPressed: onEditServer,
           icon: const Icon(Icons.edit_outlined),
           label: Text(context.wp('Edit Server')),
+        ),
+        OutlinedButton.icon(
+          onPressed: onCopyConnectLink,
+          icon: const Icon(Icons.link_rounded),
+          label: Text(context.wp('Copy Link')),
         ),
       ],
     );

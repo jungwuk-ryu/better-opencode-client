@@ -833,6 +833,7 @@ class WorkspaceController extends ChangeNotifier {
   }
 
   PendingRequestBundle get pendingRequests => _pendingRequests;
+  List<WorkspaceNotificationEntry> get notifications => _notifications;
   QuestionRequestSummary? get currentQuestionRequest =>
       currentQuestionRequestForSession(selectedSessionId);
   QuestionRequestSummary? currentQuestionRequestForSession(String? sessionId) =>

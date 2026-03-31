@@ -14,6 +14,17 @@
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>opencode-remote</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>opencode-remote</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleName</key>
 	<string>better-opencode-client</string>
 	<key>CFBundlePackageType</key>
@@ -31,6 +42,10 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Use the microphone to dictate prompts into OpenCode Remote.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Convert spoken prompts into text so you can keep working one-handed.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

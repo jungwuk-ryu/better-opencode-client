@@ -17,6 +17,8 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:speech_to_text/speech_to_text.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../l10n/app_localizations.dart';
 import '../../app/app_controller.dart';
@@ -37,7 +39,10 @@ import '../chat/prompt_attachment_service.dart';
 import '../chat/session_context_insights.dart';
 import '../commands/command_service.dart';
 import '../files/file_models.dart';
+import '../projects/project_action_models.dart';
 import '../projects/project_catalog_service.dart';
+import '../projects/project_git_models.dart';
+import '../projects/project_git_service.dart';
 import '../projects/project_models.dart';
 import '../requests/pending_request_notification_service.dart';
 import '../requests/pending_request_sound_service.dart';
@@ -52,7 +57,10 @@ import '../terminal/pty_terminal_panel.dart';
 import '../tools/todo_models.dart';
 import 'project_picker_sheet.dart';
 import 'workspace_controller.dart';
+import 'workspace_git_sheet.dart';
+import 'workspace_inbox_sheet.dart';
 import 'workspace_layout_store.dart';
+import 'workspace_project_actions_sheet.dart';
 
 part 'workspace_screen_side_panel.dart';
 
@@ -345,6 +353,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   late final bool _ownsProjectCatalogService;
   late IntegrationStatusService _integrationStatusService;
   late bool _ownsIntegrationStatusService;
+  final ProjectGitService _projectGitService = ProjectGitService();
 
   PendingRequestNotificationService get _pendingRequestNotificationService =>
       widget.pendingRequestNotificationService ??
@@ -1585,6 +1594,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     _chatSearchController.dispose();
     _chatSearchFocusNode.dispose();
     _ptyService?.dispose();
+    _projectGitService.dispose();
     if (_ownsProjectCatalogService) {
       _projectCatalogService.dispose();
     }
@@ -2164,6 +2174,627 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     );
   }
 
+  int _workspaceInboxCount(WorkspaceController controller) {
+    final unseenNotifications = controller.notifications
+        .where((notification) => !notification.viewed)
+        .length;
+    return controller.pendingRequests.questions.length +
+        controller.pendingRequests.permissions.length +
+        unseenNotifications;
+  }
+
+  Future<RepoStatusSnapshot?> _loadProjectActionRepoSnapshot(
+    WorkspaceController controller,
+  ) async {
+    final profile = _profile;
+    final project = controller.project;
+    final sessionId = controller.selectedSessionId?.trim();
+    if (profile == null ||
+        project == null ||
+        sessionId == null ||
+        sessionId.isEmpty) {
+      return null;
+    }
+    try {
+      return await _projectGitService.loadStatus(
+        profile: profile,
+        project: project,
+        sessionId: sessionId,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  List<ProjectServiceSnapshot> _buildProjectRuntimeSnapshots(
+    WorkspaceController controller, {
+    required RepoStatusSnapshot? repoSnapshot,
+  }) {
+    final project = controller.project;
+    final selectedStatus = controller.selectedStatus;
+    final runningPtyCount = _ptySessions
+        .where((session) => session.isRunning)
+        .length;
+    final snapshots = <ProjectServiceSnapshot>[
+      if (project?.commands?.start?.trim().isNotEmpty == true)
+        ProjectServiceSnapshot(
+          id: 'service.start',
+          title: context.wp('Saved Start Command'),
+          summary: context.wp(
+            'Keep the primary remote boot command close so restarting the project stays one tap away.',
+          ),
+          tone: ProjectRuntimeTone.info,
+          command: project!.commands!.start,
+          statusLabel: context.wp('Ready'),
+        ),
+      ProjectServiceSnapshot(
+        id: 'service.session',
+        title: context.wp('Agent Session'),
+        summary: selectedStatus?.message?.trim().isNotEmpty == true
+            ? selectedStatus!.message!.trim()
+            : context.wp(
+                'Track the active session status before jumping into review, triage, or terminal work.',
+              ),
+        tone: switch (selectedStatus?.type.trim().toLowerCase()) {
+          'running' || 'busy' || 'pending' => ProjectRuntimeTone.success,
+          'retry' => ProjectRuntimeTone.warning,
+          'error' => ProjectRuntimeTone.danger,
+          _ => ProjectRuntimeTone.neutral,
+        },
+        statusLabel: _workspaceSessionStatusLabel(
+          context,
+          selectedStatus?.type,
+        ),
+      ),
+      ProjectServiceSnapshot(
+        id: 'service.pty',
+        title: context.wp('Background Terminals'),
+        summary: runningPtyCount == 0
+            ? context.wp(
+                'No PTY tabs are currently active. Open one when you need long-lived terminal work.',
+              )
+            : context.wp(
+                '{count} PTY tabs are still active for this workspace.',
+                args: <String, Object?>{'count': runningPtyCount},
+              ),
+        tone: runningPtyCount == 0
+            ? ProjectRuntimeTone.neutral
+            : ProjectRuntimeTone.success,
+        statusLabel: runningPtyCount == 0
+            ? context.wp('Idle')
+            : context.wp(
+                '{count} live',
+                args: <String, Object?>{'count': runningPtyCount},
+              ),
+      ),
+      if (repoSnapshot != null)
+        ProjectServiceSnapshot(
+          id: 'service.repo',
+          title: context.wp('Repository'),
+          summary: repoSnapshot.clean
+              ? context.wp('Working tree is clean and ready for the next task.')
+              : context.wp(
+                  '{changed} changed • {staged} staged • {unstaged} unstaged',
+                  args: <String, Object?>{
+                    'changed': repoSnapshot.changedFiles.length,
+                    'staged': repoSnapshot.stagedCount,
+                    'unstaged': repoSnapshot.unstagedCount,
+                  },
+                ),
+          tone: repoSnapshot.conflictedCount > 0
+              ? ProjectRuntimeTone.danger
+              : repoSnapshot.clean
+              ? ProjectRuntimeTone.success
+              : ProjectRuntimeTone.warning,
+          statusLabel: repoSnapshot.currentBranch.isEmpty
+              ? context.wp('Unknown')
+              : repoSnapshot.currentBranch,
+        ),
+    ];
+    return List<ProjectServiceSnapshot>.unmodifiable(snapshots);
+  }
+
+  List<ProjectActionSection> _buildProjectActionSections(
+    WorkspaceController controller, {
+    required RepoStatusSnapshot? repoSnapshot,
+  }) {
+    final project = controller.project;
+    final session = controller.selectedSession;
+    final sessionId = controller.selectedSessionId?.trim();
+    final sessionSelected = sessionId != null && sessionId.isNotEmpty;
+    final inboxCount = _workspaceInboxCount(controller);
+    final startCommand = project?.commands?.start?.trim();
+    final startEnabled = sessionSelected && (startCommand?.isNotEmpty ?? false);
+    final repoBadge = repoSnapshot == null || repoSnapshot.clean
+        ? null
+        : context.wp(
+            '{count}',
+            args: <String, Object?>{'count': repoSnapshot.changedFiles.length},
+          );
+    return <ProjectActionSection>[
+      ProjectActionSection(
+        id: 'actions.quick',
+        title: context.wp('Quick Actions'),
+        subtitle: context.wp(
+          'Keep the high-frequency remote tasks one tap away on mobile.',
+        ),
+        items: <ProjectActionItem>[
+          ProjectActionItem(
+            id: 'git.workflow',
+            kind: ProjectActionKind.git,
+            icon: Icons.commit_rounded,
+            title: context.wp('Git Workflow'),
+            subtitle: repoSnapshot?.currentBranch.isNotEmpty == true
+                ? repoSnapshot!.currentBranch
+                : context.wp(
+                    'Review, stage, commit, push, pull, and switch branches.',
+                  ),
+            description: context.wp(
+              'Open the focused repository sheet with changed files, PR status, and terminal fallback.',
+            ),
+            badge: repoBadge,
+          ),
+          ProjectActionItem(
+            id: 'inbox.open',
+            kind: ProjectActionKind.inbox,
+            icon: Icons.inbox_outlined,
+            title: context.wp('Inbox'),
+            subtitle: inboxCount == 0
+                ? context.wp('No pending triage')
+                : context.wp(
+                    '{count} items need attention',
+                    args: <String, Object?>{'count': inboxCount},
+                  ),
+            description: context.wp(
+              'Questions, approvals, and unread activity stay grouped in one async queue.',
+            ),
+            badge: inboxCount == 0
+                ? null
+                : context.wp(
+                    '{count}',
+                    args: <String, Object?>{'count': inboxCount},
+                  ),
+            attention: inboxCount > 0,
+          ),
+          ProjectActionItem(
+            id: 'runtime.start',
+            kind: ProjectActionKind.command,
+            icon: Icons.play_arrow_rounded,
+            title: context.wp('Run Start Command'),
+            subtitle: startEnabled
+                ? context.wp('Launch the saved project boot command')
+                : context.wp('Select a session to run the saved boot command'),
+            description: context.wp(
+              'Use the stored project start command instead of retyping the same terminal step.',
+            ),
+            commandPreview: startCommand,
+            enabled: startEnabled,
+          ),
+          ProjectActionItem(
+            id: 'terminal.toggle',
+            kind: ProjectActionKind.terminal,
+            icon: _terminalPanelOpen
+                ? Icons.terminal_rounded
+                : Icons.terminal_outlined,
+            title: _terminalPanelOpen
+                ? context.wp('Hide Terminal')
+                : context.wp('Show Terminal'),
+            subtitle: context.wp(
+              'Use PTY tabs for long-running or fallback work.',
+            ),
+          ),
+          ProjectActionItem(
+            id: 'terminal.new',
+            kind: ProjectActionKind.terminal,
+            icon: Icons.add_box_outlined,
+            title: context.wp('New PTY Terminal'),
+            subtitle: context.wp(
+              'Spin up a fresh long-lived shell tab for this project.',
+            ),
+          ),
+        ],
+      ),
+      ProjectActionSection(
+        id: 'actions.session',
+        title: context.wp('Session'),
+        subtitle: context.wp(
+          'Move quickly between operating, summarizing, and sharing the current session.',
+        ),
+        items: <ProjectActionItem>[
+          ProjectActionItem(
+            id: 'session.new',
+            kind: ProjectActionKind.session,
+            icon: Icons.chat_bubble_outline_rounded,
+            title: context.wp('New Session'),
+            subtitle: context.wp('Start a fresh thread in this project.'),
+          ),
+          ProjectActionItem(
+            id: 'session.share',
+            kind: ProjectActionKind.link,
+            icon: session?.shareUrl?.trim().isNotEmpty == true
+                ? Icons.link_off_rounded
+                : Icons.ios_share_rounded,
+            title: session?.shareUrl?.trim().isNotEmpty == true
+                ? context.wp('Unshare Session')
+                : context.wp('Share Session'),
+            subtitle: context.wp('Create or remove a view-only handoff link.'),
+            enabled: sessionSelected,
+          ),
+          ProjectActionItem(
+            id: 'session.compact',
+            kind: ProjectActionKind.session,
+            icon: Icons.compress_rounded,
+            title: context.wp('Compact Session'),
+            subtitle: context.wp(
+              'Summarize the active context before it grows too large.',
+            ),
+            enabled: sessionSelected,
+          ),
+          ProjectActionItem(
+            id: 'session.refresh',
+            kind: ProjectActionKind.navigation,
+            icon: Icons.refresh_rounded,
+            title: context.wp('Refresh Session Timeline'),
+            subtitle: context.wp(
+              'Force a fresh fetch of the selected session history.',
+            ),
+            enabled: sessionSelected,
+          ),
+          ProjectActionItem(
+            id: 'permissions.toggle',
+            kind: ProjectActionKind.inbox,
+            icon: controller.autoAcceptsPermissionForSession(sessionId)
+                ? Icons.verified_user_rounded
+                : Icons.policy_outlined,
+            title: controller.autoAcceptsPermissionForSession(sessionId)
+                ? context.wp('Disable Permission Auto-Accept')
+                : context.wp('Enable Permission Auto-Accept'),
+            subtitle: context.wp(
+              'Control whether this session self-approves permissions.',
+            ),
+          ),
+        ],
+      ),
+      ProjectActionSection(
+        id: 'actions.panels',
+        title: context.wp('Workspace Panels'),
+        subtitle: context.wp(
+          'Jump directly into the review, files, and context surfaces from a single launcher.',
+        ),
+        items: <ProjectActionItem>[
+          ProjectActionItem(
+            id: 'panel.review',
+            kind: ProjectActionKind.review,
+            icon: Icons.rate_review_outlined,
+            title: context.wp('Open Review'),
+            subtitle: context.wp('Inspect changed files and diffs.'),
+            badge: controller.reviewStatuses.isEmpty
+                ? null
+                : context.wp(
+                    '{count}',
+                    args: <String, Object?>{
+                      'count': controller.reviewStatuses.length,
+                    },
+                  ),
+          ),
+          ProjectActionItem(
+            id: 'panel.files',
+            kind: ProjectActionKind.navigation,
+            icon: Icons.folder_open_outlined,
+            title: context.wp('Open Files'),
+            subtitle: context.wp(
+              'Browse the project tree and file search results.',
+            ),
+          ),
+          ProjectActionItem(
+            id: 'panel.context',
+            kind: ProjectActionKind.navigation,
+            icon: Icons.auto_awesome_mosaic_outlined,
+            title: context.wp('Open Context'),
+            subtitle: context.wp(
+              'Inspect context usage and request composition.',
+            ),
+          ),
+        ],
+      ),
+    ];
+  }
+
+  List<RecentRemoteLink> _buildProjectRemoteLinks(
+    WorkspaceController controller,
+  ) {
+    final profile = _profile;
+    final session = controller.selectedSession;
+    if (profile == null) {
+      return const <RecentRemoteLink>[];
+    }
+    return <RecentRemoteLink>[
+      RecentRemoteLink(
+        id: 'server.base',
+        label: context.wp('OpenCode Server'),
+        url: profile.normalizedBaseUrl,
+        source: context.wp('Server'),
+        supportingText: context.wp(
+          'Open the server root in an external browser.',
+        ),
+      ),
+      if (session?.shareUrl?.trim().isNotEmpty == true)
+        RecentRemoteLink(
+          id: 'session.share',
+          label: context.wp('Shared Session'),
+          url: session!.shareUrl!.trim(),
+          source: context.wp('Session'),
+          supportingText: context.wp(
+            'Re-open the current session handoff link.',
+          ),
+        ),
+      if (profile.normalizedBaseUrl.trim().isNotEmpty)
+        RecentRemoteLink(
+          id: 'server.health',
+          label: context.wp('Health Check'),
+          url: '${profile.normalizedBaseUrl}/global/health',
+          source: context.wp('Diagnostics'),
+          supportingText: context.wp(
+            'Quickly verify the remote health endpoint.',
+          ),
+        ),
+    ];
+  }
+
+  List<PortForwardPreset> _buildProjectPortPresets(ProjectTarget? project) {
+    final command = project?.commands?.start?.trim();
+    if (command == null || command.isEmpty) {
+      return const <PortForwardPreset>[];
+    }
+    final matches = <int>{};
+    for (final match in RegExp(
+      r'(?:--port(?:=|\s+)|-p\s+|PORT=|localhost:|127\.0\.0\.1:)(\d{2,5})',
+      caseSensitive: false,
+    ).allMatches(command)) {
+      final port = int.tryParse(match.group(1) ?? '');
+      if (port != null) {
+        matches.add(port);
+      }
+    }
+    return matches
+        .take(4)
+        .map((port) {
+          return PortForwardPreset(
+            id: 'port.$port',
+            label: context.wp(
+              'Forward {port}',
+              args: <String, Object?>{'port': port},
+            ),
+            localPort: port,
+            remotePort: port,
+            description: context.wp(
+              'Reusable SSH command for the detected dev port.',
+            ),
+          );
+        })
+        .toList(growable: false);
+  }
+
+  Future<void> _openRemoteProjectLink(RecentRemoteLink link) async {
+    final uri = Uri.tryParse(link.url);
+    if (uri == null) {
+      await Clipboard.setData(ClipboardData(text: link.url));
+      if (!mounted) {
+        return;
+      }
+      _showSnackBar(
+        context.wp(
+          'Copied the link instead because it could not be opened directly.',
+        ),
+        tone: AppSnackBarTone.info,
+      );
+      return;
+    }
+    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (launched || !mounted) {
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: link.url));
+    if (!mounted) {
+      return;
+    }
+    _showSnackBar(
+      context.wp(
+        'Copied the remote link because the external launcher was unavailable.',
+      ),
+      tone: AppSnackBarTone.info,
+    );
+  }
+
+  Future<void> _copyPortPresetCommand(PortForwardPreset preset) async {
+    await Clipboard.setData(ClipboardData(text: preset.command));
+    if (!mounted) {
+      return;
+    }
+    _showSnackBar(
+      context.wp(
+        'Copied the port forward command for {label}.',
+        args: <String, Object?>{'label': preset.label},
+      ),
+      tone: AppSnackBarTone.info,
+    );
+  }
+
+  Future<void> _openInboxSheet(WorkspaceController controller) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => FractionallySizedBox(
+        heightFactor: 0.86,
+        child: WorkspaceInboxSheet(
+          sessions: controller.sessions,
+          statuses: controller.statuses,
+          pendingRequests: controller.pendingRequests,
+          notifications: controller.notifications,
+          onOpenSession: (sessionId) => _selectSessionInPlace(
+            controller,
+            sessionId,
+            compact: _isCompactLayout(this.context),
+          ),
+          onAllowPermission: (requestId) =>
+              controller.replyToPermission(requestId, 'allow'),
+          onRejectPermission: (requestId) =>
+              controller.replyToPermission(requestId, 'reject'),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openGitWorkflowSheet(WorkspaceController controller) async {
+    final profile = _profile;
+    final project = controller.project;
+    if (profile == null || project == null) {
+      _showSnackBar(
+        context.wp(
+          'Wait for the project to load before opening Git workflow actions.',
+        ),
+        tone: AppSnackBarTone.info,
+      );
+      return;
+    }
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => FractionallySizedBox(
+        heightFactor: 0.88,
+        child: WorkspaceGitSheet(
+          profile: profile,
+          project: project,
+          sessionId: controller.selectedSessionId,
+          service: _projectGitService,
+          onOpenTerminalFallback: _toggleTerminalPanel,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _handleProjectActionSelection(
+    WorkspaceController controller,
+    ProjectActionItem action,
+  ) async {
+    switch (action.id) {
+      case 'git.workflow':
+        await _openGitWorkflowSheet(controller);
+        return;
+      case 'inbox.open':
+        await _openInboxSheet(controller);
+        return;
+      case 'runtime.start':
+        final command = controller.project?.commands?.start?.trim();
+        if (command != null && command.isNotEmpty) {
+          await controller.runTerminalCommand(command);
+        }
+        return;
+      case 'terminal.toggle':
+        await _toggleTerminalPanel();
+        return;
+      case 'terminal.new':
+        await _createPtySession();
+        return;
+      case 'session.new':
+        await _createNewSession(controller);
+        return;
+      case 'session.share':
+        if (controller.selectedSession?.shareUrl?.trim().isNotEmpty == true) {
+          await _unshareSelectedSession(controller);
+        } else {
+          await _shareSelectedSession(controller);
+        }
+        return;
+      case 'session.compact':
+        await _summarizeSelectedSession(controller);
+        return;
+      case 'session.refresh':
+        await controller.refreshTimelineSession(controller.selectedSessionId);
+        return;
+      case 'permissions.toggle':
+        await _togglePermissionAutoAcceptForController(
+          controller,
+          sessionId: controller.selectedSessionId,
+        );
+        return;
+      case 'panel.review':
+        _toggleSideTab(
+          controller,
+          WorkspaceSideTab.review,
+          compact: _isCompactLayout(context),
+        );
+        return;
+      case 'panel.files':
+        _toggleSideTab(
+          controller,
+          WorkspaceSideTab.files,
+          compact: _isCompactLayout(context),
+        );
+        return;
+      case 'panel.context':
+        _toggleSideTab(
+          controller,
+          WorkspaceSideTab.context,
+          compact: _isCompactLayout(context),
+        );
+        return;
+      default:
+        return;
+    }
+  }
+
+  Future<void> _openProjectActionsSheet(WorkspaceController controller) async {
+    final profile = _profile;
+    final project = controller.project;
+    if (profile == null || project == null) {
+      _showSnackBar(
+        context.wp(
+          'Wait for the workspace project to finish loading before opening project actions.',
+        ),
+        tone: AppSnackBarTone.info,
+      );
+      return;
+    }
+    final repoSnapshot = await _loadProjectActionRepoSnapshot(controller);
+    if (!mounted) {
+      return;
+    }
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => FractionallySizedBox(
+        heightFactor: 0.9,
+        child: WorkspaceProjectActionsSheet(
+          profileLabel: profile.effectiveLabel,
+          project: project,
+          session: controller.selectedSession,
+          status: controller.selectedStatus,
+          sections: _buildProjectActionSections(
+            controller,
+            repoSnapshot: repoSnapshot,
+          ),
+          serviceSnapshots: _buildProjectRuntimeSnapshots(
+            controller,
+            repoSnapshot: repoSnapshot,
+          ),
+          recentLinks: _buildProjectRemoteLinks(controller),
+          portPresets: _buildProjectPortPresets(project),
+          onSelectAction: (action) =>
+              _handleProjectActionSelection(controller, action),
+          onOpenLink: _openRemoteProjectLink,
+          onSelectPortPreset: _copyPortPresetCommand,
+        ),
+      ),
+    );
+  }
+
   List<_WorkspaceCommandPaletteCommand> _buildCommandPaletteCommands(
     WebParityAppController appController,
     WorkspaceController controller, {
@@ -2216,6 +2847,39 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         shortcut: 'mod+o',
         onSelected: () async {
           await _openProjectPickerShortcut();
+        },
+      ),
+      _WorkspaceCommandPaletteCommand(
+        id: 'project.actions',
+        title: context.wp('Project Actions'),
+        category: context.wp('Project'),
+        description: context.wp(
+          'Open the mobile-friendly remote operations launcher for this workspace.',
+        ),
+        onSelected: () async {
+          await _openProjectActionsSheet(controller);
+        },
+      ),
+      _WorkspaceCommandPaletteCommand(
+        id: 'project.git',
+        title: context.wp('Git Workflow'),
+        category: context.wp('Project'),
+        description: context.wp(
+          'Review repository state, stage files, commit, sync, and switch branches.',
+        ),
+        onSelected: () async {
+          await _openGitWorkflowSheet(controller);
+        },
+      ),
+      _WorkspaceCommandPaletteCommand(
+        id: 'project.inbox',
+        title: context.wp('Open Inbox'),
+        category: context.wp('Project'),
+        description: context.wp(
+          'Triage questions, approvals, and unread workspace activity.',
+        ),
+        onSelected: () async {
+          await _openInboxSheet(controller);
         },
       ),
       _WorkspaceCommandPaletteCommand(
@@ -5420,6 +6084,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       submittedDraftEpoch: _submittedDraftEpochForScope(scopeKey),
       recentSubmittedDraft: _recentSubmittedDraftForScope(scopeKey),
       onOpenMcpPicker: () => _openMcpPicker(controller),
+      onOpenProjectActions: () => _openProjectActionsSheet(controller),
+      onOpenInbox: () => _openInboxSheet(controller),
       onToggleTerminal: _toggleTerminalPanel,
       onSelectSideTab: (tab) {
         unawaited(() async {
@@ -5794,6 +6460,12 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                               onOpenCommandPalette: () {
                                 unawaited(_openCommandPalette(controller));
                               },
+                              onOpenProjectActions: () {
+                                unawaited(_openProjectActionsSheet(controller));
+                              },
+                              onOpenInbox: () {
+                                unawaited(_openInboxSheet(controller));
+                              },
                               onOpenContextPanel: () {
                                 _openSideTab(
                                   controller,
@@ -5804,6 +6476,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                               onOpenMcpPicker: () {
                                 unawaited(_openMcpPicker(controller));
                               },
+                              inboxCount: _workspaceInboxCount(controller),
                               onOpenChatSearch: _openChatSearch,
                               onCloseChatSearch: _closeChatSearch,
                               onChatSearchChanged: _handleChatSearchChanged,
@@ -6230,7 +6903,10 @@ class _WorkspaceTopBar extends StatelessWidget {
     required this.chatSearchStatusText,
     required this.chatSearchNavigationEnabled,
     required this.onOpenCommandPalette,
+    required this.onOpenProjectActions,
+    required this.onOpenInbox,
     required this.onOpenMcpPicker,
+    required this.inboxCount,
     required this.onOpenChatSearch,
     required this.onCloseChatSearch,
     required this.onChatSearchChanged,
@@ -6269,7 +6945,10 @@ class _WorkspaceTopBar extends StatelessWidget {
   final String chatSearchStatusText;
   final bool chatSearchNavigationEnabled;
   final VoidCallback onOpenCommandPalette;
+  final VoidCallback onOpenProjectActions;
+  final VoidCallback onOpenInbox;
   final VoidCallback onOpenMcpPicker;
+  final int inboxCount;
   final VoidCallback onOpenChatSearch;
   final VoidCallback onCloseChatSearch;
   final ValueChanged<String> onChatSearchChanged;
@@ -6297,7 +6976,6 @@ class _WorkspaceTopBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
-    final keyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
     final density = _workspaceDensity(context);
     final desktopHorizontal = density.inset(AppSpacing.md, min: AppSpacing.sm);
     final desktopVertical = density.inset(AppSpacing.sm, min: AppSpacing.xs);
@@ -6356,6 +7034,25 @@ class _WorkspaceTopBar extends StatelessWidget {
               label: context.wp('Command palette'),
               icon: Icons.apps_rounded,
               onSelected: onOpenCommandPalette,
+            ),
+            _SessionOverflowMenuAction(
+              id: 'project-actions',
+              label: context.wp('Project Actions'),
+              icon: Icons.flash_on_outlined,
+              onSelected: onOpenProjectActions,
+            ),
+            _SessionOverflowMenuAction(
+              id: 'inbox',
+              label: inboxCount == 0
+                  ? context.wp('Inbox')
+                  : context.wp(
+                      'Inbox ({count})',
+                      args: <String, Object?>{'count': inboxCount},
+                    ),
+              icon: inboxCount == 0
+                  ? Icons.inbox_outlined
+                  : Icons.mark_email_unread_outlined,
+              onSelected: onOpenInbox,
             ),
             _SessionOverflowMenuAction(
               id: 'mcp',
@@ -6468,6 +7165,29 @@ class _WorkspaceTopBar extends StatelessWidget {
                 ),
           onTap: onToggleSidePanel!,
         ),
+      _WorkspaceActionChip(
+        key: const ValueKey<String>('workspace-project-actions-button'),
+        label: context.wp('Actions'),
+        icon: Icons.flash_on_outlined,
+        enabled: true,
+        tooltip: context.wp('Open the project actions launcher'),
+        onTap: onOpenProjectActions,
+      ),
+      _WorkspaceActionChip(
+        key: const ValueKey<String>('workspace-inbox-button'),
+        label: inboxCount == 0
+            ? context.wp('Inbox')
+            : context.wp(
+                'Inbox ({count})',
+                args: <String, Object?>{'count': inboxCount},
+              ),
+        icon: inboxCount == 0
+            ? Icons.inbox_outlined
+            : Icons.mark_email_unread_outlined,
+        enabled: true,
+        tooltip: context.wp('Open questions, approvals, and unread activity'),
+        onTap: onOpenInbox,
+      ),
       if (onSplitSessionPane != null)
         _WorkspaceActionChip(
           key: const ValueKey<String>('workspace-split-session-pane-button'),
@@ -6650,6 +7370,31 @@ class _WorkspaceTopBar extends StatelessWidget {
                       icon: const Icon(Icons.apps_rounded),
                       tooltip:
                           '${context.wp('Command palette')} (${_formatWorkspaceShortcutLabel('mod+k')})',
+                    ),
+                    IconButton(
+                      key: const ValueKey<String>(
+                        'workspace-project-actions-icon-button',
+                      ),
+                      onPressed: onOpenProjectActions,
+                      icon: const Icon(Icons.flash_on_outlined),
+                      tooltip: context.wp('Project Actions'),
+                    ),
+                    IconButton(
+                      key: const ValueKey<String>(
+                        'workspace-inbox-icon-button',
+                      ),
+                      onPressed: onOpenInbox,
+                      icon: Icon(
+                        inboxCount == 0
+                            ? Icons.inbox_outlined
+                            : Icons.mark_email_unread_outlined,
+                      ),
+                      tooltip: inboxCount == 0
+                          ? context.wp('Inbox')
+                          : context.wp(
+                              'Inbox ({count})',
+                              args: <String, Object?>{'count': inboxCount},
+                            ),
                     ),
                     IconButton(
                       key: const ValueKey<String>(
@@ -7289,7 +8034,6 @@ class _SessionOverflowMenuAction {
     required this.label,
     required this.icon,
     required this.onSelected,
-    this.checked = false,
     this.destructive = false,
     this.enabled = true,
   });
@@ -7298,7 +8042,6 @@ class _SessionOverflowMenuAction {
   final String label;
   final IconData icon;
   final VoidCallback? onSelected;
-  final bool checked;
   final bool destructive;
   final bool enabled;
 }
@@ -7519,11 +8262,9 @@ class _SessionOverflowMenuItem extends StatelessWidget {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
     final destructiveColor = surfaces.danger;
-    final accentColor = theme.colorScheme.primary;
     final itemColor = action.destructive
         ? destructiveColor
         : theme.colorScheme.onSurface;
-    final iconTone = action.checked ? accentColor : itemColor;
 
     return Opacity(
       opacity: action.enabled ? 1 : 0.44,
@@ -7548,15 +8289,15 @@ class _SessionOverflowMenuItem extends StatelessWidget {
                   width: 30,
                   height: 30,
                   decoration: BoxDecoration(
-                    color: (action.checked ? accentColor : itemColor)
-                        .withValues(alpha: action.destructive ? 0.12 : 0.14),
+                    color: itemColor.withValues(
+                      alpha: action.destructive ? 0.12 : 0.14,
+                    ),
                     borderRadius: BorderRadius.circular(11),
                     border: Border.all(
-                      color: (action.checked ? accentColor : itemColor)
-                          .withValues(alpha: 0.16),
+                      color: itemColor.withValues(alpha: 0.16),
                     ),
                   ),
-                  child: Icon(action.icon, size: 16, color: iconTone),
+                  child: Icon(action.icon, size: 16, color: itemColor),
                 ),
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(
@@ -7569,25 +8310,6 @@ class _SessionOverflowMenuItem extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (action.checked)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.xs,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: accentColor.withValues(alpha: 0.16),
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(
-                        color: accentColor.withValues(alpha: 0.24),
-                      ),
-                    ),
-                    child: Icon(
-                      Icons.check_rounded,
-                      size: 14,
-                      color: accentColor,
-                    ),
-                  ),
               ],
             ),
           ),
@@ -11222,6 +11944,17 @@ String _workspaceMcpStatusLabel(String status) {
   };
 }
 
+String _workspaceSessionStatusLabel(BuildContext context, String? status) {
+  return switch (status?.trim().toLowerCase()) {
+    'running' || 'busy' || 'pending' => context.wp('Active'),
+    'retry' => context.wp('Needs attention'),
+    'error' => context.wp('Error'),
+    'idle' || null || '' => context.wp('Idle'),
+    final other when other.isNotEmpty => other.replaceAll('_', ' '),
+    _ => context.wp('Idle'),
+  };
+}
+
 _WorkspaceMcpStatusMeta _workspaceMcpStatusMeta(
   BuildContext context,
   ThemeData theme,
@@ -11666,11 +12399,7 @@ class _WorkspaceSidebar extends StatefulWidget {
 }
 
 void _triggerProjectReorderHapticFeedback() {
-  unawaited(
-    HapticFeedback.selectionClick().catchError((Object _, StackTrace __) {
-      return;
-    }),
-  );
+  unawaited(HapticFeedback.selectionClick().catchError((_) {}));
 }
 
 class _HapticDelayedMultiDragGestureRecognizer
@@ -11687,10 +12416,8 @@ class _HapticDelayedMultiDragGestureRecognizer
 class _HapticReorderableDelayedDragStartListener
     extends ReorderableDelayedDragStartListener {
   const _HapticReorderableDelayedDragStartListener({
-    super.key,
     required super.child,
     required super.index,
-    super.enabled,
   });
 
   @override
@@ -14219,7 +14946,6 @@ class _CompactSessionActivityBar extends StatelessWidget {
     this.onOpenPermission,
     this.onOpenTodos,
     this.onOpenSubAgents,
-    super.key,
   });
 
   final int todoCount;
@@ -17766,6 +18492,8 @@ class _PromptComposer extends StatefulWidget {
     required this.onDeleteQueuedPrompt,
     required this.onSendQueuedPromptNow,
     required this.onOpenMcpPicker,
+    this.onOpenProjectActions,
+    this.onOpenInbox,
     required this.onToggleTerminal,
     required this.onSelectSideTab,
     required this.onSubmit,
@@ -17819,6 +18547,8 @@ class _PromptComposer extends StatefulWidget {
   final Future<void> Function(String queuedPromptId) onDeleteQueuedPrompt;
   final Future<void> Function(String queuedPromptId) onSendQueuedPromptNow;
   final Future<void> Function() onOpenMcpPicker;
+  final Future<void> Function()? onOpenProjectActions;
+  final Future<void> Function()? onOpenInbox;
   final Future<void> Function() onToggleTerminal;
   final ValueChanged<WorkspaceSideTab> onSelectSideTab;
   final Future<void> Function(WorkspacePromptDispatchMode? mode) onSubmit;
@@ -17838,6 +18568,7 @@ class _PromptComposerState extends State<_PromptComposer> {
   static const Duration _restoredDraftGuardDuration = Duration(seconds: 1);
 
   final FocusNode _focusNode = FocusNode();
+  final SpeechToText _speechToText = SpeechToText();
   Timer? _restoredDraftGuardTimer;
   String? _guardedRestoredDraft;
   bool _clearingRestoredDraft = false;
@@ -17845,9 +18576,21 @@ class _PromptComposerState extends State<_PromptComposer> {
   String? _savedHistoryDraft;
   bool _applyingPromptHistory = false;
   bool _draggingFiles = false;
+  bool _voiceInitialized = false;
+  bool _voiceAvailable = false;
+  bool _voiceListening = false;
+  String? _voiceBaseText;
 
   bool get _canSubmit =>
       widget.controller.text.trim().isNotEmpty || widget.attachments.isNotEmpty;
+
+  bool get _supportsVoiceInput {
+    if (kIsWeb) {
+      return false;
+    }
+    final platform = Theme.of(context).platform;
+    return platform == TargetPlatform.android || platform == TargetPlatform.iOS;
+  }
 
   bool _usesDesktopEnterToSubmit(TargetPlatform platform) {
     switch (platform) {
@@ -18037,6 +18780,10 @@ class _PromptComposerState extends State<_PromptComposer> {
       _clearRestoredDraftGuard();
       _resetPromptHistoryNavigation();
       _draggingFiles = false;
+      if (_voiceListening) {
+        unawaited(_speechToText.stop());
+        _voiceListening = false;
+      }
       _dismissFocus();
     }
     if ((widget.submitting || widget.pickingAttachments) && _draggingFiles) {
@@ -18056,6 +18803,7 @@ class _PromptComposerState extends State<_PromptComposer> {
   void dispose() {
     _restoredDraftGuardTimer?.cancel();
     widget.controller.removeListener(_handleComposerChanged);
+    unawaited(_speechToText.cancel());
     _focusNode.dispose();
     super.dispose();
   }
@@ -18122,6 +18870,138 @@ class _PromptComposerState extends State<_PromptComposer> {
       _focusNode.unfocus();
     }
     FocusManager.instance.primaryFocus?.unfocus();
+  }
+
+  Future<bool> _ensureVoiceInputReady() async {
+    if (!_supportsVoiceInput) {
+      return false;
+    }
+    if (_voiceInitialized) {
+      return _voiceAvailable;
+    }
+    try {
+      final available = await _speechToText.initialize(
+        onStatus: (status) {
+          if (!mounted) {
+            return;
+          }
+          setState(() {
+            _voiceListening = status.trim().toLowerCase() == 'listening';
+          });
+        },
+        onError: (error) {
+          if (!mounted) {
+            return;
+          }
+          setState(() {
+            _voiceListening = false;
+          });
+          _showVoiceMessage(error.errorMsg);
+        },
+      );
+      if (!mounted) {
+        return available;
+      }
+      setState(() {
+        _voiceInitialized = true;
+        _voiceAvailable = available;
+      });
+      return available;
+    } catch (error) {
+      if (!mounted) {
+        return false;
+      }
+      setState(() {
+        _voiceInitialized = true;
+        _voiceAvailable = false;
+      });
+      _showVoiceMessage(error.toString());
+      return false;
+    }
+  }
+
+  void _showVoiceMessage(String message) {
+    final normalized = message.trim();
+    if (normalized.isEmpty) {
+      return;
+    }
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(normalized)));
+  }
+
+  void _applyVoiceTranscript(String transcript) {
+    final normalizedTranscript = transcript.trim();
+    if (normalizedTranscript.isEmpty) {
+      return;
+    }
+    final baseText = (_voiceBaseText ?? widget.controller.text).trim();
+    final combined = baseText.isEmpty
+        ? normalizedTranscript
+        : '$baseText\n$normalizedTranscript';
+    widget.controller.value = TextEditingValue(
+      text: combined,
+      selection: TextSelection.collapsed(offset: combined.length),
+      composing: TextRange.empty,
+    );
+  }
+
+  Future<void> _toggleVoiceInput() async {
+    if (_voiceListening) {
+      await _speechToText.stop();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _voiceListening = false;
+      });
+      return;
+    }
+    final available = await _ensureVoiceInputReady();
+    if (!mounted) {
+      return;
+    }
+    if (!available) {
+      _showVoiceMessage(
+        context.wp('Voice input is unavailable on this device right now.'),
+      );
+      return;
+    }
+    final localeId = Localizations.localeOf(context).toLanguageTag();
+    _voiceBaseText = widget.controller.text.trim();
+    await _speechToText.listen(
+      onResult: (result) {
+        _applyVoiceTranscript(result.recognizedWords);
+        if (!mounted) {
+          return;
+        }
+        if (result.finalResult) {
+          setState(() {
+            _voiceListening = false;
+          });
+        }
+      },
+      localeId: localeId,
+      listenOptions: SpeechListenOptions(
+        listenMode: ListenMode.dictation,
+        partialResults: true,
+        cancelOnError: true,
+      ),
+    );
+    if (!mounted) {
+      return;
+    }
+    final started = _speechToText.isListening;
+    setState(() {
+      _voiceListening = started;
+    });
+    if (!started) {
+      _showVoiceMessage(
+        context.wp(
+          'Voice input could not start. Check microphone permission and try again.',
+        ),
+      );
+    }
   }
 
   void _setDraggingFiles(bool value) {
@@ -18232,6 +19112,33 @@ class _PromptComposerState extends State<_PromptComposer> {
         type: _ComposerSlashCommandType.builtin,
         action: _ComposerBuiltinSlashAction.mcpPicker,
       ),
+      if (_supportsVoiceInput)
+        _ComposerSlashCommand(
+          id: 'builtin.voice',
+          trigger: 'voice',
+          title: context.wp('Toggle voice input'),
+          description: context.wp('Start or stop dictation in the composer'),
+          type: _ComposerSlashCommandType.builtin,
+          action: _ComposerBuiltinSlashAction.voiceInput,
+        ),
+      if (widget.onOpenProjectActions != null)
+        _ComposerSlashCommand(
+          id: 'builtin.actions',
+          trigger: 'actions',
+          title: context.wp('Open project actions'),
+          description: context.wp('Launch the grouped remote operations sheet'),
+          type: _ComposerSlashCommandType.builtin,
+          action: _ComposerBuiltinSlashAction.projectActions,
+        ),
+      if (widget.onOpenInbox != null)
+        _ComposerSlashCommand(
+          id: 'builtin.inbox',
+          trigger: 'inbox',
+          title: context.wp('Open inbox'),
+          description: context.wp('Triage approvals, questions, and activity'),
+          type: _ComposerSlashCommandType.builtin,
+          action: _ComposerBuiltinSlashAction.inbox,
+        ),
       _ComposerSlashCommand(
         id: 'builtin.terminal',
         trigger: 'terminal',
@@ -18484,6 +19391,21 @@ class _PromptComposerState extends State<_PromptComposer> {
         break;
       case _ComposerBuiltinSlashAction.mcpPicker:
         await widget.onOpenMcpPicker();
+        break;
+      case _ComposerBuiltinSlashAction.voiceInput:
+        await _toggleVoiceInput();
+        break;
+      case _ComposerBuiltinSlashAction.projectActions:
+        final callback = widget.onOpenProjectActions;
+        if (callback != null) {
+          await callback();
+        }
+        break;
+      case _ComposerBuiltinSlashAction.inbox:
+        final callback = widget.onOpenInbox;
+        if (callback != null) {
+          await callback();
+        }
         break;
       case _ComposerBuiltinSlashAction.terminal:
         await widget.onToggleTerminal();
@@ -18883,6 +19805,28 @@ class _PromptComposerState extends State<_PromptComposer> {
                                   },
                             busy: widget.pickingAttachments,
                           ),
+                          if (_supportsVoiceInput) ...<Widget>[
+                            SizedBox(
+                              width: density.inset(
+                                isCompact ? AppSpacing.xs : AppSpacing.sm,
+                              ),
+                            ),
+                            _ComposerIconButton(
+                              key: const ValueKey<String>(
+                                'composer-voice-button',
+                              ),
+                              compact: isCompact,
+                              icon: _voiceListening
+                                  ? Icons.stop_circle_outlined
+                                  : Icons.mic_none_rounded,
+                              onTap: widget.submitting
+                                  ? null
+                                  : () {
+                                      unawaited(_toggleVoiceInput());
+                                    },
+                              filled: _voiceListening,
+                            ),
+                          ],
                           SizedBox(
                             width: density.inset(
                               isCompact ? AppSpacing.xs : AppSpacing.sm,
@@ -19355,6 +20299,9 @@ enum _ComposerBuiltinSlashAction {
   reasoningPicker,
   permissionAutoAccept,
   mcpPicker,
+  voiceInput,
+  projectActions,
+  inbox,
   terminal,
   reviewTab,
   filesTab,

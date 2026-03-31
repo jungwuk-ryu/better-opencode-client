@@ -20,11 +20,7 @@ bool _showsTerminalSpecialKeyPalette(TargetPlatform platform) {
 }
 
 void _triggerTerminalSpecialKeyHapticFeedback() {
-  unawaited(
-    HapticFeedback.selectionClick().catchError((Object _, StackTrace __) {
-      return;
-    }),
-  );
+  unawaited(HapticFeedback.selectionClick().catchError((_) {}));
 }
 
 class PtyTerminalPanel extends StatelessWidget {

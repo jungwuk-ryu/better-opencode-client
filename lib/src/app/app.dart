@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:app_links/app_links.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
@@ -40,6 +42,7 @@ class _OpenCodeRemoteAppState extends State<OpenCodeRemoteApp> {
       widget.appController ?? WebParityAppController();
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   String? _scheduledReleaseNotesVersion;
+  StreamSubscription<Uri>? _appLinksSubscription;
 
   @override
   void initState() {
@@ -48,10 +51,12 @@ class _OpenCodeRemoteAppState extends State<OpenCodeRemoteApp> {
     if (widget.autoLoadAppController) {
       unawaited(_appController.load());
     }
+    _configureAppLinks();
   }
 
   @override
   void dispose() {
+    _appLinksSubscription?.cancel();
     if (_ownsAppController) {
       _appController.dispose();
     }
@@ -87,6 +92,50 @@ class _OpenCodeRemoteAppState extends State<OpenCodeRemoteApp> {
         ),
       );
     });
+  }
+
+  void _configureAppLinks() {
+    if (kIsWeb) {
+      return;
+    }
+    try {
+      final appLinks = AppLinks();
+      unawaited(_consumeInitialAppLink(appLinks));
+      _appLinksSubscription = appLinks.uriLinkStream.listen(
+        _handleIncomingAppLink,
+      );
+    } catch (_) {
+      _appLinksSubscription = null;
+    }
+  }
+
+  Future<void> _consumeInitialAppLink(AppLinks appLinks) async {
+    try {
+      final uri = await appLinks.getInitialLink();
+      if (uri != null) {
+        _handleIncomingAppLink(uri);
+      }
+    } catch (_) {}
+  }
+
+  void _handleIncomingAppLink(Uri uri) {
+    final route = _routeLocationForUri(uri);
+    final navigator = _navigatorKey.currentState;
+    if (!mounted || navigator == null || route == null) {
+      return;
+    }
+    navigator.pushNamedAndRemoveUntil(route, (route) => false);
+  }
+
+  String? _routeLocationForUri(Uri uri) {
+    final parsed = AppRouteData.parse(uri.toString());
+    return switch (parsed) {
+      HomeRouteData(:final connectionImport)
+          when connectionImport != null =>
+        connectionImport.location ?? '/',
+      HomeRouteData() => '/',
+      WorkspaceRouteData(:final location) => location,
+    };
   }
 
   @override
@@ -145,9 +194,10 @@ class _OpenCodeRemoteAppState extends State<OpenCodeRemoteApp> {
                   ),
                   builder: (context) {
                     return switch (route) {
-                      HomeRouteData() => WebParityHomeScreen(
+                      HomeRouteData(:final connectionImport) => WebParityHomeScreen(
                         flavor: _flavor,
                         localeController: _localeController,
+                        connectionImport: connectionImport,
                       ),
                       WorkspaceRouteData(:final directory, :final sessionId) =>
                         WebParityWorkspaceScreen(
