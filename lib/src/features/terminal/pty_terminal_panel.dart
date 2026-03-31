@@ -15,6 +15,18 @@ import '../../design_system/app_theme.dart';
 import 'pty_models.dart';
 import 'pty_service.dart';
 
+bool _showsTerminalSpecialKeyPalette(TargetPlatform platform) {
+  return platform == TargetPlatform.android || platform == TargetPlatform.iOS;
+}
+
+void _triggerTerminalSpecialKeyHapticFeedback() {
+  unawaited(
+    HapticFeedback.selectionClick().catchError((Object _, StackTrace __) {
+      return;
+    }),
+  );
+}
+
 class PtyTerminalPanel extends StatelessWidget {
   const PtyTerminalPanel({
     required this.profile,
@@ -492,6 +504,9 @@ class _PtyTerminalViewState extends State<_PtyTerminalView> {
   int? _lastCols;
   int? _lastRows;
 
+  bool get _showsSpecialKeyPalette =>
+      _showsTerminalSpecialKeyPalette(defaultTargetPlatform);
+
   @override
   void initState() {
     super.initState();
@@ -731,6 +746,284 @@ class _PtyTerminalViewState extends State<_PtyTerminalView> {
     }
   }
 
+  void _focusTerminal() {
+    if (!_terminalFocusNode.hasFocus) {
+      _terminalFocusNode.requestFocus();
+    }
+  }
+
+  void _scrollTerminalToBottom() {
+    if (!_scrollController.hasClients) {
+      return;
+    }
+    final position = _scrollController.position;
+    if (!position.hasContentDimensions) {
+      return;
+    }
+    _scrollController.jumpTo(position.maxScrollExtent);
+  }
+
+  void _sendSpecialTerminalKey(
+    TerminalKey key, {
+    bool ctrl = false,
+    bool alt = false,
+    bool shift = false,
+  }) {
+    _focusTerminal();
+    final handled = _terminal.keyInput(key, ctrl: ctrl, alt: alt, shift: shift);
+    if (!handled) {
+      return;
+    }
+    _scrollTerminalToBottom();
+    _triggerTerminalSpecialKeyHapticFeedback();
+  }
+
+  void _sendSpecialTerminalChar(
+    String character, {
+    bool ctrl = false,
+    bool alt = false,
+  }) {
+    if (character.isEmpty) {
+      return;
+    }
+    _focusTerminal();
+    final handled = _terminal.charInput(
+      character.codeUnitAt(0),
+      ctrl: ctrl,
+      alt: alt,
+    );
+    if (!handled) {
+      if (alt) {
+        _terminal.keyInput(TerminalKey.escape);
+      }
+      _terminal.textInput(character);
+    }
+    _scrollTerminalToBottom();
+    _triggerTerminalSpecialKeyHapticFeedback();
+  }
+
+  List<_TerminalSpecialKeyAction> _commonSpecialKeyActions() {
+    return <_TerminalSpecialKeyAction>[
+      _TerminalSpecialKeyAction(
+        id: 'esc',
+        label: 'Esc',
+        onPressed: () => _sendSpecialTerminalKey(TerminalKey.escape),
+      ),
+      _TerminalSpecialKeyAction(
+        id: 'tab',
+        label: 'Tab',
+        onPressed: () => _sendSpecialTerminalKey(TerminalKey.tab),
+      ),
+      _TerminalSpecialKeyAction(
+        id: 'ctrl-c',
+        label: 'Ctrl+C',
+        onPressed: () => _sendSpecialTerminalChar('c', ctrl: true),
+      ),
+      _TerminalSpecialKeyAction(
+        id: 'ctrl-d',
+        label: 'Ctrl+D',
+        onPressed: () => _sendSpecialTerminalChar('d', ctrl: true),
+      ),
+      _TerminalSpecialKeyAction(
+        id: 'ctrl-l',
+        label: 'Ctrl+L',
+        onPressed: () => _sendSpecialTerminalChar('l', ctrl: true),
+      ),
+      _TerminalSpecialKeyAction(
+        id: 'ctrl-z',
+        label: 'Ctrl+Z',
+        onPressed: () => _sendSpecialTerminalChar('z', ctrl: true),
+      ),
+    ];
+  }
+
+  List<_TerminalSpecialKeyAction> _navigationSpecialKeyActions() {
+    return <_TerminalSpecialKeyAction>[
+      _TerminalSpecialKeyAction(
+        id: 'up',
+        label: 'Up',
+        onPressed: () => _sendSpecialTerminalKey(TerminalKey.arrowUp),
+      ),
+      _TerminalSpecialKeyAction(
+        id: 'down',
+        label: 'Down',
+        onPressed: () => _sendSpecialTerminalKey(TerminalKey.arrowDown),
+      ),
+      _TerminalSpecialKeyAction(
+        id: 'left',
+        label: 'Left',
+        onPressed: () => _sendSpecialTerminalKey(TerminalKey.arrowLeft),
+      ),
+      _TerminalSpecialKeyAction(
+        id: 'right',
+        label: 'Right',
+        onPressed: () => _sendSpecialTerminalKey(TerminalKey.arrowRight),
+      ),
+      _TerminalSpecialKeyAction(
+        id: 'home',
+        label: 'Home',
+        onPressed: () => _sendSpecialTerminalKey(TerminalKey.home),
+      ),
+      _TerminalSpecialKeyAction(
+        id: 'end',
+        label: 'End',
+        onPressed: () => _sendSpecialTerminalKey(TerminalKey.end),
+      ),
+      _TerminalSpecialKeyAction(
+        id: 'page-up',
+        label: 'PgUp',
+        onPressed: () => _sendSpecialTerminalKey(TerminalKey.pageUp),
+      ),
+      _TerminalSpecialKeyAction(
+        id: 'page-down',
+        label: 'PgDn',
+        onPressed: () => _sendSpecialTerminalKey(TerminalKey.pageDown),
+      ),
+      _TerminalSpecialKeyAction(
+        id: 'insert',
+        label: 'Ins',
+        onPressed: () => _sendSpecialTerminalKey(TerminalKey.insert),
+      ),
+      _TerminalSpecialKeyAction(
+        id: 'delete',
+        label: 'Del',
+        onPressed: () => _sendSpecialTerminalKey(TerminalKey.delete),
+      ),
+    ];
+  }
+
+  List<_TerminalSpecialKeyAction> _functionSpecialKeyActions() {
+    return <_TerminalSpecialKeyAction>[
+      _TerminalSpecialKeyAction(
+        id: 'f1',
+        label: 'F1',
+        onPressed: () => _sendSpecialTerminalKey(TerminalKey.f1),
+      ),
+      _TerminalSpecialKeyAction(
+        id: 'f2',
+        label: 'F2',
+        onPressed: () => _sendSpecialTerminalKey(TerminalKey.f2),
+      ),
+      _TerminalSpecialKeyAction(
+        id: 'f3',
+        label: 'F3',
+        onPressed: () => _sendSpecialTerminalKey(TerminalKey.f3),
+      ),
+      _TerminalSpecialKeyAction(
+        id: 'f4',
+        label: 'F4',
+        onPressed: () => _sendSpecialTerminalKey(TerminalKey.f4),
+      ),
+      _TerminalSpecialKeyAction(
+        id: 'f5',
+        label: 'F5',
+        onPressed: () => _sendSpecialTerminalKey(TerminalKey.f5),
+      ),
+      _TerminalSpecialKeyAction(
+        id: 'f6',
+        label: 'F6',
+        onPressed: () => _sendSpecialTerminalKey(TerminalKey.f6),
+      ),
+      _TerminalSpecialKeyAction(
+        id: 'f7',
+        label: 'F7',
+        onPressed: () => _sendSpecialTerminalKey(TerminalKey.f7),
+      ),
+      _TerminalSpecialKeyAction(
+        id: 'f8',
+        label: 'F8',
+        onPressed: () => _sendSpecialTerminalKey(TerminalKey.f8),
+      ),
+      _TerminalSpecialKeyAction(
+        id: 'f9',
+        label: 'F9',
+        onPressed: () => _sendSpecialTerminalKey(TerminalKey.f9),
+      ),
+      _TerminalSpecialKeyAction(
+        id: 'f10',
+        label: 'F10',
+        onPressed: () => _sendSpecialTerminalKey(TerminalKey.f10),
+      ),
+      _TerminalSpecialKeyAction(
+        id: 'f11',
+        label: 'F11',
+        onPressed: () => _sendSpecialTerminalKey(TerminalKey.f11),
+      ),
+      _TerminalSpecialKeyAction(
+        id: 'f12',
+        label: 'F12',
+        onPressed: () => _sendSpecialTerminalKey(TerminalKey.f12),
+      ),
+    ];
+  }
+
+  Future<void> _showSpecialKeyPaletteSheet() async {
+    if (!_showsSpecialKeyPalette) {
+      return;
+    }
+    _focusTerminal();
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: surfaces.panelRaised,
+      builder: (sheetContext) {
+        final mediaQuery = MediaQuery.of(sheetContext);
+        return SafeArea(
+          top: false,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: math.min(mediaQuery.size.height * 0.72, 520),
+            ),
+            child: SingleChildScrollView(
+              key: const ValueKey<String>('pty-terminal-special-keys-sheet'),
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.md,
+                0,
+                AppSpacing.md,
+                AppSpacing.lg,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text('Terminal keys', style: theme.textTheme.titleMedium),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    'Send function keys, navigation keys, and common control shortcuts from touch devices.',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: surfaces.muted,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  _TerminalSpecialKeySection(
+                    title: 'Common',
+                    actions: _commonSpecialKeyActions(),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  _TerminalSpecialKeySection(
+                    title: 'Navigation',
+                    actions: _navigationSpecialKeyActions(),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  _TerminalSpecialKeySection(
+                    title: 'Function keys',
+                    actions: _functionSpecialKeyActions(),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+    if (mounted) {
+      _focusTerminal();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
@@ -767,21 +1060,31 @@ class _PtyTerminalViewState extends State<_PtyTerminalView> {
                   ),
                 ),
                 const SizedBox(width: AppSpacing.sm),
-                Wrap(
-                  spacing: AppSpacing.xs,
-                  runSpacing: AppSpacing.xs,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: <Widget>[
-                    if (_connectionNotice != null)
-                      _TerminalStatusChip(
-                        label: _connectionNotice!,
-                        tone: connectionTone,
-                      ),
-                    _TerminalStatusChip(
-                      label: widget.session.isRunning ? 'live' : 'exited',
-                      tone: statusTone,
+                Flexible(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Wrap(
+                      alignment: WrapAlignment.end,
+                      spacing: AppSpacing.xs,
+                      runSpacing: AppSpacing.xs,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: <Widget>[
+                        if (_connectionNotice != null)
+                          _TerminalStatusChip(
+                            label: _connectionNotice!,
+                            tone: connectionTone,
+                          ),
+                        _TerminalStatusChip(
+                          label: widget.session.isRunning ? 'live' : 'exited',
+                          tone: statusTone,
+                        ),
+                        if (_showsSpecialKeyPalette)
+                          _TerminalSpecialKeyPaletteButton(
+                            onTap: _showSpecialKeyPaletteSheet,
+                          ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               ],
             ),
@@ -870,6 +1173,122 @@ class _TerminalStatusChip extends StatelessWidget {
       child: Text(
         label,
         style: Theme.of(context).textTheme.labelMedium?.copyWith(color: tone),
+      ),
+    );
+  }
+}
+
+class _TerminalSpecialKeyAction {
+  const _TerminalSpecialKeyAction({
+    required this.id,
+    required this.label,
+    required this.onPressed,
+  });
+
+  final String id;
+  final String label;
+  final VoidCallback onPressed;
+}
+
+class _TerminalSpecialKeySection extends StatelessWidget {
+  const _TerminalSpecialKeySection({
+    required this.title,
+    required this.actions,
+  });
+
+  final String title;
+  final List<_TerminalSpecialKeyAction> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          title,
+          style: Theme.of(
+            context,
+          ).textTheme.labelLarge?.copyWith(color: surfaces.muted),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Wrap(
+          spacing: AppSpacing.xs,
+          runSpacing: AppSpacing.xs,
+          children: actions
+              .map((action) => _TerminalSpecialKeyButton(action: action))
+              .toList(growable: false),
+        ),
+      ],
+    );
+  }
+}
+
+class _TerminalSpecialKeyButton extends StatelessWidget {
+  const _TerminalSpecialKeyButton({required this.action});
+
+  final _TerminalSpecialKeyAction action;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return OutlinedButton(
+      key: ValueKey<String>('pty-terminal-special-key-${action.id}'),
+      onPressed: action.onPressed,
+      style: OutlinedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm,
+          vertical: AppSpacing.xs,
+        ),
+        visualDensity: VisualDensity.compact,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        side: BorderSide(color: surfaces.lineSoft),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+      child: Text(action.label),
+    );
+  }
+}
+
+class _TerminalSpecialKeyPaletteButton extends StatelessWidget {
+  const _TerminalSpecialKeyPaletteButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Material(
+      color: colorScheme.primary.withValues(alpha: 0.14),
+      borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
+      child: InkWell(
+        key: const ValueKey<String>('pty-terminal-special-keys-button'),
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.sm,
+            vertical: 6,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(
+                Icons.keyboard_command_key_rounded,
+                size: 16,
+                color: colorScheme.primary,
+              ),
+              const SizedBox(width: AppSpacing.xxs),
+              Text(
+                'Keys',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: colorScheme.primary,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -123,6 +123,86 @@ void main() {
       greaterThan(440),
     );
   });
+
+  testWidgets(
+    'shows the mobile special key palette on iOS',
+    (tester) async {
+      final service = _FakePtyService();
+      addTearDown(service.dispose);
+
+      await tester.pumpWidget(
+        _PtyPanelHarness(
+          profile: profile,
+          service: service,
+          sessions: sessions.take(1).toList(growable: false),
+          initialActiveSessionId: 'pty_1',
+          width: 390,
+          height: 420,
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey<String>('pty-terminal-special-keys-button')),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('pty-terminal-special-keys-button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey<String>('pty-terminal-special-keys-sheet')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('pty-terminal-special-key-f10')),
+        findsOneWidget,
+      );
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
+  testWidgets(
+    'mobile special key palette sends terminal key output',
+    (tester) async {
+      final service = _FakePtyService();
+      addTearDown(service.dispose);
+
+      await tester.pumpWidget(
+        _PtyPanelHarness(
+          profile: profile,
+          service: service,
+          sessions: sessions.take(1).toList(growable: false),
+          initialActiveSessionId: 'pty_1',
+          width: 390,
+          height: 420,
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('pty-terminal-special-keys-button')),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('pty-terminal-special-key-f10')),
+      );
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('pty-terminal-special-key-ctrl-c')),
+      );
+      await tester.pump();
+
+      final sentMessages = service.sentMessages('pty_1');
+      expect(sentMessages, hasLength(2));
+      expect(sentMessages.first, allOf(isA<String>(), contains('\u001b')));
+      expect(sentMessages.last, '\u0003');
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
 }
 
 class _PtyPanelHarness extends StatefulWidget {
@@ -201,8 +281,13 @@ class _FakePtyService extends PtyService {
   final Map<String, Future<void>> _readyById;
   final Map<String, int> _connectCounts = <String, int>{};
   final List<_FakeWebSocketChannel> _channels = <_FakeWebSocketChannel>[];
+  final Map<String, _FakeWebSocketChannel> _channelsByPtyId =
+      <String, _FakeWebSocketChannel>{};
 
   int connectCount(String ptyId) => _connectCounts[ptyId] ?? 0;
+  List<dynamic> sentMessages(String ptyId) => List<dynamic>.unmodifiable(
+    _channelsByPtyId[ptyId]?.sentMessages ?? const <dynamic>[],
+  );
 
   @override
   Future<PtySessionInfo?> getSession({
@@ -252,6 +337,7 @@ class _FakePtyService extends PtyService {
       ready: _readyById[ptyId] ?? Future<void>.value(),
     );
     _channels.add(channel);
+    _channelsByPtyId[ptyId] = channel;
     return channel;
   }
 
@@ -270,6 +356,8 @@ class _FakeWebSocketChannel implements WebSocketChannel {
   final StreamController<dynamic> _controller = StreamController<dynamic>();
   late final _FakeWebSocketSink _sink = _FakeWebSocketSink(_controller);
   final Future<void> _ready;
+
+  List<dynamic> get sentMessages => _sink.messages;
 
   @override
   Stream<dynamic> get stream => _controller.stream;
@@ -302,9 +390,12 @@ class _FakeWebSocketSink implements WebSocketSink {
 
   final StreamController<dynamic> _controller;
   final Completer<void> _done = Completer<void>();
+  final List<dynamic> messages = <dynamic>[];
 
   @override
-  void add(dynamic data) {}
+  void add(dynamic data) {
+    messages.add(data);
+  }
 
   @override
   void addError(Object error, [StackTrace? stackTrace]) {}
