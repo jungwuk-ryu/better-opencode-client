@@ -166,6 +166,50 @@ void main() {
       findsNothing,
     );
   });
+
+  testWidgets(
+    'compact activity bar overlays the timeline instead of taking layout space',
+    (tester) async {
+      tester.view.physicalSize = const Size(430, 932);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final workspaceController = _TodoDockWorkspaceController(
+        profile: profile,
+        directory: '/workspace/demo',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceController: workspaceController,
+      );
+      addTearDown(appController.dispose);
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          initialRoute: buildWorkspaceRoute(
+            '/workspace/demo',
+            sessionId: 'ses_1',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      final activityBarRect = tester.getRect(
+        find.byKey(const ValueKey<String>('compact-session-activity-bar')),
+      );
+      final timelineRect = tester.getRect(_messageTimelineListFinder());
+
+      expect(timelineRect.overlaps(activityBarRect), isTrue);
+    },
+  );
 }
 
 class _WorkspaceRouteHarness extends StatelessWidget {
@@ -361,4 +405,15 @@ class _FakePtyService extends PtyService {
   }) async {
     return const <PtySessionInfo>[];
   }
+}
+
+Finder _messageTimelineListFinder() {
+  return find.byWidgetPredicate(
+    (widget) =>
+        widget is ListView &&
+        widget.key is PageStorageKey<String> &&
+        (widget.key! as PageStorageKey<String>).value.startsWith(
+          'web-parity-message-timeline',
+        ),
+  );
 }

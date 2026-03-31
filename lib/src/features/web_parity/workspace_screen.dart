@@ -14256,7 +14256,7 @@ class _CompactSessionActivityBar extends StatelessWidget {
         AppSpacing.sm,
         AppSpacing.xs,
         AppSpacing.sm,
-        0,
+        AppSpacing.sm,
       ),
       child: Center(
         child: ConstrainedBox(
@@ -14309,7 +14309,7 @@ class _CompactActivitySummaryButton extends StatelessWidget {
             vertical: AppSpacing.xs,
           ),
           decoration: BoxDecoration(
-            color: surfaces.panelMuted.withValues(alpha: 0.94),
+            color: surfaces.panelMuted.withValues(alpha: 0.78),
             borderRadius: BorderRadius.circular(999),
             border: Border.all(color: accent.withValues(alpha: 0.28)),
           ),
@@ -15088,145 +15088,171 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                           onOpenSession: handleOpenSession,
                         ),
                       Expanded(
-                        child: sessionId == null && controller.loading
-                            ? KeyedSubtree(
-                                key: ValueKey<String>(
-                                  'workspace-session-pane-loading-${pane.id}',
-                                ),
-                                child: _TimelineStatusCard(
-                                  icon: const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
+                        child: Stack(
+                          children: <Widget>[
+                            Positioned.fill(
+                              child: sessionId == null && controller.loading
+                                  ? KeyedSubtree(
+                                      key: ValueKey<String>(
+                                        'workspace-session-pane-loading-${pane.id}',
+                                      ),
+                                      child: _TimelineStatusCard(
+                                        icon: const SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        ),
+                                        title:
+                                            'Loading ${projectLabel.isEmpty ? 'project' : projectLabel}...',
+                                        message:
+                                            'Keeping the rest of the workspace visible while this project connects.',
+                                      ),
+                                    )
+                                  : sessionId == null &&
+                                        controller.error != null
+                                  ? KeyedSubtree(
+                                      key: ValueKey<String>(
+                                        'workspace-session-pane-error-${pane.id}',
+                                      ),
+                                      child: _TimelineStatusCard(
+                                        icon: Icon(
+                                          Icons.wifi_tethering_error_rounded,
+                                          color: theme.colorScheme.error,
+                                          size: 22,
+                                        ),
+                                        title: context.wp(
+                                          "Couldn't load {project}",
+                                          args: <String, Object?>{
+                                            'project': projectLabel.isEmpty
+                                                ? context.wp('this project')
+                                                : projectLabel,
+                                          },
+                                        ),
+                                        message: controller.error!,
+                                        action: OutlinedButton(
+                                          onPressed: () =>
+                                              unawaited(handleRetryWorkspace()),
+                                          child: Text(context.wp('Retry')),
+                                        ),
+                                      ),
+                                    )
+                                  : sessionId == null
+                                  ? _NewSessionView(
+                                      project: project,
+                                      messages: timelineState.messages,
+                                    )
+                                  : _MessageTimeline(
+                                      key: ValueKey<String>(
+                                        'timeline-$timelinePageStorageKey',
+                                      ),
+                                      storageScopeKey: timelineScopeKey,
+                                      pageStorageKeyValue:
+                                          timelinePageStorageKey,
+                                      currentSessionId: sessionId,
+                                      working: busy,
+                                      loading: timelineState.loading,
+                                      showingCachedMessages:
+                                          timelineState.showingCachedMessages,
+                                      historyMore: timelineState.historyMore,
+                                      historyLoading:
+                                          timelineState.historyLoading,
+                                      error: timelineState.error,
+                                      messages: timelineState.orderedMessages,
+                                      timelineContentSignature:
+                                          controller.timelineContentSignature,
+                                      compact: compact,
+                                      sessions: controller.sessions,
+                                      selectedSession: selected
+                                          ? controller.selectedSession
+                                          : session,
+                                      configSnapshot: controller.configSnapshot,
+                                      shellToolDisplayMode:
+                                          shellToolDisplayMode,
+                                      keyboardInsetBottom: compact
+                                          ? MediaQuery.viewInsetsOf(
+                                              context,
+                                            ).bottom
+                                          : 0,
+                                      timelineProgressDetailsVisible:
+                                          timelineProgressDetailsVisible,
+                                      searchQuery: searchScoped
+                                          ? chatSearchQuery
+                                          : '',
+                                      matchingMessageIds: searchScoped
+                                          ? chatSearchMatchMessageIds.toSet()
+                                          : const <String>{},
+                                      activeMatchMessageId: searchScoped
+                                          ? chatSearchActiveMessageId
+                                          : null,
+                                      searchRevision: searchScoped
+                                          ? chatSearchRevision
+                                          : 0,
+                                      focusedMessageId:
+                                          focusedTimelineMessageIdForScope(
+                                            sessionFocusScopeKey,
+                                          ),
+                                      focusedMessageRevision:
+                                          focusedTimelineMessageRevisionForScope(
+                                            sessionFocusScopeKey,
+                                          ),
+                                      onForkMessage: handleForkMessage,
+                                      onRevertMessage: handleRevertMessage,
+                                      onOpenSession: handleOpenSession,
+                                      onRetry: handleRetry,
+                                      onIgnoreOversizedSession:
+                                          handleIgnoreOversizedSession,
+                                      oversizedSessionBehavior: AppScope.of(
+                                        context,
+                                      ).oversizedSessionBehavior,
+                                      onLoadMore: handleLoadMoreHistory,
+                                      jumpToBottomEpoch: selected
+                                          ? timelineJumpEpoch
+                                          : 0,
                                     ),
+                            ),
+                            if (compact &&
+                                sessionId != null &&
+                                (paneQuestionRequest != null ||
+                                    panePermissionRequest != null ||
+                                    compactTodoCount > 0 ||
+                                    activeChildSessions.isNotEmpty))
+                              Positioned.fill(
+                                child: Align(
+                                  alignment: Alignment.bottomCenter,
+                                  child: _CompactSessionActivityBar(
+                                    todoCount: compactTodoCount,
+                                    subAgentCount: activeChildSessions.length,
+                                    hasQuestion: paneQuestionRequest != null,
+                                    hasPermission:
+                                        panePermissionRequest != null,
+                                    onOpenQuestion: paneQuestionRequest == null
+                                        ? null
+                                        : () => unawaited(
+                                            showCompactQuestionSheet(),
+                                          ),
+                                    onOpenPermission:
+                                        panePermissionRequest == null
+                                        ? null
+                                        : () => unawaited(
+                                            showCompactPermissionSheet(),
+                                          ),
+                                    onOpenTodos: compactTodoCount == 0
+                                        ? null
+                                        : () =>
+                                              unawaited(showCompactTodoSheet()),
+                                    onOpenSubAgents: activeChildSessions.isEmpty
+                                        ? null
+                                        : () => unawaited(
+                                            showCompactSubAgentSheet(),
+                                          ),
                                   ),
-                                  title:
-                                      'Loading ${projectLabel.isEmpty ? 'project' : projectLabel}...',
-                                  message:
-                                      'Keeping the rest of the workspace visible while this project connects.',
                                 ),
-                              )
-                            : sessionId == null && controller.error != null
-                            ? KeyedSubtree(
-                                key: ValueKey<String>(
-                                  'workspace-session-pane-error-${pane.id}',
-                                ),
-                                child: _TimelineStatusCard(
-                                  icon: Icon(
-                                    Icons.wifi_tethering_error_rounded,
-                                    color: theme.colorScheme.error,
-                                    size: 22,
-                                  ),
-                                  title: context.wp(
-                                    "Couldn't load {project}",
-                                    args: <String, Object?>{
-                                      'project': projectLabel.isEmpty
-                                          ? context.wp('this project')
-                                          : projectLabel,
-                                    },
-                                  ),
-                                  message: controller.error!,
-                                  action: OutlinedButton(
-                                    onPressed: () =>
-                                        unawaited(handleRetryWorkspace()),
-                                    child: Text(context.wp('Retry')),
-                                  ),
-                                ),
-                              )
-                            : sessionId == null
-                            ? _NewSessionView(
-                                project: project,
-                                messages: timelineState.messages,
-                              )
-                            : _MessageTimeline(
-                                key: ValueKey<String>(
-                                  'timeline-$timelinePageStorageKey',
-                                ),
-                                storageScopeKey: timelineScopeKey,
-                                pageStorageKeyValue: timelinePageStorageKey,
-                                currentSessionId: sessionId,
-                                working: busy,
-                                loading: timelineState.loading,
-                                showingCachedMessages:
-                                    timelineState.showingCachedMessages,
-                                historyMore: timelineState.historyMore,
-                                historyLoading: timelineState.historyLoading,
-                                error: timelineState.error,
-                                messages: timelineState.orderedMessages,
-                                timelineContentSignature:
-                                    controller.timelineContentSignature,
-                                compact: compact,
-                                sessions: controller.sessions,
-                                selectedSession: selected
-                                    ? controller.selectedSession
-                                    : session,
-                                configSnapshot: controller.configSnapshot,
-                                shellToolDisplayMode: shellToolDisplayMode,
-                                keyboardInsetBottom: compact
-                                    ? MediaQuery.viewInsetsOf(context).bottom
-                                    : 0,
-                                timelineProgressDetailsVisible:
-                                    timelineProgressDetailsVisible,
-                                searchQuery: searchScoped
-                                    ? chatSearchQuery
-                                    : '',
-                                matchingMessageIds: searchScoped
-                                    ? chatSearchMatchMessageIds.toSet()
-                                    : const <String>{},
-                                activeMatchMessageId: searchScoped
-                                    ? chatSearchActiveMessageId
-                                    : null,
-                                searchRevision: searchScoped
-                                    ? chatSearchRevision
-                                    : 0,
-                                focusedMessageId:
-                                    focusedTimelineMessageIdForScope(
-                                      sessionFocusScopeKey,
-                                    ),
-                                focusedMessageRevision:
-                                    focusedTimelineMessageRevisionForScope(
-                                      sessionFocusScopeKey,
-                                    ),
-                                onForkMessage: handleForkMessage,
-                                onRevertMessage: handleRevertMessage,
-                                onOpenSession: handleOpenSession,
-                                onRetry: handleRetry,
-                                onIgnoreOversizedSession:
-                                    handleIgnoreOversizedSession,
-                                oversizedSessionBehavior: AppScope.of(
-                                  context,
-                                ).oversizedSessionBehavior,
-                                onLoadMore: handleLoadMoreHistory,
-                                jumpToBottomEpoch: selected
-                                    ? timelineJumpEpoch
-                                    : 0,
                               ),
-                      ),
-                      if (compact &&
-                          sessionId != null &&
-                          (paneQuestionRequest != null ||
-                              panePermissionRequest != null ||
-                              compactTodoCount > 0 ||
-                              activeChildSessions.isNotEmpty))
-                        _CompactSessionActivityBar(
-                          todoCount: compactTodoCount,
-                          subAgentCount: activeChildSessions.length,
-                          hasQuestion: paneQuestionRequest != null,
-                          hasPermission: panePermissionRequest != null,
-                          onOpenQuestion: paneQuestionRequest == null
-                              ? null
-                              : () => unawaited(showCompactQuestionSheet()),
-                          onOpenPermission: panePermissionRequest == null
-                              ? null
-                              : () => unawaited(showCompactPermissionSheet()),
-                          onOpenTodos: compactTodoCount == 0
-                              ? null
-                              : () => unawaited(showCompactTodoSheet()),
-                          onOpenSubAgents: activeChildSessions.isEmpty
-                              ? null
-                              : () => unawaited(showCompactSubAgentSheet()),
+                          ],
                         ),
+                      ),
                       if (!compact &&
                           sessionId != null &&
                           paneQuestionRequest != null)
