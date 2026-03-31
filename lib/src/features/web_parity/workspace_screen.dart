@@ -6222,6 +6222,7 @@ class _WorkspaceTopBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final keyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
     final density = _workspaceDensity(context);
     final desktopHorizontal = density.inset(AppSpacing.md, min: AppSpacing.sm);
     final desktopVertical = density.inset(AppSpacing.sm, min: AppSpacing.xs);
@@ -6513,64 +6514,65 @@ class _WorkspaceTopBar extends StatelessWidget {
                     ],
                   ),
                 ),
-                Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    density.inset(AppSpacing.xs, min: 4),
-                    density.inset(AppSpacing.xxs, min: 4),
-                    density.inset(AppSpacing.xs, min: 4),
-                    density.inset(AppSpacing.xxs, min: 4),
+                if (!keyboardVisible)
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      density.inset(AppSpacing.xs, min: 4),
+                      density.inset(AppSpacing.xxs, min: 4),
+                      density.inset(AppSpacing.xs, min: 4),
+                      density.inset(AppSpacing.xxs, min: 4),
+                    ),
+                    child: Wrap(
+                      alignment: WrapAlignment.start,
+                      runAlignment: WrapAlignment.start,
+                      spacing: density.inset(AppSpacing.xxs, min: 2),
+                      runSpacing: density.inset(AppSpacing.xxs, min: 2),
+                      children: <Widget>[
+                        IconButton(
+                          key: const ValueKey<String>(
+                            'workspace-command-palette-button',
+                          ),
+                          onPressed: onOpenCommandPalette,
+                          icon: const Icon(Icons.apps_rounded, size: 18),
+                          tooltip:
+                              '${context.wp('Command palette')} (${_formatWorkspaceShortcutLabel('mod+k')})',
+                          splashRadius: 18,
+                        ),
+                        IconButton(
+                          key: const ValueKey<String>(
+                            'workspace-mcp-picker-button',
+                          ),
+                          onPressed: onOpenMcpPicker,
+                          icon: const Icon(Icons.extension_rounded, size: 18),
+                          tooltip:
+                              '${context.wp('Toggle MCPs')} (${_formatWorkspaceShortcutLabel('mod+;')})',
+                          splashRadius: 18,
+                        ),
+                        IconButton(
+                          key: const ValueKey<String>(
+                            'workspace-chat-search-button',
+                          ),
+                          onPressed: onOpenChatSearch,
+                          icon: const Icon(Icons.search_rounded, size: 18),
+                          tooltip: context.wp('Search chat'),
+                          splashRadius: 18,
+                        ),
+                        IconButton(
+                          onPressed: onToggleTerminal,
+                          icon: Icon(
+                            terminalOpen
+                                ? Icons.terminal_rounded
+                                : Icons.terminal_outlined,
+                            size: 18,
+                          ),
+                          tooltip: terminalOpen
+                              ? context.wp('Hide terminal')
+                              : context.wp('Show terminal'),
+                          splashRadius: 18,
+                        ),
+                      ],
+                    ),
                   ),
-                  child: Wrap(
-                    alignment: WrapAlignment.start,
-                    runAlignment: WrapAlignment.start,
-                    spacing: density.inset(AppSpacing.xxs, min: 2),
-                    runSpacing: density.inset(AppSpacing.xxs, min: 2),
-                    children: <Widget>[
-                      IconButton(
-                        key: const ValueKey<String>(
-                          'workspace-command-palette-button',
-                        ),
-                        onPressed: onOpenCommandPalette,
-                        icon: const Icon(Icons.apps_rounded, size: 18),
-                        tooltip:
-                            '${context.wp('Command palette')} (${_formatWorkspaceShortcutLabel('mod+k')})',
-                        splashRadius: 18,
-                      ),
-                      IconButton(
-                        key: const ValueKey<String>(
-                          'workspace-mcp-picker-button',
-                        ),
-                        onPressed: onOpenMcpPicker,
-                        icon: const Icon(Icons.extension_rounded, size: 18),
-                        tooltip:
-                            '${context.wp('Toggle MCPs')} (${_formatWorkspaceShortcutLabel('mod+;')})',
-                        splashRadius: 18,
-                      ),
-                      IconButton(
-                        key: const ValueKey<String>(
-                          'workspace-chat-search-button',
-                        ),
-                        onPressed: onOpenChatSearch,
-                        icon: const Icon(Icons.search_rounded, size: 18),
-                        tooltip: context.wp('Search chat'),
-                        splashRadius: 18,
-                      ),
-                      IconButton(
-                        onPressed: onToggleTerminal,
-                        icon: Icon(
-                          terminalOpen
-                              ? Icons.terminal_rounded
-                              : Icons.terminal_outlined,
-                          size: 18,
-                        ),
-                        tooltip: terminalOpen
-                            ? context.wp('Hide terminal')
-                            : context.wp('Show terminal'),
-                        splashRadius: 18,
-                      ),
-                    ],
-                  ),
-                ),
                 AnimatedSwitcher(
                   duration: const Duration(milliseconds: 180),
                   switchInCurve: Curves.easeOutCubic,
@@ -13702,6 +13704,7 @@ class _WorkspaceBody extends StatelessWidget {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
     final mediaQuery = MediaQuery.of(context);
+    final keyboardVisible = mediaQuery.viewInsets.bottom > 0;
     final questionRequest = controller.currentQuestionRequest;
     final permissionRequest = controller.currentPermissionRequest;
     final usesInlinePaneComposer = inlineComposerBuilder != null;
@@ -13851,11 +13854,13 @@ class _WorkspaceBody extends StatelessWidget {
     if (compact) {
       return Column(
         children: <Widget>[
-          _CompactPaneSwitcher(
-            activePane: compactPane,
-            sideLabel: _compactSideLabel(context, controller),
-            onChanged: onCompactPaneChanged,
-          ),
+          if (!(keyboardVisible &&
+              compactPane == _CompactWorkspacePane.session))
+            _CompactPaneSwitcher(
+              activePane: compactPane,
+              sideLabel: _compactSideLabel(context, controller),
+              onChanged: onCompactPaneChanged,
+            ),
           Expanded(
             child: compactPane == _CompactWorkspacePane.session
                 ? Padding(
@@ -13898,6 +13903,261 @@ class _WorkspaceBody extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+Future<void> _showCompactWorkspaceSheet(
+  BuildContext context, {
+  required String title,
+  required Widget Function(BuildContext context, StateSetter setModalState)
+  contentBuilder,
+}) {
+  return showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    isScrollControlled: true,
+    builder: (modalContext) {
+      final theme = Theme.of(modalContext);
+      final surfaces = theme.extension<AppSurfaces>()!;
+      final mediaQuery = MediaQuery.of(modalContext);
+      return StatefulBuilder(
+        builder: (sheetContext, setModalState) {
+          return Padding(
+            padding: EdgeInsets.only(
+              top: mediaQuery.padding.top + AppSpacing.sm,
+              bottom: mediaQuery.viewInsets.bottom,
+            ),
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: FractionallySizedBox(
+                heightFactor: 0.82,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: surfaces.background,
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(28),
+                    ),
+                    border: Border.all(color: surfaces.lineSoft),
+                    boxShadow: <BoxShadow>[
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.28),
+                        blurRadius: 28,
+                        offset: const Offset(0, -6),
+                      ),
+                    ],
+                  ),
+                  child: SafeArea(
+                    top: false,
+                    child: Column(
+                      children: <Widget>[
+                        const SizedBox(height: AppSpacing.sm),
+                        Container(
+                          width: 42,
+                          height: 5,
+                          decoration: BoxDecoration(
+                            color: surfaces.lineSoft,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(
+                            AppSpacing.md,
+                            AppSpacing.sm,
+                            AppSpacing.sm,
+                            AppSpacing.sm,
+                          ),
+                          child: Row(
+                            children: <Widget>[
+                              Expanded(
+                                child: Text(
+                                  title,
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                onPressed: () =>
+                                    Navigator.of(sheetContext).pop(),
+                                icon: const Icon(Icons.close_rounded),
+                                splashRadius: 18,
+                                tooltip: MaterialLocalizations.of(
+                                  sheetContext,
+                                ).closeButtonTooltip,
+                              ),
+                            ],
+                          ),
+                        ),
+                        Divider(height: 1, color: surfaces.lineSoft),
+                        Expanded(
+                          child: SingleChildScrollView(
+                            padding: const EdgeInsets.only(
+                              bottom: AppSpacing.lg,
+                            ),
+                            child: contentBuilder(sheetContext, setModalState),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      );
+    },
+  );
+}
+
+class _CompactSessionActivityBar extends StatelessWidget {
+  const _CompactSessionActivityBar({
+    required this.todoCount,
+    required this.subAgentCount,
+    required this.hasQuestion,
+    required this.hasPermission,
+    this.onOpenQuestion,
+    this.onOpenPermission,
+    this.onOpenTodos,
+    this.onOpenSubAgents,
+    super.key,
+  });
+
+  final int todoCount;
+  final int subAgentCount;
+  final bool hasQuestion;
+  final bool hasPermission;
+  final VoidCallback? onOpenQuestion;
+  final VoidCallback? onOpenPermission;
+  final VoidCallback? onOpenTodos;
+  final VoidCallback? onOpenSubAgents;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final items = <Widget>[
+      if (hasQuestion)
+        _CompactActivitySummaryButton(
+          key: const ValueKey<String>('compact-session-question-button'),
+          icon: Icons.quiz_outlined,
+          label: context.wp('Question'),
+          accent: theme.colorScheme.primary,
+          onTap: onOpenQuestion,
+        ),
+      if (hasPermission)
+        _CompactActivitySummaryButton(
+          key: const ValueKey<String>('compact-session-permission-button'),
+          icon: Icons.policy_outlined,
+          label: context.wp('Permission'),
+          accent: surfaces.warning,
+          onTap: onOpenPermission,
+        ),
+      if (todoCount > 0)
+        _CompactActivitySummaryButton(
+          key: const ValueKey<String>('compact-session-todos-button'),
+          icon: Icons.checklist_rounded,
+          label: context.wp(
+            todoCount == 1 ? '1 to-do' : '{count} to-dos',
+            args: <String, Object?>{'count': todoCount},
+          ),
+          accent: surfaces.success,
+          onTap: onOpenTodos,
+        ),
+      if (subAgentCount > 0)
+        _CompactActivitySummaryButton(
+          key: const ValueKey<String>('compact-session-subagents-button'),
+          icon: Icons.hub_rounded,
+          label: context.wp(
+            subAgentCount == 1 ? '1 sub-agent' : '{count} sub-agents',
+            args: <String, Object?>{'count': subAgentCount},
+          ),
+          accent: theme.colorScheme.primary,
+          onTap: onOpenSubAgents,
+        ),
+    ];
+    if (items.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.sm,
+        AppSpacing.xs,
+        AppSpacing.sm,
+        0,
+      ),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 920),
+          child: SingleChildScrollView(
+            key: const ValueKey<String>('compact-session-activity-bar'),
+            scrollDirection: Axis.horizontal,
+            padding: EdgeInsets.zero,
+            child: Row(
+              children: <Widget>[
+                for (var index = 0; index < items.length; index += 1) ...[
+                  if (index > 0) const SizedBox(width: AppSpacing.xs),
+                  items[index],
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CompactActivitySummaryButton extends StatelessWidget {
+  const _CompactActivitySummaryButton({
+    required this.icon,
+    required this.label,
+    required this.accent,
+    required this.onTap,
+    super.key,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color accent;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Ink(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.sm,
+            vertical: AppSpacing.xs,
+          ),
+          decoration: BoxDecoration(
+            color: surfaces.panelMuted.withValues(alpha: 0.94),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: accent.withValues(alpha: 0.28)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(icon, size: 16, color: accent),
+              const SizedBox(width: AppSpacing.xs),
+              Text(
+                label,
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -14270,6 +14530,28 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
         activeChildSessions.isNotEmpty ||
         paneQuestionRequest != null ||
         panePermissionRequest != null;
+    final paneTodosDone =
+        paneTodos.isNotEmpty &&
+        paneTodos.every(
+          (todo) => todo.status == 'completed' || todo.status == 'cancelled',
+        );
+    final paneTodoDockState = _todoDockState(
+      count: paneTodos.length,
+      done: paneTodosDone,
+      live: paneTodoLive,
+    );
+    final compactTodoCount =
+        paneTodoDockState == _TodoDockState.open ||
+            paneTodoDockState == _TodoDockState.close
+        ? paneTodos.length
+        : 0;
+    if (compact &&
+        sessionId != null &&
+        paneTodoDockState == _TodoDockState.clear) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        controller.clearTodosForSession(sessionId);
+      });
+    }
     final visuallySelected = selected && showSelectionChrome;
 
     Future<void> handleFocus() async {
@@ -14322,6 +14604,94 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
         await handleFocus();
         onOpenSession(sessionId);
       }());
+    }
+
+    Future<void> showCompactQuestionSheet() async {
+      final request = paneQuestionRequest;
+      if (request == null) {
+        return;
+      }
+      await _showCompactWorkspaceSheet(
+        context,
+        title: context.wp('Question'),
+        contentBuilder: (sheetContext, _) => _QuestionPromptDock(
+          request: request,
+          compact: true,
+          onReply: controller.replyToQuestion,
+          onReject: controller.rejectQuestion,
+        ),
+      );
+    }
+
+    Future<void> showCompactPermissionSheet() async {
+      final request = panePermissionRequest;
+      if (request == null) {
+        return;
+      }
+      await _showCompactWorkspaceSheet(
+        context,
+        title: context.wp('Permission'),
+        contentBuilder: (sheetContext, _) => _PermissionPromptDock(
+          request: request,
+          compact: true,
+          responding: controller.permissionRequestResponding(request.id),
+          onDecide: controller.replyToPermission,
+        ),
+      );
+    }
+
+    Future<void> showCompactTodoSheet() async {
+      final currentSessionId = sessionId;
+      if (currentSessionId == null || paneTodos.isEmpty) {
+        return;
+      }
+      var collapsed = false;
+      await _showCompactWorkspaceSheet(
+        context,
+        title: context.wp('To-do'),
+        contentBuilder: (sheetContext, setModalState) => _SessionTodoDock(
+          sessionId: currentSessionId,
+          todos: paneTodos,
+          live: paneTodoLive,
+          blocked: false,
+          compact: true,
+          collapsed: collapsed,
+          onCollapsedChanged: (nextCollapsed) {
+            setModalState(() {
+              collapsed = nextCollapsed;
+            });
+          },
+          onClearStale: () => controller.clearTodosForSession(currentSessionId),
+        ),
+      );
+    }
+
+    Future<void> showCompactSubAgentSheet() async {
+      if (activeChildSessions.isEmpty) {
+        return;
+      }
+      var collapsed = false;
+      await _showCompactWorkspaceSheet(
+        context,
+        title: context.wp('Sub-agents'),
+        contentBuilder: (sheetContext, setModalState) => _ActiveSubSessionPanel(
+          rootSessionId: rootSession?.id,
+          sessions: activeChildSessions,
+          previewBySessionId: activeChildSessionPreviewById,
+          currentSessionId: sessionId,
+          compact: true,
+          collapsed: collapsed,
+          onCollapsedChanged: (nextCollapsed) {
+            setModalState(() {
+              collapsed = nextCollapsed;
+            });
+          },
+          onOpenSession: (targetSessionId) {
+            Navigator.of(sheetContext).pop();
+            handleOpenSession(targetSessionId);
+          },
+        ),
+      );
     }
 
     return Semantics(
@@ -14529,7 +14899,7 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                 Expanded(
                   child: Column(
                     children: <Widget>[
-                      if (activeChildSessions.isNotEmpty)
+                      if (!compact && activeChildSessions.isNotEmpty)
                         _ActiveSubSessionPanel(
                           key: ValueKey<String>(
                             'pane-subsessions-${pane.id}::$normalizedSessionId',
@@ -14662,7 +15032,33 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                                     : 0,
                               ),
                       ),
-                      if (sessionId != null && paneQuestionRequest != null)
+                      if (compact &&
+                          sessionId != null &&
+                          (paneQuestionRequest != null ||
+                              panePermissionRequest != null ||
+                              compactTodoCount > 0 ||
+                              activeChildSessions.isNotEmpty))
+                        _CompactSessionActivityBar(
+                          todoCount: compactTodoCount,
+                          subAgentCount: activeChildSessions.length,
+                          hasQuestion: paneQuestionRequest != null,
+                          hasPermission: panePermissionRequest != null,
+                          onOpenQuestion: paneQuestionRequest == null
+                              ? null
+                              : () => unawaited(showCompactQuestionSheet()),
+                          onOpenPermission: panePermissionRequest == null
+                              ? null
+                              : () => unawaited(showCompactPermissionSheet()),
+                          onOpenTodos: compactTodoCount == 0
+                              ? null
+                              : () => unawaited(showCompactTodoSheet()),
+                          onOpenSubAgents: activeChildSessions.isEmpty
+                              ? null
+                              : () => unawaited(showCompactSubAgentSheet()),
+                        ),
+                      if (!compact &&
+                          sessionId != null &&
+                          paneQuestionRequest != null)
                         _QuestionPromptDock(
                           key: ValueKey<String>(
                             'session-question-dock-${pane.id}::$normalizedSessionId-${paneQuestionRequest.id}',
@@ -14672,7 +15068,9 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                           onReply: controller.replyToQuestion,
                           onReject: controller.rejectQuestion,
                         ),
-                      if (sessionId != null && panePermissionRequest != null)
+                      if (!compact &&
+                          sessionId != null &&
+                          panePermissionRequest != null)
                         _PermissionPromptDock(
                           key: ValueKey<String>(
                             'session-permission-dock-${pane.id}::$normalizedSessionId-${panePermissionRequest.id}',
@@ -14684,7 +15082,7 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                           ),
                           onDecide: controller.replyToPermission,
                         ),
-                      if (sessionId != null)
+                      if (!compact && sessionId != null)
                         _SessionTodoDock(
                           key: ValueKey<String>(
                             'session-todo-dock-${pane.id}::$normalizedSessionId',
@@ -17510,6 +17908,43 @@ class _PromptComposerState extends State<_PromptComposer> {
     );
   }
 
+  Future<void> _openQueuedPromptsSheet() async {
+    if (widget.queuedPrompts.isEmpty) {
+      return;
+    }
+    await _showCompactWorkspaceSheet(
+      context,
+      title: context.wp(
+        widget.queuedPrompts.length == 1
+            ? '1 queued follow-up'
+            : '{count} queued follow-ups',
+        args: <String, Object?>{'count': widget.queuedPrompts.length},
+      ),
+      contentBuilder: (sheetContext, _) => Padding(
+        padding: const EdgeInsets.all(AppSpacing.sm),
+        child: _ComposerQueuedPromptDock(
+          compact: true,
+          queuedPrompts: widget.queuedPrompts,
+          failedQueuedPromptId: widget.failedQueuedPromptId,
+          sendingQueuedPromptId: widget.sendingQueuedPromptId,
+          busy: widget.interruptible,
+          onEditQueuedPrompt: (queuedPromptId) async {
+            Navigator.of(sheetContext).pop();
+            await widget.onEditQueuedPrompt(queuedPromptId);
+          },
+          onDeleteQueuedPrompt: (queuedPromptId) async {
+            Navigator.of(sheetContext).pop();
+            await widget.onDeleteQueuedPrompt(queuedPromptId);
+          },
+          onSendQueuedPromptNow: (queuedPromptId) async {
+            Navigator.of(sheetContext).pop();
+            await widget.onSendQueuedPromptNow(queuedPromptId);
+          },
+        ),
+      ),
+    );
+  }
+
   Future<void> _runBuiltinSlashCommand(
     _ComposerBuiltinSlashAction action,
   ) async {
@@ -17698,16 +18133,34 @@ class _PromptComposerState extends State<_PromptComposer> {
                   child: Column(
                     children: <Widget>[
                       if (widget.queuedPrompts.isNotEmpty) ...<Widget>[
-                        _ComposerQueuedPromptDock(
-                          compact: isCompact,
-                          queuedPrompts: widget.queuedPrompts,
-                          failedQueuedPromptId: widget.failedQueuedPromptId,
-                          sendingQueuedPromptId: widget.sendingQueuedPromptId,
-                          busy: widget.interruptible,
-                          onEditQueuedPrompt: widget.onEditQueuedPrompt,
-                          onDeleteQueuedPrompt: widget.onDeleteQueuedPrompt,
-                          onSendQueuedPromptNow: widget.onSendQueuedPromptNow,
-                        ),
+                        if (isCompact)
+                          _CompactActivitySummaryButton(
+                            key: const ValueKey<String>(
+                              'composer-queued-summary-button',
+                            ),
+                            icon: Icons.schedule_send_rounded,
+                            label: context.wp(
+                              widget.queuedPrompts.length == 1
+                                  ? '1 queued follow-up'
+                                  : '{count} queued follow-ups',
+                              args: <String, Object?>{
+                                'count': widget.queuedPrompts.length,
+                              },
+                            ),
+                            accent: Theme.of(context).colorScheme.primary,
+                            onTap: () => unawaited(_openQueuedPromptsSheet()),
+                          )
+                        else
+                          _ComposerQueuedPromptDock(
+                            compact: isCompact,
+                            queuedPrompts: widget.queuedPrompts,
+                            failedQueuedPromptId: widget.failedQueuedPromptId,
+                            sendingQueuedPromptId: widget.sendingQueuedPromptId,
+                            busy: widget.interruptible,
+                            onEditQueuedPrompt: widget.onEditQueuedPrompt,
+                            onDeleteQueuedPrompt: widget.onDeleteQueuedPrompt,
+                            onSendQueuedPromptNow: widget.onSendQueuedPromptNow,
+                          ),
                         SizedBox(
                           height: density.inset(
                             isCompact ? AppSpacing.sm : AppSpacing.md,

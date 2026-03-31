@@ -539,6 +539,126 @@ void main() {
     expect(find.text('Queued follow-up draft'), findsOneWidget);
   });
 
+  testWidgets('compact composer moves queued follow-ups into a sheet', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final workspaceController = _QueuedWorkspaceController(
+      profile: profile,
+      directory: '/workspace/demo',
+      queuedPrompts: <WorkspaceQueuedPrompt>[
+        WorkspaceQueuedPrompt(
+          id: 'queued_1',
+          sessionId: 'ses_1',
+          prompt: 'Queued follow-up draft',
+          attachments: const <PromptAttachment>[
+            PromptAttachment(
+              id: 'att_1',
+              filename: 'notes.txt',
+              mime: 'text/plain',
+              url: 'data:text/plain;base64,bm90ZXM=',
+            ),
+          ],
+          createdAt: DateTime.fromMillisecondsSinceEpoch(1710000001000),
+          agentName: 'Sisyphus',
+          modelKey: 'openai/gpt-5.4',
+          reasoning: 'high',
+        ),
+        WorkspaceQueuedPrompt(
+          id: 'queued_2',
+          sessionId: 'ses_1',
+          prompt: 'Second queued draft',
+          attachments: const <PromptAttachment>[],
+          createdAt: DateTime.fromMillisecondsSinceEpoch(1710000002000),
+        ),
+      ],
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceController: workspaceController,
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(
+      find.byKey(const ValueKey<String>('composer-queued-summary-button')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('composer-queued-dock')),
+      findsNothing,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('composer-queued-summary-button')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Queued follow-up draft'), findsOneWidget);
+    expect(find.text('Second queued draft'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('composer-queued-delete-button-queued_2'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(workspaceController.deletedQueuedPromptIds, <String>['queued_2']);
+    expect(
+      find.byKey(const ValueKey<String>('composer-queued-summary-button')),
+      findsOneWidget,
+    );
+    expect(find.text('Second queued draft'), findsNothing);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('composer-queued-summary-button')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('composer-queued-edit-button-queued_1'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(workspaceController.editedQueuedPromptIds, <String>['queued_1']);
+    expect(
+      tester
+          .widget<TextField>(
+            find.byKey(const ValueKey<String>('composer-text-field')),
+          )
+          .controller
+          ?.text,
+      'Queued follow-up draft',
+    );
+  });
+
   testWidgets('busy sessions show a stop button that interrupts the agent', (
     tester,
   ) async {

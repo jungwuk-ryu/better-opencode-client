@@ -18,7 +18,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-    'compact active sub-session panel starts collapsed, opens, collapses, and hides when idle',
+    'compact active sub-session activity opens in a sheet and hides when idle',
     (tester) async {
       tester.view.physicalSize = const Size(430, 932);
       tester.view.devicePixelRatio = 1;
@@ -61,11 +61,13 @@ void main() {
       final controller = createdControllers.single;
 
       expect(
-        find.byKey(const ValueKey<String>('active-subsessions-panel')),
+        find.byKey(const ValueKey<String>('compact-session-activity-bar')),
         findsOneWidget,
       );
-      expect(find.text('Sub-agents Running'), findsOneWidget);
-      expect(find.text('2 running'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('compact-session-subagents-button')),
+        findsOneWidget,
+      );
       expect(find.text('Bootstrap repo tooling'), findsNothing);
       expect(find.text('Review release checklist'), findsNothing);
       expect(find.text('Running bootstrap command'), findsNothing);
@@ -73,35 +75,48 @@ void main() {
       expect(find.text('Idle child session'), findsNothing);
 
       await tester.tap(
-        find.byKey(const ValueKey<String>('active-subsessions-toggle-button')),
+        find.byKey(const ValueKey<String>('compact-session-subagents-button')),
       );
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 250));
+      await tester.pump(const Duration(milliseconds: 300));
 
+      expect(find.text('Sub-agents'), findsOneWidget);
+      expect(find.text('Sub-agents Running'), findsOneWidget);
+      expect(find.text('2 running'), findsOneWidget);
       expect(find.text('Bootstrap repo tooling'), findsOneWidget);
       expect(find.text('Review release checklist'), findsOneWidget);
       expect(find.text('Running bootstrap command'), findsOneWidget);
       expect(find.text('Task: Compare release checklist'), findsOneWidget);
       expect(find.text('Idle child session'), findsNothing);
 
-      await tester.tap(
-        find.byKey(const ValueKey<String>('active-subsessions-toggle-button')),
-      );
+      await tester.tap(find.byTooltip('Close'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      controller.setStatus('ses_child_busy_1', 'idle');
+      controller.setStatus('ses_child_busy_2', 'idle');
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 250));
 
       expect(
-        find.byKey(
-          const ValueKey<String>('active-subsession-chip-ses_child_busy_1'),
-        ),
+        find.byKey(const ValueKey<String>('compact-session-subagents-button')),
         findsNothing,
       );
 
-      await tester.tap(
-        find.byKey(const ValueKey<String>('active-subsessions-toggle-button')),
-      );
+      controller.setStatus('ses_child_busy_1', 'busy');
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 250));
+
+      expect(
+        find.byKey(const ValueKey<String>('compact-session-subagents-button')),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('compact-session-subagents-button')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
 
       await tester.tap(
         find.byKey(
@@ -118,16 +133,6 @@ void main() {
           const ValueKey<String>('workspace-back-to-main-session-button'),
         ),
         findsOneWidget,
-      );
-
-      controller.setStatus('ses_child_busy_1', 'idle');
-      controller.setStatus('ses_child_busy_2', 'idle');
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 250));
-
-      expect(
-        find.byKey(const ValueKey<String>('active-subsessions-panel')),
-        findsNothing,
       );
     },
   );
