@@ -16352,6 +16352,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
   static const int _initialWindowSize = 60;
   static const int _windowGrowthSize = 40;
   static const double _loadOlderThreshold = 96;
+  static const double _nearBottomThreshold = 120;
   static const ValueKey<String> _loadOlderItemKey = ValueKey<String>(
     'timeline-load-older-indicator-item',
   );
@@ -16376,6 +16377,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
   double? _olderHistoryPreservedPixels;
   double? _olderHistoryPreservedExtent;
   bool _awaitingOlderHistoryInsert = false;
+  bool _showJumpToLatest = false;
   final Map<String, GlobalKey> _messageItemKeys = <String, GlobalKey>{};
 
   List<ChatMessage> get _visibleMessages => widget.messages.sublist(
@@ -16437,6 +16439,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
       _visibleStartIndex = _initialVisibleStart(widget.messages.length);
       _loadingOlder = false;
       _clearOlderHistoryPreservation();
+      _showJumpToLatest = false;
     }
 
     if (_visibleStartIndex > widget.messages.length) {
@@ -16481,7 +16484,13 @@ class _MessageTimelineState extends State<_MessageTimeline> {
       }
     });
     if (widget.keyboardInsetBottom > oldWidget.keyboardInsetBottom + 1) {
-      _scheduleKeyboardInsetFollow();
+      final nearBottomBeforeInset =
+          _scrollController.hasClients &&
+          _scrollController.position.hasContentDimensions &&
+          _positionNearBottom(_scrollController.position);
+      _scheduleKeyboardInsetFollow(
+        force: _wasNearBottom || nearBottomBeforeInset,
+      );
     }
     _lastJumpToBottomEpoch = widget.jumpToBottomEpoch;
   }
@@ -16595,14 +16604,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
   }
 
   Future<void> _handleScroll() async {
-    if (_scrollController.hasClients) {
-      final position = _scrollController.position;
-      if (position.hasContentDimensions) {
-        _wasNearBottom =
-            !position.hasPixels ||
-            (position.maxScrollExtent - position.pixels) <= 120;
-      }
-    }
+    _updateJumpToLatestVisibility();
     if (_loadingOlder || widget.historyLoading || !_hasMoreHistory) {
       return;
     }
@@ -16686,6 +16688,115 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     });
   }
 
+  bool _positionNearBottom(ScrollPosition position) {
+    return !position.hasPixels ||
+        (position.maxScrollExtent - position.pixels) <= _nearBottomThreshold;
+  }
+
+  void _updateJumpToLatestVisibility({bool notify = true}) {
+    if (!_scrollController.hasClients) {
+      if (_showJumpToLatest) {
+        if (notify && mounted) {
+          setState(() {
+            _showJumpToLatest = false;
+          });
+        } else {
+          _showJumpToLatest = false;
+        }
+      }
+      return;
+    }
+    final position = _scrollController.position;
+    if (!position.hasContentDimensions) {
+      return;
+    }
+    final nearBottom = _positionNearBottom(position);
+    _wasNearBottom = nearBottom;
+    final shouldShow = widget.messages.isNotEmpty && !nearBottom;
+    if (shouldShow == _showJumpToLatest) {
+      return;
+    }
+    if (notify && mounted) {
+      setState(() {
+        _showJumpToLatest = shouldShow;
+      });
+    } else {
+      _showJumpToLatest = shouldShow;
+    }
+  }
+
+  Future<void> _scrollToLatest() async {
+    if (!_scrollController.hasClients) {
+      return;
+    }
+    final position = _scrollController.position;
+    if (!position.hasContentDimensions) {
+      return;
+    }
+    final target = position.maxScrollExtent;
+    _beginBottomLock(widget.storageScopeKey);
+    if (_showJumpToLatest && mounted) {
+      setState(() {
+        _showJumpToLatest = false;
+      });
+    }
+    _wasNearBottom = true;
+    if (!position.hasPixels || (target - position.pixels).abs() <= 1) {
+      _scrollController.jumpTo(target);
+      _updateJumpToLatestVisibility(notify: false);
+      return;
+    }
+    await _scrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+    );
+    if (!mounted) {
+      return;
+    }
+    _updateJumpToLatestVisibility();
+  }
+
+  void _jumpToBottomIfPossible({bool animate = false}) {
+    if (!_scrollController.hasClients) {
+      return;
+    }
+    final position = _scrollController.position;
+    if (!position.hasContentDimensions) {
+      return;
+    }
+    final target = position.maxScrollExtent;
+    if ((target - position.pixels).abs() <= 1) {
+      _wasNearBottom = true;
+      _updateJumpToLatestVisibility(notify: false);
+      return;
+    }
+    if (animate && position.hasPixels) {
+      unawaited(
+        _scrollController.animateTo(
+          target,
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+        ),
+      );
+    } else {
+      _scrollController.jumpTo(target);
+    }
+    _wasNearBottom = true;
+    _updateJumpToLatestVisibility(notify: false);
+  }
+
+  void _scheduleDelayedBottomFollow(Duration delay) {
+    unawaited(
+      Future<void>.delayed(delay, () {
+        if (!mounted || !_scrollController.hasClients) {
+          return;
+        }
+        _jumpToBottomIfPossible();
+      }),
+    );
+  }
+
   int _contentSignature() {
     return Object.hash(
       widget.timelineContentSignature,
@@ -16750,6 +16861,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
         _scrollController.jumpTo(target);
       }
       _wasNearBottom = true;
+      _updateJumpToLatestVisibility(notify: false);
 
       final lastExtent = _bottomLockLastExtent;
       if (lastExtent != null && (target - lastExtent).abs() <= 1) {
@@ -16768,7 +16880,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     });
   }
 
-  void _scheduleKeyboardInsetFollow() {
+  void _scheduleKeyboardInsetFollow({bool force = false}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scrollController.hasClients || _searchActive) {
         return;
@@ -16777,34 +16889,14 @@ class _MessageTimelineState extends State<_MessageTimeline> {
       if (!position.hasContentDimensions) {
         return;
       }
-      final nearBottomNow =
-          !position.hasPixels ||
-          (position.maxScrollExtent - position.pixels) <= 120;
-      if (!(_wasNearBottom || nearBottomNow)) {
+      final nearBottomNow = _positionNearBottom(position);
+      if (!(force || _wasNearBottom || nearBottomNow)) {
         return;
       }
       _beginBottomLock(widget.storageScopeKey);
-      final target = position.maxScrollExtent;
-      if ((target - position.pixels).abs() > 1) {
-        _scrollController.jumpTo(target);
-      }
-      _wasNearBottom = true;
-      unawaited(
-        Future<void>.delayed(const Duration(milliseconds: 32), () {
-          if (!mounted || !_scrollController.hasClients) {
-            return;
-          }
-          final delayedPosition = _scrollController.position;
-          if (!delayedPosition.hasContentDimensions) {
-            return;
-          }
-          final delayedTarget = delayedPosition.maxScrollExtent;
-          if ((delayedTarget - delayedPosition.pixels).abs() > 1) {
-            _scrollController.jumpTo(delayedTarget);
-          }
-          _wasNearBottom = true;
-        }),
-      );
+      _jumpToBottomIfPossible();
+      _scheduleDelayedBottomFollow(const Duration(milliseconds: 32));
+      _scheduleDelayedBottomFollow(const Duration(milliseconds: 180));
     });
   }
 
@@ -16835,15 +16927,14 @@ class _MessageTimelineState extends State<_MessageTimeline> {
       return;
     }
     if (_searchActive && !forceBottom) {
+      _updateJumpToLatestVisibility(notify: false);
       _lastScopeKey = scopeKey;
       _lastMessageCount = messageCount;
       _lastContentSignature = contentSignature;
       _lastLoading = widget.loading;
       return;
     }
-    final nearBottomNow =
-        !position.hasPixels ||
-        (position.maxScrollExtent - position.pixels) <= 120;
+    final nearBottomNow = _positionNearBottom(position);
     final shouldFollowTimeline =
         forceBottom ||
         sessionChanged ||
@@ -16865,6 +16956,8 @@ class _MessageTimelineState extends State<_MessageTimeline> {
         _wasNearBottom = true;
       }
     }
+
+    _updateJumpToLatestVisibility(notify: false);
 
     _lastScopeKey = scopeKey;
     _lastMessageCount = messageCount;
@@ -16970,154 +17063,277 @@ class _MessageTimelineState extends State<_MessageTimeline> {
                   ),
           ),
         Expanded(
-          child: Scrollbar(
-            controller: _scrollController,
-            thumbVisibility: true,
-            interactive: true,
-            child: Builder(
-              builder: (context) {
-                final visibleMessages = _visibleMessages;
-                final showLoadOlderIndicator =
-                    _hiddenMessageCount > 0 ||
-                    widget.historyMore ||
-                    widget.historyLoading;
-                final placeholderIndex =
-                    visibleMessages.length + (showLoadOlderIndicator ? 1 : 0);
-                final itemCount =
-                    placeholderIndex + (showThinkingPlaceholder ? 1 : 0);
-                final normalizedSearchTerms = _searchActive
-                    ? _normalizedSearchTerms(widget.searchQuery)
-                    : const <String>[];
+          child: Stack(
+            children: <Widget>[
+              Scrollbar(
+                controller: _scrollController,
+                thumbVisibility: true,
+                interactive: true,
+                child: Builder(
+                  builder: (context) {
+                    final visibleMessages = _visibleMessages;
+                    final showLoadOlderIndicator =
+                        _hiddenMessageCount > 0 ||
+                        widget.historyMore ||
+                        widget.historyLoading;
+                    final placeholderIndex =
+                        visibleMessages.length +
+                        (showLoadOlderIndicator ? 1 : 0);
+                    final itemCount =
+                        placeholderIndex + (showThinkingPlaceholder ? 1 : 0);
+                    final normalizedSearchTerms = _searchActive
+                        ? _normalizedSearchTerms(widget.searchQuery)
+                        : const <String>[];
 
-                return ListView.builder(
-                  controller: _scrollController,
-                  key: PageStorageKey<String>(widget.pageStorageKeyValue),
-                  padding: EdgeInsets.fromLTRB(
-                    density.inset(
-                      widget.compact ? AppSpacing.sm : AppSpacing.xl,
-                    ),
-                    density.inset(
-                      widget.compact ? AppSpacing.sm : AppSpacing.xl,
-                    ),
-                    density.inset(
-                      widget.compact ? AppSpacing.sm : AppSpacing.xl,
-                    ),
-                    density.inset(
-                      widget.compact ? AppSpacing.xs : AppSpacing.lg,
-                    ),
-                  ),
-                  itemCount: itemCount,
-                  cacheExtent: _searchActive ? 200000 : 1600,
-                  itemBuilder: (context, index) {
-                    if (showThinkingPlaceholder && index == placeholderIndex) {
-                      return Center(
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(
-                            maxWidth: density.maxContentWidth(860),
-                          ),
-                          child: Padding(
-                            padding: EdgeInsets.only(
-                              top: visibleMessages.isEmpty
-                                  ? 0
-                                  : (widget.compact
-                                        ? density.inset(AppSpacing.sm)
-                                        : density.inset(AppSpacing.md)),
-                            ),
-                            child: _TimelineThinkingPlaceholder(
-                              compact: widget.compact,
-                            ),
-                          ),
+                    return ListView.builder(
+                      controller: _scrollController,
+                      key: PageStorageKey<String>(widget.pageStorageKeyValue),
+                      padding: EdgeInsets.fromLTRB(
+                        density.inset(
+                          widget.compact ? AppSpacing.sm : AppSpacing.xl,
                         ),
-                      );
-                    }
-                    if (showLoadOlderIndicator && index == 0) {
-                      return KeyedSubtree(
-                        key: _loadOlderItemKey,
-                        child: Center(
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(
-                              maxWidth: density.maxContentWidth(860),
-                            ),
-                            child: Padding(
-                              padding: EdgeInsets.only(
-                                bottom: widget.compact
-                                    ? density.inset(AppSpacing.sm)
-                                    : density.inset(AppSpacing.md),
-                              ),
-                              child: _TimelineLoadOlderIndicator(
-                                hiddenCount: _hiddenMessageCount,
-                                loading: _loadingOlder || widget.historyLoading,
-                                serverMore: widget.historyMore,
-                                compact: widget.compact,
-                                onPressed: () =>
-                                    unawaited(_loadOlderMessages()),
-                              ),
-                            ),
-                          ),
+                        density.inset(
+                          widget.compact ? AppSpacing.sm : AppSpacing.xl,
                         ),
-                      );
-                    }
-
-                    final messageIndex =
-                        index - (showLoadOlderIndicator ? 1 : 0);
-                    final message = visibleMessages[messageIndex];
-                    final isLast = messageIndex == visibleMessages.length - 1;
-                    final matched = widget.matchingMessageIds.contains(
-                      message.info.id,
-                    );
-                    final activeMatch =
-                        widget.activeMatchMessageId == message.info.id;
-                    return KeyedSubtree(
-                      key: _messageItemKey(message.info.id),
-                      child: RepaintBoundary(
-                        child: Center(
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(
-                              maxWidth: density.maxContentWidth(860),
-                            ),
-                            child: Padding(
-                              padding: EdgeInsets.only(
-                                bottom: isLast
-                                    ? 0
-                                    : (widget.compact
-                                          ? density.inset(AppSpacing.md)
-                                          : density.inset(AppSpacing.xl)),
+                        density.inset(
+                          widget.compact ? AppSpacing.sm : AppSpacing.xl,
+                        ),
+                        density.inset(
+                          widget.compact ? AppSpacing.xs : AppSpacing.lg,
+                        ),
+                      ),
+                      itemCount: itemCount,
+                      cacheExtent: _searchActive ? 200000 : 1600,
+                      itemBuilder: (context, index) {
+                        if (showThinkingPlaceholder &&
+                            index == placeholderIndex) {
+                          return Center(
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth: density.maxContentWidth(860),
                               ),
-                              child: SizedBox(
-                                width: double.infinity,
-                                child: _TimelineMessage(
-                                  currentSessionId: widget.currentSessionId,
-                                  message: message,
+                              child: Padding(
+                                padding: EdgeInsets.only(
+                                  top: visibleMessages.isEmpty
+                                      ? 0
+                                      : (widget.compact
+                                            ? density.inset(AppSpacing.sm)
+                                            : density.inset(AppSpacing.md)),
+                                ),
+                                child: _TimelineThinkingPlaceholder(
                                   compact: widget.compact,
-                                  searchTerms: matched
-                                      ? normalizedSearchTerms
-                                      : const <String>[],
-                                  searchMatched: matched,
-                                  searchActive: activeMatch,
-                                  sessions: widget.sessions,
-                                  selectedSession: widget.selectedSession,
-                                  configSnapshot: widget.configSnapshot,
-                                  shellToolDisplayMode:
-                                      widget.shellToolDisplayMode,
-                                  timelineProgressDetailsVisible:
-                                      widget.timelineProgressDetailsVisible,
-                                  onForkMessage: widget.onForkMessage,
-                                  onRevertMessage: widget.onRevertMessage,
-                                  onOpenSession: widget.onOpenSession,
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+                        if (showLoadOlderIndicator && index == 0) {
+                          return KeyedSubtree(
+                            key: _loadOlderItemKey,
+                            child: Center(
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxWidth: density.maxContentWidth(860),
+                                ),
+                                child: Padding(
+                                  padding: EdgeInsets.only(
+                                    bottom: widget.compact
+                                        ? density.inset(AppSpacing.sm)
+                                        : density.inset(AppSpacing.md),
+                                  ),
+                                  child: _TimelineLoadOlderIndicator(
+                                    hiddenCount: _hiddenMessageCount,
+                                    loading:
+                                        _loadingOlder || widget.historyLoading,
+                                    serverMore: widget.historyMore,
+                                    compact: widget.compact,
+                                    onPressed: () =>
+                                        unawaited(_loadOlderMessages()),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+
+                        final messageIndex =
+                            index - (showLoadOlderIndicator ? 1 : 0);
+                        final message = visibleMessages[messageIndex];
+                        final isLast =
+                            messageIndex == visibleMessages.length - 1;
+                        final matched = widget.matchingMessageIds.contains(
+                          message.info.id,
+                        );
+                        final activeMatch =
+                            widget.activeMatchMessageId == message.info.id;
+                        return KeyedSubtree(
+                          key: _messageItemKey(message.info.id),
+                          child: RepaintBoundary(
+                            child: Center(
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxWidth: density.maxContentWidth(860),
+                                ),
+                                child: Padding(
+                                  padding: EdgeInsets.only(
+                                    bottom: isLast
+                                        ? 0
+                                        : (widget.compact
+                                              ? density.inset(AppSpacing.md)
+                                              : density.inset(AppSpacing.xl)),
+                                  ),
+                                  child: SizedBox(
+                                    width: double.infinity,
+                                    child: _TimelineMessage(
+                                      currentSessionId: widget.currentSessionId,
+                                      message: message,
+                                      compact: widget.compact,
+                                      searchTerms: matched
+                                          ? normalizedSearchTerms
+                                          : const <String>[],
+                                      searchMatched: matched,
+                                      searchActive: activeMatch,
+                                      sessions: widget.sessions,
+                                      selectedSession: widget.selectedSession,
+                                      configSnapshot: widget.configSnapshot,
+                                      shellToolDisplayMode:
+                                          widget.shellToolDisplayMode,
+                                      timelineProgressDetailsVisible:
+                                          widget.timelineProgressDetailsVisible,
+                                      onForkMessage: widget.onForkMessage,
+                                      onRevertMessage: widget.onRevertMessage,
+                                      onOpenSession: widget.onOpenSession,
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+              Positioned(
+                right: density.inset(
+                  widget.compact ? AppSpacing.md : AppSpacing.xl,
+                ),
+                bottom: density.inset(
+                  widget.compact ? AppSpacing.md : AppSpacing.xl,
+                ),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 180),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  transitionBuilder: (child, animation) {
+                    return FadeTransition(
+                      opacity: animation,
+                      child: SlideTransition(
+                        position: Tween<Offset>(
+                          begin: const Offset(0, 0.18),
+                          end: Offset.zero,
+                        ).animate(animation),
+                        child: child,
                       ),
                     );
                   },
-                );
-              },
-            ),
+                  child: _showJumpToLatest
+                      ? _TimelineJumpToLatestButton(
+                          key: const ValueKey<String>(
+                            'timeline-jump-to-latest-button',
+                          ),
+                          compact: widget.compact,
+                          onPressed: () => unawaited(_scrollToLatest()),
+                        )
+                      : const SizedBox.shrink(
+                          key: ValueKey<String>(
+                            'timeline-jump-to-latest-hidden',
+                          ),
+                        ),
+                ),
+              ),
+            ],
           ),
         ),
       ],
+    );
+  }
+}
+
+class _TimelineJumpToLatestButton extends StatelessWidget {
+  const _TimelineJumpToLatestButton({
+    required this.compact,
+    required this.onPressed,
+    super.key,
+  });
+
+  final bool compact;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final density = _workspaceDensity(context);
+    final content = compact
+        ? Icon(
+            Icons.arrow_downward_rounded,
+            size: 20,
+            color: theme.colorScheme.onPrimary,
+          )
+        : Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(
+                Icons.arrow_downward_rounded,
+                size: 18,
+                color: theme.colorScheme.onPrimary,
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Text(
+                context.wp('Latest'),
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: theme.colorScheme.onPrimary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          );
+
+    return Material(
+      color: Colors.transparent,
+      child: Ink(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.primary,
+          borderRadius: BorderRadius.circular(
+            compact ? AppSpacing.pillRadius : 16,
+          ),
+          boxShadow: <BoxShadow>[
+            BoxShadow(
+              color: theme.colorScheme.shadow.withValues(alpha: 0.18),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+          border: Border.all(color: surfaces.panel.withValues(alpha: 0.18)),
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(
+            compact ? AppSpacing.pillRadius : 16,
+          ),
+          onTap: onPressed,
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: density.inset(
+                compact ? AppSpacing.sm : AppSpacing.md,
+              ),
+              vertical: density.inset(AppSpacing.sm),
+            ),
+            child: content,
+          ),
+        ),
+      ),
     );
   }
 }

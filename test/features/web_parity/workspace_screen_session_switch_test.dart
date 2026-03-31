@@ -844,6 +844,98 @@ void main() {
   );
 
   testWidgets(
+    'timeline shows a jump-to-latest control when viewing older messages',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 932);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final createdControllers = <_LongSessionWorkspaceController>[];
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              final controller = _LongSessionWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+              createdControllers.add(controller);
+              return controller;
+            },
+      );
+      addTearDown(appController.dispose);
+
+      final navigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          navigatorKey: navigatorKey,
+          initialRoute: '/',
+        ),
+      );
+      navigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_long'),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.pumpAndSettle();
+
+      expect(createdControllers.single.selectedSessionId, 'ses_long');
+      expect(
+        find.byKey(const ValueKey<String>('timeline-jump-to-latest-button')),
+        findsNothing,
+      );
+
+      final listFinder = _messageTimelineListFinder();
+      final scrollController = tester.widget<ListView>(listFinder).controller!;
+      final initialPosition = scrollController.position;
+      scrollController.jumpTo(
+        (initialPosition.maxScrollExtent - 720).clamp(
+          0.0,
+          initialPosition.maxScrollExtent,
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        scrollController.position.maxScrollExtent -
+            scrollController.position.pixels,
+        greaterThan(120),
+      );
+      expect(
+        find.byKey(const ValueKey<String>('timeline-jump-to-latest-button')),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('timeline-jump-to-latest-button')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 260));
+      await tester.pumpAndSettle();
+
+      expect(
+        scrollController.position.pixels,
+        closeTo(scrollController.position.maxScrollExtent, 96),
+      );
+      expect(
+        find.byKey(const ValueKey<String>('timeline-jump-to-latest-button')),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
     'desktop composer recalls submitted prompt history per session and across launches',
     (tester) async {
       tester.view.physicalSize = const Size(1600, 1000);
