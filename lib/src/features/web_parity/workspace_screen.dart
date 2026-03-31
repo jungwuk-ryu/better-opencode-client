@@ -8776,16 +8776,16 @@ class _WorkspaceSettingsOversizedSessionBehaviorRow extends StatelessWidget {
                 'workspace-settings-oversized-session-behavior-segments',
               ),
               showSelectedIcon: false,
-              segments: const <ButtonSegment<OversizedSessionBehavior>>[
+              segments: <ButtonSegment<OversizedSessionBehavior>>[
                 ButtonSegment<OversizedSessionBehavior>(
                   value: OversizedSessionBehavior.retry,
                   label: Text(context.wp('Retry')),
-                  icon: Icon(Icons.refresh_rounded),
+                  icon: const Icon(Icons.refresh_rounded),
                 ),
                 ButtonSegment<OversizedSessionBehavior>(
                   value: OversizedSessionBehavior.openWithoutHistory,
                   label: Text(context.wp('Open')),
-                  icon: Icon(Icons.folder_open_rounded),
+                  icon: const Icon(Icons.folder_open_rounded),
                 ),
               ],
               selected: <OversizedSessionBehavior>{value},
