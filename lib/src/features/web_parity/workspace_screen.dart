@@ -20743,6 +20743,7 @@ class _TimelineMessageState extends State<_TimelineMessage> {
           child: _TimelinePart(
             currentSessionId: widget.currentSessionId,
             part: part,
+            compact: widget.compact,
             sessions: widget.sessions,
             shellToolDisplayMode: widget.shellToolDisplayMode,
             textStreamingActive: messageIsActive,
@@ -21326,6 +21327,7 @@ class _TimelinePart extends StatelessWidget {
   const _TimelinePart({
     required this.currentSessionId,
     required this.part,
+    required this.compact,
     required this.sessions,
     required this.shellToolDisplayMode,
     required this.textStreamingActive,
@@ -21337,6 +21339,7 @@ class _TimelinePart extends StatelessWidget {
 
   final String? currentSessionId;
   final ChatPart part;
+  final bool compact;
   final List<SessionSummary> sessions;
   final ShellToolDisplayMode shellToolDisplayMode;
   final bool textStreamingActive;
@@ -21388,6 +21391,7 @@ class _TimelinePart extends StatelessWidget {
         running: _toolStateStatus(part) == 'running',
         shimmerActive: shimmerActive,
         displayMode: shellToolDisplayMode,
+        compact: compact,
         searchTerms: searchTerms,
         searchActive: searchActive,
       );
@@ -21608,6 +21612,7 @@ class _ShellTimelinePart extends StatefulWidget {
     required this.running,
     required this.shimmerActive,
     required this.displayMode,
+    required this.compact,
     this.searchTerms = const <String>[],
     this.searchActive = false,
     super.key,
@@ -21621,6 +21626,7 @@ class _ShellTimelinePart extends StatefulWidget {
   final bool running;
   final bool shimmerActive;
   final ShellToolDisplayMode displayMode;
+  final bool compact;
   final List<String> searchTerms;
   final bool searchActive;
 
@@ -21629,7 +21635,7 @@ class _ShellTimelinePart extends StatefulWidget {
 }
 
 class _ShellTimelinePartState extends State<_ShellTimelinePart> {
-  static const int _maxPreviewLines = 6;
+  static const int _compactCollapsedCommandMaxLines = 2;
   static const double _expandedLogMaxHeight = 164;
 
   Timer? _copiedTimer;
@@ -21742,9 +21748,13 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
     final hasSubtitle = !pending && subtitle.isNotEmpty;
     final command = widget.command.trim();
     final output = widget.output.trim();
-    final preview = _shellPreviewOutput(output, maxLines: _maxPreviewLines);
     final hasCommand = command.isNotEmpty;
     final hasOutput = output.isNotEmpty;
+    final showCollapsedWaiting = pending && !hasOutput;
+    final showCollapsedBody = hasCommand || showCollapsedWaiting;
+    final collapsedCommandMaxLines = widget.compact && !_expanded
+        ? _compactCollapsedCommandMaxLines
+        : null;
     final canToggle =
         hasOutput &&
         !pending &&
@@ -21877,66 +21887,52 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
             ),
           ),
         ),
-        Container(
-          width: double.infinity,
-          margin: _timelineExpandableBodyMargin,
-          padding: _timelineShellBodyPadding,
-          decoration: BoxDecoration(
-            color: previewSurface,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: surfaces.lineSoft),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              if (hasCommand)
-                Text.rich(
-                  TextSpan(
-                    style: monoStyle.copyWith(fontWeight: FontWeight.w600),
-                    children: _buildSearchHighlightedTextSpans(
-                      text: '\$ $command',
+        if (showCollapsedBody)
+          Container(
+            width: double.infinity,
+            margin: _timelineExpandableBodyMargin,
+            padding: _timelineShellBodyPadding,
+            decoration: BoxDecoration(
+              color: previewSurface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: surfaces.lineSoft),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                if (hasCommand)
+                  Text.rich(
+                    TextSpan(
                       style: monoStyle.copyWith(fontWeight: FontWeight.w600),
-                      terms: widget.searchTerms,
-                      highlightColor: _searchTextHighlightColor(
-                        context,
-                        active: widget.searchActive,
-                        code: true,
+                      children: _buildSearchHighlightedTextSpans(
+                        text: '\$ $command',
+                        style: monoStyle.copyWith(fontWeight: FontWeight.w600),
+                        terms: widget.searchTerms,
+                        highlightColor: _searchTextHighlightColor(
+                          context,
+                          active: widget.searchActive,
+                          code: true,
+                        ),
                       ),
                     ),
+                    key: ValueKey<String>(
+                      'timeline-shell-command-${widget.partId}',
+                    ),
+                    maxLines: collapsedCommandMaxLines,
+                    overflow: collapsedCommandMaxLines == null
+                        ? TextOverflow.visible
+                        : TextOverflow.ellipsis,
                   ),
-                  key: ValueKey<String>(
-                    'timeline-shell-command-${widget.partId}',
-                  ),
-                ),
-              if (hasCommand && hasOutput)
-                const SizedBox(height: AppSpacing.sm),
-              if (hasOutput)
-                Text.rich(
-                  TextSpan(
+                if (showCollapsedWaiting) ...<Widget>[
+                  if (hasCommand) const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    context.wp('Waiting for shell output…'),
                     style: monoStyle.copyWith(color: surfaces.muted),
-                    children: _buildSearchHighlightedTextSpans(
-                      text: preview,
-                      style: monoStyle.copyWith(color: surfaces.muted),
-                      terms: widget.searchTerms,
-                      highlightColor: _searchTextHighlightColor(
-                        context,
-                        active: widget.searchActive,
-                        code: true,
-                      ),
-                    ),
                   ),
-                  key: ValueKey<String>(
-                    'timeline-shell-preview-output-${widget.partId}',
-                  ),
-                )
-              else if (pending)
-                Text(
-                  context.wp('Waiting for shell output…'),
-                  style: monoStyle.copyWith(color: surfaces.muted),
-                ),
-            ],
+                ],
+              ],
+            ),
           ),
-        ),
         ClipRect(
           child: AnimatedSize(
             duration: const Duration(milliseconds: 180),
@@ -25428,18 +25424,6 @@ String _shellToolOutput(ChatPart part) {
         _nestedValue(part.metadata, const <String>['output']) ??
         part.text,
   );
-}
-
-String _shellPreviewOutput(String output, {required int maxLines}) {
-  final normalized = output.trimRight();
-  if (normalized.isEmpty) {
-    return '';
-  }
-  final lines = normalized.split('\n');
-  if (lines.length <= maxLines) {
-    return normalized;
-  }
-  return lines.sublist(lines.length - maxLines).join('\n');
 }
 
 String _stringifyShellOutput(Object? value) {

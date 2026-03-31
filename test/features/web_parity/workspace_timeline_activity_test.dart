@@ -824,6 +824,7 @@ void main() {
       find.byKey(const ValueKey<String>('timeline-shell-expanded-part_tool')),
       findsOneWidget,
     );
+    expect(find.textContaining('M README.md'), findsOneWidget);
 
     await appController.setShellToolDisplayMode(ShellToolDisplayMode.collapsed);
     await tester.pump();
@@ -837,6 +838,7 @@ void main() {
       find.byKey(const ValueKey<String>('timeline-shell-expanded-part_tool')),
       findsNothing,
     );
+    expect(find.textContaining('M README.md'), findsNothing);
   });
 
   testWidgets('shell auto mode releases expansion after completion', (
@@ -887,7 +889,10 @@ void main() {
     );
 
     controllerInstance.completeShell(
-      output: List<String>.generate(8, (index) => 'line ${index + 1}').join('\n'),
+      output: List<String>.generate(
+        8,
+        (index) => 'line ${index + 1}',
+      ).join('\n'),
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
@@ -896,14 +901,75 @@ void main() {
       find.byKey(const ValueKey<String>('timeline-shell-expanded-part_tool')),
       findsNothing,
     );
+    expect(find.textContaining('line 8'), findsNothing);
+    expect(find.textContaining('line 1'), findsNothing);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('timeline-shell-header-part_tool')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
     expect(
-      find.byKey(
-        const ValueKey<String>('timeline-shell-preview-output-part_tool'),
-      ),
+      find.byKey(const ValueKey<String>('timeline-shell-expanded-part_tool')),
       findsOneWidget,
     );
     expect(find.textContaining('line 8'), findsOneWidget);
-    expect(find.textContaining('line 1'), findsNothing);
+    expect(find.textContaining('line 1'), findsOneWidget);
+  });
+
+  testWidgets('collapsed mobile shell summary limits commands to two lines', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      initialShellToolDisplayMode: ShellToolDisplayMode.collapsed,
+      initialTimelineProgressDetailsVisible: false,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _MutableShellWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+              initialCommand: List<String>.generate(
+                4,
+                (index) => 'command step ${index + 1}',
+              ).join('\n'),
+              initialOutput: 'output row 1\noutput row 2',
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    final commandText = tester.widget<Text>(
+      find.byKey(const ValueKey<String>('timeline-shell-command-part_tool')),
+    );
+
+    expect(commandText.maxLines, 2);
+    expect(commandText.overflow, TextOverflow.ellipsis);
+    expect(find.textContaining('output row 1'), findsNothing);
   });
 
   testWidgets('compaction renders as a divider instead of an activity card', (
@@ -1142,7 +1208,12 @@ class _MutableShellWorkspaceController extends WorkspaceController {
     required super.profile,
     required super.directory,
     super.initialSessionId,
-  });
+    String initialCommand = 'git diff --staged && git diff',
+    String initialOutput = 'line 1\nline 2',
+  }) : _command = initialCommand,
+       _messages = <ChatMessage>[
+         _buildShellMessage(command: initialCommand, output: initialOutput),
+       ];
 
   static const ProjectTarget _projectTarget = ProjectTarget(
     directory: '/workspace/demo',
@@ -1163,10 +1234,12 @@ class _MutableShellWorkspaceController extends WorkspaceController {
   );
 
   bool _loading = true;
-  List<ChatMessage> _messages = <ChatMessage>[_buildShellMessage()];
+  final String _command;
+  List<ChatMessage> _messages;
 
   static ChatMessage _buildShellMessage({
     String status = 'running',
+    String command = 'git diff --staged && git diff',
     String output = 'line 1\nline 2',
   }) {
     return ChatMessage(
@@ -1187,7 +1260,7 @@ class _MutableShellWorkspaceController extends WorkspaceController {
               'title': 'Shell output',
               'input': <String, Object?>{
                 'description': 'Run repository checks',
-                'command': 'git diff --staged && git diff',
+                'command': command,
               },
               'output': output,
             },
@@ -1228,7 +1301,11 @@ class _MutableShellWorkspaceController extends WorkspaceController {
 
   void completeShell({required String output}) {
     _messages = <ChatMessage>[
-      _buildShellMessage(status: 'completed', output: output),
+      _buildShellMessage(
+        status: 'completed',
+        command: _command,
+        output: output,
+      ),
     ];
     notifyListeners();
   }
