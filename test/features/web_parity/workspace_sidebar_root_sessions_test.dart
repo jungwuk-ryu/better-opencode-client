@@ -307,6 +307,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Workspace Settings'), findsOneWidget);
+    expect(find.text('Shell'), findsOneWidget);
     expect(find.text('Manage Servers'), findsOneWidget);
     expect(find.text('Ready'), findsOneWidget);
     expect(

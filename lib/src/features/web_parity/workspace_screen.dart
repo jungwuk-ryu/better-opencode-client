@@ -5708,14 +5708,6 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                       context: null,
                                     )
                                   : controller.sessionContextMetrics,
-                              shellToolDisplayMode:
-                                  appController.shellToolDisplayMode,
-                              onSetShellToolDisplayMode:
-                                  appController.setShellToolDisplayMode,
-                              timelineProgressDetailsVisible:
-                                  appController.timelineProgressDetailsVisible,
-                              onSetTimelineProgressDetailsVisible: appController
-                                  .setTimelineProgressDetailsVisible,
                               terminalOpen: _terminalPanelOpen,
                               chatSearchVisible: _chatSearchVisible,
                               chatSearchController: _chatSearchController,
@@ -6141,10 +6133,6 @@ class _WorkspaceTopBar extends StatelessWidget {
     required this.mainSession,
     required this.status,
     required this.contextMetrics,
-    required this.shellToolDisplayMode,
-    required this.onSetShellToolDisplayMode,
-    required this.timelineProgressDetailsVisible,
-    required this.onSetTimelineProgressDetailsVisible,
     required this.terminalOpen,
     required this.chatSearchVisible,
     required this.chatSearchController,
@@ -6183,11 +6171,6 @@ class _WorkspaceTopBar extends StatelessWidget {
   final SessionSummary? mainSession;
   final SessionStatusSummary? status;
   final SessionContextMetrics contextMetrics;
-  final ShellToolDisplayMode shellToolDisplayMode;
-  final Future<void> Function(ShellToolDisplayMode value)
-  onSetShellToolDisplayMode;
-  final bool timelineProgressDetailsVisible;
-  final Future<void> Function(bool value) onSetTimelineProgressDetailsVisible;
   final bool terminalOpen;
   final bool chatSearchVisible;
   final TextEditingController chatSearchController;
@@ -6290,54 +6273,6 @@ class _WorkspaceTopBar extends StatelessWidget {
             icon: Icons.subdirectory_arrow_left_rounded,
             onSelected: onBackToMainSession,
           ),
-      ],
-      <_SessionOverflowMenuAction>[
-        _SessionOverflowMenuAction(
-          id: 'shell-display-collapsed',
-          label: context.wp('Shell details off'),
-          icon: Icons.terminal_rounded,
-          checked: shellToolDisplayMode == ShellToolDisplayMode.collapsed,
-          onSelected: () {
-            unawaited(
-              onSetShellToolDisplayMode(ShellToolDisplayMode.collapsed),
-            );
-          },
-        ),
-        _SessionOverflowMenuAction(
-          id: 'shell-display-auto-collapse',
-          label: context.wp('Shell auto collapse'),
-          icon: Icons.unfold_less_rounded,
-          checked: shellToolDisplayMode == ShellToolDisplayMode.autoCollapse,
-          onSelected: () {
-            unawaited(
-              onSetShellToolDisplayMode(ShellToolDisplayMode.autoCollapse),
-            );
-          },
-        ),
-        _SessionOverflowMenuAction(
-          id: 'shell-display-always-expanded',
-          label: context.wp('Shell always expanded'),
-          icon: Icons.unfold_more_rounded,
-          checked: shellToolDisplayMode == ShellToolDisplayMode.alwaysExpanded,
-          onSelected: () {
-            unawaited(
-              onSetShellToolDisplayMode(ShellToolDisplayMode.alwaysExpanded),
-            );
-          },
-        ),
-        _SessionOverflowMenuAction(
-          id: 'timeline-progress-details',
-          label: context.wp('Show to-do details in timeline'),
-          icon: Icons.checklist_rtl_rounded,
-          checked: timelineProgressDetailsVisible,
-          onSelected: () {
-            unawaited(
-              onSetTimelineProgressDetailsVisible(
-                !timelineProgressDetailsVisible,
-              ),
-            );
-          },
-        ),
       ],
       <_SessionOverflowMenuAction>[
         _SessionOverflowMenuAction(
@@ -7964,10 +7899,9 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                 ),
                                 SizedBox(height: sectionGap),
                                 _WorkspaceSettingsSection(
-                                  title: context.wp('Timeline'),
+                                  title: context.wp('Shell'),
                                   child: _WorkspaceSettingsCard(
-                                    child: Column(
-                                      children: <Widget>[
+                                    child:
                                         _WorkspaceSettingsShellDisplayModeRow(
                                           key: const ValueKey<String>(
                                             'workspace-settings-shell-toggle',
@@ -7984,7 +7918,14 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                             );
                                           },
                                         ),
-                                        const SizedBox(height: AppSpacing.sm),
+                                  ),
+                                ),
+                                SizedBox(height: sectionGap),
+                                _WorkspaceSettingsSection(
+                                  title: context.wp('Timeline'),
+                                  child: _WorkspaceSettingsCard(
+                                    child: Column(
+                                      children: <Widget>[
                                         _WorkspaceSettingsToggleRow(
                                           key: const ValueKey<String>(
                                             'workspace-settings-progress-toggle',
