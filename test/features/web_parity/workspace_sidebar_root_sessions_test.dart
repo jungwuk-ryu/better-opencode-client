@@ -647,6 +647,108 @@ void main() {
   });
 
   testWidgets(
+    'mobile workspace settings wraps language options instead of compressing segments',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      tester.binding.platformDispatcher.localesTestValue = const <Locale>[
+        Locale('en', 'US'),
+      ];
+      addTearDown(tester.binding.platformDispatcher.clearLocalesTestValue);
+
+      final profile = ServerProfile(
+        id: 'server-mobile-language',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              return _SidebarWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+            },
+      );
+      final localeController = LocaleController();
+      addTearDown(appController.dispose);
+      addTearDown(localeController.dispose);
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          initialRoute: buildWorkspaceRoute(
+            '/workspace/demo',
+            sessionId: 'ses_1',
+          ),
+          localeController: localeController,
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      await tester.tap(find.byIcon(Icons.menu_rounded).first);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 240));
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('workspace-sidebar-settings-button')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 240));
+
+      final settingsListView = find
+          .descendant(
+            of: find.byKey(const ValueKey<String>('workspace-settings-sheet')),
+            matching: find.byType(ListView),
+          )
+          .first;
+      await tester.dragUntilVisible(
+        find.byKey(const ValueKey<String>('workspace-settings-language-row')),
+        settingsListView,
+        const Offset(0, -160),
+      );
+      await tester.pump();
+
+      final languageRow = find.byKey(
+        const ValueKey<String>('workspace-settings-language-row'),
+      );
+      expect(languageRow, findsOneWidget);
+      expect(
+        find.descendant(
+          of: languageRow,
+          matching: find.byKey(
+            const ValueKey<String>('workspace-settings-language-wrap'),
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: languageRow,
+          matching: find.byKey(
+            const ValueKey<String>('workspace-settings-language-segments'),
+          ),
+        ),
+        findsNothing,
+      );
+
+      await tester.tap(
+        find.descendant(of: languageRow, matching: find.text('한국어')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 220));
+
+      expect(localeController.mode, AppLocaleMode.korean);
+      expect(localeController.locale, const Locale('ko'));
+    },
+  );
+
+  testWidgets(
     'workspace settings sheet localizes chrome for japanese and chinese',
     (tester) async {
       tester.view.physicalSize = const Size(1600, 1000);

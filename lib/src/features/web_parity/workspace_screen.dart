@@ -9333,6 +9333,60 @@ class _WorkspaceSettingsLanguageRow extends StatelessWidget {
   final Locale effectiveLocale;
   final ValueChanged<AppLocaleMode> onChanged;
 
+  static const List<
+    ({
+      AppLocaleMode value,
+      String Function(BuildContext context) labelBuilder,
+      IconData icon,
+    })
+  >
+  _options =
+      <
+        ({
+          AppLocaleMode value,
+          String Function(BuildContext context) labelBuilder,
+          IconData icon,
+        })
+      >[
+        (
+          value: AppLocaleMode.system,
+          labelBuilder: _languageSystemLabel,
+          icon: Icons.settings_suggest_rounded,
+        ),
+        (
+          value: AppLocaleMode.english,
+          labelBuilder: _languageEnglishLabel,
+          icon: Icons.language_rounded,
+        ),
+        (
+          value: AppLocaleMode.korean,
+          labelBuilder: _languageKoreanLabel,
+          icon: Icons.translate_rounded,
+        ),
+        (
+          value: AppLocaleMode.japanese,
+          labelBuilder: _languageJapaneseLabel,
+          icon: Icons.translate_rounded,
+        ),
+        (
+          value: AppLocaleMode.chinese,
+          labelBuilder: _languageChineseLabel,
+          icon: Icons.translate_rounded,
+        ),
+      ];
+
+  static String _languageSystemLabel(BuildContext context) =>
+      context.wp('System');
+
+  static String _languageEnglishLabel(BuildContext context) =>
+      context.wp('English');
+
+  static String _languageKoreanLabel(BuildContext context) => '한국어';
+
+  static String _languageJapaneseLabel(BuildContext context) => '日本語';
+
+  static String _languageChineseLabel(BuildContext context) => '中文';
+
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
@@ -9377,46 +9431,56 @@ class _WorkspaceSettingsLanguageRow extends StatelessWidget {
             ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
           ),
           SizedBox(height: density.inset(AppSpacing.md)),
-          SizedBox(
-            width: double.infinity,
-            child: SegmentedButton<AppLocaleMode>(
-              key: const ValueKey<String>(
-                'workspace-settings-language-segments',
-              ),
-              showSelectedIcon: false,
-              segments: <ButtonSegment<AppLocaleMode>>[
-                ButtonSegment<AppLocaleMode>(
-                  value: AppLocaleMode.system,
-                  label: Text(context.wp('System')),
-                  icon: Icon(Icons.settings_suggest_rounded),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final useWrappedOptions = constraints.maxWidth < 520;
+              if (useWrappedOptions) {
+                return Wrap(
+                  key: const ValueKey<String>(
+                    'workspace-settings-language-wrap',
+                  ),
+                  spacing: AppSpacing.xs,
+                  runSpacing: AppSpacing.xs,
+                  children: _options
+                      .map((option) {
+                        final label = option.labelBuilder(context);
+                        return ChoiceChip(
+                          key: ValueKey<String>(
+                            'workspace-settings-language-option-${option.value.name}',
+                          ),
+                          label: Text(label),
+                          selected: value == option.value,
+                          onSelected: (_) => onChanged(option.value),
+                        );
+                      })
+                      .toList(growable: false),
+                );
+              }
+              return SizedBox(
+                width: double.infinity,
+                child: SegmentedButton<AppLocaleMode>(
+                  key: const ValueKey<String>(
+                    'workspace-settings-language-segments',
+                  ),
+                  showSelectedIcon: false,
+                  segments: _options
+                      .map((option) {
+                        final label = option.labelBuilder(context);
+                        return ButtonSegment<AppLocaleMode>(
+                          value: option.value,
+                          label: Text(label),
+                          icon: Icon(option.icon),
+                        );
+                      })
+                      .toList(growable: false),
+                  selected: <AppLocaleMode>{value},
+                  onSelectionChanged: (selection) {
+                    final next = selection.isEmpty ? value : selection.first;
+                    onChanged(next);
+                  },
                 ),
-                ButtonSegment<AppLocaleMode>(
-                  value: AppLocaleMode.english,
-                  label: Text(context.wp('English')),
-                  icon: Icon(Icons.language_rounded),
-                ),
-                ButtonSegment<AppLocaleMode>(
-                  value: AppLocaleMode.korean,
-                  label: Text('한국어'),
-                  icon: Icon(Icons.translate_rounded),
-                ),
-                ButtonSegment<AppLocaleMode>(
-                  value: AppLocaleMode.japanese,
-                  label: Text('日本語'),
-                  icon: Icon(Icons.translate_rounded),
-                ),
-                ButtonSegment<AppLocaleMode>(
-                  value: AppLocaleMode.chinese,
-                  label: Text('中文'),
-                  icon: Icon(Icons.translate_rounded),
-                ),
-              ],
-              selected: <AppLocaleMode>{value},
-              onSelectionChanged: (selection) {
-                final next = selection.isEmpty ? value : selection.first;
-                onChanged(next);
-              },
-            ),
+              );
+            },
           ),
         ],
       ),
