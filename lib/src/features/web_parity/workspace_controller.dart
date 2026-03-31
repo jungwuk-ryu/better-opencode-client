@@ -6260,10 +6260,121 @@ class WorkspaceController extends ChangeNotifier {
         break;
       }
     }
-    if (!changed) {
+    final ordered = changed
+        ? indexed.map((entry) => entry.message).toList(growable: false)
+        : messages;
+    return _suppressDerivedOptimisticUserMessages(ordered);
+  }
+
+  List<ChatMessage> _suppressDerivedOptimisticUserMessages(
+    List<ChatMessage> messages,
+  ) {
+    // Some agents surface an expanded prompt as the first rendered assistant
+    // payload for the turn, so we suppress the local optimistic echo once the
+    // derived prompt already includes the original user text.
+    final suppressedIndexes = <int>{};
+    for (var index = 0; index < messages.length; index += 1) {
+      final message = messages[index];
+      if (!_isOptimisticLocalUserMessage(message)) {
+        continue;
+      }
+      final userText = _normalizedComparableText(
+        _userMessageDisplayText(message),
+      );
+      if (userText.isEmpty) {
+        continue;
+      }
+      for (
+        var nextIndex = index + 1;
+        nextIndex < messages.length;
+        nextIndex += 1
+      ) {
+        final candidate = messages[nextIndex];
+        if (candidate.info.role == 'user') {
+          break;
+        }
+        if (_messageContainsDerivedUserPrompt(candidate, userText)) {
+          suppressedIndexes.add(index);
+          break;
+        }
+      }
+    }
+    if (suppressedIndexes.isEmpty) {
       return messages;
     }
-    return indexed.map((entry) => entry.message).toList(growable: false);
+    return <ChatMessage>[
+      for (var index = 0; index < messages.length; index += 1)
+        if (!suppressedIndexes.contains(index)) messages[index],
+    ];
+  }
+
+  bool _isOptimisticLocalUserMessage(ChatMessage message) {
+    if (message.info.role != 'user') {
+      return false;
+    }
+    if (message.info.metadata['_optimistic'] == true) {
+      return true;
+    }
+    final messageId = message.info.id.trim();
+    return messageId.startsWith('msg_local_') ||
+        messageId.startsWith('local_user_');
+  }
+
+  String _userMessageDisplayText(ChatMessage message) {
+    return message.parts
+        .where((part) => part.type == 'text')
+        .map(_partSignatureText)
+        .where((text) => text.isNotEmpty)
+        .join('\n\n');
+  }
+
+  bool _messageContainsDerivedUserPrompt(
+    ChatMessage message,
+    String normalizedUserText,
+  ) {
+    for (final part in message.parts) {
+      if (!_isDerivedPromptCandidatePart(part)) {
+        continue;
+      }
+      final candidateText = _normalizedComparableText(
+        _derivedPromptCandidateText(part),
+      );
+      if (candidateText.length <= normalizedUserText.length) {
+        continue;
+      }
+      if (candidateText.contains(normalizedUserText)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _isDerivedPromptCandidatePart(ChatPart part) {
+    return switch (part.type) {
+      'text' || 'reasoning' || 'agent' || 'subtask' || 'compaction' => true,
+      _ => false,
+    };
+  }
+
+  String _derivedPromptCandidateText(ChatPart part) {
+    final candidates = <Object?>[
+      part.text,
+      part.metadata['text'],
+      part.metadata['content'],
+      part.metadata['summary'],
+      part.metadata['description'],
+    ];
+    for (final candidate in candidates) {
+      final resolved = candidate?.toString().trim();
+      if (resolved != null && resolved.isNotEmpty) {
+        return resolved;
+      }
+    }
+    return '';
+  }
+
+  String _normalizedComparableText(String value) {
+    return value.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
   }
 
   int _computeTimelineContentSignature(List<ChatMessage> messages) {

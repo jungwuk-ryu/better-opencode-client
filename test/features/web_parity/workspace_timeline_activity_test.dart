@@ -551,6 +551,97 @@ void main() {
     );
   });
 
+  testWidgets('processed prompt hides the optimistic raw user bubble', (
+    tester,
+  ) async {
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      initialShellToolPartsExpanded: true,
+      initialTimelineProgressDetailsVisible: false,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _OptimisticTimelineWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+              messages: _processedPromptMessages,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(
+      find.byKey(
+        const ValueKey<String>('timeline-user-message-msg_local_prompt'),
+      ),
+      findsNothing,
+    );
+    expect(find.textContaining('[search-mode]'), findsOneWidget);
+  });
+
+  testWidgets(
+    'ordinary assistant replies keep the optimistic raw user bubble visible',
+    (tester) async {
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        initialShellToolPartsExpanded: true,
+        initialTimelineProgressDetailsVisible: false,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              return _OptimisticTimelineWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+                messages: _ordinaryAssistantReplyMessages,
+              );
+            },
+      );
+      addTearDown(appController.dispose);
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          initialRoute: buildWorkspaceRoute(
+            '/workspace/demo',
+            sessionId: 'ses_1',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      expect(
+        find.byKey(
+          const ValueKey<String>('timeline-user-message-msg_local_plain'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('I can check the branch list next.'), findsOneWidget);
+    },
+  );
+
   testWidgets(
     'desktop user message actions survive rapid hover toggles without duplicate keys',
     (tester) async {
@@ -1991,6 +2082,134 @@ class _UserMessageActionWorkspaceController extends WorkspaceController {
     );
     notifyListeners();
     return _session;
+  }
+}
+
+final List<ChatMessage> _processedPromptMessages = <ChatMessage>[
+  ChatMessage(
+    info: ChatMessageInfo(
+      id: 'msg_local_prompt',
+      role: 'user',
+      sessionId: 'ses_1',
+      createdAt: DateTime.fromMillisecondsSinceEpoch(1711421100000),
+      completedAt: DateTime.fromMillisecondsSinceEpoch(1711421100000),
+      metadata: const <String, Object?>{'_optimistic': true},
+    ),
+    parts: const <ChatPart>[
+      ChatPart(
+        id: 'part_local_prompt',
+        type: 'text',
+        text: 'Show me the branch list.',
+      ),
+    ],
+  ),
+  ChatMessage(
+    info: ChatMessageInfo(
+      id: 'msg_assistant_prompt',
+      role: 'assistant',
+      sessionId: 'ses_1',
+      createdAt: DateTime.fromMillisecondsSinceEpoch(1711421101000),
+    ),
+    parts: const <ChatPart>[
+      ChatPart(
+        id: 'part_assistant_prompt',
+        type: 'text',
+        text:
+            '[search-mode]\nMAXIMIZE SEARCH EFFORT.\n\nCollect the active branch names before responding.\n\nShow me the branch list.',
+      ),
+    ],
+  ),
+];
+
+final List<ChatMessage> _ordinaryAssistantReplyMessages = <ChatMessage>[
+  ChatMessage(
+    info: ChatMessageInfo(
+      id: 'msg_local_plain',
+      role: 'user',
+      sessionId: 'ses_1',
+      createdAt: DateTime.fromMillisecondsSinceEpoch(1711421100000),
+      completedAt: DateTime.fromMillisecondsSinceEpoch(1711421100000),
+      metadata: const <String, Object?>{'_optimistic': true},
+    ),
+    parts: const <ChatPart>[
+      ChatPart(
+        id: 'part_local_plain',
+        type: 'text',
+        text: 'Show me the branch list.',
+      ),
+    ],
+  ),
+  ChatMessage(
+    info: ChatMessageInfo(
+      id: 'msg_assistant_plain',
+      role: 'assistant',
+      sessionId: 'ses_1',
+      createdAt: DateTime.fromMillisecondsSinceEpoch(1711421101000),
+    ),
+    parts: const <ChatPart>[
+      ChatPart(
+        id: 'part_assistant_plain',
+        type: 'text',
+        text: 'I can check the branch list next.',
+      ),
+    ],
+  ),
+];
+
+class _OptimisticTimelineWorkspaceController extends WorkspaceController {
+  _OptimisticTimelineWorkspaceController({
+    required super.profile,
+    required super.directory,
+    super.initialSessionId,
+    required List<ChatMessage> messages,
+  }) : _messages = messages;
+
+  static const ProjectTarget _projectTarget = ProjectTarget(
+    directory: '/workspace/demo',
+    label: 'Demo',
+    source: 'server',
+    vcs: 'git',
+    branch: 'main',
+  );
+
+  static final SessionSummary _session = SessionSummary(
+    id: 'ses_1',
+    directory: '/workspace/demo',
+    title: 'Optimistic prompt visibility',
+    version: '1',
+    updatedAt: DateTime.fromMillisecondsSinceEpoch(1711421100000),
+  );
+
+  final List<ChatMessage> _messages;
+  bool _loading = true;
+
+  @override
+  bool get loading => _loading;
+
+  @override
+  ProjectTarget? get project => _projectTarget;
+
+  @override
+  List<ProjectTarget> get availableProjects => const <ProjectTarget>[
+    _projectTarget,
+  ];
+
+  @override
+  List<SessionSummary> get sessions => <SessionSummary>[_session];
+
+  @override
+  String? get selectedSessionId => _session.id;
+
+  @override
+  SessionSummary? get selectedSession => _session;
+
+  @override
+  List<ChatMessage> get messages => _messages;
+
+  @override
+  Future<void> load() async {
+    _loading = false;
+    notifyListeners();
   }
 }
 
