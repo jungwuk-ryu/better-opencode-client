@@ -3034,6 +3034,162 @@ void main() {
   );
 
   testWidgets(
+    'keyboard opening keeps the timeline pinned when already near the latest messages',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 932);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetViewInsets);
+
+      final createdControllers = <_LongSessionWorkspaceController>[];
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              final controller = _LongSessionWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+              createdControllers.add(controller);
+              return controller;
+            },
+      );
+      addTearDown(appController.dispose);
+
+      final navigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          navigatorKey: navigatorKey,
+          initialRoute: '/',
+        ),
+      );
+      navigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_long'),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.pumpAndSettle();
+
+      expect(createdControllers.single.selectedSessionId, 'ses_long');
+
+      final listFinder = _messageTimelineListFinder();
+      final initialPosition = tester
+          .widget<ListView>(listFinder)
+          .controller!
+          .position;
+      final initialMaxExtent = initialPosition.maxScrollExtent;
+      expect(initialPosition.pixels, closeTo(initialMaxExtent, 96));
+
+      tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+      await tester.pumpAndSettle();
+
+      final updatedPosition = tester
+          .widget<ListView>(listFinder)
+          .controller!
+          .position;
+      expect(updatedPosition.maxScrollExtent, greaterThan(initialMaxExtent));
+      expect(
+        updatedPosition.pixels,
+        closeTo(updatedPosition.maxScrollExtent, 96),
+      );
+    },
+  );
+
+  testWidgets(
+    'keyboard opening does not pull the timeline when viewing older messages',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 932);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetViewInsets);
+
+      final createdControllers = <_LongSessionWorkspaceController>[];
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              final controller = _LongSessionWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+              createdControllers.add(controller);
+              return controller;
+            },
+      );
+      addTearDown(appController.dispose);
+
+      final navigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          navigatorKey: navigatorKey,
+          initialRoute: '/',
+        ),
+      );
+      navigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_long'),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.pumpAndSettle();
+
+      expect(createdControllers.single.selectedSessionId, 'ses_long');
+
+      final listFinder = _messageTimelineListFinder();
+      final scrollController = tester.widget<ListView>(listFinder).controller!;
+      final initialPosition = scrollController.position;
+      scrollController.jumpTo(
+        (initialPosition.maxScrollExtent - 720).clamp(
+          0.0,
+          initialPosition.maxScrollExtent,
+        ),
+      );
+      await tester.pump();
+
+      final beforeKeyboardPosition = scrollController.position.pixels;
+      expect(
+        scrollController.position.maxScrollExtent - beforeKeyboardPosition,
+        greaterThan(120),
+      );
+
+      tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+      await tester.pumpAndSettle();
+
+      final updatedPosition = scrollController.position;
+      expect(
+        updatedPosition.maxScrollExtent - updatedPosition.pixels,
+        greaterThan(200),
+      );
+      expect(updatedPosition.pixels, closeTo(beforeKeyboardPosition, 24));
+    },
+  );
+
+  testWidgets(
     'scrolling to the top loads older timeline messages without resetting the viewport',
     (tester) async {
       tester.view.physicalSize = const Size(1600, 1000);

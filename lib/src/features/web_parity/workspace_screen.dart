@@ -15097,6 +15097,9 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                                     : session,
                                 configSnapshot: controller.configSnapshot,
                                 shellToolDisplayMode: shellToolDisplayMode,
+                                keyboardInsetBottom: compact
+                                    ? MediaQuery.viewInsetsOf(context).bottom
+                                    : 0,
                                 timelineProgressDetailsVisible:
                                     timelineProgressDetailsVisible,
                                 searchQuery: searchScoped
@@ -16223,6 +16226,7 @@ class _MessageTimeline extends StatefulWidget {
     required this.selectedSession,
     required this.configSnapshot,
     required this.shellToolDisplayMode,
+    required this.keyboardInsetBottom,
     required this.timelineProgressDetailsVisible,
     required this.searchQuery,
     required this.matchingMessageIds,
@@ -16257,6 +16261,7 @@ class _MessageTimeline extends StatefulWidget {
   final SessionSummary? selectedSession;
   final ConfigSnapshot? configSnapshot;
   final ShellToolDisplayMode shellToolDisplayMode;
+  final double keyboardInsetBottom;
   final bool timelineProgressDetailsVisible;
   final String searchQuery;
   final Set<String> matchingMessageIds;
@@ -16409,6 +16414,9 @@ class _MessageTimelineState extends State<_MessageTimeline> {
         );
       }
     });
+    if (widget.keyboardInsetBottom > oldWidget.keyboardInsetBottom + 1) {
+      _scheduleKeyboardInsetFollow();
+    }
     _lastJumpToBottomEpoch = widget.jumpToBottomEpoch;
   }
 
@@ -16691,6 +16699,46 @@ class _MessageTimelineState extends State<_MessageTimeline> {
         return;
       }
       _scheduleBottomLock();
+    });
+  }
+
+  void _scheduleKeyboardInsetFollow() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients || _searchActive) {
+        return;
+      }
+      final position = _scrollController.position;
+      if (!position.hasContentDimensions) {
+        return;
+      }
+      final nearBottomNow =
+          !position.hasPixels ||
+          (position.maxScrollExtent - position.pixels) <= 120;
+      if (!(_wasNearBottom || nearBottomNow)) {
+        return;
+      }
+      _beginBottomLock(widget.storageScopeKey);
+      final target = position.maxScrollExtent;
+      if ((target - position.pixels).abs() > 1) {
+        _scrollController.jumpTo(target);
+      }
+      _wasNearBottom = true;
+      unawaited(
+        Future<void>.delayed(const Duration(milliseconds: 32), () {
+          if (!mounted || !_scrollController.hasClients) {
+            return;
+          }
+          final delayedPosition = _scrollController.position;
+          if (!delayedPosition.hasContentDimensions) {
+            return;
+          }
+          final delayedTarget = delayedPosition.maxScrollExtent;
+          if ((delayedTarget - delayedPosition.pixels).abs() > 1) {
+            _scrollController.jumpTo(delayedTarget);
+          }
+          _wasNearBottom = true;
+        }),
+      );
     });
   }
 
