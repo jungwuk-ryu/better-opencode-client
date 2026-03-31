@@ -4527,6 +4527,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         ..._promptSubmitInFlightScopeKeys,
         scopeKey,
       };
+      _timelineJumpEpoch += 1;
       _composerAttachments = const <PromptAttachment>[];
       _promptSubmitEpoch = nextSubmitEpoch;
       _recentSubmittedPromptDraft = draft;
@@ -15132,7 +15133,7 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                                   context,
                                 ).oversizedSessionBehavior,
                                 onLoadMore: handleLoadMoreHistory,
-                                jumpToBottomEpoch: searchScoped
+                                jumpToBottomEpoch: selected
                                     ? timelineJumpEpoch
                                     : 0,
                               ),
@@ -16344,6 +16345,8 @@ class _MessageTimelineState extends State<_MessageTimeline> {
   void didUpdateWidget(covariant _MessageTimeline oldWidget) {
     super.didUpdateWidget(oldWidget);
 
+    final jumpToBottomRequested =
+        _lastJumpToBottomEpoch != widget.jumpToBottomEpoch;
     final sessionChanged =
         oldWidget.currentSessionId != widget.currentSessionId;
     final becameNonEmpty =
@@ -16409,9 +16412,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
               messagesShrank)) {
         _revealSearchMatch(widget.focusedMessageId!);
       } else {
-        _syncTimelinePosition(
-          forceBottom: _lastJumpToBottomEpoch != widget.jumpToBottomEpoch,
-        );
+        _syncTimelinePosition(forceBottom: jumpToBottomRequested);
       }
     });
     if (widget.keyboardInsetBottom > oldWidget.keyboardInsetBottom + 1) {

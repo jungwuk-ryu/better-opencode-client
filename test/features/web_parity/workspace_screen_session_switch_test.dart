@@ -756,6 +756,94 @@ void main() {
   );
 
   testWidgets(
+    'prompt submit jumps the selected timeline to the bottom even from older history',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      late _SubmittingLongSessionWorkspaceController controllerInstance;
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              controllerInstance = _SubmittingLongSessionWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+              return controllerInstance;
+            },
+      );
+      addTearDown(appController.dispose);
+
+      final navigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          navigatorKey: navigatorKey,
+          initialRoute: '/',
+          platform: TargetPlatform.macOS,
+        ),
+      );
+      navigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_long'),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.pumpAndSettle();
+
+      final listFinder = _messageTimelineListFinder();
+      final scrollController = tester.widget<ListView>(listFinder).controller!;
+      final maxExtentBeforeSubmit = scrollController.position.maxScrollExtent;
+      scrollController.jumpTo(
+        (maxExtentBeforeSubmit - 720).clamp(0.0, maxExtentBeforeSubmit),
+      );
+      await tester.pump();
+
+      expect(
+        scrollController.position.maxScrollExtent -
+            scrollController.position.pixels,
+        greaterThan(120),
+      );
+
+      final textField = find.byKey(
+        const ValueKey<String>('composer-text-field'),
+      );
+      await tester.tap(textField);
+      await tester.pump();
+      await tester.enterText(textField, 'Scroll me to the latest turn');
+      await tester.pump();
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.pumpAndSettle();
+
+      expect(controllerInstance.submittedPrompts, <String>[
+        'Scroll me to the latest turn',
+      ]);
+      final updatedPosition = tester
+          .widget<ListView>(listFinder)
+          .controller!
+          .position;
+      expect(
+        updatedPosition.pixels,
+        closeTo(updatedPosition.maxScrollExtent, 96),
+      );
+    },
+  );
+
+  testWidgets(
     'desktop composer recalls submitted prompt history per session and across launches',
     (tester) async {
       tester.view.physicalSize = const Size(1600, 1000);
@@ -4009,6 +4097,27 @@ class _ThinkingPlaceholderWorkspaceController
       ),
     ];
     notifyListeners();
+  }
+}
+
+class _SubmittingLongSessionWorkspaceController
+    extends _LongSessionWorkspaceController {
+  _SubmittingLongSessionWorkspaceController({
+    required super.profile,
+    required super.directory,
+    super.initialSessionId,
+  });
+
+  final List<String> submittedPrompts = <String>[];
+
+  @override
+  Future<String?> submitPrompt(
+    String prompt, {
+    List<PromptAttachment> attachments = const <PromptAttachment>[],
+    WorkspacePromptDispatchMode? mode,
+  }) async {
+    submittedPrompts.add(prompt.trim());
+    return selectedSessionId;
   }
 }
 
