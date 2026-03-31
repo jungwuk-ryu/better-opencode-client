@@ -5481,6 +5481,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
           final chatSearch = _resolveChatSearchState(controller);
           return Scaffold(
             key: _scaffoldKey,
+            resizeToAvoidBottomInset: !compact,
             drawer: compact
                 ? Drawer(
                     child: _WorkspaceSidebar(
@@ -8733,7 +8734,7 @@ class _WorkspaceSettingsOversizedSessionBehaviorRow extends StatelessWidget {
                 'workspace-settings-oversized-session-behavior-segments',
               ),
               showSelectedIcon: false,
-              segments: <ButtonSegment<OversizedSessionBehavior>>[
+              segments: const <ButtonSegment<OversizedSessionBehavior>>[
                 ButtonSegment<OversizedSessionBehavior>(
                   value: OversizedSessionBehavior.retry,
                   label: Text(context.wp('Retry')),
@@ -13648,6 +13649,7 @@ class _WorkspaceBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
+    final mediaQuery = MediaQuery.of(context);
     final questionRequest = controller.currentQuestionRequest;
     final permissionRequest = controller.currentPermissionRequest;
     final usesInlinePaneComposer = inlineComposerBuilder != null;
@@ -13800,7 +13802,12 @@ class _WorkspaceBody extends StatelessWidget {
           ),
           Expanded(
             child: compactPane == _CompactWorkspacePane.session
-                ? content
+                ? Padding(
+                    padding: EdgeInsets.only(
+                      bottom: mediaQuery.viewInsets.bottom,
+                    ),
+                    child: content,
+                  )
                 : sidePanel,
           ),
         ],
