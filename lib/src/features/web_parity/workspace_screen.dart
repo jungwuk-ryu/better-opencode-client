@@ -6257,6 +6257,38 @@ class _WorkspaceTopBar extends StatelessWidget {
             ),
           )
         : const SizedBox.shrink();
+    final compactToolbarMenuActions = compact
+        ? <_SessionOverflowMenuAction>[
+            _SessionOverflowMenuAction(
+              id: 'command-palette',
+              label: context.wp('Command palette'),
+              icon: Icons.apps_rounded,
+              onSelected: onOpenCommandPalette,
+            ),
+            _SessionOverflowMenuAction(
+              id: 'mcp',
+              label: context.wp('Toggle MCPs'),
+              icon: Icons.extension_rounded,
+              onSelected: onOpenMcpPicker,
+            ),
+            _SessionOverflowMenuAction(
+              id: 'chat-search',
+              label: context.wp('Search chat'),
+              icon: Icons.search_rounded,
+              onSelected: onOpenChatSearch,
+            ),
+            _SessionOverflowMenuAction(
+              id: 'terminal-toggle',
+              label: terminalOpen
+                  ? context.wp('Hide terminal')
+                  : context.wp('Show terminal'),
+              icon: terminalOpen
+                  ? Icons.terminal_rounded
+                  : Icons.terminal_outlined,
+              onSelected: onToggleTerminal,
+            ),
+          ]
+        : const <_SessionOverflowMenuAction>[];
     final menuSections = <List<_SessionOverflowMenuAction>>[
       <_SessionOverflowMenuAction>[
         if (compact)
@@ -6274,13 +6306,15 @@ class _WorkspaceTopBar extends StatelessWidget {
             onSelected: onBackToMainSession,
           ),
       ],
+      compactToolbarMenuActions,
       <_SessionOverflowMenuAction>[
-        _SessionOverflowMenuAction(
-          id: 'mcp',
-          label: context.wp('Toggle MCPs'),
-          icon: Icons.extension_rounded,
-          onSelected: onOpenMcpPicker,
-        ),
+        if (!compact)
+          _SessionOverflowMenuAction(
+            id: 'mcp',
+            label: context.wp('Toggle MCPs'),
+            icon: Icons.extension_rounded,
+            onSelected: onOpenMcpPicker,
+          ),
         _SessionOverflowMenuAction(
           id: 'rename',
           label: context.wp('Rename Session'),
@@ -6449,65 +6483,6 @@ class _WorkspaceTopBar extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (!keyboardVisible)
-                  Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      density.inset(AppSpacing.xs, min: 4),
-                      density.inset(AppSpacing.xxs, min: 4),
-                      density.inset(AppSpacing.xs, min: 4),
-                      density.inset(AppSpacing.xxs, min: 4),
-                    ),
-                    child: Wrap(
-                      alignment: WrapAlignment.start,
-                      runAlignment: WrapAlignment.start,
-                      spacing: density.inset(AppSpacing.xxs, min: 2),
-                      runSpacing: density.inset(AppSpacing.xxs, min: 2),
-                      children: <Widget>[
-                        IconButton(
-                          key: const ValueKey<String>(
-                            'workspace-command-palette-button',
-                          ),
-                          onPressed: onOpenCommandPalette,
-                          icon: const Icon(Icons.apps_rounded, size: 18),
-                          tooltip:
-                              '${context.wp('Command palette')} (${_formatWorkspaceShortcutLabel('mod+k')})',
-                          splashRadius: 18,
-                        ),
-                        IconButton(
-                          key: const ValueKey<String>(
-                            'workspace-mcp-picker-button',
-                          ),
-                          onPressed: onOpenMcpPicker,
-                          icon: const Icon(Icons.extension_rounded, size: 18),
-                          tooltip:
-                              '${context.wp('Toggle MCPs')} (${_formatWorkspaceShortcutLabel('mod+;')})',
-                          splashRadius: 18,
-                        ),
-                        IconButton(
-                          key: const ValueKey<String>(
-                            'workspace-chat-search-button',
-                          ),
-                          onPressed: onOpenChatSearch,
-                          icon: const Icon(Icons.search_rounded, size: 18),
-                          tooltip: context.wp('Search chat'),
-                          splashRadius: 18,
-                        ),
-                        IconButton(
-                          onPressed: onToggleTerminal,
-                          icon: Icon(
-                            terminalOpen
-                                ? Icons.terminal_rounded
-                                : Icons.terminal_outlined,
-                            size: 18,
-                          ),
-                          tooltip: terminalOpen
-                              ? context.wp('Hide terminal')
-                              : context.wp('Show terminal'),
-                          splashRadius: 18,
-                        ),
-                      ],
-                    ),
-                  ),
                 AnimatedSwitcher(
                   duration: const Duration(milliseconds: 180),
                   switchInCurve: Curves.easeOutCubic,

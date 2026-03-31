@@ -417,6 +417,113 @@ void main() {
   });
 
   testWidgets(
+    'compact session header moves toolbar actions into overflow menu',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              return _HeaderWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+            },
+      );
+      addTearDown(appController.dispose);
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          initialRoute: buildWorkspaceRoute(
+            '/workspace/demo',
+            sessionId: 'ses_1',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 120));
+
+      expect(
+        find.byKey(const ValueKey<String>('workspace-command-palette-button')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('workspace-mcp-picker-button')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('workspace-chat-search-button')),
+        findsNothing,
+      );
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('session-header-overflow-menu-button'),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 220));
+
+      expect(
+        find.byKey(
+          const ValueKey<String>(
+            'session-header-overflow-menu-item-command-palette',
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>('session-header-overflow-menu-item-mcp'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>(
+            'session-header-overflow-menu-item-chat-search',
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>(
+            'session-header-overflow-menu-item-terminal-toggle',
+          ),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>(
+            'session-header-overflow-menu-item-command-palette',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 220));
+
+      expect(
+        find.byKey(const ValueKey<String>('workspace-command-palette-sheet')),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
     'session header chat search reveals older matches and navigates between them',
     (tester) async {
       tester.view.physicalSize = const Size(1480, 960);
