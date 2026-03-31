@@ -1778,6 +1778,27 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     controller.setSideTab(tab);
   }
 
+  void _openSideTab(
+    WorkspaceController controller,
+    WorkspaceSideTab tab, {
+    required bool compact,
+  }) {
+    if (compact) {
+      if (_compactPane != _CompactWorkspacePane.side) {
+        setState(() {
+          _compactPane = _CompactWorkspacePane.side;
+        });
+      }
+      controller.setSideTab(tab);
+      return;
+    }
+
+    if (!_desktopSidePanelVisible) {
+      _setDesktopSidePanelVisible(true);
+    }
+    controller.setSideTab(tab);
+  }
+
   Future<void> _navigateSessionByOffset(
     WorkspaceController controller,
     int offset, {
@@ -5720,6 +5741,13 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                               onOpenCommandPalette: () {
                                 unawaited(_openCommandPalette(controller));
                               },
+                              onOpenContextPanel: () {
+                                _openSideTab(
+                                  controller,
+                                  WorkspaceSideTab.context,
+                                  compact: compact,
+                                );
+                              },
                               onOpenMcpPicker: () {
                                 unawaited(_openMcpPicker(controller));
                               },
@@ -6150,6 +6178,7 @@ class _WorkspaceTopBar extends StatelessWidget {
     required this.sidePanelVisible,
     required this.sidePanelLabel,
     required this.sessionPaneCount,
+    required this.onOpenContextPanel,
     required this.onBackHome,
     required this.onToggleTerminal,
     this.onToggleSessionsPanel,
@@ -6188,6 +6217,7 @@ class _WorkspaceTopBar extends StatelessWidget {
   final bool sidePanelVisible;
   final String sidePanelLabel;
   final int sessionPaneCount;
+  final VoidCallback onOpenContextPanel;
   final VoidCallback onBackHome;
   final VoidCallback onToggleTerminal;
   final VoidCallback? onToggleSessionsPanel;
@@ -6474,6 +6504,7 @@ class _WorkspaceTopBar extends StatelessWidget {
                             totalTokens: contextSnapshot?.totalTokens,
                             contextLimit: contextSnapshot?.contextLimit,
                             compact: true,
+                            onTap: onOpenContextPanel,
                           ),
                         ),
                       _SessionOverflowMenuButton(
@@ -6545,6 +6576,7 @@ class _WorkspaceTopBar extends StatelessWidget {
                           usagePercent: contextSnapshot?.usagePercent,
                           totalTokens: contextSnapshot?.totalTokens,
                           contextLimit: contextSnapshot?.contextLimit,
+                          onTap: onOpenContextPanel,
                         ),
                       ),
                     SizedBox(width: density.inset(AppSpacing.xs, min: 4)),
@@ -11355,6 +11387,7 @@ class _SessionContextUsageRing extends StatelessWidget {
     required this.totalTokens,
     required this.contextLimit,
     this.compact = false,
+    this.onTap,
     super.key,
   });
 
@@ -11362,6 +11395,7 @@ class _SessionContextUsageRing extends StatelessWidget {
   final int? totalTokens;
   final int? contextLimit;
   final bool compact;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -11382,55 +11416,67 @@ class _SessionContextUsageRing extends StatelessWidget {
       (final usage?, _, _) => '$usage% of context window used',
     };
 
+    final indicator = Semantics(
+      label: tooltip,
+      button: onTap != null,
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            DecoratedBox(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: surfaces.lineSoft,
+                  width: strokeWidth,
+                ),
+              ),
+            ),
+            if (percent != null)
+              Padding(
+                padding: const EdgeInsets.all(0.5),
+                child: CircularProgressIndicator(
+                  value: value,
+                  strokeWidth: strokeWidth,
+                  backgroundColor: Colors.transparent,
+                  color: color,
+                  strokeCap: StrokeCap.round,
+                ),
+              ),
+            Center(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: percent == null ? 0.28 : 0.85),
+                  shape: BoxShape.circle,
+                ),
+                child: SizedBox(
+                  width: compact ? 4 : 5,
+                  height: compact ? 4 : 5,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
     return Tooltip(
       message: tooltip,
       waitDuration: const Duration(milliseconds: 120),
-      child: Semantics(
-        label: tooltip,
-        child: SizedBox(
-          width: size,
-          height: size,
-          child: Stack(
-            fit: StackFit.expand,
-            children: <Widget>[
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: surfaces.lineSoft,
-                    width: strokeWidth,
-                  ),
-                ),
+      child: onTap == null
+          ? indicator
+          : Material(
+              color: Colors.transparent,
+              shape: const CircleBorder(),
+              child: InkResponse(
+                onTap: onTap,
+                radius: size * 0.9,
+                customBorder: const CircleBorder(),
+                child: indicator,
               ),
-              if (percent != null)
-                Padding(
-                  padding: const EdgeInsets.all(0.5),
-                  child: CircularProgressIndicator(
-                    value: value,
-                    strokeWidth: strokeWidth,
-                    backgroundColor: Colors.transparent,
-                    color: color,
-                    strokeCap: StrokeCap.round,
-                  ),
-                ),
-              Center(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: color.withValues(
-                      alpha: percent == null ? 0.28 : 0.85,
-                    ),
-                    shape: BoxShape.circle,
-                  ),
-                  child: SizedBox(
-                    width: compact ? 4 : 5,
-                    height: compact ? 4 : 5,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+            ),
     );
   }
 }
