@@ -96,6 +96,33 @@ void main() {
     final liveRect = tester.getRect(liveFinder);
     expect(connectingRect.overlaps(liveRect), isFalse);
   });
+
+  testWidgets('can expand to fill the available height', (tester) async {
+    final service = _FakePtyService();
+    addTearDown(service.dispose);
+
+    await tester.pumpWidget(
+      _PtyPanelHarness(
+        profile: profile,
+        service: service,
+        sessions: sessions,
+        initialActiveSessionId: 'pty_1',
+        width: 390,
+        height: 520,
+        expandToFill: true,
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      tester
+          .getSize(
+            find.byKey(const ValueKey<String>('pty-terminal-panel-frame')),
+          )
+          .height,
+      greaterThan(440),
+    );
+  });
 }
 
 class _PtyPanelHarness extends StatefulWidget {
@@ -104,12 +131,18 @@ class _PtyPanelHarness extends StatefulWidget {
     required this.service,
     required this.sessions,
     required this.initialActiveSessionId,
+    this.width = 1100,
+    this.height = 420,
+    this.expandToFill = false,
   });
 
   final ServerProfile profile;
   final PtyService service;
   final List<PtySessionInfo> sessions;
   final String initialActiveSessionId;
+  final double width;
+  final double height;
+  final bool expandToFill;
 
   @override
   State<_PtyPanelHarness> createState() => _PtyPanelHarnessState();
@@ -131,8 +164,8 @@ class _PtyPanelHarnessState extends State<_PtyPanelHarness> {
       home: Scaffold(
         body: Center(
           child: SizedBox(
-            width: 1100,
-            height: 420,
+            width: widget.width,
+            height: widget.height,
             child: PtyTerminalPanel(
               profile: widget.profile,
               directory: '/workspace/demo',
@@ -152,6 +185,7 @@ class _PtyPanelHarnessState extends State<_PtyPanelHarness> {
               onRetry: () {},
               onTitleChanged: (id, title) {},
               onSessionMissing: (_) {},
+              expandToFill: widget.expandToFill,
             ),
           ),
         ),

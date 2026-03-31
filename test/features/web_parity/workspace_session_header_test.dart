@@ -18,6 +18,7 @@ import 'package:better_opencode_client/src/features/terminal/pty_service.dart';
 import 'package:better_opencode_client/src/features/web_parity/workspace_controller.dart';
 import 'package:better_opencode_client/src/features/web_parity/workspace_screen.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:xterm/xterm.dart';
 
 import '../../test_helpers/responsive_viewports.dart';
 
@@ -896,6 +897,101 @@ void main() {
 
     expect(terminalService.connectCount('pty_1'), 1);
   });
+
+  testWidgets(
+    'compact terminal focus hides the composer and expands above the keyboard',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetViewInsets);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final terminalService = _TrackingPtyService();
+      addTearDown(terminalService.dispose);
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              return _HeaderWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+            },
+      );
+      addTearDown(appController.dispose);
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          initialRoute: buildWorkspaceRoute(
+            '/workspace/demo',
+            sessionId: 'ses_1',
+          ),
+          ptyServiceFactory: () => terminalService,
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 120));
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('session-header-overflow-menu-button'),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 220));
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>(
+            'session-header-overflow-menu-item-terminal-toggle',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 220));
+
+      expect(terminalService.connectCount('pty_1'), 1);
+      expect(find.byType(TerminalView), findsOneWidget);
+
+      await tester.tap(find.byType(TerminalView));
+      await tester.pump();
+
+      tester.view.viewInsets = const FakeViewPadding(bottom: 336);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 220));
+
+      expect(
+        tester
+            .getSize(
+              find.byKey(const ValueKey<String>('pty-terminal-panel-frame')),
+            )
+            .height,
+        greaterThan(380),
+      );
+      expect(
+        find.byKey(const ValueKey<String>('composer-text-field')),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+
+      tester.view.viewInsets = FakeViewPadding.zero;
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 220));
+
+      expect(
+        find.byKey(const ValueKey<String>('composer-text-field')),
+        findsOneWidget,
+      );
+    },
+  );
 }
 
 class _WorkspaceRouteHarness extends StatelessWidget {

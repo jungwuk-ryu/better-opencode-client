@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -30,6 +31,8 @@ class PtyTerminalPanel extends StatelessWidget {
     required this.onRetry,
     required this.onTitleChanged,
     required this.onSessionMissing,
+    this.expandToFill = false,
+    this.onFocusChanged,
     super.key,
   });
 
@@ -47,92 +50,111 @@ class PtyTerminalPanel extends StatelessWidget {
   final VoidCallback onRetry;
   final void Function(String id, String title) onTitleChanged;
   final ValueChanged<String> onSessionMissing;
+  final bool expandToFill;
+  final ValueChanged<bool>? onFocusChanged;
 
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final activeSession = _resolveActiveSession(sessions, activeSessionId);
+    const panelPadding = EdgeInsets.fromLTRB(
+      AppSpacing.md,
+      0,
+      AppSpacing.md,
+      AppSpacing.md,
+    );
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.md,
-        0,
-        AppSpacing.md,
-        AppSpacing.md,
-      ),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1240),
-          child: Container(
-            height: 320,
-            decoration: BoxDecoration(
-              color: surfaces.panelRaised,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: surfaces.lineSoft),
-            ),
-            child: Column(
-              children: <Widget>[
-                _PtyPanelHeader(
-                  sessions: sessions,
-                  activeSessionId: activeSession?.id,
-                  creating: creating,
-                  onSelectSession: onSelectSession,
-                  onCloseSession: onCloseSession,
-                  onCreateSession: onCreateSession,
-                ),
-                Expanded(
-                  child: ClipRRect(
-                    borderRadius: const BorderRadius.vertical(
-                      bottom: Radius.circular(18),
-                    ),
-                    child: Builder(
-                      builder: (context) {
-                        if (loading && sessions.isEmpty) {
-                          return _TerminalPlaceholder(
-                            title: 'Loading terminals...',
-                            subtitle: 'Fetching active PTY sessions.',
-                            busy: true,
-                          );
-                        }
-                        if (error != null && sessions.isEmpty) {
-                          return _TerminalPlaceholder(
-                            title: 'Terminal unavailable',
-                            subtitle: error!,
-                            actionLabel: 'Retry',
-                            onAction: onRetry,
-                          );
-                        }
-                        if (activeSession == null) {
-                          return _TerminalPlaceholder(
-                            title: creating
-                                ? 'Opening terminal...'
-                                : 'No terminal tabs yet',
-                            subtitle: creating
-                                ? 'Creating a new PTY session on the server.'
-                                : 'Create a terminal tab to interact with the remote shell.',
-                            busy: creating,
-                            actionLabel: creating ? null : 'New Terminal',
-                            onAction: creating ? null : onCreateSession,
-                          );
-                        }
-                        return _PtyTerminalViewport(
-                          profile: profile,
-                          directory: directory,
-                          service: service,
-                          sessions: sessions,
-                          activeSessionId: activeSession.id,
-                          onTitleChanged: onTitleChanged,
-                          onSessionMissing: onSessionMissing,
-                        );
-                      },
-                    ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableHeight = constraints.maxHeight.isFinite
+            ? math.max(0, constraints.maxHeight - panelPadding.vertical)
+            : 320.0;
+        final resolvedHeight =
+            (expandToFill ? availableHeight : math.min(320.0, availableHeight))
+                .toDouble();
+
+        return Padding(
+          key: const ValueKey<String>('pty-terminal-panel-root'),
+          padding: panelPadding,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1240),
+              child: SizedBox(
+                key: const ValueKey<String>('pty-terminal-panel-frame'),
+                height: resolvedHeight,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: surfaces.panelRaised,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: surfaces.lineSoft),
+                  ),
+                  child: Column(
+                    children: <Widget>[
+                      _PtyPanelHeader(
+                        sessions: sessions,
+                        activeSessionId: activeSession?.id,
+                        creating: creating,
+                        onSelectSession: onSelectSession,
+                        onCloseSession: onCloseSession,
+                        onCreateSession: onCreateSession,
+                      ),
+                      Expanded(
+                        child: ClipRRect(
+                          borderRadius: const BorderRadius.vertical(
+                            bottom: Radius.circular(18),
+                          ),
+                          child: Builder(
+                            builder: (context) {
+                              if (loading && sessions.isEmpty) {
+                                return _TerminalPlaceholder(
+                                  title: 'Loading terminals...',
+                                  subtitle: 'Fetching active PTY sessions.',
+                                  busy: true,
+                                );
+                              }
+                              if (error != null && sessions.isEmpty) {
+                                return _TerminalPlaceholder(
+                                  title: 'Terminal unavailable',
+                                  subtitle: error!,
+                                  actionLabel: 'Retry',
+                                  onAction: onRetry,
+                                );
+                              }
+                              if (activeSession == null) {
+                                return _TerminalPlaceholder(
+                                  title: creating
+                                      ? 'Opening terminal...'
+                                      : 'No terminal tabs yet',
+                                  subtitle: creating
+                                      ? 'Creating a new PTY session on the server.'
+                                      : 'Create a terminal tab to interact with the remote shell.',
+                                  busy: creating,
+                                  actionLabel: creating ? null : 'New Terminal',
+                                  onAction: creating ? null : onCreateSession,
+                                );
+                              }
+                              return _PtyTerminalViewport(
+                                profile: profile,
+                                directory: directory,
+                                service: service,
+                                sessions: sessions,
+                                activeSessionId: activeSession.id,
+                                onTitleChanged: onTitleChanged,
+                                onSessionMissing: onSessionMissing,
+                                onFocusChanged: onFocusChanged,
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -359,6 +381,7 @@ class _PtyTerminalView extends StatefulWidget {
     required this.session,
     required this.onTitleChanged,
     required this.onSessionMissing,
+    this.onFocusChanged,
     super.key,
   });
 
@@ -368,6 +391,7 @@ class _PtyTerminalView extends StatefulWidget {
   final PtySessionInfo session;
   final void Function(String id, String title) onTitleChanged;
   final ValueChanged<String> onSessionMissing;
+  final ValueChanged<bool>? onFocusChanged;
 
   @override
   State<_PtyTerminalView> createState() => _PtyTerminalViewState();
@@ -382,6 +406,7 @@ class _PtyTerminalViewport extends StatefulWidget {
     required this.activeSessionId,
     required this.onTitleChanged,
     required this.onSessionMissing,
+    this.onFocusChanged,
   });
 
   final ServerProfile profile;
@@ -391,6 +416,7 @@ class _PtyTerminalViewport extends StatefulWidget {
   final String activeSessionId;
   final void Function(String id, String title) onTitleChanged;
   final ValueChanged<String> onSessionMissing;
+  final ValueChanged<bool>? onFocusChanged;
 
   @override
   State<_PtyTerminalViewport> createState() => _PtyTerminalViewportState();
@@ -439,6 +465,9 @@ class _PtyTerminalViewportState extends State<_PtyTerminalViewport> {
               session: session,
               onTitleChanged: widget.onTitleChanged,
               onSessionMissing: widget.onSessionMissing,
+              onFocusChanged: session.id == widget.activeSessionId
+                  ? widget.onFocusChanged
+                  : null,
             ),
           )
           .toList(growable: false),
@@ -450,6 +479,7 @@ class _PtyTerminalViewState extends State<_PtyTerminalView> {
   late final Terminal _terminal;
   late final TerminalController _terminalController;
   late final ScrollController _scrollController;
+  late final FocusNode _terminalFocusNode;
   WebSocketChannel? _channel;
   StreamSubscription<dynamic>? _subscription;
   Timer? _reconnectTimer;
@@ -474,6 +504,9 @@ class _PtyTerminalViewState extends State<_PtyTerminalView> {
     );
     _terminalController = TerminalController();
     _scrollController = ScrollController();
+    _terminalFocusNode = FocusNode(
+      debugLabel: 'pty-terminal-${widget.session.id}',
+    )..addListener(_handleFocusChanged);
     unawaited(_connect(resetCursor: true));
   }
 
@@ -486,7 +519,14 @@ class _PtyTerminalViewState extends State<_PtyTerminalView> {
     unawaited(_disposeConnection());
     _scrollController.dispose();
     _terminalController.dispose();
+    _terminalFocusNode
+      ..removeListener(_handleFocusChanged)
+      ..dispose();
     super.dispose();
+  }
+
+  void _handleFocusChanged() {
+    widget.onFocusChanged?.call(_terminalFocusNode.hasFocus);
   }
 
   Future<void> _connect({required bool resetCursor}) async {
@@ -753,6 +793,7 @@ class _PtyTerminalViewState extends State<_PtyTerminalView> {
               scrollController: _scrollController,
               autoResize: true,
               autofocus: true,
+              focusNode: _terminalFocusNode,
               backgroundOpacity: 1,
               theme: _buildTheme(context),
               textStyle: TerminalStyle(

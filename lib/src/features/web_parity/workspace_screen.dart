@@ -287,6 +287,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   String? _terminalError;
   bool _terminalPanelOpen = false;
   bool _terminalPanelMounted = false;
+  bool _terminalInputFocused = false;
   bool _loadingPtySessions = false;
   bool _creatingPtySession = false;
   bool _desktopSidebarVisible = true;
@@ -3213,6 +3214,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     _terminalError = null;
     _terminalPanelOpen = false;
     _terminalPanelMounted = false;
+    _terminalInputFocused = false;
     _loadingPtySessions = true;
     _creatingPtySession = false;
     unawaited(_loadPtySessions(epoch: _terminalEpoch, profile: profile));
@@ -3271,10 +3273,20 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     return sessions.first.id;
   }
 
+  void _handleTerminalFocusChanged(bool focused) {
+    if (_terminalInputFocused == focused || !mounted) {
+      return;
+    }
+    setState(() {
+      _terminalInputFocused = focused;
+    });
+  }
+
   Future<void> _toggleTerminalPanel() async {
     if (_terminalPanelOpen) {
       setState(() {
         _terminalPanelOpen = false;
+        _terminalInputFocused = false;
       });
       return;
     }
@@ -3346,6 +3358,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       _activePtyId = _resolveActivePtyId(_ptySessions);
       if (_ptySessions.isEmpty) {
         _terminalPanelOpen = false;
+        _terminalInputFocused = false;
       }
     });
     try {
@@ -3430,6 +3443,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       _activePtyId = _resolveActivePtyId(_ptySessions, preferred: _activePtyId);
       if (_ptySessions.isEmpty) {
         _terminalPanelOpen = false;
+        _terminalInputFocused = false;
       }
     });
   }
@@ -5457,9 +5471,12 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
               });
             });
           }
+          final mediaQuery = MediaQuery.of(context);
           final compact =
-              MediaQuery.sizeOf(context).width <
-              AppSpacing.wideLayoutBreakpoint;
+              mediaQuery.size.width < AppSpacing.wideLayoutBreakpoint;
+          final keyboardVisible = mediaQuery.viewInsets.bottom > 0;
+          final terminalCompactFocusMode =
+              compact && keyboardVisible && _terminalInputFocused;
           final displayProject =
               controller.project ?? projectLoadingShell?.targetProject;
           final displayProjects = controller.availableProjects.isNotEmpty
@@ -6040,12 +6057,17 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                               controller,
                                             ),
                                       onToggleTerminal: _toggleTerminalPanel,
+                                      terminalKeyboardFocused:
+                                          terminalCompactFocusMode,
                                       terminalPanelOpen: _terminalPanelOpen,
                                       terminalPanel:
                                           !_terminalPanelMounted ||
                                               _ptyService == null
                                           ? null
                                           : PtyTerminalPanel(
+                                              key: const ValueKey<String>(
+                                                'workspace-terminal-panel',
+                                              ),
                                               profile: _profile!,
                                               directory: _currentDirectory,
                                               service: _ptyService!,
@@ -6069,6 +6091,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                               onTitleChanged: _renamePtySession,
                                               onSessionMissing:
                                                   _removeMissingPtySession,
+                                              expandToFill:
+                                                  terminalCompactFocusMode,
+                                              onFocusChanged:
+                                                  _handleTerminalFocusChanged,
                                             ),
                                     ),
                             ),
@@ -13627,6 +13653,7 @@ class _WorkspaceBody extends StatelessWidget {
     this.onFinishResizeSidePanel,
     this.inlineComposerBuilder,
     required this.onToggleTerminal,
+    required this.terminalKeyboardFocused,
     required this.terminalPanelOpen,
     required this.terminalPanel,
     this.onShareSession,
@@ -13702,6 +13729,7 @@ class _WorkspaceBody extends StatelessWidget {
   )?
   inlineComposerBuilder;
   final Future<void> Function() onToggleTerminal;
+  final bool terminalKeyboardFocused;
   final bool terminalPanelOpen;
   final Widget? terminalPanel;
   final Future<void> Function()? onShareSession;
@@ -13714,146 +13742,178 @@ class _WorkspaceBody extends StatelessWidget {
     final density = _workspaceDensity(context);
     final mediaQuery = MediaQuery.of(context);
     final keyboardVisible = mediaQuery.viewInsets.bottom > 0;
+    final terminalFocusMode =
+        compact &&
+        compactPane == _CompactWorkspacePane.session &&
+        terminalPanelOpen &&
+        terminalKeyboardFocused &&
+        terminalPanel != null;
+    final collapseInlineTerminal =
+        compact &&
+        compactPane == _CompactWorkspacePane.session &&
+        terminalPanelOpen &&
+        keyboardVisible &&
+        !terminalKeyboardFocused;
     final questionRequest = controller.currentQuestionRequest;
     final permissionRequest = controller.currentPermissionRequest;
     final usesInlinePaneComposer = inlineComposerBuilder != null;
-    final content = Column(
-      children: <Widget>[
-        Expanded(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: surfaces.background,
-              borderRadius: compact
-                  ? null
-                  : const BorderRadius.only(
-                      topLeft: Radius.circular(AppSpacing.cardRadius),
+    final content = LayoutBuilder(
+      builder: (context, constraints) {
+        final expandedTerminalHeight = constraints.maxHeight.isFinite
+            ? constraints.maxHeight
+            : null;
+
+        return Column(
+          children: <Widget>[
+            if (!terminalFocusMode)
+              Expanded(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: surfaces.background,
+                    borderRadius: compact
+                        ? null
+                        : const BorderRadius.only(
+                            topLeft: Radius.circular(AppSpacing.cardRadius),
+                          ),
+                  ),
+                  child: _WorkspaceSessionPaneDeck(
+                    compact: compact,
+                    paneViewModels: paneViewModels,
+                    activePaneId: activePaneId,
+                    shellToolDisplayMode: shellToolDisplayMode,
+                    timelineProgressDetailsVisible:
+                        timelineProgressDetailsVisible,
+                    chatSearchQuery: chatSearchQuery,
+                    chatSearchMatchMessageIds: chatSearchMatchMessageIds,
+                    chatSearchActiveMessageId: chatSearchActiveMessageId,
+                    chatSearchRevision: chatSearchRevision,
+                    timelineJumpEpoch: timelineJumpEpoch,
+                    focusedTimelineMessageIdForScope:
+                        focusedTimelineMessageIdForScope,
+                    focusedTimelineMessageRevisionForScope:
+                        focusedTimelineMessageRevisionForScope,
+                    todoDockCollapsedForScope: todoDockCollapsedForScope,
+                    onTodoDockCollapsedChanged: onTodoDockCollapsedChanged,
+                    subAgentPanelCollapsedForScope:
+                        subAgentPanelCollapsedForScope,
+                    onSubAgentPanelCollapsedChanged:
+                        onSubAgentPanelCollapsedChanged,
+                    onSelectPane: onSelectSessionPane,
+                    onClosePane: onCloseSessionPane,
+                    onForkMessage: onForkMessage,
+                    onRevertMessage: onRevertMessage,
+                    onOpenSession: onOpenSession,
+                    onRetrySelectedSession:
+                        controller.retrySelectedSessionMessages,
+                    inlineComposerBuilder: inlineComposerBuilder,
+                  ),
+                ),
+              ),
+            if (!terminalFocusMode &&
+                !usesInlinePaneComposer &&
+                activeWorkspaceLoading)
+              Container(
+                padding: EdgeInsets.fromLTRB(
+                  density.inset(compact ? AppSpacing.sm : AppSpacing.lg),
+                  density.inset(compact ? AppSpacing.xs : AppSpacing.md),
+                  density.inset(compact ? AppSpacing.sm : AppSpacing.lg),
+                  density.inset(compact ? AppSpacing.sm : AppSpacing.lg),
+                ),
+                decoration: BoxDecoration(
+                  color: surfaces.panel,
+                  border: Border(top: BorderSide(color: surfaces.lineSoft)),
+                ),
+                child: _PromptComposerLoadingPlaceholder(compact: compact),
+              )
+            else if (!terminalFocusMode &&
+                !usesInlinePaneComposer &&
+                activeWorkspaceError == null &&
+                questionRequest != null)
+              _PendingQuestionComposerNotice(
+                request: questionRequest,
+                compact: compact,
+              )
+            else if (!terminalFocusMode &&
+                !usesInlinePaneComposer &&
+                activeWorkspaceError == null &&
+                permissionRequest != null)
+              _PendingPermissionComposerNotice(
+                request: permissionRequest,
+                compact: compact,
+              )
+            else if (!terminalFocusMode &&
+                !usesInlinePaneComposer &&
+                activeWorkspaceError == null)
+              _PromptComposer(
+                controller: promptController,
+                compact: compact,
+                scopeKey:
+                    '${controller.directory}::${controller.selectedSessionId ?? 'new'}',
+                focusRequestToken: promptFocusRequestToken,
+                submitting: submittingPrompt,
+                busyFollowupMode: busyFollowupMode,
+                interruptible: interruptiblePrompt,
+                interrupting: interruptingPrompt,
+                pickingAttachments: pickingAttachments,
+                attachments: attachments,
+                queuedPrompts: controller.selectedSessionQueuedPrompts,
+                failedQueuedPromptId:
+                    controller.selectedSessionFailedQueuedPromptId,
+                sendingQueuedPromptId:
+                    controller.selectedSessionSendingQueuedPromptId,
+                agents: controller.composerAgents,
+                models: controller.composerModels,
+                selectedAgentName: controller.selectedAgentName,
+                selectedModel: controller.selectedModel,
+                selectedReasoning: controller.selectedReasoning,
+                reasoningValues: controller.availableReasoningValues,
+                customCommands: controller.composerCommands,
+                historyEntries: historyEntries,
+                permissionAutoAccepting: controller
+                    .autoAcceptsPermissionForSession(
+                      controller.selectedSessionId,
                     ),
-            ),
-            child: _WorkspaceSessionPaneDeck(
-              compact: compact,
-              paneViewModels: paneViewModels,
-              activePaneId: activePaneId,
-              shellToolDisplayMode: shellToolDisplayMode,
-              timelineProgressDetailsVisible: timelineProgressDetailsVisible,
-              chatSearchQuery: chatSearchQuery,
-              chatSearchMatchMessageIds: chatSearchMatchMessageIds,
-              chatSearchActiveMessageId: chatSearchActiveMessageId,
-              chatSearchRevision: chatSearchRevision,
-              timelineJumpEpoch: timelineJumpEpoch,
-              focusedTimelineMessageIdForScope:
-                  focusedTimelineMessageIdForScope,
-              focusedTimelineMessageRevisionForScope:
-                  focusedTimelineMessageRevisionForScope,
-              todoDockCollapsedForScope: todoDockCollapsedForScope,
-              onTodoDockCollapsedChanged: onTodoDockCollapsedChanged,
-              subAgentPanelCollapsedForScope: subAgentPanelCollapsedForScope,
-              onSubAgentPanelCollapsedChanged: onSubAgentPanelCollapsedChanged,
-              onSelectPane: onSelectSessionPane,
-              onClosePane: onCloseSessionPane,
-              onForkMessage: onForkMessage,
-              onRevertMessage: onRevertMessage,
-              onOpenSession: onOpenSession,
-              onRetrySelectedSession: controller.retrySelectedSessionMessages,
-              inlineComposerBuilder: inlineComposerBuilder,
-            ),
-          ),
-        ),
-        if (!usesInlinePaneComposer && activeWorkspaceLoading)
-          Container(
-            padding: EdgeInsets.fromLTRB(
-              density.inset(compact ? AppSpacing.sm : AppSpacing.lg),
-              density.inset(compact ? AppSpacing.xs : AppSpacing.md),
-              density.inset(compact ? AppSpacing.sm : AppSpacing.lg),
-              density.inset(compact ? AppSpacing.sm : AppSpacing.lg),
-            ),
-            decoration: BoxDecoration(
-              color: surfaces.panel,
-              border: Border(top: BorderSide(color: surfaces.lineSoft)),
-            ),
-            child: _PromptComposerLoadingPlaceholder(compact: compact),
-          )
-        else if (!usesInlinePaneComposer &&
-            activeWorkspaceError == null &&
-            questionRequest != null)
-          _PendingQuestionComposerNotice(
-            request: questionRequest,
-            compact: compact,
-          )
-        else if (!usesInlinePaneComposer &&
-            activeWorkspaceError == null &&
-            permissionRequest != null)
-          _PendingPermissionComposerNotice(
-            request: permissionRequest,
-            compact: compact,
-          )
-        else if (!usesInlinePaneComposer && activeWorkspaceError == null)
-          _PromptComposer(
-            controller: promptController,
-            compact: compact,
-            scopeKey:
-                '${controller.directory}::${controller.selectedSessionId ?? 'new'}',
-            focusRequestToken: promptFocusRequestToken,
-            submitting: submittingPrompt,
-            busyFollowupMode: busyFollowupMode,
-            interruptible: interruptiblePrompt,
-            interrupting: interruptingPrompt,
-            pickingAttachments: pickingAttachments,
-            attachments: attachments,
-            queuedPrompts: controller.selectedSessionQueuedPrompts,
-            failedQueuedPromptId:
-                controller.selectedSessionFailedQueuedPromptId,
-            sendingQueuedPromptId:
-                controller.selectedSessionSendingQueuedPromptId,
-            agents: controller.composerAgents,
-            models: controller.composerModels,
-            selectedAgentName: controller.selectedAgentName,
-            selectedModel: controller.selectedModel,
-            selectedReasoning: controller.selectedReasoning,
-            reasoningValues: controller.availableReasoningValues,
-            customCommands: controller.composerCommands,
-            historyEntries: historyEntries,
-            permissionAutoAccepting: controller.autoAcceptsPermissionForSession(
-              controller.selectedSessionId,
-            ),
-            onSelectAgent: controller.selectAgent,
-            onSelectModel: controller.selectModel,
-            onSelectReasoning: controller.selectReasoning,
-            onTogglePermissionAutoAccept: onTogglePermissionAutoAccept,
-            onCreateSession: onCreateSession,
-            onInterrupt: onInterruptPrompt,
-            onPickAttachments: onPickAttachments,
-            onDropFiles: onDropFiles,
-            onPasteClipboardImage: onPasteClipboardImage,
-            onContentInserted: onContentInserted,
-            dropRegionBuilder: dropRegionBuilder,
-            onRemoveAttachment: onRemoveAttachment,
-            onEditQueuedPrompt: onEditQueuedPrompt,
-            onDeleteQueuedPrompt: onDeleteQueuedPrompt,
-            onSendQueuedPromptNow: onSendQueuedPromptNow,
-            onShareSession: onShareSession,
-            onUnshareSession: onUnshareSession,
-            onSummarizeSession: onSummarizeSession,
-            submittedDraftEpoch: submittedDraftEpoch,
-            recentSubmittedDraft: recentSubmittedDraft,
-            onOpenMcpPicker: onOpenMcpPicker,
-            onToggleTerminal: onToggleTerminal,
-            onSelectSideTab: (tab) {
-              if (!compact && !sidePanelVisible) {
-                onShowSidePanel?.call();
-              }
-              controller.setSideTab(tab);
-            },
-            onSubmit: onSubmitPrompt,
-          ),
-        if (terminalPanel != null)
-          Offstage(
-            offstage: !terminalPanelOpen,
-            child: IgnorePointer(
-              ignoring: !terminalPanelOpen,
-              child: terminalPanel!,
-            ),
-          ),
-      ],
+                onSelectAgent: controller.selectAgent,
+                onSelectModel: controller.selectModel,
+                onSelectReasoning: controller.selectReasoning,
+                onTogglePermissionAutoAccept: onTogglePermissionAutoAccept,
+                onCreateSession: onCreateSession,
+                onInterrupt: onInterruptPrompt,
+                onPickAttachments: onPickAttachments,
+                onDropFiles: onDropFiles,
+                onPasteClipboardImage: onPasteClipboardImage,
+                onContentInserted: onContentInserted,
+                dropRegionBuilder: dropRegionBuilder,
+                onRemoveAttachment: onRemoveAttachment,
+                onEditQueuedPrompt: onEditQueuedPrompt,
+                onDeleteQueuedPrompt: onDeleteQueuedPrompt,
+                onSendQueuedPromptNow: onSendQueuedPromptNow,
+                onShareSession: onShareSession,
+                onUnshareSession: onUnshareSession,
+                onSummarizeSession: onSummarizeSession,
+                submittedDraftEpoch: submittedDraftEpoch,
+                recentSubmittedDraft: recentSubmittedDraft,
+                onOpenMcpPicker: onOpenMcpPicker,
+                onToggleTerminal: onToggleTerminal,
+                onSelectSideTab: (tab) {
+                  if (!compact && !sidePanelVisible) {
+                    onShowSidePanel?.call();
+                  }
+                  controller.setSideTab(tab);
+                },
+                onSubmit: onSubmitPrompt,
+              ),
+            if (terminalPanel != null)
+              _WorkspaceTerminalPanelSlot(
+                open: terminalPanelOpen,
+                hidden: collapseInlineTerminal,
+                expanded: terminalFocusMode,
+                expandedHeight: expandedTerminalHeight,
+                child: terminalPanel!,
+              ),
+          ],
+        );
+      },
     );
 
     final sidePanel = _SidePanel(
@@ -13912,6 +13972,41 @@ class _WorkspaceBody extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _WorkspaceTerminalPanelSlot extends StatelessWidget {
+  const _WorkspaceTerminalPanelSlot({
+    required this.open,
+    required this.hidden,
+    required this.expanded,
+    required this.child,
+    this.expandedHeight,
+  });
+
+  final bool open;
+  final bool hidden;
+  final bool expanded;
+  final double? expandedHeight;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final slotChild = Offstage(
+      offstage: !open,
+      child: IgnorePointer(ignoring: !open || hidden, child: child),
+    );
+
+    return SizedBox(
+      height: expanded ? expandedHeight : null,
+      child: ClipRect(
+        child: Align(
+          alignment: Alignment.topCenter,
+          heightFactor: hidden ? 0 : 1,
+          child: slotChild,
+        ),
+      ),
     );
   }
 }
