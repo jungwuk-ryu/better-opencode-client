@@ -20463,6 +20463,8 @@ class _CompactPaneSwitcher extends StatelessWidget {
     required this.onChanged,
   });
 
+  static const double height = 40;
+
   final _CompactWorkspacePane activePane;
   final String sideLabel;
   final ValueChanged<_CompactWorkspacePane> onChanged;
@@ -20471,7 +20473,8 @@ class _CompactPaneSwitcher extends StatelessWidget {
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     return Container(
-      height: 46,
+      key: const ValueKey<String>('workspace-compact-pane-switcher'),
+      height: height,
       decoration: BoxDecoration(
         color: surfaces.panel,
         border: Border(bottom: BorderSide(color: surfaces.lineSoft)),
