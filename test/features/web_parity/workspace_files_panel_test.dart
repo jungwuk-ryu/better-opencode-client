@@ -64,7 +64,10 @@ void main() {
 
     expect(createdControllers, hasLength(1));
     expect(createdControllers.single.fileBundle?.selectedPath, isNull);
-    expect(find.byKey(const ValueKey<String>('files-preview-panel')), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('files-preview-panel')),
+      findsNothing,
+    );
 
     await tester.tap(find.text('pubspec.yaml').first);
     await tester.pumpAndSettle();
@@ -150,6 +153,86 @@ void main() {
     ]);
     expect(find.text('main.dart'), findsNothing);
   });
+
+  testWidgets(
+    'markdown previews can switch between source and rendered modes',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final createdControllers = <_FilesWorkspaceController>[];
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              final controller = _FilesWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+              createdControllers.add(controller);
+              return controller;
+            },
+      );
+      addTearDown(appController.dispose);
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          initialRoute: buildWorkspaceRoute(
+            '/workspace/demo',
+            sessionId: 'ses_1',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('README.md').first);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(
+          const ValueKey<String>('files-preview-markdown-mode-toggle'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('# README preview'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('files-preview-markdown-content')),
+        findsNothing,
+      );
+
+      await tester.tap(find.text('Rendered'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey<String>('files-preview-markdown-content')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('files-preview-content')),
+        findsNothing,
+      );
+      expect(find.text('# README preview'), findsNothing);
+      expect(find.text('README preview'), findsOneWidget);
+
+      await tester.tap(find.text('Source'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('# README preview'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('files-preview-markdown-content')),
+        findsNothing,
+      );
+    },
+  );
 
   testWidgets('files panel preview can be resized by dragging the handle', (
     tester,

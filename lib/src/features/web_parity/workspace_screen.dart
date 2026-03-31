@@ -12,6 +12,7 @@ import 'package:flutter/gestures.dart'
         DragStartBehavior,
         MultiDragGestureRecognizer;
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -28558,12 +28559,14 @@ class _WorkspaceSafeFilePreview extends StatefulWidget {
 
 class _WorkspaceSafeFilePreviewState extends State<_WorkspaceSafeFilePreview> {
   bool _expanded = false;
+  _WorkspaceFilePreviewMode _previewMode = _WorkspaceFilePreviewMode.source;
 
   @override
   void didUpdateWidget(covariant _WorkspaceSafeFilePreview oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.path != widget.path || oldWidget.content != widget.content) {
       _expanded = false;
+      _previewMode = _WorkspaceFilePreviewMode.source;
     }
   }
 
@@ -28571,6 +28574,7 @@ class _WorkspaceSafeFilePreviewState extends State<_WorkspaceSafeFilePreview> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
+    final isMarkdown = _isMarkdownPreviewPath(widget.path);
     final canExpand =
         widget.content.length > _workspaceFilePreviewCollapsedCharacterLimit;
     final visibleContent = !_expanded && canExpand
@@ -28579,45 +28583,83 @@ class _WorkspaceSafeFilePreviewState extends State<_WorkspaceSafeFilePreview> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        if (canExpand)
+        if (canExpand || isMarkdown)
           Padding(
             padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-            child: Row(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Icon(
-                  Icons.visibility_rounded,
-                  size: 16,
-                  color: surfaces.warning,
-                ),
-                const SizedBox(width: AppSpacing.xs),
-                Expanded(
-                  child: Text(
-                    _expanded
-                        ? context.wp('Showing the full safe preview payload.')
-                        : context.wp(
-                            'Showing the first {count} characters to keep the preview responsive.',
-                            args: <String, Object?>{
-                              'count':
-                                  _workspaceFilePreviewCollapsedCharacterLimit,
-                            },
+                if (canExpand)
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Icon(
+                        Icons.visibility_rounded,
+                        size: 16,
+                        color: surfaces.warning,
+                      ),
+                      const SizedBox(width: AppSpacing.xs),
+                      Expanded(
+                        child: Text(
+                          _expanded
+                              ? context.wp(
+                                  'Showing the full safe preview payload.',
+                                )
+                              : context.wp(
+                                  'Showing the first {count} characters to keep the preview responsive.',
+                                  args: <String, Object?>{
+                                    'count':
+                                        _workspaceFilePreviewCollapsedCharacterLimit,
+                                  },
+                                ),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: surfaces.muted,
                           ),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: surfaces.muted,
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.xs),
+                      TextButton(
+                        onPressed: () {
+                          setState(() {
+                            _expanded = !_expanded;
+                          });
+                        },
+                        child: Text(
+                          context.wp(_expanded ? 'Show less' : 'Show more'),
+                        ),
+                      ),
+                    ],
+                  ),
+                if (isMarkdown)
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: SegmentedButton<_WorkspaceFilePreviewMode>(
+                      key: const ValueKey<String>(
+                        'files-preview-markdown-mode-toggle',
+                      ),
+                      segments: <ButtonSegment<_WorkspaceFilePreviewMode>>[
+                        ButtonSegment<_WorkspaceFilePreviewMode>(
+                          value: _WorkspaceFilePreviewMode.source,
+                          label: Text(context.wp('Source')),
+                        ),
+                        ButtonSegment<_WorkspaceFilePreviewMode>(
+                          value: _WorkspaceFilePreviewMode.rendered,
+                          label: Text(context.wp('Rendered')),
+                        ),
+                      ],
+                      selected: <_WorkspaceFilePreviewMode>{_previewMode},
+                      onSelectionChanged:
+                          (Set<_WorkspaceFilePreviewMode> selection) {
+                            final nextMode = selection.firstOrNull;
+                            if (nextMode == null) {
+                              return;
+                            }
+                            setState(() {
+                              _previewMode = nextMode;
+                            });
+                          },
                     ),
                   ),
-                ),
-                const SizedBox(width: AppSpacing.xs),
-                TextButton(
-                  onPressed: () {
-                    setState(() {
-                      _expanded = !_expanded;
-                    });
-                  },
-                  child: Text(
-                    context.wp(_expanded ? 'Show less' : 'Show more'),
-                  ),
-                ),
               ],
             ),
           ),
@@ -28625,16 +28667,96 @@ class _WorkspaceSafeFilePreviewState extends State<_WorkspaceSafeFilePreview> {
           child: SingleChildScrollView(
             child: ConstrainedBox(
               constraints: BoxConstraints(minWidth: widget.previewWidth),
-              child: _HighlightedFilePreview(
-                path: widget.path,
-                content: visibleContent,
-              ),
+              child:
+                  isMarkdown &&
+                      _previewMode == _WorkspaceFilePreviewMode.rendered
+                  ? _RenderedMarkdownFilePreview(content: visibleContent)
+                  : _HighlightedFilePreview(
+                      path: widget.path,
+                      content: visibleContent,
+                    ),
             ),
           ),
         ),
       ],
     );
   }
+}
+
+enum _WorkspaceFilePreviewMode { source, rendered }
+
+class _RenderedMarkdownFilePreview extends StatelessWidget {
+  const _RenderedMarkdownFilePreview({required this.content});
+
+  final String content;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final baseStyle =
+        theme.textTheme.bodySmall?.copyWith(
+          height: 1.55,
+          color: theme.colorScheme.onSurface.withValues(alpha: 0.94),
+        ) ??
+        TextStyle(
+          fontSize: 12,
+          height: 1.55,
+          color: theme.colorScheme.onSurface.withValues(alpha: 0.94),
+        );
+    final baseSheet = MarkdownStyleSheet.fromTheme(theme);
+    final styleSheet = baseSheet.copyWith(
+      p: baseStyle,
+      h1: theme.textTheme.titleLarge?.copyWith(
+        color: theme.colorScheme.onSurface,
+        fontWeight: FontWeight.w700,
+      ),
+      h2: theme.textTheme.titleMedium?.copyWith(
+        color: theme.colorScheme.onSurface,
+        fontWeight: FontWeight.w700,
+      ),
+      h3: theme.textTheme.titleSmall?.copyWith(
+        color: theme.colorScheme.onSurface,
+        fontWeight: FontWeight.w700,
+      ),
+      code: baseStyle.copyWith(
+        fontFamily: 'monospace',
+        color: surfaces.warning,
+      ),
+      codeblockDecoration: BoxDecoration(
+        color: surfaces.panelRaised,
+        borderRadius: BorderRadius.circular(AppSpacing.md),
+        border: Border.all(color: surfaces.lineSoft),
+      ),
+      blockquote: baseStyle.copyWith(color: surfaces.muted),
+      blockquoteDecoration: BoxDecoration(
+        color: surfaces.panelMuted,
+        borderRadius: BorderRadius.circular(AppSpacing.md),
+        border: Border.all(color: surfaces.lineSoft),
+      ),
+      a: baseStyle.copyWith(
+        color: theme.colorScheme.primary.withValues(alpha: 0.96),
+        decoration: TextDecoration.underline,
+      ),
+      listBullet: baseStyle,
+      horizontalRuleDecoration: BoxDecoration(
+        border: Border(top: BorderSide(color: surfaces.lineSoft)),
+      ),
+    );
+
+    return MarkdownBody(
+      key: const ValueKey<String>('files-preview-markdown-content'),
+      data: content,
+      selectable: true,
+      styleSheet: styleSheet,
+      shrinkWrap: true,
+    );
+  }
+}
+
+bool _isMarkdownPreviewPath(String? path) {
+  return _previewSyntaxLanguageForPath(path) ==
+      _FilePreviewSyntaxLanguage.markdown;
 }
 
 class _HighlightedFilePreviewState extends State<_HighlightedFilePreview> {
