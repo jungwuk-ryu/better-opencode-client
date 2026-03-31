@@ -25,6 +25,7 @@ import 'package:better_opencode_client/src/features/terminal/pty_models.dart';
 import 'package:better_opencode_client/src/features/terminal/pty_service.dart';
 import 'package:better_opencode_client/src/features/tools/todo_models.dart';
 import 'package:better_opencode_client/src/features/web_parity/workspace_controller.dart';
+import 'package:better_opencode_client/src/features/web_parity/workspace_layout_store.dart';
 import 'package:better_opencode_client/src/features/web_parity/workspace_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -2087,6 +2088,93 @@ void main() {
     expect(paneCards, findsNWidgets(8));
   });
 
+  testWidgets('desktop layout ignores stale hidden panes when splitting', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspacePaneLayouts: <String, WorkspacePaneLayoutSnapshot>{
+        profile.storageKey: WorkspacePaneLayoutSnapshot(
+          activePaneId: 'pane_main',
+          panes: <WorkspacePaneLayoutPane>[
+            const WorkspacePaneLayoutPane(
+              id: 'pane_main',
+              directory: '/workspace/demo',
+              sessionId: 'ses_1',
+            ),
+            for (var index = 0; index < 7; index += 1)
+              WorkspacePaneLayoutPane(
+                id: 'pane_hidden_$index',
+                directory: '/workspace/demo',
+                sessionId: 'ses_missing_$index',
+              ),
+          ],
+        ),
+      },
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _RecordingWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    final navigatorKey = GlobalKey<NavigatorState>();
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        navigatorKey: navigatorKey,
+        initialRoute: '/',
+      ),
+    );
+    navigatorKey.currentState!.pushNamed(
+      buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('workspace-split-session-pane-button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('You can open up to 8 session panes.'), findsNothing);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is InkWell &&
+            widget.key is ValueKey<String> &&
+            (widget.key! as ValueKey<String>).value.startsWith(
+              'workspace-session-pane-',
+            ),
+      ),
+      findsNWidgets(2),
+    );
+
+    final persistedLayout = appController.workspacePaneLayoutFor(profile);
+    expect(persistedLayout, isNotNull);
+    expect(persistedLayout!.panes, hasLength(2));
+    expect(
+      persistedLayout.panes.where(
+        (pane) => (pane.sessionId ?? '').startsWith('ses_missing_'),
+      ),
+      isEmpty,
+    );
+  });
+
   testWidgets('composer draft follows the active pane session and project', (
     tester,
   ) async {
@@ -3696,12 +3784,41 @@ class _StaticAppController extends WebParityAppController {
   _StaticAppController({
     required this.profile,
     required WorkspaceControllerFactory workspaceControllerFactory,
-  }) : super(workspaceControllerFactory: workspaceControllerFactory);
+    Map<String, WorkspacePaneLayoutSnapshot> workspacePaneLayouts =
+        const <String, WorkspacePaneLayoutSnapshot>{},
+  }) : _workspacePaneLayouts = Map<String, WorkspacePaneLayoutSnapshot>.from(
+         workspacePaneLayouts,
+       ),
+       super(workspaceControllerFactory: workspaceControllerFactory);
 
   final ServerProfile profile;
+  final Map<String, WorkspacePaneLayoutSnapshot> _workspacePaneLayouts;
 
   @override
   ServerProfile? get selectedProfile => profile;
+
+  @override
+  WorkspacePaneLayoutSnapshot? workspacePaneLayoutFor(ServerProfile? profile) {
+    if (profile == null) {
+      return null;
+    }
+    return _workspacePaneLayouts[profile.storageKey];
+  }
+
+  @override
+  Future<WorkspacePaneLayoutSnapshot?> ensureWorkspacePaneLayout(
+    ServerProfile profile,
+  ) async {
+    return workspacePaneLayoutFor(profile);
+  }
+
+  @override
+  Future<void> persistWorkspacePaneLayout({
+    required ServerProfile profile,
+    required WorkspacePaneLayoutSnapshot snapshot,
+  }) async {
+    _workspacePaneLayouts[profile.storageKey] = snapshot;
+  }
 }
 
 class _RecordingWorkspaceController extends WorkspaceController {

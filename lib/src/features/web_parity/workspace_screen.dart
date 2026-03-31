@@ -1124,6 +1124,24 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     return true;
   }
 
+  List<_WorkspaceSessionPaneSpec> _visibleDesktopSessionPanes(
+    WorkspaceController controller,
+  ) {
+    final profile = _profile;
+    if (profile == null) {
+      return List<_WorkspaceSessionPaneSpec>.unmodifiable(_desktopSessionPanes);
+    }
+    return _resolvedDesktopSessionPanes(
+      AppScope.of(context),
+      profile,
+      controller,
+    );
+  }
+
+  int _visibleDesktopSessionPaneCount(WorkspaceController controller) {
+    return _visibleDesktopSessionPanes(controller).length;
+  }
+
   _WorkspaceSessionPaneLayoutSnapshot? _desktopSessionPaneLayoutSnapshot() {
     if (_desktopSessionPanes.isEmpty) {
       return null;
@@ -2454,7 +2472,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       ),
     ];
 
-    if (!compact && _desktopSessionPanes.length < _maxDesktopSessionPanes) {
+    if (!compact &&
+        _visibleDesktopSessionPaneCount(controller) < _maxDesktopSessionPanes) {
       commands.add(
         _WorkspaceCommandPaletteCommand(
           id: 'pane.split',
@@ -3836,27 +3855,28 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   }
 
   void _splitDesktopSessionPane(WorkspaceController controller) {
-    if (_desktopSessionPanes.length >= _maxDesktopSessionPanes) {
+    _commitSelectedSessionToActivePane(controller);
+    final currentPanes = _visibleDesktopSessionPanes(controller);
+    if (currentPanes.length >= _maxDesktopSessionPanes) {
       _showSnackBar(
         context.wp('You can open up to 8 session panes.'),
         tone: AppSnackBarTone.warning,
       );
       return;
     }
-    _commitSelectedSessionToActivePane(controller);
     final activePaneId = _activeDesktopSessionPaneId;
-    final activeIndex = _desktopSessionPanes.indexWhere(
+    final activeIndex = currentPanes.indexWhere(
       (pane) => pane.id == activePaneId,
     );
     final insertIndex = activeIndex >= 0
         ? activeIndex + 1
-        : _desktopSessionPanes.length;
+        : currentPanes.length;
     final newPane = _WorkspaceSessionPaneSpec(
       id: 'pane_${_sessionPaneSequence++}',
       directory: controller.directory,
       sessionId: controller.selectedSessionId,
     );
-    final next = List<_WorkspaceSessionPaneSpec>.from(_desktopSessionPanes)
+    final next = List<_WorkspaceSessionPaneSpec>.from(currentPanes)
       ..insert(insertIndex, newPane);
     setState(() {
       _desktopSessionPanes = next;
@@ -3871,19 +3891,21 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     WorkspaceController controller,
     String paneId,
   ) async {
-    if (_desktopSessionPanes.length <= 1) {
-      return;
-    }
     final profile = _profile;
     _commitSelectedSessionToActivePane(controller);
+    final currentPanes = _visibleDesktopSessionPanes(controller);
+    if (currentPanes.length <= 1) {
+      return;
+    }
     if (_paneSessionVisibleElsewhere(
       directory: controller.directory,
       sessionId: controller.selectedSessionId,
       excludingPaneId: paneId,
+      panes: currentPanes,
     )) {
       controller.preserveSelectedSessionTimelineForWatch();
     }
-    final current = List<_WorkspaceSessionPaneSpec>.from(_desktopSessionPanes);
+    final current = List<_WorkspaceSessionPaneSpec>.from(currentPanes);
     final removedIndex = current.indexWhere((pane) => pane.id == paneId);
     if (removedIndex < 0) {
       return;
@@ -3924,12 +3946,13 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     required String directory,
     required String? sessionId,
     required String excludingPaneId,
+    Iterable<_WorkspaceSessionPaneSpec>? panes,
   }) {
     final normalizedSessionId = sessionId?.trim();
     if (normalizedSessionId == null || normalizedSessionId.isEmpty) {
       return false;
     }
-    for (final pane in _desktopSessionPanes) {
+    for (final pane in panes ?? _desktopSessionPanes) {
       if (pane.id == excludingPaneId) {
         continue;
       }
@@ -5518,12 +5541,6 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                   activeController: controller,
                   projectLoadingShell: projectLoadingShell,
                 );
-          final activePaneId = compact
-              ? paneViewModels.first.pane.id
-              : (_activeDesktopSessionPaneId ??
-                    (paneViewModels.isNotEmpty
-                        ? paneViewModels.first.pane.id
-                        : null));
           final desktopSidebarVisible = !compact && _desktopSidebarVisible;
           final desktopSidePanelVisible = !compact && _desktopSidePanelVisible;
           final desktopSessionPanes = compact
@@ -5531,6 +5548,15 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
               : List<_WorkspaceSessionPaneSpec>.unmodifiable(
                   paneViewModels.map((paneViewModel) => paneViewModel.pane),
                 );
+          final activePaneId = compact
+              ? paneViewModels.first.pane.id
+              : (desktopSessionPanes.any(
+                      (pane) => pane.id == _activeDesktopSessionPaneId,
+                    )
+                    ? _activeDesktopSessionPaneId
+                    : (desktopSessionPanes.isNotEmpty
+                          ? desktopSessionPanes.first.id
+                          : null));
           _syncObservedPaneControllers(
             paneViewModels.map((paneViewModel) => paneViewModel.controller),
           );

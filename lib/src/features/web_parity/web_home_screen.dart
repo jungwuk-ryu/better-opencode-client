@@ -153,13 +153,58 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
     return controller.workspacePaneLayoutFor(profile);
   }
 
+  bool _isPaneStillValidForHome(
+    ServerProfile profile,
+    WorkspacePaneLayoutPane pane,
+  ) {
+    final sessionId = pane.sessionId?.trim();
+    if (sessionId == null || sessionId.isEmpty) {
+      return true;
+    }
+    final observedController = _observedWorkspaceController(
+      profile,
+      pane.directory,
+    );
+    if (observedController == null ||
+        observedController.loading ||
+        observedController.error != null) {
+      return true;
+    }
+    return observedController.sessions.any(
+      (session) => session.id == sessionId,
+    );
+  }
+
+  WorkspacePaneLayoutSnapshot? _normalizedLayoutForProfile(
+    WebParityAppController controller,
+    ServerProfile profile,
+  ) {
+    final layout = _layoutForProfile(controller, profile);
+    if (layout == null) {
+      return null;
+    }
+    final panes = layout.panes
+        .where((pane) => _isPaneStillValidForHome(profile, pane))
+        .toList(growable: false);
+    if (panes.isEmpty) {
+      return null;
+    }
+    final activePaneId = panes.any((pane) => pane.id == layout.activePaneId)
+        ? layout.activePaneId
+        : panes.first.id;
+    return WorkspacePaneLayoutSnapshot(
+      panes: List<WorkspacePaneLayoutPane>.unmodifiable(panes),
+      activePaneId: activePaneId,
+    );
+  }
+
   String _workspaceStateSignature(WebParityAppController controller) {
     final buffer = StringBuffer()..write('loading=${controller.loading};');
     for (final profile in controller.profiles) {
       buffer
         ..write(profile.storageKey)
         ..write('::');
-      final layout = controller.workspacePaneLayoutFor(profile);
+      final layout = _normalizedLayoutForProfile(controller, profile);
       if (layout != null) {
         buffer
           ..write(layout.activePaneId)
@@ -255,7 +300,7 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
     WebParityAppController controller,
     ServerProfile profile,
   ) {
-    final layout = _layoutForProfile(controller, profile);
+    final layout = _normalizedLayoutForProfile(controller, profile);
     final directories = <String>[];
     final seen = <String>{};
     if (layout != null) {
@@ -277,7 +322,7 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
     ServerProfile profile,
     String directory,
   ) {
-    final layout = _layoutForProfile(controller, profile);
+    final layout = _normalizedLayoutForProfile(controller, profile);
     if (layout != null) {
       final activePane = layout.activePane;
       if (activePane != null &&
@@ -363,7 +408,7 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
     WebParityAppController controller,
     ServerProfile profile,
   ) {
-    return _layoutForProfile(controller, profile)?.activePane;
+    return _normalizedLayoutForProfile(controller, profile)?.activePane;
   }
 
   Future<void> _resumeWorkspace(
@@ -643,7 +688,7 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
     ServerProfile profile,
   ) {
     final runningSessions = _runningSessionsForProfile(controller, profile);
-    final layout = _layoutForProfile(controller, profile);
+    final layout = _normalizedLayoutForProfile(controller, profile);
     final lastWorkspace = _lastWorkspaceForProfile(profile);
     final paneCount = layout?.panes.length ?? (lastWorkspace == null ? 0 : 1);
     var completedTodoCount = 0;
@@ -666,7 +711,7 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
     WebParityAppController controller,
     ServerProfile profile,
   ) {
-    final layout = _layoutForProfile(controller, profile);
+    final layout = _normalizedLayoutForProfile(controller, profile);
     final lastWorkspace = _lastWorkspaceForProfile(profile);
     final activeDirectory =
         layout?.activePane?.directory ?? lastWorkspace?.directory;
@@ -722,7 +767,7 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
     WebParityAppController controller,
     ServerProfile profile,
   ) {
-    final layout = _layoutForProfile(controller, profile);
+    final layout = _normalizedLayoutForProfile(controller, profile);
     final lastWorkspace = _lastWorkspaceForProfile(profile);
     if (layout == null) {
       if (lastWorkspace == null) {
