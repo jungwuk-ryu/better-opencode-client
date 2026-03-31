@@ -115,14 +115,16 @@ class _OpenCodeRemoteAppState extends State<OpenCodeRemoteApp> {
                 if (mediaQuery == null) {
                   return child ?? const SizedBox.shrink();
                 }
-                return MediaQuery(
-                  data: mediaQuery.copyWith(
-                    textScaler: _ScaledTextScaler(
-                      base: mediaQuery.textScaler,
-                      multiplier: _appController.effectiveTextScaleFactor,
+                return _AppKeyboardDismissOnTap(
+                  child: MediaQuery(
+                    data: mediaQuery.copyWith(
+                      textScaler: _ScaledTextScaler(
+                        base: mediaQuery.textScaler,
+                        multiplier: _appController.effectiveTextScaleFactor,
+                      ),
                     ),
+                    child: child ?? const SizedBox.shrink(),
                   ),
-                  child: child ?? const SizedBox.shrink(),
                 );
               },
               locale: _localeController.locale,
@@ -161,6 +163,32 @@ class _OpenCodeRemoteAppState extends State<OpenCodeRemoteApp> {
           ),
         );
       },
+    );
+  }
+}
+
+class _AppKeyboardDismissOnTap extends StatelessWidget {
+  const _AppKeyboardDismissOnTap({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Actions(
+      actions: <Type, Action<Intent>>{
+        EditableTextTapOutsideIntent:
+            CallbackAction<EditableTextTapOutsideIntent>(
+              onInvoke: (intent) {
+                if (!intent.focusNode.hasFocus) {
+                  return null;
+                }
+                intent.focusNode.unfocus();
+                FocusManager.instance.primaryFocus?.unfocus();
+                return null;
+              },
+            ),
+      },
+      child: TapRegionSurface(child: child),
     );
   }
 }
