@@ -615,7 +615,7 @@ class _WorkspaceSideSectionHeader extends StatelessWidget {
             ),
           ),
           if (trailing != null) ...<Widget>[
-            const SizedBox(width: AppSpacing.sm),
+            SizedBox(width: dense ? AppSpacing.xxs : AppSpacing.sm),
             trailing!,
           ],
         ],
@@ -733,10 +733,10 @@ class _WorkspaceSideEmptyState extends StatelessWidget {
         constraints: const BoxConstraints(maxWidth: 440),
         child: Container(
           margin: EdgeInsets.all(
-            density.inset(AppSpacing.lg, min: AppSpacing.md),
+            density.inset(AppSpacing.md, min: AppSpacing.sm),
           ),
           padding: EdgeInsets.all(
-            density.inset(compact ? AppSpacing.md : AppSpacing.lg),
+            density.inset(compact ? AppSpacing.sm : AppSpacing.md),
           ),
           decoration: _workspaceSidePanelDecoration(
             surfaces: surfaces,
@@ -765,7 +765,7 @@ class _WorkspaceSideEmptyState extends StatelessWidget {
                     color: resolvedTint,
                   ),
                 ),
-                SizedBox(height: density.inset(AppSpacing.sm)),
+                SizedBox(height: density.inset(AppSpacing.xs, min: 4)),
                 Text(
                   title,
                   key: titleKey,
@@ -775,7 +775,7 @@ class _WorkspaceSideEmptyState extends StatelessWidget {
                     letterSpacing: -0.2,
                   ),
                 ),
-                SizedBox(height: density.inset(AppSpacing.xs)),
+                SizedBox(height: density.inset(AppSpacing.xxs, min: 4)),
                 Text(
                   message,
                   key: messageKey,
@@ -786,7 +786,7 @@ class _WorkspaceSideEmptyState extends StatelessWidget {
                   ),
                 ),
                 if (action != null) ...<Widget>[
-                  SizedBox(height: density.inset(AppSpacing.md)),
+                  SizedBox(height: density.inset(AppSpacing.sm)),
                   action!,
                 ],
               ],
@@ -1104,10 +1104,10 @@ class _ReviewPanelState extends State<_ReviewPanel> {
                   ),
                   Expanded(
                     child: ListView.separated(
-                      padding: EdgeInsets.all(density.inset(AppSpacing.md)),
+                      padding: EdgeInsets.all(density.inset(AppSpacing.sm)),
                       itemCount: widget.statuses.length,
                       separatorBuilder: (_, _) => SizedBox(
-                        height: density.inset(AppSpacing.xs, min: 6),
+                        height: density.inset(AppSpacing.xxs, min: 4),
                       ),
                       itemBuilder: (context, index) {
                         final item = widget.statuses[index];
@@ -1145,8 +1145,8 @@ class _ReviewPanelState extends State<_ReviewPanel> {
                               ),
                             ),
                             contentPadding: EdgeInsets.symmetric(
-                              horizontal: density.inset(AppSpacing.sm, min: 10),
-                              vertical: density.inset(AppSpacing.xs, min: 2),
+                              horizontal: density.inset(AppSpacing.xs, min: 8),
+                              vertical: density.inset(AppSpacing.xxs, min: 2),
                             ),
                             leading: Container(
                               width: density.inset(34, min: 30),
@@ -1234,10 +1234,10 @@ class _ReviewPanelState extends State<_ReviewPanel> {
                 height: previewHeight,
                 width: double.infinity,
                 margin: EdgeInsets.fromLTRB(
-                  density.inset(AppSpacing.md),
+                  density.inset(AppSpacing.sm),
                   0,
-                  density.inset(AppSpacing.md),
-                  density.inset(AppSpacing.md),
+                  density.inset(AppSpacing.sm),
+                  density.inset(AppSpacing.sm),
                 ),
                 decoration: _workspaceSidePanelDecoration(
                   surfaces: surfaces,
@@ -1263,7 +1263,7 @@ class _ReviewPanelState extends State<_ReviewPanel> {
                       child: MouseRegion(
                         cursor: SystemMouseCursors.resizeUpDown,
                         child: SizedBox(
-                          height: 24,
+                          height: density.compact ? 20 : 22,
                           width: double.infinity,
                           child: Center(
                             child: Container(
@@ -1283,17 +1283,17 @@ class _ReviewPanelState extends State<_ReviewPanel> {
                     Expanded(
                       child: Padding(
                         padding: EdgeInsets.fromLTRB(
-                          density.inset(AppSpacing.md),
+                          density.inset(AppSpacing.sm),
                           0,
-                          density.inset(AppSpacing.md),
-                          density.inset(AppSpacing.md),
+                          density.inset(AppSpacing.sm),
+                          density.inset(AppSpacing.sm),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: <Widget>[
                             Padding(
                               padding: EdgeInsets.only(
-                                bottom: density.inset(AppSpacing.sm),
+                                bottom: density.inset(AppSpacing.xs, min: 4),
                               ),
                               child: Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1348,7 +1348,10 @@ class _ReviewPanelState extends State<_ReviewPanel> {
                                     ),
                                   ),
                                   SizedBox(
-                                    width: density.inset(AppSpacing.sm, min: 6),
+                                    width: density.inset(
+                                      AppSpacing.xxs,
+                                      min: 4,
+                                    ),
                                   ),
                                   Flexible(
                                     child: LayoutBuilder(
@@ -1464,8 +1467,8 @@ class _ReviewPanelState extends State<_ReviewPanel> {
                                                       fullscreenButton,
                                                       SizedBox(
                                                         width: density.inset(
-                                                          AppSpacing.xs,
-                                                          min: 6,
+                                                          AppSpacing.xxs,
+                                                          min: 4,
                                                         ),
                                                       ),
                                                     ],
@@ -1482,16 +1485,16 @@ class _ReviewPanelState extends State<_ReviewPanel> {
                             if (diffModeHint != null)
                               Container(
                                 margin: EdgeInsets.only(
-                                  bottom: density.inset(AppSpacing.sm),
+                                  bottom: density.inset(AppSpacing.xs, min: 4),
                                 ),
                                 padding: EdgeInsets.all(
-                                  density.inset(AppSpacing.sm, min: 10),
+                                  density.inset(AppSpacing.xs, min: 8),
                                 ),
                                 decoration: BoxDecoration(
                                   color: surfaces.warning.withValues(
                                     alpha: 0.1,
                                   ),
-                                  borderRadius: BorderRadius.circular(14),
+                                  borderRadius: BorderRadius.circular(12),
                                   border: Border.all(
                                     color: surfaces.warning.withValues(
                                       alpha: 0.18,
@@ -1644,7 +1647,7 @@ class _ReviewDiffView extends StatelessWidget {
         child: Container(
           key: const ValueKey<String>('review-diff-surface'),
           width: double.infinity,
-          padding: EdgeInsets.all(density.inset(AppSpacing.md)),
+          padding: EdgeInsets.all(density.inset(AppSpacing.sm)),
           decoration:
               _workspaceSidePanelDecoration(
                 surfaces: surfaces,
@@ -1805,7 +1808,7 @@ class _ReviewSplitDiffBody extends StatelessWidget {
           case _ReviewDiffRowKind.spacerTiny:
             return const SizedBox(height: AppSpacing.xxs);
           case _ReviewDiffRowKind.spacerSmall:
-            return const SizedBox(height: AppSpacing.sm);
+            return const SizedBox(height: AppSpacing.xxs);
           case _ReviewDiffRowKind.spacerDivider:
             return const SizedBox(height: 1);
           case _ReviewDiffRowKind.hunkHeader:
@@ -1871,8 +1874,8 @@ class _ReviewDiffMetaRow extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: EdgeInsets.symmetric(
-        horizontal: density.inset(AppSpacing.sm),
-        vertical: density.compact ? 4 : 6,
+        horizontal: density.inset(AppSpacing.xs, min: 6),
+        vertical: density.compact ? 3 : 5,
       ),
       decoration: BoxDecoration(
         color: surfaces.panelMuted.withValues(alpha: 0.82),
@@ -1905,8 +1908,8 @@ class _ReviewDiffHunkHeaderRow extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: EdgeInsets.symmetric(
-        horizontal: density.inset(AppSpacing.sm),
-        vertical: density.compact ? 4 : 6,
+        horizontal: density.inset(AppSpacing.xs, min: 6),
+        vertical: density.compact ? 3 : 5,
       ),
       decoration: BoxDecoration(
         color: theme.colorScheme.primary.withValues(alpha: 0.1),
@@ -1941,8 +1944,8 @@ class _ReviewDiffNoticeRow extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: EdgeInsets.symmetric(
-        horizontal: density.inset(AppSpacing.sm),
-        vertical: density.compact ? 6 : 8,
+        horizontal: density.inset(AppSpacing.xs, min: 6),
+        vertical: density.compact ? 4 : 6,
       ),
       decoration: BoxDecoration(
         color: surfaces.warning.withValues(alpha: 0.1),
@@ -1978,8 +1981,8 @@ class _ReviewSplitSideHeader extends StatelessWidget {
         Expanded(
           child: Container(
             padding: EdgeInsets.symmetric(
-              horizontal: density.inset(AppSpacing.sm),
-              vertical: density.compact ? 4 : 6,
+              horizontal: density.inset(AppSpacing.xs, min: 6),
+              vertical: density.compact ? 3 : 5,
             ),
             decoration: BoxDecoration(
               color: surfaces.panelMuted.withValues(alpha: 0.62),
@@ -1995,8 +1998,8 @@ class _ReviewSplitSideHeader extends StatelessWidget {
         Expanded(
           child: Container(
             padding: EdgeInsets.symmetric(
-              horizontal: density.inset(AppSpacing.sm),
-              vertical: density.compact ? 4 : 6,
+              horizontal: density.inset(AppSpacing.xs, min: 6),
+              vertical: density.compact ? 3 : 5,
             ),
             decoration: BoxDecoration(
               color: surfaces.panelMuted.withValues(alpha: 0.62),
@@ -2306,7 +2309,7 @@ class _ReviewUnifiedLineRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final density = _workspaceDensity(context);
     final lineNumberWidth = density.compact ? 32.0 : 40.0;
-    final verticalPadding = density.compact ? 2.0 : 4.0;
+    final verticalPadding = density.compact ? 1.5 : 3.0;
     final lineTextHeight = density.compact ? 1.25 : 1.45;
     final backgroundColor = switch (line.kind) {
       _ParsedReviewLineKind.insert => surfaces.success.withValues(alpha: 0.08),
@@ -2348,7 +2351,7 @@ class _ReviewUnifiedLineRow extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: AppSpacing.xs),
+          const SizedBox(width: AppSpacing.xxs),
           SizedBox(
             width: lineNumberWidth,
             child: Text(
@@ -2360,12 +2363,12 @@ class _ReviewUnifiedLineRow extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: AppSpacing.xs),
+          const SizedBox(width: AppSpacing.xxs),
           _ReviewLineCommentButton(
             target: target,
             onPressed: () => onLineComment(target),
           ),
-          const SizedBox(width: AppSpacing.xs),
+          const SizedBox(width: AppSpacing.xxs),
           Expanded(
             child: Text(
               '$prefix${line.text}',
@@ -2409,8 +2412,8 @@ class _ReviewSplitLineCell extends StatelessWidget {
     final density = _workspaceDensity(context);
     final lineNumberWidth = density.compact ? 40.0 : 46.0;
     final prefixWidth = density.compact ? 10.0 : 12.0;
-    final commentWidth = density.compact ? 22.0 : 26.0;
-    final verticalPadding = density.compact ? 2.0 : 4.0;
+    final commentWidth = density.compact ? 20.0 : 24.0;
+    final verticalPadding = density.compact ? 1.5 : 3.0;
     final lineTextHeight = density.compact ? 1.25 : 1.45;
     final lineKind = line?.kind;
     final backgroundColor = switch (lineKind) {
@@ -2462,7 +2465,7 @@ class _ReviewSplitLineCell extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: AppSpacing.xs),
+          const SizedBox(width: AppSpacing.xxs),
           SizedBox(
             width: prefixWidth,
             child: Text(
@@ -2473,7 +2476,7 @@ class _ReviewSplitLineCell extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: AppSpacing.xs),
+          const SizedBox(width: AppSpacing.xxs),
           SizedBox(
             width: commentWidth,
             child: !showCommentButton
@@ -2483,7 +2486,7 @@ class _ReviewSplitLineCell extends StatelessWidget {
                     onPressed: () => onLineComment(commentTarget),
                   ),
           ),
-          const SizedBox(width: AppSpacing.xs),
+          const SizedBox(width: AppSpacing.xxs),
           Expanded(
             child: Text(
               line?.text ?? '',
@@ -3092,10 +3095,10 @@ class _FilesPanelState extends State<_FilesPanel> {
                   ),
                   Expanded(
                     child: ListView.separated(
-                      padding: EdgeInsets.all(density.inset(AppSpacing.md)),
+                      padding: EdgeInsets.all(density.inset(AppSpacing.sm)),
                       itemCount: visibleNodes.length,
                       separatorBuilder: (_, _) => SizedBox(
-                        height: density.inset(AppSpacing.xs, min: 6),
+                        height: density.inset(AppSpacing.xxs, min: 4),
                       ),
                       itemBuilder: (context, index) {
                         final entry = visibleNodes[index];
@@ -3129,9 +3132,9 @@ class _FilesPanelState extends State<_FilesPanel> {
                             ),
                             contentPadding: EdgeInsets.only(
                               left:
-                                  density.inset(AppSpacing.sm, min: 10) +
-                                  (entry.depth * density.inset(18, min: 14)),
-                              right: density.inset(AppSpacing.sm, min: 10),
+                                  density.inset(AppSpacing.xs, min: 8) +
+                                  (entry.depth * density.inset(18, min: 12)),
+                              right: density.inset(AppSpacing.xs, min: 8),
                             ),
                             leading: Row(
                               mainAxisSize: MainAxisSize.min,
@@ -3218,10 +3221,10 @@ class _FilesPanelState extends State<_FilesPanel> {
                 height: previewHeight,
                 width: double.infinity,
                 margin: EdgeInsets.fromLTRB(
-                  density.inset(AppSpacing.md),
+                  density.inset(AppSpacing.sm),
                   0,
-                  density.inset(AppSpacing.md),
-                  density.inset(AppSpacing.md),
+                  density.inset(AppSpacing.sm),
+                  density.inset(AppSpacing.sm),
                 ),
                 decoration: _workspaceSidePanelDecoration(
                   surfaces: surfaces,
@@ -3243,7 +3246,7 @@ class _FilesPanelState extends State<_FilesPanel> {
                       child: MouseRegion(
                         cursor: SystemMouseCursors.resizeUpDown,
                         child: SizedBox(
-                          height: 24,
+                          height: density.compact ? 20 : 22,
                           width: double.infinity,
                           child: Center(
                             child: Container(
@@ -3263,10 +3266,10 @@ class _FilesPanelState extends State<_FilesPanel> {
                     Expanded(
                       child: Padding(
                         padding: EdgeInsets.fromLTRB(
-                          density.inset(AppSpacing.md),
+                          density.inset(AppSpacing.sm),
                           0,
-                          density.inset(AppSpacing.md),
-                          density.inset(AppSpacing.md),
+                          density.inset(AppSpacing.sm),
+                          density.inset(AppSpacing.sm),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -3309,7 +3312,7 @@ class _FilesPanelState extends State<_FilesPanel> {
                                   : Container(
                                       width: double.infinity,
                                       padding: EdgeInsets.all(
-                                        density.inset(AppSpacing.md),
+                                        density.inset(AppSpacing.sm),
                                       ),
                                       decoration:
                                           _workspaceSidePanelDecoration(
@@ -3489,6 +3492,7 @@ class _WorkspaceSafeFilePreviewState extends State<_WorkspaceSafeFilePreview> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
+    final density = _workspaceDensity(context);
     final isMarkdown = _isMarkdownPreviewPath(widget.path);
     final canExpand =
         widget.content.length > _workspaceFilePreviewCollapsedCharacterLimit;
@@ -3500,7 +3504,9 @@ class _WorkspaceSafeFilePreviewState extends State<_WorkspaceSafeFilePreview> {
       children: <Widget>[
         if (canExpand || isMarkdown)
           Padding(
-            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+            padding: EdgeInsets.only(
+              bottom: density.inset(AppSpacing.xs, min: 4),
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
@@ -3545,6 +3551,8 @@ class _WorkspaceSafeFilePreviewState extends State<_WorkspaceSafeFilePreview> {
                       ),
                     ],
                   ),
+                if (canExpand && isMarkdown)
+                  SizedBox(height: density.inset(AppSpacing.xxs, min: 4)),
                 if (isMarkdown)
                   Align(
                     alignment: Alignment.centerRight,
@@ -3623,7 +3631,9 @@ class _WorkspacePreviewScaffold extends StatelessWidget {
       appBar: AppBar(title: Text(title)),
       body: SafeArea(
         child: Padding(
-          padding: EdgeInsets.all(density.inset(AppSpacing.lg)),
+          padding: EdgeInsets.all(
+            density.inset(AppSpacing.md, min: AppSpacing.sm),
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
@@ -3662,7 +3672,7 @@ class _WorkspaceFilePreviewPage extends StatelessWidget {
       subtitle: path,
       child: Container(
         width: double.infinity,
-        padding: EdgeInsets.all(density.inset(AppSpacing.md)),
+        padding: EdgeInsets.all(density.inset(AppSpacing.sm)),
         decoration: _workspaceSidePanelDecoration(
           surfaces: surfaces,
           compact: density.compact,
@@ -3725,7 +3735,7 @@ class _WorkspaceReviewPreviewPageState
       subtitle: widget.diff.path,
       child: Container(
         width: double.infinity,
-        padding: EdgeInsets.all(density.inset(AppSpacing.md)),
+        padding: EdgeInsets.all(density.inset(AppSpacing.sm)),
         decoration: _workspaceSidePanelDecoration(
           surfaces: surfaces,
           compact: density.compact,
@@ -4656,15 +4666,15 @@ class _ContextPanelState extends State<_ContextPanel> {
           primary: false,
           key: const PageStorageKey<String>('web-parity-context-panel'),
           padding: EdgeInsets.fromLTRB(
-            density.inset(AppSpacing.lg, min: AppSpacing.md),
-            density.inset(AppSpacing.md),
-            density.inset(AppSpacing.lg, min: AppSpacing.md),
-            density.inset(AppSpacing.xl, min: AppSpacing.md),
+            density.inset(AppSpacing.md, min: AppSpacing.sm),
+            density.inset(AppSpacing.sm),
+            density.inset(AppSpacing.md, min: AppSpacing.sm),
+            density.inset(AppSpacing.md, min: AppSpacing.sm),
           ),
           children: <Widget>[
             Container(
               padding: EdgeInsets.all(
-                density.inset(AppSpacing.md, min: AppSpacing.sm),
+                density.inset(AppSpacing.sm, min: AppSpacing.xxs),
               ),
               decoration: _workspaceSidePanelDecoration(
                 surfaces: surfaces,
@@ -4688,7 +4698,7 @@ class _ContextPanelState extends State<_ContextPanel> {
                                 fontWeight: FontWeight.w800,
                               ),
                             ),
-                            const SizedBox(height: 4),
+                            const SizedBox(height: 2),
                             Text(
                               context.wp(
                                 'Token usage, message volume, and provider details for the current session.',
@@ -4701,7 +4711,7 @@ class _ContextPanelState extends State<_ContextPanel> {
                           ],
                         ),
                       ),
-                      const SizedBox(width: AppSpacing.sm),
+                      SizedBox(width: density.inset(AppSpacing.xxs, min: 4)),
                       _WorkspaceSideBadge(
                         label: _formatContextPercent(usageValue, decimal),
                         tint: surfaces.success,
@@ -4709,7 +4719,7 @@ class _ContextPanelState extends State<_ContextPanel> {
                       ),
                     ],
                   ),
-                  SizedBox(height: density.inset(AppSpacing.md)),
+                  SizedBox(height: density.inset(AppSpacing.sm)),
                   ClipRRect(
                     borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
                     child: LinearProgressIndicator(
@@ -4725,10 +4735,10 @@ class _ContextPanelState extends State<_ContextPanel> {
                       ),
                     ),
                   ),
-                  SizedBox(height: density.inset(AppSpacing.sm)),
+                  SizedBox(height: density.inset(AppSpacing.xs, min: 4)),
                   Wrap(
-                    spacing: AppSpacing.sm,
-                    runSpacing: AppSpacing.sm,
+                    spacing: density.inset(AppSpacing.xs, min: 6),
+                    runSpacing: density.inset(AppSpacing.xs, min: 6),
                     children: <Widget>[
                       _WorkspaceSideBadge(
                         label:
@@ -4747,12 +4757,12 @@ class _ContextPanelState extends State<_ContextPanel> {
                       ),
                     ],
                   ),
-                  SizedBox(height: density.inset(AppSpacing.md)),
+                  SizedBox(height: density.inset(AppSpacing.sm)),
                   Container(
                     width: double.infinity,
                     padding: EdgeInsets.symmetric(
-                      horizontal: density.inset(AppSpacing.sm, min: 10),
-                      vertical: density.inset(AppSpacing.sm, min: 10),
+                      horizontal: density.inset(AppSpacing.xs, min: 8),
+                      vertical: density.inset(AppSpacing.xs, min: 8),
                     ),
                     decoration:
                         _workspaceSidePanelDecoration(
@@ -4786,7 +4796,7 @@ class _ContextPanelState extends State<_ContextPanel> {
                 ],
               ),
             ),
-            const SizedBox(height: AppSpacing.lg),
+            SizedBox(height: density.inset(AppSpacing.md, min: AppSpacing.sm)),
             if (breakdown.isNotEmpty) ...<Widget>[
               _WorkspaceSideSectionHeader(
                 title: context.wp('Context Breakdown'),
@@ -4794,12 +4804,12 @@ class _ContextPanelState extends State<_ContextPanel> {
                   'Visual split between system, user, assistant, and tool content.',
                 ),
               ),
-              const SizedBox(height: AppSpacing.sm),
+              SizedBox(height: density.inset(AppSpacing.xs, min: 4)),
               _ContextBreakdownBar(segments: breakdown),
-              const SizedBox(height: AppSpacing.sm),
+              SizedBox(height: density.inset(AppSpacing.xs, min: 4)),
               Wrap(
-                spacing: AppSpacing.md,
-                runSpacing: AppSpacing.xs,
+                spacing: density.inset(AppSpacing.sm),
+                runSpacing: density.inset(AppSpacing.xxs, min: 4),
                 children: breakdown
                     .map(
                       (segment) => Row(
@@ -4826,7 +4836,9 @@ class _ContextPanelState extends State<_ContextPanel> {
                     )
                     .toList(growable: false),
               ),
-              const SizedBox(height: AppSpacing.xxl),
+              SizedBox(
+                height: density.inset(AppSpacing.md, min: AppSpacing.sm),
+              ),
             ],
             _WorkspaceSideSectionHeader(
               title: context.wp('Session metrics'),
@@ -4836,14 +4848,14 @@ class _ContextPanelState extends State<_ContextPanel> {
             ),
             LayoutBuilder(
               builder: (context, constraints) {
-                final gap = density.inset(AppSpacing.lg, min: AppSpacing.md);
+                final gap = density.inset(AppSpacing.md, min: AppSpacing.sm);
                 final columns = constraints.maxWidth >= 300 ? 2 : 1;
                 final itemWidth = columns == 1
                     ? constraints.maxWidth
                     : (constraints.maxWidth - gap) / 2;
                 return Wrap(
                   spacing: gap,
-                  runSpacing: AppSpacing.lg,
+                  runSpacing: density.inset(AppSpacing.md, min: AppSpacing.sm),
                   children: stats
                       .map(
                         (entry) => SizedBox(
@@ -4856,17 +4868,19 @@ class _ContextPanelState extends State<_ContextPanel> {
               },
             ),
             if (systemPrompt != null) ...<Widget>[
-              const SizedBox(height: AppSpacing.xxl),
+              SizedBox(
+                height: density.inset(AppSpacing.md, min: AppSpacing.sm),
+              ),
               _WorkspaceSideSectionHeader(
                 title: context.wp('System Prompt'),
                 caption: context.wp(
                   'Reference prompt currently shaping model behavior for this session.',
                 ),
               ),
-              const SizedBox(height: AppSpacing.sm),
+              SizedBox(height: density.inset(AppSpacing.xs, min: 4)),
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(AppSpacing.md),
+                padding: EdgeInsets.all(density.inset(AppSpacing.sm)),
                 decoration: _workspaceSidePanelDecoration(
                   surfaces: surfaces,
                   compact: density.compact,
@@ -4881,17 +4895,17 @@ class _ContextPanelState extends State<_ContextPanel> {
                 ),
               ),
             ],
-            const SizedBox(height: AppSpacing.xxl),
+            SizedBox(height: density.inset(AppSpacing.md, min: AppSpacing.sm)),
             _WorkspaceSideSectionHeader(
               title: context.wp('Raw messages'),
               caption: context.wp(
                 'Expandable transport-level payloads for debugging and auditing.',
               ),
             ),
-            const SizedBox(height: AppSpacing.sm),
+            SizedBox(height: density.inset(AppSpacing.xs, min: 4)),
             if (widget.messages.isEmpty)
               Container(
-                padding: const EdgeInsets.all(AppSpacing.md),
+                padding: EdgeInsets.all(density.inset(AppSpacing.sm)),
                 decoration: _workspaceSidePanelDecoration(
                   surfaces: surfaces,
                   compact: density.compact,
@@ -4906,7 +4920,9 @@ class _ContextPanelState extends State<_ContextPanel> {
             else
               ...widget.messages.map(
                 (message) => Padding(
-                  padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                  padding: EdgeInsets.only(
+                    bottom: density.inset(AppSpacing.xxs, min: 4),
+                  ),
                   child: _ContextRawMessageTile(
                     message: message,
                     timestampLabel: _formatContextTime(
@@ -4941,7 +4957,9 @@ class _ContextStat extends StatelessWidget {
     final surfaces = theme.extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
     return Container(
-      padding: EdgeInsets.all(density.inset(AppSpacing.md, min: AppSpacing.sm)),
+      padding: EdgeInsets.all(
+        density.inset(AppSpacing.sm, min: AppSpacing.xxs),
+      ),
       decoration: _workspaceSidePanelDecoration(
         surfaces: surfaces,
         compact: density.compact,
@@ -4953,7 +4971,7 @@ class _ContextStat extends StatelessWidget {
             entry.label,
             style: theme.textTheme.labelMedium?.copyWith(color: surfaces.muted),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 2),
           Text(
             entry.value,
             maxLines: 3,
@@ -5047,7 +5065,7 @@ class _ContextRawMessageTile extends StatelessWidget {
             compact: density.compact,
           ).copyWith(
             color: Colors.transparent,
-            borderRadius: BorderRadius.circular(AppSpacing.md),
+            borderRadius: BorderRadius.circular(AppSpacing.sm),
           ),
       child: Theme(
         data: theme.copyWith(dividerColor: Colors.transparent),
@@ -5059,10 +5077,7 @@ class _ContextRawMessageTile extends StatelessWidget {
           collapsedBackgroundColor: Colors.transparent,
           shape: const Border(),
           collapsedShape: const Border(),
-          tilePadding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md,
-            vertical: 4,
-          ),
+          tilePadding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
           childrenPadding: EdgeInsets.zero,
           iconColor: surfaces.muted,
           collapsedIconColor: surfaces.muted,
@@ -5089,7 +5104,7 @@ class _ContextRawMessageTile extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              const SizedBox(width: AppSpacing.sm),
+              const SizedBox(width: AppSpacing.xxs),
               Flexible(
                 child: Text(
                   timestampLabel,
@@ -5110,10 +5125,10 @@ class _ContextRawMessageTile extends StatelessWidget {
               ),
               width: double.infinity,
               margin: const EdgeInsets.fromLTRB(
-                AppSpacing.md,
+                AppSpacing.sm,
                 0,
-                AppSpacing.md,
-                AppSpacing.md,
+                AppSpacing.sm,
+                AppSpacing.sm,
               ),
               clipBehavior: Clip.antiAlias,
               decoration:
@@ -5123,9 +5138,9 @@ class _ContextRawMessageTile extends StatelessWidget {
                     tint: surfaces.accentSoft,
                   ).copyWith(
                     color: surfaces.background.withValues(alpha: 0.78),
-                    borderRadius: BorderRadius.circular(AppSpacing.md),
+                    borderRadius: BorderRadius.circular(AppSpacing.sm),
                   ),
-              padding: const EdgeInsets.all(AppSpacing.md),
+              padding: const EdgeInsets.all(AppSpacing.sm),
               child: Text(
                 _wrapRawMessageForDisplay(formatRawSessionMessage(message)),
                 style: GoogleFonts.ibmPlexMono(
