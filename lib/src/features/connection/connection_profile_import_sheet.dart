@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/connection/connection_models.dart';
 import '../../design_system/app_spacing.dart';
+import '../../design_system/app_surface_decor.dart';
 import '../../design_system/app_theme.dart';
 import '../../i18n/web_parity_localizations.dart';
 import 'connection_profile_import.dart';
@@ -24,148 +25,183 @@ class ConnectionProfileImportSheet extends StatelessWidget {
     final existing = existingProfile;
     final valid = routeData.hasValidPayload;
     return SafeArea(
-      child: Material(
-        color: Colors.transparent,
-        child: Container(
-          decoration: BoxDecoration(
-            color: surfaces.panel,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-            border: Border.all(color: surfaces.lineSoft),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.lg,
-              AppSpacing.lg,
-              AppSpacing.lg,
-              AppSpacing.xl,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Row(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.md,
+          AppSpacing.md,
+          AppSpacing.md,
+          AppSpacing.lg,
+        ),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: AppGlassPanel(
+              radius: AppSpacing.dialogRadius,
+              blur: 14,
+              backgroundOpacity: theme.brightness == Brightness.dark
+                  ? 0.9
+                  : 0.95,
+              borderOpacity: 0.08,
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Expanded(
-                      child: Text(
-                        context.wp('Import Connection'),
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: () => Navigator.of(context).pop(false),
-                      icon: const Icon(Icons.close_rounded),
-                    ),
-                  ],
-                ),
-                Text(
-                  valid
-                      ? context.wp(
-                          'Review the shared server profile before saving it to this device.',
-                        )
-                      : context.wp(
-                          'This shared connection could not be trusted yet. Review the validation issues below.',
-                        ),
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: surfaces.muted,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.lg),
-                _ConnectionImportCard(
-                  title: payload.label.isNotEmpty
-                      ? payload.label
-                      : context.wp('Shared Server'),
-                  subtitle: payload.baseUrl.isNotEmpty
-                      ? payload.baseUrl
-                      : context.wp('Missing server address'),
-                  children: <Widget>[
-                    _ConnectionImportMetaRow(
-                      label: context.wp('Auth'),
-                      value: switch (payload.authType) {
-                        ConnectionProfileImportAuthType.basic => 'Basic',
-                        ConnectionProfileImportAuthType.none => context.wp('None'),
-                      },
-                    ),
-                    _ConnectionImportMetaRow(
-                      label: context.wp('Expires'),
-                      value: payload.expiresAt == null
-                          ? context.wp('No expiry')
-                          : MaterialLocalizations.of(
-                              context,
-                            ).formatShortDate(payload.expiresAt!),
-                    ),
-                    if (existing != null)
-                      _ConnectionImportMetaRow(
-                        label: context.wp('Duplicate'),
-                        value: context.wp(
-                          'Will update "{label}"',
-                          args: <String, Object?>{'label': existing.effectiveLabel},
-                        ),
-                      ),
-                  ],
-                ),
-                if (!valid) ...<Widget>[
-                  const SizedBox(height: AppSpacing.lg),
-                  _ConnectionImportCard(
-                    title: context.wp('Validation Issues'),
-                    subtitle: context.wp(
-                      'Shared profiles must pass version, auth, URL, and expiry checks before import.',
-                    ),
-                    children: routeData.validation.issues
-                        .map(
-                          (issue) => Padding(
-                            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: <Widget>[
-                                Icon(
-                                  Icons.error_outline_rounded,
-                                  size: 18,
-                                  color: theme.colorScheme.error,
+                    Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Text(
+                                context.wp('Import Connection'),
+                                style: theme.textTheme.titleLarge?.copyWith(
+                                  fontWeight: FontWeight.w800,
                                 ),
-                                const SizedBox(width: AppSpacing.sm),
-                                Expanded(
-                                  child: Text(
-                                    issue.message,
-                                    style: theme.textTheme.bodyMedium,
-                                  ),
+                              ),
+                              const SizedBox(height: AppSpacing.xs),
+                              Text(
+                                valid
+                                    ? context.wp(
+                                        'Review the shared server profile before saving it to this device.',
+                                      )
+                                    : context.wp(
+                                        'This shared connection could not be trusted yet. Review the validation issues below.',
+                                      ),
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: surfaces.muted,
+                                  height: 1.45,
                                 ),
-                              ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.of(context).pop(false),
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    _ConnectionImportCard(
+                      title: payload.label.isNotEmpty
+                          ? payload.label
+                          : context.wp('Shared Server'),
+                      subtitle: payload.baseUrl.isNotEmpty
+                          ? payload.baseUrl
+                          : context.wp('Missing server address'),
+                      children: <Widget>[
+                        _ConnectionImportMetaRow(
+                          label: context.wp('Auth'),
+                          value: switch (payload.authType) {
+                            ConnectionProfileImportAuthType.basic => 'Basic',
+                            ConnectionProfileImportAuthType.none => context.wp(
+                              'None',
+                            ),
+                          },
+                        ),
+                        _ConnectionImportMetaRow(
+                          label: context.wp('Expires'),
+                          value: payload.expiresAt == null
+                              ? context.wp('No expiry')
+                              : MaterialLocalizations.of(
+                                  context,
+                                ).formatShortDate(payload.expiresAt!),
+                        ),
+                        if (existing != null)
+                          _ConnectionImportMetaRow(
+                            label: context.wp('Duplicate'),
+                            value: context.wp(
+                              'Will update "{label}"',
+                              args: <String, Object?>{
+                                'label': existing.effectiveLabel,
+                              },
                             ),
                           ),
-                        )
-                        .toList(growable: false),
-                  ),
-                ],
-                const SizedBox(height: AppSpacing.lg),
-                Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.of(context).pop(false),
-                        child: Text(context.wp('Cancel')),
-                      ),
+                      ],
                     ),
-                    const SizedBox(width: AppSpacing.sm),
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: valid ? () => Navigator.of(context).pop(true) : null,
-                        icon: Icon(
-                          existing == null
-                              ? Icons.download_done_rounded
-                              : Icons.system_update_alt_rounded,
+                    if (!valid) ...<Widget>[
+                      const SizedBox(height: AppSpacing.lg),
+                      _ConnectionImportCard(
+                        title: context.wp('Validation Issues'),
+                        subtitle: context.wp(
+                          'Shared profiles must pass version, auth, URL, and expiry checks before import.',
                         ),
-                        label: Text(
-                          existing == null
-                              ? context.wp('Save Server')
-                              : context.wp('Update Saved Server'),
-                        ),
+                        accentColor: theme.colorScheme.error,
+                        children: routeData.validation.issues
+                            .map(
+                              (issue) => Padding(
+                                padding: const EdgeInsets.only(
+                                  bottom: AppSpacing.sm,
+                                ),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: <Widget>[
+                                    Icon(
+                                      Icons.error_outline_rounded,
+                                      size: 18,
+                                      color: theme.colorScheme.error,
+                                    ),
+                                    const SizedBox(width: AppSpacing.sm),
+                                    Expanded(
+                                      child: Text(
+                                        issue.message,
+                                        style: theme.textTheme.bodyMedium,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )
+                            .toList(growable: false),
                       ),
+                    ],
+                    const SizedBox(height: AppSpacing.lg),
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final compact = constraints.maxWidth < 420;
+                        final cancelButton = OutlinedButton(
+                          onPressed: () => Navigator.of(context).pop(false),
+                          child: Text(context.wp('Cancel')),
+                        );
+                        final saveButton = FilledButton.icon(
+                          onPressed: valid
+                              ? () => Navigator.of(context).pop(true)
+                              : null,
+                          icon: Icon(
+                            existing == null
+                                ? Icons.download_done_rounded
+                                : Icons.system_update_alt_rounded,
+                          ),
+                          label: Text(
+                            existing == null
+                                ? context.wp('Save Server')
+                                : context.wp('Update Saved Server'),
+                          ),
+                        );
+                        if (compact) {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: <Widget>[
+                              saveButton,
+                              const SizedBox(height: AppSpacing.sm),
+                              cancelButton,
+                            ],
+                          );
+                        }
+                        return Row(
+                          children: <Widget>[
+                            Expanded(child: cancelButton),
+                            const SizedBox(width: AppSpacing.sm),
+                            Expanded(child: saveButton),
+                          ],
+                        );
+                      },
                     ),
                   ],
                 ),
-              ],
+              ),
             ),
           ),
         ),
@@ -179,11 +215,13 @@ class _ConnectionImportCard extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.children,
+    this.accentColor,
   });
 
   final String title;
   final String subtitle;
   final List<Widget> children;
+  final Color? accentColor;
 
   @override
   Widget build(BuildContext context) {
@@ -192,10 +230,14 @@ class _ConnectionImportCard extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(AppSpacing.lg),
-      decoration: BoxDecoration(
-        color: surfaces.panelRaised,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: surfaces.lineSoft),
+      decoration: appSoftCardDecoration(
+        context,
+        radius: 24,
+        tone: accentColor == theme.colorScheme.error
+            ? AppSurfaceTone.danger
+            : AppSurfaceTone.neutral,
+        muted: true,
+        emphasized: true,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -237,7 +279,9 @@ class _ConnectionImportMetaRow extends StatelessWidget {
             width: 88,
             child: Text(
               label,
-              style: theme.textTheme.labelLarge?.copyWith(color: surfaces.muted),
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: surfaces.muted,
+              ),
             ),
           ),
           Expanded(

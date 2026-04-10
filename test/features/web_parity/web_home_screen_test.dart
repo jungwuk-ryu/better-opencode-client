@@ -271,6 +271,76 @@ void main() {
     },
   );
 
+  testWidgets(
+    'compact home keeps server management inline without duplicate sheet shortcuts',
+    (tester) async {
+      _setCompactSurface(tester);
+      final alpha = ServerProfile(
+        id: 'alpha',
+        label: 'Alpha',
+        baseUrl: 'https://alpha.example.com',
+      );
+      final beta = ServerProfile(
+        id: 'beta',
+        label: 'Beta',
+        baseUrl: 'https://beta.example.com',
+      );
+      final controller = _MutableHomeAppController(
+        profiles: <ServerProfile>[alpha, beta],
+        selected: alpha,
+        reports: <String, ServerProbeReport>{
+          alpha.storageKey: _probeReport(alpha, version: '1.2.3'),
+          beta.storageKey: _probeReport(
+            beta,
+            version: '0.9.0',
+            classification: ConnectionProbeClassification.authFailure,
+          ),
+        },
+      );
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(
+        AppScope(
+          controller: controller,
+          child: MaterialApp(
+            theme: AppTheme.dark(),
+            home: WebParityHomeScreen(
+              flavor: AppFlavor.debug,
+              localeController: LocaleController(),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.widgetWithText(OutlinedButton, 'See Servers'), findsNothing);
+      expect(find.widgetWithText(OutlinedButton, 'Manage'), findsNothing);
+      expect(find.byType(ListView), findsNothing);
+      expect(find.byType(SingleChildScrollView), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('home-server-card-alpha')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('home-server-card-beta')),
+        findsOneWidget,
+      );
+
+      await tester.ensureVisible(
+        find.byKey(const ValueKey<String>('home-server-card-beta')),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('home-server-card-beta')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey<String>('home-server-resume-button-beta')),
+        findsOneWidget,
+      );
+    },
+  );
+
   testWidgets('home localizes server actions for japanese and chinese', (
     tester,
   ) async {
@@ -962,6 +1032,13 @@ class _RecordingNavigatorObserver extends NavigatorObserver {
 
 void _setLargeSurface(WidgetTester tester) {
   tester.view.physicalSize = const Size(1440, 2200);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+}
+
+void _setCompactSurface(WidgetTester tester) {
+  tester.view.physicalSize = const Size(390, 844);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);

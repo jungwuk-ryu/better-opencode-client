@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../design_system/app_spacing.dart';
+import '../../design_system/app_surface_decor.dart';
 import '../../design_system/app_theme.dart';
 import '../../i18n/web_parity_localizations.dart';
 import '../chat/chat_models.dart';
@@ -41,29 +42,41 @@ class WorkspaceProjectActionsSheet extends StatelessWidget {
     final surfaces = theme.extension<AppSurfaces>()!;
     final project = this.project;
     final session = this.session;
+    final viewInsets = MediaQuery.viewInsetsOf(context);
 
     return SafeArea(
       child: Material(
         color: Colors.transparent,
-        child: Container(
-          decoration: BoxDecoration(
-            color: surfaces.panel,
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(28),
+        child: Padding(
+          padding: EdgeInsets.only(bottom: viewInsets.bottom),
+          child: AppGlassPanel(
+            radius: AppSpacing.sheetRadius,
+            tone: AppSurfaceTone.accent,
+            blur: 22,
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.md,
+              AppSpacing.lg,
+              AppSpacing.xl,
             ),
-            border: Border.all(color: surfaces.lineSoft),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.lg,
-                  AppSpacing.lg,
-                  AppSpacing.lg,
-                  AppSpacing.sm,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Center(
+                  child: Container(
+                    width: 44,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: surfaces.muted.withValues(alpha: 0.28),
+                      borderRadius: BorderRadius.circular(
+                        AppSpacing.pillRadius,
+                      ),
+                    ),
+                  ),
                 ),
-                child: Row(
+                const SizedBox(height: AppSpacing.md),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Expanded(
                       child: Column(
@@ -72,128 +85,139 @@ class WorkspaceProjectActionsSheet extends StatelessWidget {
                           Text(
                             context.wp('Project Actions'),
                             style: theme.textTheme.titleLarge?.copyWith(
-                              fontWeight: FontWeight.w700,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -0.4,
                             ),
                           ),
-                          const SizedBox(height: AppSpacing.xxs),
+                          const SizedBox(height: AppSpacing.xs),
                           Text(
                             context.wp(
                               'Keep the most common remote workflows one tap away.',
                             ),
                             style: theme.textTheme.bodyMedium?.copyWith(
                               color: surfaces.muted,
+                              height: 1.45,
                             ),
                           ),
                         ],
                       ),
                     ),
+                    const SizedBox(width: AppSpacing.sm),
                     IconButton(
                       onPressed: () => Navigator.of(context).pop(),
+                      style: IconButton.styleFrom(
+                        backgroundColor: surfaces.panelRaised.withValues(
+                          alpha: 0.72,
+                        ),
+                      ),
                       icon: const Icon(Icons.close_rounded),
                       tooltip: context.wp('Close'),
                     ),
                   ],
                 ),
-              ),
-              Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.lg,
-                    0,
-                    AppSpacing.lg,
-                    AppSpacing.xl,
+                const SizedBox(height: AppSpacing.lg),
+                Expanded(
+                  child: ListView(
+                    children: <Widget>[
+                      _ProjectActionsOverviewCard(
+                        profileLabel: profileLabel,
+                        project: project,
+                        session: session,
+                        status: status,
+                      ),
+                      if (serviceSnapshots.isNotEmpty) ...<Widget>[
+                        const SizedBox(height: AppSpacing.lg),
+                        _ProjectActionsSectionTitle(
+                          title: context.wp('Runtime'),
+                          subtitle: context.wp(
+                            'A compact view of startup commands and live project state.',
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        ...serviceSnapshots.map(
+                          (snapshot) => Padding(
+                            padding: const EdgeInsets.only(
+                              bottom: AppSpacing.sm,
+                            ),
+                            child: _ProjectServiceCard(snapshot: snapshot),
+                          ),
+                        ),
+                      ],
+                      for (final section in sections) ...<Widget>[
+                        const SizedBox(height: AppSpacing.lg),
+                        _ProjectActionsSectionTitle(
+                          title: section.title,
+                          subtitle: section.subtitle,
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        ...section.items.map(
+                          (item) => Padding(
+                            padding: const EdgeInsets.only(
+                              bottom: AppSpacing.sm,
+                            ),
+                            child: _ProjectActionTile(
+                              item: item,
+                              onTap: () async {
+                                Navigator.of(context).pop();
+                                await onSelectAction(item);
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
+                      if (recentLinks.isNotEmpty) ...<Widget>[
+                        const SizedBox(height: AppSpacing.lg),
+                        _ProjectActionsSectionTitle(
+                          title: context.wp('Recent Links'),
+                          subtitle: context.wp(
+                            'Re-open or copy the remote links that matter most right now.',
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        ...recentLinks.map(
+                          (link) => Padding(
+                            padding: const EdgeInsets.only(
+                              bottom: AppSpacing.sm,
+                            ),
+                            child: _ProjectLinkTile(
+                              link: link,
+                              onTap: () async {
+                                Navigator.of(context).pop();
+                                await onOpenLink(link);
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
+                      if (portPresets.isNotEmpty) ...<Widget>[
+                        const SizedBox(height: AppSpacing.lg),
+                        _ProjectActionsSectionTitle(
+                          title: context.wp('Port Presets'),
+                          subtitle: context.wp(
+                            'Keep a reusable handoff command ready when remote services need a local hop.',
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        ...portPresets.map(
+                          (preset) => Padding(
+                            padding: const EdgeInsets.only(
+                              bottom: AppSpacing.sm,
+                            ),
+                            child: _PortPresetTile(
+                              preset: preset,
+                              onTap: () async {
+                                Navigator.of(context).pop();
+                                await onSelectPortPreset(preset);
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
-                  children: <Widget>[
-                    _ProjectActionsOverviewCard(
-                      profileLabel: profileLabel,
-                      project: project,
-                      session: session,
-                      status: status,
-                    ),
-                    if (serviceSnapshots.isNotEmpty) ...<Widget>[
-                      const SizedBox(height: AppSpacing.lg),
-                      _ProjectActionsSectionTitle(
-                        title: context.wp('Runtime'),
-                        subtitle: context.wp(
-                          'A compact view of startup commands and live project state.',
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.sm),
-                      ...serviceSnapshots.map(
-                        (snapshot) => Padding(
-                          padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                          child: _ProjectServiceCard(snapshot: snapshot),
-                        ),
-                      ),
-                    ],
-                    for (final section in sections) ...<Widget>[
-                      const SizedBox(height: AppSpacing.lg),
-                      _ProjectActionsSectionTitle(
-                        title: section.title,
-                        subtitle: section.subtitle,
-                      ),
-                      const SizedBox(height: AppSpacing.sm),
-                      ...section.items.map(
-                        (item) => Padding(
-                          padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                          child: _ProjectActionTile(
-                            item: item,
-                            onTap: () async {
-                              Navigator.of(context).pop();
-                              await onSelectAction(item);
-                            },
-                          ),
-                        ),
-                      ),
-                    ],
-                    if (recentLinks.isNotEmpty) ...<Widget>[
-                      const SizedBox(height: AppSpacing.lg),
-                      _ProjectActionsSectionTitle(
-                        title: context.wp('Recent Links'),
-                        subtitle: context.wp(
-                          'Re-open or copy the remote links that matter most right now.',
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.sm),
-                      ...recentLinks.map(
-                        (link) => Padding(
-                          padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                          child: _ProjectLinkTile(
-                            link: link,
-                            onTap: () async {
-                              Navigator.of(context).pop();
-                              await onOpenLink(link);
-                            },
-                          ),
-                        ),
-                      ),
-                    ],
-                    if (portPresets.isNotEmpty) ...<Widget>[
-                      const SizedBox(height: AppSpacing.lg),
-                      _ProjectActionsSectionTitle(
-                        title: context.wp('Port Presets'),
-                        subtitle: context.wp(
-                          'Keep a reusable handoff command ready when remote services need a local hop.',
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.sm),
-                      ...portPresets.map(
-                        (preset) => Padding(
-                          padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                          child: _PortPresetTile(
-                            preset: preset,
-                            onTap: () async {
-                              Navigator.of(context).pop();
-                              await onSelectPortPreset(preset);
-                            },
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -223,24 +247,41 @@ class _ProjectActionsOverviewCard extends StatelessWidget {
     final statusLabel = _statusLabel(context, status);
     return Container(
       padding: const EdgeInsets.all(AppSpacing.lg),
-      decoration: BoxDecoration(
-        color: surfaces.panelRaised,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: surfaces.lineSoft),
+      decoration: appSoftCardDecoration(
+        context,
+        radius: 24,
+        tone: AppSurfaceTone.accent,
+        emphasized: true,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primary.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(
+              Icons.dashboard_customize_rounded,
+              color: theme.colorScheme.primary,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
           Text(
             project?.title ?? context.wp('Workspace'),
             style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w800,
             ),
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
             project?.directory ?? context.wp('Pick a project to see actions.'),
-            style: theme.textTheme.bodyMedium?.copyWith(color: surfaces.muted),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: surfaces.muted,
+              height: 1.45,
+            ),
           ),
           const SizedBox(height: AppSpacing.md),
           Wrap(
@@ -253,20 +294,11 @@ class _ProjectActionsOverviewCard extends StatelessWidget {
                   label: profileLabel.trim(),
                 ),
               if (branch.isNotEmpty)
-                _OverviewChip(
-                  icon: Icons.commit_rounded,
-                  label: branch,
-                ),
+                _OverviewChip(icon: Icons.commit_rounded, label: branch),
               if (sessionTitle.isNotEmpty)
-                _OverviewChip(
-                  icon: Icons.forum_rounded,
-                  label: sessionTitle,
-                ),
+                _OverviewChip(icon: Icons.forum_rounded, label: sessionTitle),
               if (statusLabel.isNotEmpty)
-                _OverviewChip(
-                  icon: Icons.bolt_rounded,
-                  label: statusLabel,
-                ),
+                _OverviewChip(icon: Icons.bolt_rounded, label: statusLabel),
             ],
           ),
         ],
@@ -300,15 +332,18 @@ class _ProjectActionsSectionTitle extends StatelessWidget {
       children: <Widget>[
         Text(
           title,
-          style: theme.textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.w700,
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w800,
           ),
         ),
         if (subtitle?.trim().isNotEmpty == true) ...<Widget>[
-          const SizedBox(height: AppSpacing.xxs),
+          const SizedBox(height: AppSpacing.xs),
           Text(
             subtitle!.trim(),
-            style: theme.textTheme.bodySmall?.copyWith(color: surfaces.muted),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: surfaces.muted,
+              height: 1.4,
+            ),
           ),
         ],
       ],
@@ -335,15 +370,18 @@ class _ProjectActionTile extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: item.enabled ? onTap : null,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         child: Ink(
           padding: const EdgeInsets.all(AppSpacing.md),
-          decoration: BoxDecoration(
-            color: surfaces.panelRaised,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: item.enabled ? surfaces.lineSoft : surfaces.lineSoft,
-            ),
+          decoration: appSoftCardDecoration(
+            context,
+            radius: 20,
+            tone: item.destructive
+                ? AppSurfaceTone.danger
+                : item.attention
+                ? AppSurfaceTone.warning
+                : AppSurfaceTone.accent,
+            muted: !item.enabled,
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -369,9 +407,7 @@ class _ProjectActionTile extends StatelessWidget {
                             item.title,
                             style: theme.textTheme.titleSmall?.copyWith(
                               fontWeight: FontWeight.w700,
-                              color: item.enabled
-                                  ? null
-                                  : surfaces.muted,
+                              color: item.enabled ? null : surfaces.muted,
                             ),
                           ),
                         ),
@@ -393,6 +429,11 @@ class _ProjectActionTile extends StatelessWidget {
                               ),
                             ),
                           ),
+                        const SizedBox(width: AppSpacing.sm),
+                        Icon(
+                          Icons.chevron_right_rounded,
+                          color: item.enabled ? surfaces.muted : surfaces.line,
+                        ),
                       ],
                     ),
                     if (item.subtitle?.trim().isNotEmpty == true) ...<Widget>[
@@ -404,7 +445,8 @@ class _ProjectActionTile extends StatelessWidget {
                         ),
                       ),
                     ],
-                    if (item.description?.trim().isNotEmpty == true) ...<Widget>[
+                    if (item.description?.trim().isNotEmpty ==
+                        true) ...<Widget>[
                       const SizedBox(height: AppSpacing.xs),
                       Text(
                         item.description!,
@@ -414,9 +456,8 @@ class _ProjectActionTile extends StatelessWidget {
                         ),
                       ),
                     ],
-                    if (item.commandPreview?.trim().isNotEmpty == true) ...<
-                      Widget
-                    >[
+                    if (item.commandPreview?.trim().isNotEmpty ==
+                        true) ...<Widget>[
                       const SizedBox(height: AppSpacing.sm),
                       Container(
                         width: double.infinity,
@@ -425,7 +466,7 @@ class _ProjectActionTile extends StatelessWidget {
                           vertical: AppSpacing.sm,
                         ),
                         decoration: BoxDecoration(
-                          color: surfaces.panel,
+                          color: surfaces.panel.withValues(alpha: 0.8),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(color: surfaces.lineSoft),
                         ),
@@ -467,10 +508,16 @@ class _ProjectServiceCard extends StatelessWidget {
     };
     return Container(
       padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: surfaces.panelRaised,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: surfaces.lineSoft),
+      decoration: appSoftCardDecoration(
+        context,
+        radius: 20,
+        tone: switch (snapshot.tone) {
+          ProjectRuntimeTone.success => AppSurfaceTone.success,
+          ProjectRuntimeTone.warning => AppSurfaceTone.warning,
+          ProjectRuntimeTone.danger => AppSurfaceTone.danger,
+          ProjectRuntimeTone.info => AppSurfaceTone.accent,
+          ProjectRuntimeTone.neutral => AppSurfaceTone.neutral,
+        },
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -505,11 +552,20 @@ class _ProjectServiceCard extends StatelessWidget {
           ),
           if (snapshot.command?.trim().isNotEmpty == true) ...<Widget>[
             const SizedBox(height: AppSpacing.sm),
-            Text(
-              snapshot.command!,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurface,
-                fontFamily: 'monospace',
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(AppSpacing.sm),
+              decoration: BoxDecoration(
+                color: surfaces.panel.withValues(alpha: 0.82),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: surfaces.lineSoft),
+              ),
+              child: Text(
+                snapshot.command!,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurface,
+                  fontFamily: 'monospace',
+                ),
               ),
             ),
           ],
@@ -527,52 +583,125 @@ class _ProjectLinkTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         child: Ink(
           padding: const EdgeInsets.all(AppSpacing.md),
-          decoration: BoxDecoration(
-            color: surfaces.panelRaised,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: surfaces.lineSoft),
+          decoration: appSoftCardDecoration(
+            context,
+            radius: 20,
+            tone: AppSurfaceTone.neutral,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Row(
-                children: <Widget>[
-                  Expanded(
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final stacked = constraints.maxWidth < 360;
+                  final sourceChip = Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.sm,
+                      vertical: AppSpacing.xs,
+                    ),
+                    decoration: BoxDecoration(
+                      color: surfaces.panel.withValues(alpha: 0.8),
+                      borderRadius: BorderRadius.circular(
+                        AppSpacing.pillRadius,
+                      ),
+                      border: Border.all(color: surfaces.lineSoft),
+                    ),
                     child: Text(
-                      link.label,
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
+                      link.source,
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: surfaces.muted,
                       ),
                     ),
-                  ),
-                  Text(
-                    link.source,
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: surfaces.muted,
-                    ),
-                  ),
-                ],
+                  );
+                  if (stacked) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Row(
+                          children: <Widget>[
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.primary.withValues(
+                                  alpha: 0.1,
+                                ),
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: Icon(
+                                Icons.link_rounded,
+                                color: theme.colorScheme.primary,
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.md),
+                            Expanded(
+                              child: Text(
+                                link.label,
+                                style: theme.textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        sourceChip,
+                      ],
+                    );
+                  }
+                  return Row(
+                    children: <Widget>[
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primary.withValues(
+                            alpha: 0.1,
+                          ),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Icon(
+                          Icons.link_rounded,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(
+                        child: Text(
+                          link.label,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      sourceChip,
+                    ],
+                  );
+                },
               ),
-              const SizedBox(height: AppSpacing.xxs),
+              const SizedBox(height: AppSpacing.sm),
               Text(
                 link.url,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                style: theme.textTheme.bodySmall?.copyWith(
                   color: surfaces.muted,
+                  height: 1.4,
                 ),
               ),
               if (link.supportingText?.trim().isNotEmpty == true) ...<Widget>[
                 const SizedBox(height: AppSpacing.xs),
                 Text(
                   link.supportingText!,
-                  style: Theme.of(context).textTheme.bodySmall,
+                  style: theme.textTheme.bodySmall?.copyWith(height: 1.4),
                 ),
               ],
             ],
@@ -591,47 +720,77 @@ class _PortPresetTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         child: Ink(
           padding: const EdgeInsets.all(AppSpacing.md),
-          decoration: BoxDecoration(
-            color: surfaces.panelRaised,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: surfaces.lineSoft),
+          decoration: appSoftCardDecoration(
+            context,
+            radius: 20,
+            tone: AppSurfaceTone.accent,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Text(
-                preset.label,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+              Row(
+                children: <Widget>[
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Icon(
+                      Icons.swap_horiz_rounded,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: Text(
+                      preset.label,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: AppSpacing.xxs),
+              const SizedBox(height: AppSpacing.sm),
               Text(
                 'localhost:${preset.localPort} -> ${preset.host}:${preset.remotePort}',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                style: theme.textTheme.bodySmall?.copyWith(
                   color: surfaces.muted,
+                  height: 1.4,
                 ),
               ),
               if (preset.description?.trim().isNotEmpty == true) ...<Widget>[
                 const SizedBox(height: AppSpacing.xs),
                 Text(
                   preset.description!,
-                  style: Theme.of(context).textTheme.bodySmall,
+                  style: theme.textTheme.bodySmall?.copyWith(height: 1.4),
                 ),
               ],
               const SizedBox(height: AppSpacing.sm),
-              Text(
-                preset.command,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  fontFamily: 'monospace',
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(AppSpacing.sm),
+                decoration: BoxDecoration(
+                  color: surfaces.panel.withValues(alpha: 0.82),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: surfaces.lineSoft),
+                ),
+                child: Text(
+                  preset.command,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontFamily: 'monospace',
+                  ),
                 ),
               ),
             ],
@@ -656,10 +815,10 @@ class _OverviewChip extends StatelessWidget {
         horizontal: AppSpacing.sm,
         vertical: AppSpacing.xs,
       ),
-      decoration: BoxDecoration(
-        color: surfaces.panel,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: surfaces.lineSoft),
+      decoration: appSoftCardDecoration(
+        context,
+        radius: AppSpacing.pillRadius,
+        muted: true,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

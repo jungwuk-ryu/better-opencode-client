@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../design_system/app_spacing.dart';
+import '../../design_system/app_surface_decor.dart';
 import '../../design_system/app_theme.dart';
 import '../../i18n/web_parity_localizations.dart';
 import '../chat/chat_models.dart';
@@ -31,30 +32,45 @@ class WorkspaceInboxSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
-    final unseenNotifications = notifications
-        .where((notification) => !notification.viewed)
-        .toList(growable: false)
-      ..sort((left, right) => right.timeMs.compareTo(left.timeMs));
+    final viewInsets = MediaQuery.viewInsetsOf(context);
+    final unseenNotifications =
+        notifications
+            .where((notification) => !notification.viewed)
+            .toList(growable: false)
+          ..sort((left, right) => right.timeMs.compareTo(left.timeMs));
     return SafeArea(
       child: Material(
         color: Colors.transparent,
-        child: Container(
-          decoration: BoxDecoration(
-            color: surfaces.panel,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-            border: Border.all(color: surfaces.lineSoft),
-          ),
-          child: Padding(
+        child: Padding(
+          padding: EdgeInsets.only(bottom: viewInsets.bottom),
+          child: AppGlassPanel(
+            radius: AppSpacing.sheetRadius,
+            tone: AppSurfaceTone.accent,
+            blur: 22,
             padding: const EdgeInsets.fromLTRB(
               AppSpacing.lg,
-              AppSpacing.lg,
+              AppSpacing.md,
               AppSpacing.lg,
               AppSpacing.xl,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
+                Center(
+                  child: Container(
+                    width: 44,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: surfaces.muted.withValues(alpha: 0.28),
+                      borderRadius: BorderRadius.circular(
+                        AppSpacing.pillRadius,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Expanded(
                       child: Column(
@@ -64,62 +80,101 @@ class WorkspaceInboxSheet extends StatelessWidget {
                             context.wp('Inbox'),
                             style: theme.textTheme.titleLarge?.copyWith(
                               fontWeight: FontWeight.w800,
+                              letterSpacing: -0.4,
                             ),
                           ),
-                          const SizedBox(height: AppSpacing.xxs),
+                          const SizedBox(height: AppSpacing.xs),
                           Text(
                             context.wp(
                               'Triage open questions, permissions, and unread session activity from one mobile-friendly queue.',
                             ),
                             style: theme.textTheme.bodyMedium?.copyWith(
                               color: surfaces.muted,
+                              height: 1.45,
                             ),
                           ),
                         ],
                       ),
                     ),
+                    const SizedBox(width: AppSpacing.sm),
                     IconButton(
                       onPressed: () => Navigator.of(context).pop(),
+                      style: IconButton.styleFrom(
+                        backgroundColor: surfaces.panelRaised.withValues(
+                          alpha: 0.72,
+                        ),
+                        foregroundColor: theme.colorScheme.onSurface,
+                      ),
                       icon: const Icon(Icons.close_rounded),
+                      tooltip: context.wp('Close'),
                     ),
                   ],
                 ),
                 const SizedBox(height: AppSpacing.md),
-                Wrap(
-                  spacing: AppSpacing.sm,
-                  runSpacing: AppSpacing.sm,
-                  children: <Widget>[
-                    _InboxSummaryChip(
-                      label: context.wp(
-                        pendingRequests.questions.length == 1
-                            ? '1 question'
-                            : '{count} questions',
-                        args: <String, Object?>{
-                          'count': pendingRequests.questions.length,
-                        },
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(AppSpacing.md),
+                  decoration: appSoftCardDecoration(
+                    context,
+                    radius: 22,
+                    tone: AppSurfaceTone.accent,
+                    emphasized: true,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        context.wp('Today at a glance'),
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: surfaces.muted,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
-                    ),
-                    _InboxSummaryChip(
-                      label: context.wp(
-                        pendingRequests.permissions.length == 1
-                            ? '1 approval'
-                            : '{count} approvals',
-                        args: <String, Object?>{
-                          'count': pendingRequests.permissions.length,
-                        },
+                      const SizedBox(height: AppSpacing.sm),
+                      Wrap(
+                        spacing: AppSpacing.sm,
+                        runSpacing: AppSpacing.sm,
+                        children: <Widget>[
+                          _InboxSummaryChip(
+                            icon: Icons.help_outline_rounded,
+                            tone: AppSurfaceTone.accent,
+                            label: context.wp(
+                              pendingRequests.questions.length == 1
+                                  ? '1 question'
+                                  : '{count} questions',
+                              args: <String, Object?>{
+                                'count': pendingRequests.questions.length,
+                              },
+                            ),
+                          ),
+                          _InboxSummaryChip(
+                            icon: Icons.policy_outlined,
+                            tone: AppSurfaceTone.warning,
+                            label: context.wp(
+                              pendingRequests.permissions.length == 1
+                                  ? '1 approval'
+                                  : '{count} approvals',
+                              args: <String, Object?>{
+                                'count': pendingRequests.permissions.length,
+                              },
+                            ),
+                          ),
+                          _InboxSummaryChip(
+                            icon: Icons.notifications_none_rounded,
+                            tone: AppSurfaceTone.neutral,
+                            label: context.wp(
+                              unseenNotifications.length == 1
+                                  ? '1 unread event'
+                                  : '{count} unread events',
+                              args: <String, Object?>{
+                                'count': unseenNotifications.length,
+                              },
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                    _InboxSummaryChip(
-                      label: context.wp(
-                        unseenNotifications.length == 1
-                            ? '1 unread event'
-                            : '{count} unread events',
-                        args: <String, Object?>{
-                          'count': unseenNotifications.length,
-                        },
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.lg),
                 Expanded(
@@ -127,7 +182,10 @@ class WorkspaceInboxSheet extends StatelessWidget {
                     children: <Widget>[
                       _InboxSection(
                         title: context.wp('Questions'),
-                        emptyLabel: context.wp('No pending questions right now.'),
+                        emptyLabel: context.wp(
+                          'No pending questions right now.',
+                        ),
+                        count: pendingRequests.questions.length,
                         children: pendingRequests.questions
                             .map(
                               (request) => _QuestionInboxTile(
@@ -144,7 +202,10 @@ class WorkspaceInboxSheet extends StatelessWidget {
                       const SizedBox(height: AppSpacing.lg),
                       _InboxSection(
                         title: context.wp('Approvals'),
-                        emptyLabel: context.wp('No permission requests right now.'),
+                        emptyLabel: context.wp(
+                          'No permission requests right now.',
+                        ),
+                        count: pendingRequests.permissions.length,
                         children: pendingRequests.permissions
                             .map(
                               (request) => _PermissionInboxTile(
@@ -163,13 +224,19 @@ class WorkspaceInboxSheet extends StatelessWidget {
                       const SizedBox(height: AppSpacing.lg),
                       _InboxSection(
                         title: context.wp('Unread Activity'),
-                        emptyLabel: context.wp('All workspace activity is caught up.'),
+                        emptyLabel: context.wp(
+                          'All workspace activity is caught up.',
+                        ),
+                        count: unseenNotifications.length,
                         children: unseenNotifications
                             .map(
                               (notification) => _NotificationInboxTile(
                                 notification: notification,
-                                sessionLabel: _sessionLabel(notification.sessionId),
-                                statusLabel: statuses[notification.sessionId]?.type,
+                                sessionLabel: _sessionLabel(
+                                  notification.sessionId,
+                                ),
+                                statusLabel:
+                                    statuses[notification.sessionId]?.type,
                                 onTap: () async {
                                   Navigator.of(context).pop();
                                   await onOpenSession(notification.sessionId);
@@ -204,32 +271,66 @@ class _InboxSection extends StatelessWidget {
   const _InboxSection({
     required this.title,
     required this.emptyLabel,
+    required this.count,
     required this.children,
   });
 
   final String title;
   final String emptyLabel;
+  final int count;
   final List<Widget> children;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Text(
-          title,
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: Text(
+                title,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.2,
+                ),
               ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.sm,
+                vertical: AppSpacing.xs,
+              ),
+              decoration: appSoftCardDecoration(
+                context,
+                radius: AppSpacing.pillRadius,
+                muted: true,
+              ),
+              child: Text(
+                '$count',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: surfaces.muted,
+                ),
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: AppSpacing.sm),
         if (children.isEmpty)
-          Text(
-            emptyLabel,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: surfaces.muted,
-                ),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(AppSpacing.md),
+            decoration: appSoftCardDecoration(context, radius: 20, muted: true),
+            child: Text(
+              emptyLabel,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: surfaces.muted,
+                height: 1.45,
+              ),
+            ),
           )
         else
           ...children.map(
@@ -244,28 +345,50 @@ class _InboxSection extends StatelessWidget {
 }
 
 class _InboxSummaryChip extends StatelessWidget {
-  const _InboxSummaryChip({required this.label});
+  const _InboxSummaryChip({
+    required this.icon,
+    required this.label,
+    required this.tone,
+  });
 
+  final IconData icon;
   final String label;
+  final AppSurfaceTone tone;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final accent = switch (tone) {
+      AppSurfaceTone.warning => surfaces.warning,
+      AppSurfaceTone.danger => theme.colorScheme.error,
+      AppSurfaceTone.success => surfaces.success,
+      AppSurfaceTone.neutral ||
+      AppSurfaceTone.accent => theme.colorScheme.primary,
+    };
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.sm,
-        vertical: AppSpacing.xs,
+        vertical: 10,
       ),
-      decoration: BoxDecoration(
-        color: surfaces.panelRaised,
-        borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
-        border: Border.all(color: surfaces.lineSoft),
+      decoration: appSoftCardDecoration(
+        context,
+        radius: AppSpacing.pillRadius,
+        tone: tone,
+        selected: tone != AppSurfaceTone.neutral,
       ),
-      child: Text(
-        label,
-        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(icon, size: 16, color: accent),
+          const SizedBox(width: AppSpacing.xs),
+          Text(
+            label,
+            style: Theme.of(
+              context,
+            ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
+          ),
+        ],
       ),
     );
   }
@@ -277,26 +400,33 @@ class _InboxTileFrame extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.children,
-    this.tint,
+    this.tone = AppSurfaceTone.accent,
   });
 
   final IconData icon;
   final String title;
   final String subtitle;
   final List<Widget> children;
-  final Color? tint;
+  final AppSurfaceTone tone;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
-    final accent = tint ?? theme.colorScheme.primary;
+    final accent = switch (tone) {
+      AppSurfaceTone.warning => surfaces.warning,
+      AppSurfaceTone.danger => theme.colorScheme.error,
+      AppSurfaceTone.success => surfaces.success,
+      AppSurfaceTone.neutral ||
+      AppSurfaceTone.accent => theme.colorScheme.primary,
+    };
     return Container(
       padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: surfaces.panelRaised,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: surfaces.lineSoft),
+      decoration: appSoftCardDecoration(
+        context,
+        radius: 22,
+        tone: tone,
+        emphasized: true,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -305,13 +435,13 @@ class _InboxTileFrame extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Container(
-                width: 40,
-                height: 40,
+                width: 44,
+                height: 44,
                 decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(12),
+                  color: accent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(14),
                 ),
-                child: Icon(icon, color: accent, size: 20),
+                child: Icon(icon, color: accent, size: 22),
               ),
               const SizedBox(width: AppSpacing.md),
               Expanded(
@@ -321,15 +451,16 @@ class _InboxTileFrame extends StatelessWidget {
                     Text(
                       title,
                       style: theme.textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     const SizedBox(height: AppSpacing.xxs),
                     Text(
                       subtitle,
                       style: theme.textTheme.bodySmall?.copyWith(
-                            color: surfaces.muted,
-                          ),
+                        color: surfaces.muted,
+                        height: 1.35,
+                      ),
                     ),
                   ],
                 ),
@@ -367,14 +498,21 @@ class _QuestionInboxTile extends StatelessWidget {
     return _InboxTileFrame(
       icon: Icons.help_outline_rounded,
       title: title,
-      subtitle: '$sessionLabel  •  ${context.wp(
-        count == 1 ? '1 prompt needs an answer' : '{count} prompts need answers',
-        args: <String, Object?>{'count': count},
-      )}',
+      subtitle:
+          '$sessionLabel  •  ${context.wp(count == 1 ? '1 prompt needs an answer' : '{count} prompts need answers', args: <String, Object?>{'count': count})}',
       children: <Widget>[
+        if (firstPrompt?.question.trim().isNotEmpty == true) ...<Widget>[
+          Text(
+            firstPrompt!.question.trim(),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(height: 1.45),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+        ],
         Align(
           alignment: Alignment.centerRight,
-          child: FilledButton.tonalIcon(
+          child: FilledButton.icon(
             onPressed: onTap,
             icon: const Icon(Icons.open_in_new_rounded),
             label: Text(context.wp('Open Session')),
@@ -406,7 +544,7 @@ class _PermissionInboxTile extends StatelessWidget {
     final surfaces = theme.extension<AppSurfaces>()!;
     return _InboxTileFrame(
       icon: Icons.policy_outlined,
-      tint: surfaces.warning,
+      tone: AppSurfaceTone.warning,
       title: request.permission.trim().isEmpty
           ? context.wp('Permission request')
           : request.permission.trim(),
@@ -421,19 +559,19 @@ class _PermissionInboxTile extends StatelessWidget {
         Wrap(
           spacing: AppSpacing.sm,
           runSpacing: AppSpacing.sm,
-          alignment: WrapAlignment.end,
           children: <Widget>[
             OutlinedButton(
               onPressed: () => onOpen(),
-              child: Text(context.wp('Open')),
+              child: Text(context.wp('Open Session')),
             ),
             OutlinedButton(
               onPressed: () => onReject(),
               child: Text(context.wp('Reject')),
             ),
-            FilledButton(
+            FilledButton.icon(
               onPressed: () => onAllow(),
-              child: Text(context.wp('Allow')),
+              icon: const Icon(Icons.check_rounded),
+              label: Text(context.wp('Allow')),
             ),
           ],
         ),
@@ -467,30 +605,48 @@ class _NotificationInboxTile extends StatelessWidget {
       alwaysUse24HourFormat: MediaQuery.of(context).alwaysUse24HourFormat,
     );
     return _InboxTileFrame(
-      icon: error ? Icons.error_outline_rounded : Icons.notifications_none_rounded,
-      tint: error ? theme.colorScheme.error : theme.colorScheme.primary,
+      icon: error
+          ? Icons.error_outline_rounded
+          : Icons.notifications_none_rounded,
+      tone: error ? AppSurfaceTone.danger : AppSurfaceTone.neutral,
       title: sessionLabel,
       subtitle:
           '$timeLabel  •  ${statusLabel?.trim().isNotEmpty == true ? statusLabel!.trim() : context.wp('Activity')}',
       children: <Widget>[
-        Row(
-          children: <Widget>[
-            Expanded(
-              child: Text(
-                notification.directory,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: surfaces.muted,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            FilledButton.tonal(
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final stacked = constraints.maxWidth < 360;
+            final button = FilledButton.tonal(
               onPressed: onTap,
               child: Text(context.wp('Open')),
-            ),
-          ],
+            );
+            final directory = Text(
+              notification.directory,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: surfaces.muted,
+                height: 1.35,
+              ),
+              maxLines: stacked ? 3 : 2,
+              overflow: TextOverflow.ellipsis,
+            );
+            if (stacked) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  directory,
+                  const SizedBox(height: AppSpacing.sm),
+                  Align(alignment: Alignment.centerRight, child: button),
+                ],
+              );
+            }
+            return Row(
+              children: <Widget>[
+                Expanded(child: directory),
+                const SizedBox(width: AppSpacing.sm),
+                button,
+              ],
+            );
+          },
         ),
       ],
     );

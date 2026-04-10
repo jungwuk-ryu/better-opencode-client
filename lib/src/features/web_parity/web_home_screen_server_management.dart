@@ -1,15 +1,11 @@
 part of 'web_home_screen.dart';
 
 class _ServerPill extends StatelessWidget {
-  const _ServerPill({
-    required this.profile,
-    required this.report,
-    required this.onTap,
-  });
+  const _ServerPill({required this.profile, required this.report, this.onTap});
 
   final ServerProfile? profile;
   final ServerProbeReport? report;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -24,32 +20,37 @@ class _ServerPill extends StatelessWidget {
       ConnectionProbeClassification.connectivityFailure => surfaces.danger,
       null => surfaces.muted,
     };
+    final child = Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
+      ),
+      decoration: appSoftCardDecoration(
+        context,
+        radius: AppSpacing.pillRadius,
+        muted: true,
+        emphasized: false,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Text(profile?.effectiveLabel ?? context.wp('Select Server')),
+        ],
+      ),
+    );
+    if (onTap == null) {
+      return child;
+    }
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.md,
-          vertical: AppSpacing.sm,
-        ),
-        decoration: BoxDecoration(
-          color: surfaces.panelRaised.withValues(alpha: 0.92),
-          borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
-          border: Border.all(color: surfaces.lineSoft),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            Text(profile?.effectiveLabel ?? context.wp('Select Server')),
-          ],
-        ),
-      ),
+      child: child,
     );
   }
 }
@@ -71,7 +72,7 @@ class _ServersSheetState extends State<_ServersSheet> {
       context: context,
       useSafeArea: true,
       isScrollControlled: true,
-      backgroundColor: Theme.of(context).colorScheme.surface,
+      backgroundColor: Colors.transparent,
       builder: (context) => FractionallySizedBox(
         heightFactor: 0.72,
         child: _ServerEditorSheet(initialProfile: profile),
@@ -97,25 +98,34 @@ class _ServersSheetState extends State<_ServersSheet> {
   Future<void> _confirmDelete(ServerProfile profile) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(context.wp('Delete server?')),
-        content: Text(
-          context.wp(
-            'Remove "{label}" from saved servers? This keeps the rest of your home screen intact.',
-            args: <String, Object?>{'label': profile.effectiveLabel},
+      builder: (context) {
+        final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+        return AlertDialog(
+          backgroundColor: surfaces.panelRaised,
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
+            side: BorderSide(color: surfaces.lineSoft),
           ),
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text(context.wp('Cancel')),
+          title: Text(context.wp('Delete server?')),
+          content: Text(
+            context.wp(
+              'Remove "{label}" from saved servers? This keeps the rest of your home screen intact.',
+              args: <String, Object?>{'label': profile.effectiveLabel},
+            ),
           ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: Text(context.wp('Delete')),
-          ),
-        ],
-      ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text(context.wp('Cancel')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text(context.wp('Delete')),
+            ),
+          ],
+        );
+      },
     );
     if (confirmed != true) {
       return;
@@ -160,46 +170,91 @@ class _ServersSheetState extends State<_ServersSheet> {
       animation: controller,
       builder: (context, _) {
         final profiles = controller.profiles;
-        return Padding(
+        return AppGlassPanel(
+          radius: AppSpacing.cardRadius,
+          blur: 12,
+          backgroundOpacity: 0.9,
+          borderOpacity: 0.06,
           padding: const EdgeInsets.all(AppSpacing.lg),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Row(
-                children: <Widget>[
-                  Expanded(
-                    child: Text(
-                      context.wp('See Servers'),
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
+              Center(
+                child: Container(
+                  width: 44,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: surfaces.lineSoft,
+                    borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
                   ),
-                  IconButton(
-                    tooltip: context.wp('Close'),
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close_rounded),
-                  ),
-                  IconButton(
-                    tooltip: context.wp('Refresh all statuses'),
-                    onPressed: profiles.isEmpty ? null : _refreshAll,
-                    icon: const Icon(Icons.refresh_rounded),
-                  ),
-                  const SizedBox(width: AppSpacing.xs),
-                  FilledButton.icon(
-                    key: const ValueKey<String>('servers-sheet-add-button'),
-                    onPressed: _openServerEditor,
-                    icon: const Icon(Icons.add_rounded),
-                    label: Text(context.wp('Add Server')),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                context.wp(
-                  'Choose the active server, edit saved entries, reorder them, and keep connection status visible here.',
                 ),
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final compact = constraints.maxWidth < 620;
+                  final titleBlock = Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        context.wp('See Servers'),
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        context.wp(
+                          'Choose the active server, edit saved entries, reorder them, and keep connection status visible here.',
+                        ),
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
+                      ),
+                    ],
+                  );
+                  final actions = Wrap(
+                    spacing: AppSpacing.sm,
+                    runSpacing: AppSpacing.sm,
+                    alignment: WrapAlignment.end,
+                    children: <Widget>[
+                      OutlinedButton.icon(
+                        onPressed: profiles.isEmpty ? null : _refreshAll,
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: Text(context.wp('Refresh')),
+                      ),
+                      FilledButton.icon(
+                        key: const ValueKey<String>('servers-sheet-add-button'),
+                        onPressed: _openServerEditor,
+                        icon: const Icon(Icons.add_rounded),
+                        label: Text(context.wp('Add Server')),
+                      ),
+                      IconButton(
+                        tooltip: context.wp('Close'),
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  );
+                  if (compact) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        titleBlock,
+                        const SizedBox(height: AppSpacing.md),
+                        actions,
+                      ],
+                    );
+                  }
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Expanded(child: titleBlock),
+                      const SizedBox(width: AppSpacing.md),
+                      actions,
+                    ],
+                  );
+                },
               ),
               const SizedBox(height: AppSpacing.lg),
               Expanded(
@@ -208,15 +263,27 @@ class _ServersSheetState extends State<_ServersSheet> {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: <Widget>[
-                            Icon(
-                              Icons.storage_rounded,
-                              size: 34,
-                              color: surfaces.muted,
+                            Container(
+                              width: 64,
+                              height: 64,
+                              decoration: BoxDecoration(
+                                color: surfaces.panelMuted.withValues(
+                                  alpha: 0.92,
+                                ),
+                                borderRadius: BorderRadius.circular(22),
+                                border: Border.all(color: surfaces.lineSoft),
+                              ),
+                              child: Icon(
+                                Icons.storage_rounded,
+                                size: 28,
+                                color: surfaces.muted,
+                              ),
                             ),
-                            const SizedBox(height: AppSpacing.sm),
+                            const SizedBox(height: AppSpacing.md),
                             Text(
                               context.wp('No saved servers yet.'),
-                              style: Theme.of(context).textTheme.titleMedium,
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w700),
                             ),
                             const SizedBox(height: AppSpacing.xs),
                             Text(
@@ -309,7 +376,8 @@ class _ServerManagementCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
     final meta = _serverMetaItems(context, profile, report);
 
     return Material(
@@ -318,22 +386,13 @@ class _ServerManagementCard extends StatelessWidget {
         onTap: onSelect,
         borderRadius: BorderRadius.circular(AppSpacing.lg),
         child: Ink(
-          decoration: BoxDecoration(
-            color: selected
-                ? Color.alphaBlend(
-                    Theme.of(
-                      context,
-                    ).colorScheme.primary.withValues(alpha: 0.09),
-                    surfaces.panelRaised,
-                  )
-                : surfaces.panelRaised.withValues(alpha: 0.96),
-            borderRadius: BorderRadius.circular(AppSpacing.lg),
-            border: Border.all(
-              color: selected
-                  ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.5)
-                  : surfaces.lineSoft,
-              width: selected ? 1.5 : 1,
-            ),
+          decoration: appSoftCardDecoration(
+            context,
+            radius: AppSpacing.lg,
+            tone: AppSurfaceTone.accent,
+            muted: !selected,
+            selected: selected,
+            emphasized: selected,
           ),
           child: Padding(
             padding: const EdgeInsets.all(AppSpacing.md),
@@ -357,8 +416,9 @@ class _ServerManagementCard extends StatelessWidget {
                               final compactBadges = constraints.maxWidth < 220;
                               final title = Text(
                                 profile.effectiveLabel,
-                                style: Theme.of(context).textTheme.titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.w700),
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                               );
@@ -371,7 +431,7 @@ class _ServerManagementCard extends StatelessWidget {
                                     _ServerMetaBadge(
                                       icon: Icons.check_circle_rounded,
                                       label: context.wp('Active'),
-                                      tint: Theme.of(context).colorScheme.primary,
+                                      tint: theme.colorScheme.primary,
                                     ),
                                 ],
                               );
@@ -397,8 +457,10 @@ class _ServerManagementCard extends StatelessWidget {
                           const SizedBox(height: AppSpacing.xxs),
                           Text(
                             profile.normalizedBaseUrl,
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(color: surfaces.muted),
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: surfaces.muted,
+                              height: 1.4,
+                            ),
                           ),
                         ],
                       ),
@@ -428,7 +490,7 @@ class _ServerManagementCard extends StatelessWidget {
                   builder: (context, constraints) {
                     final compact = constraints.maxWidth < 560;
                     final actionButtons = <Widget>[
-                      IconButton(
+                      _ServerActionIconButton(
                         key: ValueKey<String>(
                           '$keyNamespace-refresh-${profile.id}',
                         ),
@@ -436,44 +498,51 @@ class _ServerManagementCard extends StatelessWidget {
                         onPressed: isRefreshing ? null : onRefresh,
                         icon: isRefreshing
                             ? const SizedBox.square(
-                                dimension: 18,
+                                dimension: 16,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
                                 ),
                               )
-                            : const Icon(Icons.refresh_rounded),
+                            : const Icon(Icons.refresh_rounded, size: 18),
                       ),
-                      IconButton(
+                      _ServerActionIconButton(
                         key: ValueKey<String>(
                           '$keyNamespace-move-up-${profile.id}',
                         ),
                         tooltip: context.wp('Move up'),
                         onPressed: onMoveUp,
-                        icon: const Icon(Icons.arrow_upward_rounded),
+                        icon: const Icon(Icons.arrow_upward_rounded, size: 18),
                       ),
-                      IconButton(
+                      _ServerActionIconButton(
                         key: ValueKey<String>(
                           '$keyNamespace-move-down-${profile.id}',
                         ),
                         tooltip: context.wp('Move down'),
                         onPressed: onMoveDown,
-                        icon: const Icon(Icons.arrow_downward_rounded),
+                        icon: const Icon(
+                          Icons.arrow_downward_rounded,
+                          size: 18,
+                        ),
                       ),
-                      IconButton(
+                      _ServerActionIconButton(
                         key: ValueKey<String>(
                           '$keyNamespace-edit-${profile.id}',
                         ),
                         tooltip: context.wp('Edit server'),
                         onPressed: onEdit,
-                        icon: const Icon(Icons.edit_outlined),
+                        icon: const Icon(Icons.edit_outlined, size: 18),
                       ),
-                      IconButton(
+                      _ServerActionIconButton(
                         key: ValueKey<String>(
                           '$keyNamespace-delete-${profile.id}',
                         ),
                         tooltip: context.wp('Delete server'),
                         onPressed: onDelete,
-                        icon: const Icon(Icons.delete_outline_rounded),
+                        icon: const Icon(
+                          Icons.delete_outline_rounded,
+                          size: 18,
+                        ),
+                        destructive: true,
                       ),
                     ];
                     if (compact) {
@@ -614,7 +683,11 @@ class _ServerEditorSheetState extends State<_ServerEditorSheet> {
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final editingExisting = widget.initialProfile != null;
-    return Padding(
+    return AppGlassPanel(
+      radius: AppSpacing.cardRadius,
+      blur: 12,
+      backgroundOpacity: 0.9,
+      borderOpacity: 0.06,
       padding: EdgeInsets.only(
         left: AppSpacing.lg,
         right: AppSpacing.lg,
@@ -625,11 +698,24 @@ class _ServerEditorSheetState extends State<_ServerEditorSheet> {
         key: _formKey,
         child: ListView(
           children: <Widget>[
+            Center(
+              child: Container(
+                width: 44,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: surfaces.lineSoft,
+                  borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
             Text(
               editingExisting
                   ? context.wp('Edit Server')
                   : context.wp('Add Server'),
-              style: Theme.of(context).textTheme.titleLarge,
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: AppSpacing.xs),
             Text(
@@ -641,77 +727,139 @@ class _ServerEditorSheetState extends State<_ServerEditorSheet> {
               ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
             ),
             const SizedBox(height: AppSpacing.lg),
-            TextFormField(
-              key: const ValueKey<String>('servers-editor-label-field'),
-              controller: _labelController,
-              decoration: InputDecoration(
-                labelText: context.wp('Label'),
-                hintText: context.wp('Studio'),
+            Container(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              decoration: appSoftCardDecoration(
+                context,
+                radius: AppSpacing.panelRadius,
+                muted: true,
+                emphasized: false,
               ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            TextFormField(
-              key: const ValueKey<String>('servers-editor-url-field'),
-              controller: _baseUrlController,
-              keyboardType: TextInputType.url,
-              decoration: InputDecoration(
-                labelText: context.wp('Server URL'),
-                hintText: context.wp('https://studio.example.com'),
-              ),
-              validator: _validateAddress,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            TextFormField(
-              key: const ValueKey<String>('servers-editor-username-field'),
-              controller: _usernameController,
-              decoration: InputDecoration(
-                labelText: context.wp('Username'),
-                hintText: context.wp('Optional'),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            TextFormField(
-              key: const ValueKey<String>('servers-editor-password-field'),
-              controller: _passwordController,
-              obscureText: !_showPassword,
-              decoration: InputDecoration(
-                labelText: context.wp('Password'),
-                hintText: context.wp('Optional'),
-                suffixIcon: IconButton(
-                  onPressed: () {
-                    setState(() {
-                      _showPassword = !_showPassword;
-                    });
-                  },
-                  icon: Icon(
-                    _showPassword ? Icons.visibility_off : Icons.visibility,
+              child: Column(
+                children: <Widget>[
+                  TextFormField(
+                    key: const ValueKey<String>('servers-editor-label-field'),
+                    controller: _labelController,
+                    decoration: InputDecoration(
+                      labelText: context.wp('Label'),
+                      hintText: context.wp('Studio'),
+                    ),
                   ),
-                ),
+                  const SizedBox(height: AppSpacing.md),
+                  TextFormField(
+                    key: const ValueKey<String>('servers-editor-url-field'),
+                    controller: _baseUrlController,
+                    keyboardType: TextInputType.url,
+                    decoration: InputDecoration(
+                      labelText: context.wp('Server URL'),
+                      hintText: context.wp('https://studio.example.com'),
+                    ),
+                    validator: _validateAddress,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Container(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              decoration: appSoftCardDecoration(
+                context,
+                radius: AppSpacing.panelRadius,
+                muted: true,
+                emphasized: false,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    context.wp('Optional credentials'),
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    context.wp(
+                      'Only add these when your server requires basic auth.',
+                    ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  TextFormField(
+                    key: const ValueKey<String>(
+                      'servers-editor-username-field',
+                    ),
+                    controller: _usernameController,
+                    decoration: InputDecoration(
+                      labelText: context.wp('Username'),
+                      hintText: context.wp('Optional'),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  TextFormField(
+                    key: const ValueKey<String>(
+                      'servers-editor-password-field',
+                    ),
+                    controller: _passwordController,
+                    obscureText: !_showPassword,
+                    decoration: InputDecoration(
+                      labelText: context.wp('Password'),
+                      hintText: context.wp('Optional'),
+                      suffixIcon: IconButton(
+                        onPressed: () {
+                          setState(() {
+                            _showPassword = !_showPassword;
+                          });
+                        },
+                        icon: Icon(
+                          _showPassword
+                              ? Icons.visibility_off
+                              : Icons.visibility,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: AppSpacing.lg),
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: Text(context.wp('Cancel')),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final compact = constraints.maxWidth < 420;
+                final cancelButton = OutlinedButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text(context.wp('Cancel')),
+                );
+                final saveButton = FilledButton.icon(
+                  key: const ValueKey<String>('servers-editor-save-button'),
+                  onPressed: _submit,
+                  icon: const Icon(Icons.save_outlined),
+                  label: Text(
+                    editingExisting
+                        ? context.wp('Save Changes')
+                        : context.wp('Save Server'),
                   ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: FilledButton.icon(
-                    key: const ValueKey<String>('servers-editor-save-button'),
-                    onPressed: _submit,
-                    icon: const Icon(Icons.save_outlined),
-                    label: Text(
-                      editingExisting
-                          ? context.wp('Save Changes')
-                          : context.wp('Save Server'),
-                    ),
-                  ),
-                ),
-              ],
+                );
+                if (compact) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      saveButton,
+                      const SizedBox(height: AppSpacing.sm),
+                      cancelButton,
+                    ],
+                  );
+                }
+                return Row(
+                  children: <Widget>[
+                    Expanded(child: cancelButton),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(child: saveButton),
+                  ],
+                );
+              },
             ),
           ],
         ),
@@ -745,9 +893,9 @@ class _ServerMetaBadge extends StatelessWidget {
         vertical: AppSpacing.xxs,
       ),
       decoration: BoxDecoration(
-        color: accent.withValues(alpha: 0.14),
+        color: accent.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
-        border: Border.all(color: accent.withValues(alpha: 0.18)),
+        border: Border.all(color: accent.withValues(alpha: 0.16)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -767,6 +915,58 @@ class _ServerMetaBadge extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ServerActionIconButton extends StatelessWidget {
+  const _ServerActionIconButton({
+    required this.tooltip,
+    required this.onPressed,
+    required this.icon,
+    this.destructive = false,
+    super.key,
+  });
+
+  final String tooltip;
+  final VoidCallback? onPressed;
+  final Widget icon;
+  final bool destructive;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final tint = destructive ? surfaces.danger : surfaces.muted;
+    final enabled = onPressed != null;
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(14),
+          child: Ink(
+            width: 40,
+            height: 40,
+            decoration: appSoftCardDecoration(
+              context,
+              radius: 14,
+              tone: destructive
+                  ? AppSurfaceTone.danger
+                  : AppSurfaceTone.neutral,
+              muted: !enabled,
+              emphasized: enabled,
+            ),
+            child: IconTheme(
+              data: IconThemeData(
+                color: enabled ? tint : surfaces.muted.withValues(alpha: 0.5),
+              ),
+              child: Center(child: icon),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -886,8 +1086,9 @@ String _statusLabel(BuildContext context, ServerProbeReport? report) {
   return switch (report?.classification) {
     ConnectionProbeClassification.ready => context.wp('Ready'),
     ConnectionProbeClassification.authFailure => context.wp('Sign In'),
-    ConnectionProbeClassification.unsupportedCapabilities =>
-      context.wp('Needs Update'),
+    ConnectionProbeClassification.unsupportedCapabilities => context.wp(
+      'Needs Update',
+    ),
     ConnectionProbeClassification.specFetchFailure => context.wp('Unavailable'),
     ConnectionProbeClassification.connectivityFailure => context.wp('Offline'),
     null => context.wp('Unknown'),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/connection/connection_models.dart';
 import '../../design_system/app_spacing.dart';
+import '../../design_system/app_surface_decor.dart';
 import '../../design_system/app_theme.dart';
 import '../../i18n/web_parity_localizations.dart';
 import '../projects/project_git_models.dart';
@@ -80,7 +81,8 @@ class _WorkspaceGitSheetState extends State<WorkspaceGitSheet> {
         _snapshot = snapshot;
         _branches = branches;
         _loading = false;
-        _error = snapshot.errorMessage?.trim().isNotEmpty == true && snapshot.hasGit
+        _error =
+            snapshot.errorMessage?.trim().isNotEmpty == true && snapshot.hasGit
             ? snapshot.errorMessage
             : null;
       });
@@ -165,12 +167,11 @@ class _WorkspaceGitSheetState extends State<WorkspaceGitSheet> {
     if (sessionId == null) {
       return;
     }
-    final surfaceColor = Theme.of(context).colorScheme.surface;
     final selection = await showModalBottomSheet<_BranchAction>(
       context: context,
       useSafeArea: true,
       isScrollControlled: true,
-      backgroundColor: surfaceColor,
+      backgroundColor: Colors.transparent,
       builder: (context) => _BranchPickerSheet(branches: _branches),
     );
     if (!mounted) {
@@ -226,26 +227,40 @@ class _WorkspaceGitSheetState extends State<WorkspaceGitSheet> {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
     final snapshot = _snapshot;
+    final viewInsets = MediaQuery.viewInsetsOf(context);
     return SafeArea(
       child: Material(
         color: Colors.transparent,
-        child: Container(
-          decoration: BoxDecoration(
-            color: surfaces.panel,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-            border: Border.all(color: surfaces.lineSoft),
-          ),
-          child: Padding(
+        child: Padding(
+          padding: EdgeInsets.only(bottom: viewInsets.bottom),
+          child: AppGlassPanel(
+            radius: AppSpacing.sheetRadius,
+            tone: AppSurfaceTone.accent,
+            blur: 24,
             padding: const EdgeInsets.fromLTRB(
               AppSpacing.lg,
-              AppSpacing.lg,
+              AppSpacing.md,
               AppSpacing.lg,
               AppSpacing.xl,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
+                Center(
+                  child: Container(
+                    width: 44,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: surfaces.muted.withValues(alpha: 0.28),
+                      borderRadius: BorderRadius.circular(
+                        AppSpacing.pillRadius,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Expanded(
                       child: Column(
@@ -255,27 +270,43 @@ class _WorkspaceGitSheetState extends State<WorkspaceGitSheet> {
                             context.wp('Git Workflow'),
                             style: theme.textTheme.titleLarge?.copyWith(
                               fontWeight: FontWeight.w800,
+                              letterSpacing: -0.4,
                             ),
                           ),
-                          const SizedBox(height: AppSpacing.xxs),
+                          const SizedBox(height: AppSpacing.xs),
                           Text(
                             context.wp(
                               'Review changes, stage files, commit, sync, and fall back to the terminal without leaving the app.',
                             ),
                             style: theme.textTheme.bodyMedium?.copyWith(
                               color: surfaces.muted,
+                              height: 1.45,
                             ),
                           ),
                         ],
                       ),
                     ),
+                    const SizedBox(width: AppSpacing.sm),
                     IconButton(
                       onPressed: _runningAction || _loading ? null : _load,
+                      style: IconButton.styleFrom(
+                        backgroundColor: surfaces.panelRaised.withValues(
+                          alpha: 0.72,
+                        ),
+                      ),
                       icon: const Icon(Icons.refresh_rounded),
+                      tooltip: context.wp('Refresh'),
                     ),
+                    const SizedBox(width: AppSpacing.xs),
                     IconButton(
                       onPressed: () => Navigator.of(context).pop(),
+                      style: IconButton.styleFrom(
+                        backgroundColor: surfaces.panelRaised.withValues(
+                          alpha: 0.72,
+                        ),
+                      ),
                       icon: const Icon(Icons.close_rounded),
+                      tooltip: context.wp('Close'),
                     ),
                   ],
                 ),
@@ -296,7 +327,9 @@ class _WorkspaceGitSheetState extends State<WorkspaceGitSheet> {
                     child: _GitEmptyState(
                       message: snapshot?.errorMessage?.trim().isNotEmpty == true
                           ? snapshot!.errorMessage!
-                          : context.wp('No Git repository was detected for this project yet.'),
+                          : context.wp(
+                              'No Git repository was detected for this project yet.',
+                            ),
                       onOpenTerminalFallback: widget.onOpenTerminalFallback,
                     ),
                   )
@@ -315,21 +348,27 @@ class _WorkspaceGitSheetState extends State<WorkspaceGitSheet> {
                           onStageAll: snapshot.clean
                               ? null
                               : () => _runAction(
-                                    (sessionId) => widget.service.stageAll(
-                                      profile: widget.profile,
-                                      project: widget.project,
-                                      sessionId: sessionId,
-                                    ),
-                                    successMessage: context.wp('All changes were staged.'),
+                                  (sessionId) => widget.service.stageAll(
+                                    profile: widget.profile,
+                                    project: widget.project,
+                                    sessionId: sessionId,
                                   ),
-                          onCommit: snapshot.stagedCount == 0 ? null : _showCommitComposer,
+                                  successMessage: context.wp(
+                                    'All changes were staged.',
+                                  ),
+                                ),
+                          onCommit: snapshot.stagedCount == 0
+                              ? null
+                              : _showCommitComposer,
                           onPull: () => _runAction(
                             (sessionId) => widget.service.pull(
                               profile: widget.profile,
                               project: widget.project,
                               sessionId: sessionId,
                             ),
-                            successMessage: context.wp('Pulled the latest remote changes.'),
+                            successMessage: context.wp(
+                              'Pulled the latest remote changes.',
+                            ),
                           ),
                           onPush: () => _runAction(
                             (sessionId) => widget.service.push(
@@ -337,29 +376,57 @@ class _WorkspaceGitSheetState extends State<WorkspaceGitSheet> {
                               project: widget.project,
                               sessionId: sessionId,
                             ),
-                            successMessage: context.wp('Pushed the active branch.'),
+                            successMessage: context.wp(
+                              'Pushed the active branch.',
+                            ),
                           ),
                           onBranches: _showBranchSheet,
                         ),
                         const SizedBox(height: AppSpacing.lg),
-                        Text(
-                          context.wp('Changed Files'),
-                          style: theme.textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w800,
+                        Row(
+                          children: <Widget>[
+                            Expanded(
+                              child: Text(
+                                context.wp('Changed Files'),
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                ),
                               ),
+                            ),
+                            _RepoMeta(
+                              label: context.wp(
+                                '{count} total',
+                                args: <String, Object?>{
+                                  'count': snapshot.changedFiles.length,
+                                },
+                              ),
+                              emphasized: snapshot.changedFiles.isNotEmpty,
+                            ),
+                          ],
                         ),
                         const SizedBox(height: AppSpacing.sm),
                         if (snapshot.changedFiles.isEmpty)
-                          Text(
-                            context.wp('The working tree is clean.'),
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: surfaces.muted,
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(AppSpacing.md),
+                            decoration: appSoftCardDecoration(
+                              context,
+                              radius: 20,
+                              muted: true,
+                            ),
+                            child: Text(
+                              context.wp('The working tree is clean.'),
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: surfaces.muted,
+                              ),
                             ),
                           )
                         else
                           ...snapshot.changedFiles.map(
                             (file) => Padding(
-                              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                              padding: const EdgeInsets.only(
+                                bottom: AppSpacing.sm,
+                              ),
                               child: _RepoChangedFileTile(
                                 file: file,
                                 busy: _runningAction,
@@ -378,8 +445,18 @@ class _WorkspaceGitSheetState extends State<WorkspaceGitSheet> {
                                           path: file.path,
                                         ),
                                   successMessage: file.staged
-                                      ? context.wp('Moved "{path}" back to unstaged changes.', args: <String, Object?>{'path': file.path})
-                                      : context.wp('Staged "{path}".', args: <String, Object?>{'path': file.path}),
+                                      ? context.wp(
+                                          'Moved "{path}" back to unstaged changes.',
+                                          args: <String, Object?>{
+                                            'path': file.path,
+                                          },
+                                        )
+                                      : context.wp(
+                                          'Staged "{path}".',
+                                          args: <String, Object?>{
+                                            'path': file.path,
+                                          },
+                                        ),
                                 ),
                               ),
                             ),
@@ -389,8 +466,14 @@ class _WorkspaceGitSheetState extends State<WorkspaceGitSheet> {
                   ),
                 if (!_loading) ...<Widget>[
                   const SizedBox(height: AppSpacing.lg),
-                  SizedBox(
+                  Container(
                     width: double.infinity,
+                    padding: const EdgeInsets.all(AppSpacing.sm),
+                    decoration: appSoftCardDecoration(
+                      context,
+                      radius: 20,
+                      muted: true,
+                    ),
                     child: OutlinedButton.icon(
                       onPressed: _runningAction
                           ? null
@@ -420,13 +503,17 @@ class _RepoSummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final surfaces = theme.extension<AppSurfaces>()!;
     return Container(
       padding: const EdgeInsets.all(AppSpacing.lg),
-      decoration: BoxDecoration(
-        color: surfaces.panelRaised,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: surfaces.lineSoft),
+      decoration: appSoftCardDecoration(
+        context,
+        radius: 24,
+        tone: snapshot.conflictedCount > 0
+            ? AppSurfaceTone.danger
+            : snapshot.clean
+            ? AppSurfaceTone.success
+            : AppSurfaceTone.accent,
+        emphasized: true,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -444,38 +531,88 @@ class _RepoSummaryCard extends StatelessWidget {
                 ),
               ),
               if (snapshot.clean)
-                _RepoBadge(label: context.wp('Clean'))
+                _RepoBadge(label: context.wp('Clean'), success: true)
               else if (snapshot.conflictedCount > 0)
                 _RepoBadge(
-                  label: context.wp('{count} conflicts', args: <String, Object?>{'count': snapshot.conflictedCount}),
+                  label: context.wp(
+                    '{count} conflicts',
+                    args: <String, Object?>{'count': snapshot.conflictedCount},
+                  ),
                   danger: true,
                 )
               else
                 _RepoBadge(
-                  label: context.wp('{count} changed', args: <String, Object?>{'count': snapshot.changedFiles.length}),
+                  label: context.wp(
+                    '{count} changed',
+                    args: <String, Object?>{
+                      'count': snapshot.changedFiles.length,
+                    },
+                  ),
                 ),
             ],
           ),
           const SizedBox(height: AppSpacing.sm),
+          Text(
+            snapshot.clean
+                ? context.wp(
+                    'Everything is aligned and ready for the next change.',
+                  )
+                : context.wp(
+                    '{staged} staged • {unstaged} unstaged • {untracked} untracked',
+                    args: <String, Object?>{
+                      'staged': snapshot.stagedCount,
+                      'unstaged': snapshot.unstagedCount,
+                      'untracked': snapshot.untrackedCount,
+                    },
+                  ),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: Theme.of(context).extension<AppSurfaces>()!.muted,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
           Wrap(
             spacing: AppSpacing.sm,
             runSpacing: AppSpacing.sm,
             children: <Widget>[
               if ((snapshot.upstreamBranch ?? '').isNotEmpty)
-                _RepoMeta(label: context.wp('Upstream: {name}', args: <String, Object?>{'name': snapshot.upstreamBranch!})),
+                _RepoMeta(
+                  label: context.wp(
+                    'Upstream: {name}',
+                    args: <String, Object?>{'name': snapshot.upstreamBranch!},
+                  ),
+                ),
               if (snapshot.ahead > 0)
-                _RepoMeta(label: context.wp('Ahead {count}', args: <String, Object?>{'count': snapshot.ahead})),
+                _RepoMeta(
+                  label: context.wp(
+                    'Ahead {count}',
+                    args: <String, Object?>{'count': snapshot.ahead},
+                  ),
+                ),
               if (snapshot.behind > 0)
-                _RepoMeta(label: context.wp('Behind {count}', args: <String, Object?>{'count': snapshot.behind})),
+                _RepoMeta(
+                  label: context.wp(
+                    'Behind {count}',
+                    args: <String, Object?>{'count': snapshot.behind},
+                  ),
+                ),
               _RepoMeta(
-                label: context.wp('Staged {count}', args: <String, Object?>{'count': snapshot.stagedCount}),
+                label: context.wp(
+                  'Staged {count}',
+                  args: <String, Object?>{'count': snapshot.stagedCount},
+                ),
               ),
               _RepoMeta(
-                label: context.wp('Unstaged {count}', args: <String, Object?>{'count': snapshot.unstagedCount}),
+                label: context.wp(
+                  'Unstaged {count}',
+                  args: <String, Object?>{'count': snapshot.unstagedCount},
+                ),
               ),
               if (snapshot.untrackedCount > 0)
                 _RepoMeta(
-                  label: context.wp('Untracked {count}', args: <String, Object?>{'count': snapshot.untrackedCount}),
+                  label: context.wp(
+                    'Untracked {count}',
+                    args: <String, Object?>{'count': snapshot.untrackedCount},
+                  ),
                 ),
             ],
           ),
@@ -496,17 +633,20 @@ class _RepoPullRequestCard extends StatelessWidget {
     final surfaces = theme.extension<AppSurfaces>()!;
     return Container(
       padding: const EdgeInsets.all(AppSpacing.lg),
-      decoration: BoxDecoration(
-        color: surfaces.panelRaised,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: surfaces.lineSoft),
+      decoration: appSoftCardDecoration(
+        context,
+        radius: 24,
+        tone: AppSurfaceTone.neutral,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Text(
             summary.available
-                ? context.wp('Pull Request #{number}', args: <String, Object?>{'number': summary.number ?? 0})
+                ? context.wp(
+                    'Pull Request #{number}',
+                    args: <String, Object?>{'number': summary.number ?? 0},
+                  )
                 : context.wp('Pull Request'),
             style: theme.textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.w800,
@@ -564,6 +704,11 @@ class _RepoChangedFileTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
+    final tone = file.conflicted
+        ? AppSurfaceTone.danger
+        : file.staged
+        ? AppSurfaceTone.success
+        : AppSurfaceTone.warning;
     final accent = file.conflicted
         ? theme.colorScheme.error
         : file.staged
@@ -571,56 +716,87 @@ class _RepoChangedFileTile extends StatelessWidget {
         : surfaces.warning;
     return Container(
       padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: surfaces.panelRaised,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: surfaces.lineSoft),
+      decoration: appSoftCardDecoration(
+        context,
+        radius: 20,
+        tone: tone,
+        selected: file.staged,
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: accent.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(12),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final stacked = constraints.maxWidth < 420;
+          final button = OutlinedButton.icon(
+            onPressed: busy || file.conflicted ? null : onToggleStage,
+            icon: Icon(
+              file.staged ? Icons.undo_rounded : Icons.add_task_rounded,
             ),
-            child: Icon(
-              file.conflicted
-                  ? Icons.error_outline_rounded
-                  : file.staged
-                  ? Icons.task_alt_rounded
-                  : Icons.edit_note_rounded,
-              color: accent,
-              size: 20,
+            label: Text(
+              file.staged ? context.wp('Unstage') : context.wp('Stage'),
             ),
-          ),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: Column(
+          );
+          final content = <Widget>[
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(
+                file.conflicted
+                    ? Icons.error_outline_rounded
+                    : file.staged
+                    ? Icons.task_alt_rounded
+                    : Icons.edit_note_rounded,
+                color: accent,
+                size: 22,
+              ),
+            ),
+            if (!stacked) const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  if (stacked) const SizedBox(height: AppSpacing.md),
+                  Text(
+                    file.path,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.xxs),
+                  Text(
+                    file.statusLabel,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: surfaces.muted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ];
+          if (stacked) {
+            return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Text(
-                  file.path,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: content,
                 ),
-                const SizedBox(height: AppSpacing.xxs),
-                Text(
-                  file.statusLabel,
-                  style: theme.textTheme.bodySmall?.copyWith(color: surfaces.muted),
-                ),
+                const SizedBox(height: AppSpacing.md),
+                Align(alignment: Alignment.centerRight, child: button),
               ],
-            ),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          OutlinedButton(
-            onPressed: busy || file.conflicted ? null : onToggleStage,
-            child: Text(file.staged ? context.wp('Unstage') : context.wp('Stage')),
-          ),
-        ],
+            );
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              ...content,
+              const SizedBox(width: AppSpacing.sm),
+              button,
+            ],
+          );
+        },
       ),
     );
   }
@@ -645,36 +821,68 @@ class _GitActionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      spacing: AppSpacing.sm,
-      runSpacing: AppSpacing.sm,
-      children: <Widget>[
-        FilledButton.tonalIcon(
-          onPressed: running ? null : onStageAll,
-          icon: const Icon(Icons.playlist_add_check_rounded),
-          label: Text(context.wp('Stage All')),
-        ),
-        FilledButton.tonalIcon(
-          onPressed: running ? null : onCommit,
-          icon: const Icon(Icons.commit_rounded),
-          label: Text(context.wp('Commit')),
-        ),
-        FilledButton.tonalIcon(
-          onPressed: running ? null : onPull,
-          icon: const Icon(Icons.download_rounded),
-          label: Text(context.wp('Pull')),
-        ),
-        FilledButton.tonalIcon(
-          onPressed: running ? null : onPush,
-          icon: const Icon(Icons.upload_rounded),
-          label: Text(context.wp('Push')),
-        ),
-        FilledButton.tonalIcon(
-          onPressed: running ? null : onBranches,
-          icon: const Icon(Icons.alt_route_rounded),
-          label: Text(context.wp('Branches')),
-        ),
-      ],
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: appSoftCardDecoration(
+        context,
+        radius: 22,
+        tone: AppSurfaceTone.accent,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            context.wp('Quick actions'),
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            context.wp(
+              'Stage, commit, sync, or move between branches without leaving the sheet.',
+            ),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: surfaces.muted,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
+            children: <Widget>[
+              FilledButton.tonalIcon(
+                onPressed: running ? null : onStageAll,
+                icon: const Icon(Icons.playlist_add_check_rounded),
+                label: Text(context.wp('Stage All')),
+              ),
+              FilledButton.icon(
+                onPressed: running ? null : onCommit,
+                icon: const Icon(Icons.commit_rounded),
+                label: Text(context.wp('Commit')),
+              ),
+              OutlinedButton.icon(
+                onPressed: running ? null : onPull,
+                icon: const Icon(Icons.download_rounded),
+                label: Text(context.wp('Pull')),
+              ),
+              OutlinedButton.icon(
+                onPressed: running ? null : onPush,
+                icon: const Icon(Icons.upload_rounded),
+                label: Text(context.wp('Push')),
+              ),
+              FilledButton.tonalIcon(
+                onPressed: running ? null : onBranches,
+                icon: const Icon(Icons.alt_route_rounded),
+                label: Text(context.wp('Branches')),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -690,42 +898,71 @@ class _GitEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Icon(Icons.commit_rounded, size: 40, color: surfaces.muted),
-          const SizedBox(height: AppSpacing.md),
-          Text(
-            message,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: surfaces.muted,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(AppSpacing.xl),
+        decoration: appSoftCardDecoration(context, radius: 24, muted: true),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Icon(
+                Icons.commit_rounded,
+                size: 28,
+                color: theme.colorScheme.primary,
+              ),
             ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          FilledButton.tonalIcon(
-            onPressed: onOpenTerminalFallback,
-            icon: const Icon(Icons.terminal_rounded),
-            label: Text(context.wp('Use Terminal Instead')),
-          ),
-        ],
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              message,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: surfaces.muted,
+                height: 1.45,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            FilledButton.tonalIcon(
+              onPressed: onOpenTerminalFallback,
+              icon: const Icon(Icons.terminal_rounded),
+              label: Text(context.wp('Use Terminal Instead')),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
 class _RepoBadge extends StatelessWidget {
-  const _RepoBadge({required this.label, this.danger = false});
+  const _RepoBadge({
+    required this.label,
+    this.danger = false,
+    this.success = false,
+  });
 
   final String label;
   final bool danger;
+  final bool success;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final color = danger ? theme.colorScheme.error : theme.colorScheme.primary;
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final color = danger
+        ? theme.colorScheme.error
+        : success
+        ? surfaces.success
+        : theme.colorScheme.primary;
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.sm,
@@ -747,9 +984,10 @@ class _RepoBadge extends StatelessWidget {
 }
 
 class _RepoMeta extends StatelessWidget {
-  const _RepoMeta({required this.label});
+  const _RepoMeta({required this.label, this.emphasized = false});
 
   final String label;
+  final bool emphasized;
 
   @override
   Widget build(BuildContext context) {
@@ -760,11 +998,18 @@ class _RepoMeta extends StatelessWidget {
         vertical: AppSpacing.xs,
       ),
       decoration: BoxDecoration(
-        color: surfaces.panel,
+        color: emphasized
+            ? surfaces.panelRaised.withValues(alpha: 0.92)
+            : surfaces.panel.withValues(alpha: 0.72),
         borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
         border: Border.all(color: surfaces.lineSoft),
       ),
-      child: Text(label),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+          fontWeight: emphasized ? FontWeight.w700 : FontWeight.w600,
+        ),
+      ),
     );
   }
 }
@@ -797,7 +1042,12 @@ class _CommitComposerDialogState extends State<_CommitComposerDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(context.wp('Create Commit')),
+      title: Text(
+        context.wp('Create Commit'),
+        style: Theme.of(
+          context,
+        ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+      ),
       content: SizedBox(
         width: 420,
         child: Column(
@@ -871,57 +1121,144 @@ class _BranchPickerSheetState extends State<_BranchPickerSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
     return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
+      child: AppGlassPanel(
+        radius: AppSpacing.sheetRadius,
+        tone: AppSurfaceTone.accent,
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.lg,
+          AppSpacing.md,
+          AppSpacing.lg,
+          AppSpacing.xl,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
+            Center(
+              child: Container(
+                width: 44,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: surfaces.muted.withValues(alpha: 0.28),
+                  borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
             Text(
               context.wp('Branches'),
-              style: Theme.of(context).textTheme.titleLarge,
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              context.wp(
+                'Switch quickly or start a fresh branch for the current session.',
+              ),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: surfaces.muted,
+                height: 1.45,
+              ),
             ),
             const SizedBox(height: AppSpacing.md),
             Expanded(
               child: ListView(
                 children: <Widget>[
                   ...widget.branches.map(
-                    (branch) => ListTile(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      tileColor: surfaces.panelRaised,
-                      leading: Icon(
-                        branch.current
-                            ? Icons.radio_button_checked_rounded
-                            : Icons.radio_button_off_rounded,
-                      ),
-                      title: Text(branch.name),
-                      subtitle: branch.upstream?.trim().isNotEmpty == true
-                          ? Text(branch.upstream!)
-                          : null,
-                      trailing: branch.current
-                          ? Text(
-                              context.wp('Current'),
-                              style: Theme.of(context).textTheme.labelLarge,
-                            )
-                          : FilledButton.tonal(
-                              onPressed: () {
-                                Navigator.of(context).pop(
-                                  _BranchAction(name: branch.name),
-                                );
-                              },
-                              child: Text(context.wp('Switch')),
+                    (branch) => Padding(
+                      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                      child: Container(
+                        padding: const EdgeInsets.all(AppSpacing.md),
+                        decoration: appSoftCardDecoration(
+                          context,
+                          radius: 18,
+                          tone: branch.current
+                              ? AppSurfaceTone.accent
+                              : AppSurfaceTone.neutral,
+                          selected: branch.current,
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color:
+                                    (branch.current
+                                            ? theme.colorScheme.primary
+                                            : surfaces.muted)
+                                        .withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: Icon(
+                                branch.current
+                                    ? Icons.radio_button_checked_rounded
+                                    : Icons.alt_route_rounded,
+                                color: branch.current
+                                    ? theme.colorScheme.primary
+                                    : surfaces.muted,
+                              ),
                             ),
+                            const SizedBox(width: AppSpacing.md),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: <Widget>[
+                                  Text(
+                                    branch.name,
+                                    style: theme.textTheme.titleSmall?.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  if (branch.upstream?.trim().isNotEmpty ==
+                                      true) ...<Widget>[
+                                    const SizedBox(height: AppSpacing.xxs),
+                                    Text(
+                                      branch.upstream!,
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(color: surfaces.muted),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.sm),
+                            branch.current
+                                ? _RepoBadge(
+                                    label: context.wp('Current'),
+                                    success: true,
+                                  )
+                                : FilledButton.tonal(
+                                    onPressed: () {
+                                      Navigator.of(
+                                        context,
+                                      ).pop(_BranchAction(name: branch.name));
+                                    },
+                                    child: Text(context.wp('Switch')),
+                                  ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
-                  const SizedBox(height: AppSpacing.lg),
-                  TextField(
-                    controller: _branchController,
-                    decoration: InputDecoration(
-                      labelText: context.wp('New branch'),
-                      hintText: context.wp('feature/mobile-triage'),
+                  const SizedBox(height: AppSpacing.md),
+                  Container(
+                    padding: const EdgeInsets.all(AppSpacing.md),
+                    decoration: appSoftCardDecoration(
+                      context,
+                      radius: 20,
+                      muted: true,
+                    ),
+                    child: TextField(
+                      controller: _branchController,
+                      decoration: InputDecoration(
+                        labelText: context.wp('New branch'),
+                        hintText: context.wp('feature/mobile-triage'),
+                      ),
                     ),
                   ),
                 ],
