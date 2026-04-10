@@ -174,4 +174,46 @@ void main() {
     expect(diff, contains('@@ -0,0 +1 @@'));
     expect(diff, contains('+API_KEY=demo'));
   });
+
+  test(
+    'uses server-provided patch output when before and after are absent',
+    () async {
+      final client = MockClient((request) async {
+        return http.Response(
+          jsonEncode(<Map<String, Object?>>[
+            <String, Object?>{
+              'file': 'README.md',
+              'patch':
+                  'diff --git a/README.md b/README.md\n'
+                  '--- a/README.md\n'
+                  '+++ b/README.md\n'
+                  '@@ -1 +1 @@\n'
+                  '-Old title\n'
+                  '+README preview\n',
+              'additions': 1,
+              'deletions': 1,
+              'status': 'modified',
+            },
+          ]),
+          200,
+          headers: <String, String>{'content-type': 'application/json'},
+        );
+      });
+      final service = ReviewDiffService(client: client);
+
+      final bundle = await service.fetchSessionDiffs(
+        profile: const ServerProfile(
+          id: 'server',
+          label: 'Mock',
+          baseUrl: 'https://example.com',
+        ),
+        sessionId: 'ses_patch',
+      );
+
+      final diff = bundle.diffForPath('README.md');
+      expect(diff, isNotNull);
+      expect(diff!.content, contains('diff --git a/README.md b/README.md'));
+      expect(diff.content, contains('+README preview'));
+    },
+  );
 }
