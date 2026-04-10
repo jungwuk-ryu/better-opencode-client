@@ -155,7 +155,7 @@ void main() {
   });
 
   testWidgets(
-    'markdown previews can switch between source and rendered modes',
+    'markdown previews can switch between source and preview modes',
     (tester) async {
       tester.view.physicalSize = const Size(1600, 1000);
       tester.view.devicePixelRatio = 1;
@@ -209,7 +209,14 @@ void main() {
         findsNothing,
       );
 
-      await tester.tap(find.text('Rendered'));
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(
+            const ValueKey<String>('files-preview-markdown-mode-toggle'),
+          ),
+          matching: find.text('Preview'),
+        ),
+      );
       await tester.pumpAndSettle();
 
       expect(

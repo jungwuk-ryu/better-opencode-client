@@ -2860,7 +2860,7 @@ class _WorkspaceSafeFilePreviewState extends State<_WorkspaceSafeFilePreview> {
                         ),
                         ButtonSegment<_WorkspaceFilePreviewMode>(
                           value: _WorkspaceFilePreviewMode.rendered,
-                          label: Text(context.wp('Rendered')),
+                          label: Text(context.wp('Preview')),
                         ),
                       ],
                       selected: <_WorkspaceFilePreviewMode>{_previewMode},
