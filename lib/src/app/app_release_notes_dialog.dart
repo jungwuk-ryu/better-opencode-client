@@ -14,16 +14,23 @@ class AppReleaseNotesDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
+    final size = MediaQuery.sizeOf(context);
+    final compact = size.width < 420;
+    final dialogInset = EdgeInsets.symmetric(
+      horizontal: compact ? AppSpacing.md : AppSpacing.lg,
+      vertical: compact ? AppSpacing.md : AppSpacing.xl,
+    );
+    final panelPadding = EdgeInsets.all(
+      compact ? AppSpacing.md : AppSpacing.lg,
+    );
+    final sectionGap = compact ? AppSpacing.md : AppSpacing.lg;
 
     return Dialog(
       key: const ValueKey<String>('release-notes-dialog'),
       backgroundColor: Colors.transparent,
       surfaceTintColor: Colors.transparent,
       elevation: 0,
-      insetPadding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.lg,
-        vertical: AppSpacing.xl,
-      ),
+      insetPadding: dialogInset,
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 560),
         child: AppGlassPanel(
@@ -31,15 +38,15 @@ class AppReleaseNotesDialog extends StatelessWidget {
           blur: 14,
           backgroundOpacity: theme.brightness == Brightness.dark ? 0.88 : 0.94,
           borderOpacity: 0.08,
-          padding: const EdgeInsets.all(AppSpacing.lg),
+          padding: panelPadding,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Wrap(
                 crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: AppSpacing.sm,
-                runSpacing: AppSpacing.xs,
+                spacing: compact ? AppSpacing.xs : AppSpacing.sm,
+                runSpacing: AppSpacing.xxs,
                 children: <Widget>[
                   Text(
                     "What's New",
@@ -71,7 +78,7 @@ class AppReleaseNotesDialog extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: AppSpacing.sm),
+              SizedBox(height: sectionGap),
               Text(
                 notes.headline,
                 style: theme.textTheme.titleMedium?.copyWith(
@@ -87,10 +94,10 @@ class AppReleaseNotesDialog extends StatelessWidget {
                   color: surfaces.muted,
                 ),
               ),
-              const SizedBox(height: AppSpacing.lg),
+              SizedBox(height: sectionGap),
               ConstrainedBox(
                 constraints: BoxConstraints(
-                  maxHeight: MediaQuery.sizeOf(context).height * 0.45,
+                  maxHeight: size.height * (compact ? 0.38 : 0.45),
                 ),
                 child: SingleChildScrollView(
                   child: Column(
@@ -101,16 +108,19 @@ class AppReleaseNotesDialog extends StatelessWidget {
                             padding: EdgeInsets.only(
                               bottom: highlight == notes.highlights.last
                                   ? 0
-                                  : AppSpacing.sm,
+                                  : sectionGap,
                             ),
-                            child: _ReleaseHighlightCard(highlight: highlight),
+                            child: _ReleaseHighlightCard(
+                              highlight: highlight,
+                              compact: compact,
+                            ),
                           ),
                         )
                         .toList(growable: false),
                   ),
                 ),
               ),
-              const SizedBox(height: AppSpacing.lg),
+              SizedBox(height: sectionGap),
               SizedBox(
                 width: double.infinity,
                 child: FilledButton(
@@ -128,9 +138,10 @@ class AppReleaseNotesDialog extends StatelessWidget {
 }
 
 class _ReleaseHighlightCard extends StatelessWidget {
-  const _ReleaseHighlightCard({required this.highlight});
+  const _ReleaseHighlightCard({required this.highlight, required this.compact});
 
   final AppReleaseHighlight highlight;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -146,7 +157,7 @@ class _ReleaseHighlightCard extends StatelessWidget {
         emphasized: true,
       ),
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
+        padding: EdgeInsets.all(compact ? AppSpacing.sm : AppSpacing.md),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
@@ -166,7 +177,7 @@ class _ReleaseHighlightCard extends StatelessWidget {
                 size: 20,
               ),
             ),
-            const SizedBox(width: AppSpacing.md),
+            SizedBox(width: compact ? AppSpacing.sm : AppSpacing.md),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

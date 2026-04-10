@@ -24,14 +24,21 @@ class ConnectionProfileImportSheet extends StatelessWidget {
     final payload = routeData.payload;
     final existing = existingProfile;
     final valid = routeData.hasValidPayload;
+    final size = MediaQuery.sizeOf(context);
+    final compact = size.width < 420;
+    final outerPadding = EdgeInsets.fromLTRB(
+      compact ? AppSpacing.sm : AppSpacing.md,
+      compact ? AppSpacing.sm : AppSpacing.md,
+      compact ? AppSpacing.sm : AppSpacing.md,
+      compact ? AppSpacing.md : AppSpacing.lg,
+    );
+    final panelPadding = EdgeInsets.all(
+      compact ? AppSpacing.md : AppSpacing.lg,
+    );
+    final sectionGap = compact ? AppSpacing.md : AppSpacing.lg;
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          AppSpacing.md,
-          AppSpacing.md,
-          AppSpacing.md,
-          AppSpacing.lg,
-        ),
+        padding: outerPadding,
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 720),
@@ -42,7 +49,7 @@ class ConnectionProfileImportSheet extends StatelessWidget {
                   ? 0.9
                   : 0.95,
               borderOpacity: 0.08,
-              padding: const EdgeInsets.all(AppSpacing.lg),
+              padding: panelPadding,
               child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -78,12 +85,18 @@ class ConnectionProfileImportSheet extends StatelessWidget {
                           ),
                         ),
                         IconButton(
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 40,
+                            minHeight: 40,
+                          ),
                           onPressed: () => Navigator.of(context).pop(false),
                           icon: const Icon(Icons.close_rounded),
                         ),
                       ],
                     ),
-                    const SizedBox(height: AppSpacing.lg),
+                    SizedBox(height: sectionGap),
                     _ConnectionImportCard(
                       title: payload.label.isNotEmpty
                           ? payload.label
@@ -91,9 +104,11 @@ class ConnectionProfileImportSheet extends StatelessWidget {
                       subtitle: payload.baseUrl.isNotEmpty
                           ? payload.baseUrl
                           : context.wp('Missing server address'),
+                      compact: compact,
                       children: <Widget>[
                         _ConnectionImportMetaRow(
                           label: context.wp('Auth'),
+                          compact: compact,
                           value: switch (payload.authType) {
                             ConnectionProfileImportAuthType.basic => 'Basic',
                             ConnectionProfileImportAuthType.none => context.wp(
@@ -103,6 +118,7 @@ class ConnectionProfileImportSheet extends StatelessWidget {
                         ),
                         _ConnectionImportMetaRow(
                           label: context.wp('Expires'),
+                          compact: compact,
                           value: payload.expiresAt == null
                               ? context.wp('No expiry')
                               : MaterialLocalizations.of(
@@ -112,6 +128,7 @@ class ConnectionProfileImportSheet extends StatelessWidget {
                         if (existing != null)
                           _ConnectionImportMetaRow(
                             label: context.wp('Duplicate'),
+                            compact: compact,
                             value: context.wp(
                               'Will update "{label}"',
                               args: <String, Object?>{
@@ -122,18 +139,24 @@ class ConnectionProfileImportSheet extends StatelessWidget {
                       ],
                     ),
                     if (!valid) ...<Widget>[
-                      const SizedBox(height: AppSpacing.lg),
+                      SizedBox(height: sectionGap),
                       _ConnectionImportCard(
                         title: context.wp('Validation Issues'),
                         subtitle: context.wp(
                           'Shared profiles must pass version, auth, URL, and expiry checks before import.',
                         ),
                         accentColor: theme.colorScheme.error,
+                        compact: compact,
                         children: routeData.validation.issues
                             .map(
                               (issue) => Padding(
-                                padding: const EdgeInsets.only(
-                                  bottom: AppSpacing.sm,
+                                padding: EdgeInsets.only(
+                                  bottom:
+                                      issue == routeData.validation.issues.last
+                                      ? 0
+                                      : (compact
+                                            ? AppSpacing.xs
+                                            : AppSpacing.sm),
                                 ),
                                 child: Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -143,7 +166,11 @@ class ConnectionProfileImportSheet extends StatelessWidget {
                                       size: 18,
                                       color: theme.colorScheme.error,
                                     ),
-                                    const SizedBox(width: AppSpacing.sm),
+                                    SizedBox(
+                                      width: compact
+                                          ? AppSpacing.xs
+                                          : AppSpacing.sm,
+                                    ),
                                     Expanded(
                                       child: Text(
                                         issue.message,
@@ -157,7 +184,7 @@ class ConnectionProfileImportSheet extends StatelessWidget {
                             .toList(growable: false),
                       ),
                     ],
-                    const SizedBox(height: AppSpacing.lg),
+                    SizedBox(height: sectionGap),
                     LayoutBuilder(
                       builder: (context, constraints) {
                         final compact = constraints.maxWidth < 420;
@@ -185,7 +212,7 @@ class ConnectionProfileImportSheet extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: <Widget>[
                               saveButton,
-                              const SizedBox(height: AppSpacing.sm),
+                              const SizedBox(height: AppSpacing.xs),
                               cancelButton,
                             ],
                           );
@@ -193,7 +220,7 @@ class ConnectionProfileImportSheet extends StatelessWidget {
                         return Row(
                           children: <Widget>[
                             Expanded(child: cancelButton),
-                            const SizedBox(width: AppSpacing.sm),
+                            const SizedBox(width: AppSpacing.xs),
                             Expanded(child: saveButton),
                           ],
                         );
@@ -215,12 +242,14 @@ class _ConnectionImportCard extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.children,
+    required this.compact,
     this.accentColor,
   });
 
   final String title;
   final String subtitle;
   final List<Widget> children;
+  final bool compact;
   final Color? accentColor;
 
   @override
@@ -229,10 +258,10 @@ class _ConnectionImportCard extends StatelessWidget {
     final surfaces = theme.extension<AppSurfaces>()!;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(AppSpacing.lg),
+      padding: EdgeInsets.all(compact ? AppSpacing.md : AppSpacing.lg),
       decoration: appSoftCardDecoration(
         context,
-        radius: 24,
+        radius: AppSpacing.panelRadius,
         tone: accentColor == theme.colorScheme.error
             ? AppSurfaceTone.danger
             : AppSurfaceTone.neutral,
@@ -253,7 +282,7 @@ class _ConnectionImportCard extends StatelessWidget {
             subtitle,
             style: theme.textTheme.bodyMedium?.copyWith(color: surfaces.muted),
           ),
-          const SizedBox(height: AppSpacing.md),
+          SizedBox(height: compact ? AppSpacing.sm : AppSpacing.md),
           ...children,
         ],
       ),
@@ -262,21 +291,26 @@ class _ConnectionImportCard extends StatelessWidget {
 }
 
 class _ConnectionImportMetaRow extends StatelessWidget {
-  const _ConnectionImportMetaRow({required this.label, required this.value});
+  const _ConnectionImportMetaRow({
+    required this.label,
+    required this.value,
+    required this.compact,
+  });
 
   final String label;
   final String value;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
     return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      padding: EdgeInsets.only(bottom: compact ? AppSpacing.xs : AppSpacing.sm),
       child: Row(
         children: <Widget>[
           SizedBox(
-            width: 88,
+            width: compact ? 76 : 88,
             child: Text(
               label,
               style: theme.textTheme.labelLarge?.copyWith(
