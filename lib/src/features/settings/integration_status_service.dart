@@ -132,24 +132,29 @@ class IntegrationStatusService {
     if (result is! Map) {
       return null;
     }
-    return result['authorizationUrl']?.toString();
+    return _authorizationUrlFromResult(result);
   }
 
   Future<String?> startMcpAuth({
     required ServerProfile profile,
     required ProjectTarget project,
     required String name,
+    String? redirectUri,
   }) async {
-    final result = await _postJson(
+    final resolvedRedirectUri =
+        _normalizedOptional(redirectUri) ?? _defaultMcpRedirectUri(profile);
+    final result = await _postJsonWithCompatRetry(
       profile: profile,
       project: project,
       path: '/mcp/$name/auth',
-      body: const <String, Object?>{},
+      body: resolvedRedirectUri == null
+          ? const <String, Object?>{}
+          : <String, Object?>{'redirectUri': resolvedRedirectUri},
     );
     if (result is! Map) {
       return null;
     }
-    return result['authorizationUrl']?.toString();
+    return _authorizationUrlFromResult(result);
   }
 
   Future<void> connectMcp({
@@ -251,6 +256,84 @@ class IntegrationStatusService {
       );
     }
     return jsonDecode(response.body);
+  }
+
+  Future<Object?> _postJsonWithCompatRetry({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String path,
+    required Map<String, Object?> body,
+  }) async {
+    if (body['redirectUri'] == null) {
+      return _postJson(
+        profile: profile,
+        project: project,
+        path: path,
+        body: body,
+      );
+    }
+
+    try {
+      return await _postJson(
+        profile: profile,
+        project: project,
+        path: path,
+        body: body,
+      );
+    } on StateError catch (error) {
+      if (!error.toString().contains('status 400')) {
+        rethrow;
+      }
+      return _postJson(
+        profile: profile,
+        project: project,
+        path: path,
+        body: const <String, Object?>{},
+      );
+    }
+  }
+
+  String? _defaultMcpRedirectUri(ServerProfile profile) {
+    final baseUri = profile.uriOrNull;
+    if (baseUri == null) {
+      return null;
+    }
+    final scheme = baseUri.scheme.trim().toLowerCase();
+    if (scheme != 'http' && scheme != 'https') {
+      return null;
+    }
+
+    final basePath = switch (baseUri.path) {
+      '' => '',
+      '/' => '',
+      final value when value.endsWith('/') => value.substring(
+        0,
+        value.length - 1,
+      ),
+      final value => value,
+    };
+    return Uri(
+      scheme: baseUri.scheme,
+      host: baseUri.host,
+      port: baseUri.hasPort ? baseUri.port : null,
+      path: '$basePath/mcp/oauth/callback',
+    ).toString();
+  }
+
+  String? _normalizedOptional(String? value) {
+    final normalized = value?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return null;
+    }
+    return normalized;
+  }
+
+  String? _authorizationUrlFromResult(Map<dynamic, dynamic> result) {
+    final primary = _normalizedOptional(result['authorizationUrl']?.toString());
+    if (primary != null) {
+      return primary;
+    }
+    return _normalizedOptional(result['url']?.toString());
   }
 
   void dispose() {

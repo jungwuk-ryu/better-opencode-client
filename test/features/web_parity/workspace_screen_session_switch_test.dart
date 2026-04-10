@@ -3854,6 +3854,7 @@ class _FakeIntegrationStatusService extends IntegrationStatusService {
     required ServerProfile profile,
     required ProjectTarget project,
     required String name,
+    String? redirectUri,
   }) async {
     authCalls.add(name);
     _mcpDetails[name] = const McpIntegrationStatus(status: 'disabled');
