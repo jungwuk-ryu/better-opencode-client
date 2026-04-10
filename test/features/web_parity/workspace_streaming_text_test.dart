@@ -142,6 +142,77 @@ void main() {
         findsOneWidget,
       );
     },
+
+
+  testWidgets(
+    'long multiline streaming updates catch up immediately instead of rendering blank space',
+    (tester) async {
+      tester.view.physicalSize = const Size(1480, 960);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      late _StreamingWorkspaceController controller;
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              controller = _StreamingWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+              return controller;
+            },
+      );
+      addTearDown(appController.dispose);
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          initialRoute: buildWorkspaceRoute(
+            '/workspace/demo',
+            sessionId: 'ses_1',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      controller.pushPlaceholderPart();
+      await tester.pump();
+
+      controller.pushStreamingContent(
+        'Line one arrives fast.\n'
+        'Line two lands immediately.\n'
+        'Line three should already be visible.\n'
+        'Line four should not wait for the fade queue.',
+      );
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey<String>('streaming-text-part_text_stream')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>('streaming-text-chunk-part_text_stream-0'),
+        ),
+        findsNothing,
+      );
+      await tester.pump(const Duration(milliseconds: 160));
+      expect(
+        find.byKey(
+          const ValueKey<String>('streaming-text-chunk-part_text_stream-0'),
+        ),
+        findsNothing,
+      );
+    },
   );
 }
 

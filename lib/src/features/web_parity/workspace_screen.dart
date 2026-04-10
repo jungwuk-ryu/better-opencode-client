@@ -24691,6 +24691,9 @@ class _StreamingTextPart extends StatefulWidget {
 class _StreamingTextPartState extends State<_StreamingTextPart> {
   static const Duration _revealStep = Duration(milliseconds: 55);
   static const Duration _fadeDuration = Duration(milliseconds: 220);
+  static const int _maxAnimatedBacklogChunks = 8;
+  static const int _maxAnimatedAppendLength = 80;
+  static const int _maxAnimatedAppendedLineBreaks = 1;
 
   late _StreamingWordSequence _sequence;
   late int _visibleChunkCount;
@@ -24705,6 +24708,14 @@ class _StreamingTextPartState extends State<_StreamingTextPart> {
     if (widget.animate &&
         widget.text.trim().isNotEmpty &&
         _sequence.chunks.isNotEmpty) {
+      if (_shouldCatchUpWithoutFade(
+        appendedText: widget.text,
+        chunkBacklog: _sequence.chunks.length,
+      )) {
+        _visibleChunkCount = _sequence.chunks.length;
+        _revealingChunkIndex = null;
+        return;
+      }
       _visibleChunkCount = 1;
       _revealingChunkIndex = 0;
       _animationEpoch = 1;
@@ -24730,9 +24741,22 @@ class _StreamingTextPartState extends State<_StreamingTextPart> {
       return;
     }
 
+    final appendedText = oldWidget.text.isEmpty
+        ? widget.text
+        : widget.text.substring(oldWidget.text.length);
     _sequence = nextSequence;
     if (_visibleChunkCount > _sequence.chunks.length) {
       _visibleChunkCount = _sequence.chunks.length;
+    }
+    final chunkBacklog = _sequence.chunks.length - _visibleChunkCount;
+    if (_shouldCatchUpWithoutFade(
+      appendedText: appendedText,
+      chunkBacklog: chunkBacklog,
+    )) {
+      _cancelRevealTimer();
+      _visibleChunkCount = _sequence.chunks.length;
+      _revealingChunkIndex = null;
+      return;
     }
     if (_visibleChunkCount < _sequence.chunks.length) {
       _revealNextChunk(immediate: true);
@@ -24782,6 +24806,25 @@ class _StreamingTextPartState extends State<_StreamingTextPart> {
     _scheduleReveal();
   }
 
+  bool _shouldCatchUpWithoutFade({
+    required String appendedText,
+    required int chunkBacklog,
+  }) {
+    if (chunkBacklog <= 0) {
+      return false;
+    }
+    if (chunkBacklog > _maxAnimatedBacklogChunks) {
+      return true;
+    }
+    if (appendedText.length > _maxAnimatedAppendLength) {
+      return true;
+    }
+    if (_lineBreakCount(appendedText) > _maxAnimatedAppendedLineBreaks) {
+      return true;
+    }
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!widget.animate || widget.text.trim().isEmpty) {
@@ -24797,9 +24840,6 @@ class _StreamingTextPartState extends State<_StreamingTextPart> {
     final searchHighlightColor = _searchTextHighlightColor(
       context,
       active: widget.searchActive,
-    );
-    final transparentStyle = (baseStyle ?? const TextStyle()).copyWith(
-      color: Colors.transparent,
     );
     final spans = <InlineSpan>[];
     if (_sequence.leadingWhitespace.isNotEmpty) {
@@ -24871,22 +24911,14 @@ class _StreamingTextPartState extends State<_StreamingTextPart> {
         );
       }
     }
-    for (
-      var index = _visibleChunkCount;
-      index < _sequence.chunks.length;
-      index += 1
-    ) {
-      spans.add(
-        TextSpan(text: _sequence.chunks[index].text, style: transparentStyle),
-      );
-    }
-
     return Text.rich(
       TextSpan(style: baseStyle, children: spans),
       key: ValueKey<String>('streaming-text-${widget.partId}'),
     );
   }
 }
+
+int _lineBreakCount(String value) => '\n'.allMatches(value).length;
 
 class _StreamingWordSequence {
   const _StreamingWordSequence({
