@@ -1009,6 +1009,80 @@ void main() {
     expect(find.textContaining('line 1'), findsOneWidget);
   });
 
+  testWidgets('shell auto mode keeps in-progress output expanded live', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    late _MutableShellWorkspaceController controllerInstance;
+    final appController = _StaticAppController(
+      profile: profile,
+      initialShellToolDisplayMode: ShellToolDisplayMode.autoCollapse,
+      initialTimelineProgressDetailsVisible: false,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            controllerInstance = _MutableShellWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+              initialStatus: 'in_progress',
+              initialOutput: 'line 1',
+            );
+            return controllerInstance;
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(
+      find.byKey(const ValueKey<String>('timeline-shell-expanded-part_tool')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('line 1'), findsOneWidget);
+
+    controllerInstance.updateShell(
+      status: 'in_progress',
+      output: 'line 1\nline 2\nline 3',
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(
+      find.byKey(const ValueKey<String>('timeline-shell-expanded-part_tool')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('line 3'), findsOneWidget);
+
+    controllerInstance.completeShell(output: 'line 1\nline 2\nline 3\nline 4');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(
+      find.byKey(const ValueKey<String>('timeline-shell-expanded-part_tool')),
+      findsNothing,
+    );
+    expect(find.textContaining('line 4'), findsNothing);
+  });
+
   testWidgets('collapsed mobile shell summary limits commands to two lines', (
     tester,
   ) async {
@@ -1299,11 +1373,16 @@ class _MutableShellWorkspaceController extends WorkspaceController {
     required super.profile,
     required super.directory,
     super.initialSessionId,
+    String initialStatus = 'running',
     String initialCommand = 'git diff --staged && git diff',
     String initialOutput = 'line 1\nline 2',
   }) : _command = initialCommand,
        _messages = <ChatMessage>[
-         _buildShellMessage(command: initialCommand, output: initialOutput),
+         _buildShellMessage(
+           status: initialStatus,
+           command: initialCommand,
+           output: initialOutput,
+         ),
        ];
 
   static const ProjectTarget _projectTarget = ProjectTarget(
@@ -1391,12 +1470,12 @@ class _MutableShellWorkspaceController extends WorkspaceController {
   }
 
   void completeShell({required String output}) {
+    updateShell(status: 'completed', output: output);
+  }
+
+  void updateShell({required String status, required String output}) {
     _messages = <ChatMessage>[
-      _buildShellMessage(
-        status: 'completed',
-        command: _command,
-        output: output,
-      ),
+      _buildShellMessage(status: status, command: _command, output: output),
     ];
     notifyListeners();
   }

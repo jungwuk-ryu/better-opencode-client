@@ -23098,7 +23098,7 @@ class _TimelinePart extends StatelessWidget {
         subtitle: _shellToolSubtitle(part),
         command: _shellToolCommand(part),
         output: _shellToolOutput(part),
-        running: _toolStateStatus(part) == 'running',
+        running: _toolStateIsRunning(_toolStateStatus(part)),
         shimmerActive: shimmerActive,
         displayMode: shellToolDisplayMode,
         compact: compact,
@@ -26316,7 +26316,7 @@ bool _activityPartShimmerActive(
 }) {
   if (part.type == 'tool') {
     final status = _toolStateStatus(part);
-    return status == 'pending' || status == 'running';
+    return _toolStateIsActive(status);
   }
 
   return switch (part.type) {
@@ -26666,7 +26666,7 @@ bool _shouldRenderTimelinePart(
   }
   if (_isQuestionToolPart(part)) {
     final status = _toolStateStatus(part);
-    if (status == 'pending' || status == 'running') {
+    if (_toolStateIsActive(status)) {
       return false;
     }
   }
@@ -26809,7 +26809,7 @@ bool _isPendingContextToolPart(ChatPart part) {
     return false;
   }
   final status = _toolStateStatus(part);
-  return status == 'pending' || status == 'running';
+  return _toolStateIsActive(status);
 }
 
 String? _toolStateStatus(ChatPart part) {
@@ -26817,6 +26817,14 @@ String? _toolStateStatus(ChatPart part) {
     'state',
     'status',
   ])?.toString().trim().toLowerCase();
+}
+
+bool _toolStateIsActive(String? status) {
+  return status == 'pending' || _toolStateIsRunning(status);
+}
+
+bool _toolStateIsRunning(String? status) {
+  return status == 'running' || status == 'in_progress';
 }
 
 _ContextToolSummary _contextToolSummary(List<ChatPart> parts) {
