@@ -21,7 +21,7 @@ class _Section extends StatelessWidget {
         border: Border.all(color: surfaces.line),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
+        padding: const EdgeInsets.all(AppSpacing.sm),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
@@ -33,7 +33,7 @@ class _Section extends StatelessWidget {
                 context,
               ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
             ),
-            const SizedBox(height: AppSpacing.md),
+            const SizedBox(height: AppSpacing.sm),
             child,
           ],
         ),
@@ -149,7 +149,7 @@ class _ProjectChoiceTile extends StatelessWidget {
             ],
           ),
           child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.md),
+            padding: const EdgeInsets.all(AppSpacing.sm),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
@@ -157,7 +157,7 @@ class _ProjectChoiceTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     _ProjectAvatar(target: target),
-                    const SizedBox(width: AppSpacing.md),
+                    const SizedBox(width: AppSpacing.sm),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,

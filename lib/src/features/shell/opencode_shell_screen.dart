@@ -3222,13 +3222,13 @@ class _TabletPortraitShell extends StatelessWidget {
                   Scaffold.of(innerContext).openDrawer(),
             ),
           ),
-          const SizedBox(height: AppSpacing.lg),
+          const SizedBox(height: AppSpacing.sm),
           _ShellPrimaryDestinationStrip(
             compact: true,
             selectedDestination: primaryDestination,
             onSelectDestination: onSelectPrimaryDestination,
           ),
-          const SizedBox(height: AppSpacing.lg),
+          const SizedBox(height: AppSpacing.sm),
           Expanded(
             child: AnimatedSwitcher(
               duration: _motionMedium,
@@ -4279,8 +4279,8 @@ class _CompactSessionsPanel extends StatelessWidget {
                             final depth = orderedSessions[session.id] ?? 0;
                             return Padding(
                               padding: EdgeInsets.only(
-                                left: depth * AppSpacing.sm,
-                                bottom: AppSpacing.sm,
+                                left: depth * AppSpacing.xs,
+                                bottom: AppSpacing.xs,
                               ),
                               child: _SessionTile(
                                 title: session.title,
@@ -4696,8 +4696,8 @@ class _LeftRail extends StatelessWidget {
                   final depth = orderedSessions[session.id] ?? 0;
                   return Padding(
                     padding: EdgeInsets.only(
-                      left: depth * AppSpacing.sm,
-                      bottom: AppSpacing.sm,
+                      left: depth * AppSpacing.xs,
+                      bottom: AppSpacing.xs,
                     ),
                     child: _SessionTile(
                       title: session.title,
@@ -5410,7 +5410,7 @@ class _ChatCanvasState extends State<_ChatCanvas> {
               widget.compact ? AppSpacing.sm : AppSpacing.md,
               widget.compact ? AppSpacing.sm : AppSpacing.md,
               widget.compact ? AppSpacing.sm : AppSpacing.md,
-              widget.compact ? AppSpacing.md : AppSpacing.lg,
+              widget.compact ? AppSpacing.sm : AppSpacing.md,
             ),
             children: <Widget>[
               _MessageBubble(
@@ -5435,7 +5435,7 @@ class _ChatCanvasState extends State<_ChatCanvas> {
             widget.compact ? AppSpacing.sm : AppSpacing.md,
             widget.compact ? AppSpacing.sm : AppSpacing.md,
             widget.compact ? AppSpacing.sm : AppSpacing.md,
-            widget.compact ? AppSpacing.md : AppSpacing.lg,
+            widget.compact ? AppSpacing.sm : AppSpacing.md,
           ),
           // The shell already keeps the visible chat window in memory.
           // Using eager children here gives desktop scrollbars stable extents.
@@ -5762,7 +5762,7 @@ class _PanelCard extends StatelessWidget {
         ],
       ),
       child: Padding(
-        padding: EdgeInsets.all(compact ? AppSpacing.md : AppSpacing.lg),
+        padding: EdgeInsets.all(compact ? AppSpacing.sm : AppSpacing.lg),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[

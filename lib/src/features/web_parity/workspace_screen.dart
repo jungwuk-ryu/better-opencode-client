@@ -8503,10 +8503,10 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
-    final sectionGap = density.inset(AppSpacing.lg, min: AppSpacing.md);
+    final sectionGap = density.inset(AppSpacing.md, min: AppSpacing.sm);
     final sheetOuterPadding = density.inset(AppSpacing.md, min: AppSpacing.sm);
-    final sheetTopPadding = density.inset(AppSpacing.lg, min: AppSpacing.md);
-    final sheetHeaderLead = density.inset(AppSpacing.lg, min: AppSpacing.md);
+    final sheetTopPadding = density.inset(AppSpacing.md, min: AppSpacing.sm);
+    final sheetHeaderLead = density.inset(AppSpacing.md, min: AppSpacing.sm);
     final headerBottom = density.inset(AppSpacing.md, min: AppSpacing.sm);
 
     return AnimatedBuilder(
@@ -9350,8 +9350,8 @@ class _WorkspaceSettingsToggleRow extends StatelessWidget {
     final density = _workspaceDensity(context);
     return Container(
       padding: EdgeInsets.symmetric(
-        horizontal: density.inset(AppSpacing.md),
-        vertical: density.inset(AppSpacing.sm),
+        horizontal: density.inset(AppSpacing.sm, min: AppSpacing.xs),
+        vertical: density.inset(AppSpacing.xs, min: AppSpacing.xxs),
       ),
       decoration: BoxDecoration(
         color: surfaces.panelMuted.withValues(alpha: 0.52),
@@ -12781,7 +12781,7 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
     };
     final density = _workspaceDensity(context);
     final panelPadding = density.inset(AppSpacing.md, min: AppSpacing.xs);
-    final sectionGap = density.inset(AppSpacing.lg, min: AppSpacing.md);
+    final sectionGap = density.inset(AppSpacing.md, min: AppSpacing.sm);
     final microGap = density.inset(AppSpacing.sm, min: AppSpacing.xs);
     final projects = _orderedProjects;
     final currentProject =
@@ -18535,13 +18535,13 @@ class _MessageTimelineState extends State<_MessageTimeline> {
                           ),
                           padding: EdgeInsets.fromLTRB(
                             density.inset(
-                              widget.compact ? AppSpacing.sm : AppSpacing.xl,
+                              widget.compact ? AppSpacing.xs : AppSpacing.xl,
                             ),
                             density.inset(
-                              widget.compact ? AppSpacing.sm : AppSpacing.xl,
+                              widget.compact ? AppSpacing.xs : AppSpacing.xl,
                             ),
                             density.inset(
-                              widget.compact ? AppSpacing.sm : AppSpacing.xl,
+                              widget.compact ? AppSpacing.xs : AppSpacing.xl,
                             ),
                             density.inset(
                               widget.compact ? AppSpacing.xs : AppSpacing.lg,
@@ -18625,7 +18625,10 @@ class _MessageTimelineState extends State<_MessageTimeline> {
                                         bottom: isLast
                                             ? 0
                                             : (widget.compact
-                                                  ? density.inset(AppSpacing.md)
+                                                  ? density.inset(
+                                                      AppSpacing.sm,
+                                                      min: AppSpacing.xs,
+                                                    )
                                                   : density.inset(
                                                       AppSpacing.xl,
                                                     )),

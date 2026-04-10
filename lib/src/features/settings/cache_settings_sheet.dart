@@ -72,7 +72,12 @@ class _CacheSettingsSheetState extends State<CacheSettingsSheet> {
     final l10n = AppLocalizations.of(context)!;
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.md,
+          AppSpacing.sm,
+          AppSpacing.md,
+          AppSpacing.lg,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -81,9 +86,9 @@ class _CacheSettingsSheetState extends State<CacheSettingsSheet> {
               l10n.cacheSettingsTitle,
               style: Theme.of(context).textTheme.headlineSmall,
             ),
-            const SizedBox(height: AppSpacing.sm),
+            const SizedBox(height: AppSpacing.xs),
             Text(l10n.cacheSettingsSubtitle),
-            const SizedBox(height: AppSpacing.lg),
+            const SizedBox(height: AppSpacing.md),
             DropdownButtonFormField<int>(
               initialValue: _selectedTtl?.inMilliseconds,
               decoration: InputDecoration(labelText: l10n.cacheTtlLabel),
@@ -102,7 +107,7 @@ class _CacheSettingsSheetState extends State<CacheSettingsSheet> {
                 _updateTtl(Duration(milliseconds: value));
               },
             ),
-            const SizedBox(height: AppSpacing.lg),
+            const SizedBox(height: AppSpacing.md),
             Align(
               alignment: Alignment.centerLeft,
               child: ElevatedButton.icon(

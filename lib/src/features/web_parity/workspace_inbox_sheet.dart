@@ -48,10 +48,10 @@ class WorkspaceInboxSheet extends StatelessWidget {
             tone: AppSurfaceTone.accent,
             blur: 22,
             padding: const EdgeInsets.fromLTRB(
-              AppSpacing.md,
+              AppSpacing.sm,
+              AppSpacing.sm,
               AppSpacing.sm,
               AppSpacing.md,
-              AppSpacing.lg,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -68,7 +68,7 @@ class WorkspaceInboxSheet extends StatelessWidget {
                     ),
                   ),
                 ),
-                const SizedBox(height: AppSpacing.md),
+                const SizedBox(height: AppSpacing.sm),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
@@ -176,7 +176,7 @@ class WorkspaceInboxSheet extends StatelessWidget {
                     ],
                   ),
                 ),
-                const SizedBox(height: AppSpacing.md),
+                const SizedBox(height: AppSpacing.sm),
                 Expanded(
                   child: ListView(
                     children: <Widget>[
@@ -199,7 +199,7 @@ class WorkspaceInboxSheet extends StatelessWidget {
                             )
                             .toList(growable: false),
                       ),
-                      const SizedBox(height: AppSpacing.md),
+                      const SizedBox(height: AppSpacing.sm),
                       _InboxSection(
                         title: context.wp('Approvals'),
                         emptyLabel: context.wp(
@@ -221,7 +221,7 @@ class WorkspaceInboxSheet extends StatelessWidget {
                             )
                             .toList(growable: false),
                       ),
-                      const SizedBox(height: AppSpacing.md),
+                      const SizedBox(height: AppSpacing.sm),
                       _InboxSection(
                         title: context.wp('Unread Activity'),
                         emptyLabel: context.wp(
@@ -300,8 +300,8 @@ class _InboxSection extends StatelessWidget {
             ),
             Container(
               padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.sm,
-                vertical: AppSpacing.xs,
+                horizontal: AppSpacing.xs,
+                vertical: AppSpacing.xxs,
               ),
               decoration: appSoftCardDecoration(
                 context,
@@ -335,7 +335,7 @@ class _InboxSection extends StatelessWidget {
         else
           ...children.map(
             (child) => Padding(
-              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+              padding: const EdgeInsets.only(bottom: AppSpacing.xs),
               child: child,
             ),
           ),
@@ -369,7 +369,7 @@ class _InboxSummaryChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.xs,
-        vertical: AppSpacing.xs,
+        vertical: AppSpacing.xxs,
       ),
       decoration: appSoftCardDecoration(
         context,

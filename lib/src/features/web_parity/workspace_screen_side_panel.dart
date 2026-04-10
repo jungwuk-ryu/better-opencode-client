@@ -1808,7 +1808,7 @@ class _ReviewSplitDiffBody extends StatelessWidget {
           case _ReviewDiffRowKind.spacerTiny:
             return const SizedBox(height: AppSpacing.xxs);
           case _ReviewDiffRowKind.spacerSmall:
-            return const SizedBox(height: AppSpacing.xxs);
+            return const SizedBox(height: AppSpacing.sm);
           case _ReviewDiffRowKind.spacerDivider:
             return const SizedBox(height: 1);
           case _ReviewDiffRowKind.hunkHeader:

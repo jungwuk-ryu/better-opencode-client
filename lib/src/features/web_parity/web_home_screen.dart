@@ -1013,7 +1013,7 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
                   padding: EdgeInsets.all(
                     MediaQuery.sizeOf(context).width < 600
                         ? AppSpacing.sm
-                        : AppSpacing.lg,
+                        : AppSpacing.md,
                   ),
                   child: controller.loading
                       ? const Center(child: CircularProgressIndicator())
@@ -1109,7 +1109,7 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
                                             flex: 4,
                                             child: serverListPanel,
                                           ),
-                                          const SizedBox(width: AppSpacing.md),
+                                          const SizedBox(width: AppSpacing.sm),
                                           Flexible(flex: 6, child: detailPanel),
                                         ],
                                       )
@@ -1119,7 +1119,7 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
                                             flex: 4,
                                             child: serverListPanel,
                                           ),
-                                          const SizedBox(height: AppSpacing.md),
+                                          const SizedBox(height: AppSpacing.sm),
                                           Expanded(flex: 6, child: detailPanel),
                                         ],
                                       );
@@ -1130,9 +1130,9 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
                                           CrossAxisAlignment.start,
                                       children: <Widget>[
                                         headerSection,
-                                        const SizedBox(height: AppSpacing.md),
+                                        const SizedBox(height: AppSpacing.sm),
                                         serverListPanel,
-                                        const SizedBox(height: AppSpacing.md),
+                                        const SizedBox(height: AppSpacing.sm),
                                         detailPanel,
                                       ],
                                     ),
@@ -1142,7 +1142,7 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: <Widget>[
                                     headerSection,
-                                    const SizedBox(height: AppSpacing.md),
+                                    const SizedBox(height: AppSpacing.sm),
                                     Expanded(child: contentSection),
                                   ],
                                 );
@@ -1433,7 +1433,7 @@ class _HomeServerListPanel extends StatelessWidget {
       builder: (context, panelConstraints) {
         final compressed = panelConstraints.maxHeight < 340;
         return _HomeSectionCard(
-          padding: EdgeInsets.all(compressed ? AppSpacing.md : AppSpacing.lg),
+          padding: EdgeInsets.all(compressed ? AppSpacing.sm : AppSpacing.md),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
@@ -1848,7 +1848,7 @@ class _HomeServerDetailPanel extends StatelessWidget {
                       meta: meta,
                     ),
                   ),
-                  const SizedBox(width: AppSpacing.lg),
+                  const SizedBox(width: AppSpacing.md),
                   _HomeServerDetailActions(
                     profileId: profile!.id,
                     paneCount: summary?.paneCount ?? 0,

@@ -176,7 +176,7 @@ class _ServersSheetState extends State<_ServersSheet> {
           blur: 12,
           backgroundOpacity: 0.9,
           borderOpacity: 0.06,
-          padding: EdgeInsets.all(compactShell ? AppSpacing.md : AppSpacing.lg),
+          padding: EdgeInsets.all(compactShell ? AppSpacing.sm : AppSpacing.md),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
@@ -257,7 +257,7 @@ class _ServersSheetState extends State<_ServersSheet> {
                   );
                 },
               ),
-              SizedBox(height: compactShell ? AppSpacing.md : AppSpacing.lg),
+              SizedBox(height: compactShell ? AppSpacing.sm : AppSpacing.md),
               Expanded(
                 child: profiles.isEmpty
                     ? Center(
@@ -694,12 +694,10 @@ class _ServerEditorSheetState extends State<_ServerEditorSheet> {
       backgroundOpacity: 0.9,
       borderOpacity: 0.06,
       padding: EdgeInsets.only(
-        left: compactSheet ? AppSpacing.md : AppSpacing.lg,
-        right: compactSheet ? AppSpacing.md : AppSpacing.lg,
-        top: compactSheet ? AppSpacing.md : AppSpacing.lg,
-        bottom:
-            (compactSheet ? AppSpacing.md : AppSpacing.lg) +
-            MediaQuery.of(context).viewInsets.bottom,
+        left: compactSheet ? AppSpacing.sm : AppSpacing.md,
+        right: compactSheet ? AppSpacing.sm : AppSpacing.md,
+        top: compactSheet ? AppSpacing.sm : AppSpacing.md,
+        bottom: AppSpacing.md + MediaQuery.of(context).viewInsets.bottom,
       ),
       child: Form(
         key: _formKey,
@@ -733,7 +731,7 @@ class _ServerEditorSheetState extends State<_ServerEditorSheet> {
                 context,
               ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
             ),
-            SizedBox(height: compactSheet ? AppSpacing.md : AppSpacing.lg),
+            SizedBox(height: compactSheet ? AppSpacing.sm : AppSpacing.md),
             Container(
               padding: EdgeInsets.all(
                 compactSheet ? AppSpacing.sm : AppSpacing.md,
@@ -839,7 +837,7 @@ class _ServerEditorSheetState extends State<_ServerEditorSheet> {
                 ],
               ),
             ),
-            SizedBox(height: compactSheet ? AppSpacing.md : AppSpacing.lg),
+            SizedBox(height: compactSheet ? AppSpacing.sm : AppSpacing.md),
             LayoutBuilder(
               builder: (context, constraints) {
                 final compact = constraints.maxWidth < 420;

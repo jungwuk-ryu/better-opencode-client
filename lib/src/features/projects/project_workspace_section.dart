@@ -411,7 +411,7 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
+        padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
@@ -430,10 +430,10 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
               const SizedBox(height: AppSpacing.md),
               _buildChooserOverview(context, l10n),
             ],
-            const SizedBox(height: AppSpacing.lg),
+            const SizedBox(height: AppSpacing.md),
             if (_loading)
               const Padding(
-                padding: EdgeInsets.all(AppSpacing.lg),
+                padding: EdgeInsets.all(AppSpacing.md),
                 child: Center(child: CircularProgressIndicator()),
               )
             else
@@ -463,7 +463,7 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: <Widget>[
                               chooser,
-                              const SizedBox(height: AppSpacing.lg),
+                              const SizedBox(height: AppSpacing.md),
                               preview,
                             ],
                           );
@@ -472,7 +472,7 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: <Widget>[
                             Expanded(flex: 6, child: chooser),
-                            const SizedBox(width: AppSpacing.lg),
+                            const SizedBox(width: AppSpacing.md),
                             Expanded(flex: 4, child: preview),
                           ],
                         );

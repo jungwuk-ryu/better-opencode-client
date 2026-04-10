@@ -61,10 +61,10 @@ SnackBar buildAppSnackBar(
     backgroundColor: Colors.transparent,
     elevation: 0,
     margin: const EdgeInsets.fromLTRB(
-      AppSpacing.lg,
+      AppSpacing.md,
       0,
-      AppSpacing.lg,
-      AppSpacing.lg,
+      AppSpacing.md,
+      AppSpacing.md,
     ),
     padding: EdgeInsets.zero,
     duration: duration,

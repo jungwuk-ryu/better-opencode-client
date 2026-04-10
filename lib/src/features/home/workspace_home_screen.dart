@@ -845,17 +845,17 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         _buildHeader(context),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AppSpacing.md),
         heroCard,
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AppSpacing.md),
         serverBrowser,
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AppSpacing.md),
         if (isWide)
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Expanded(flex: 9, child: workspacePane),
-              const SizedBox(width: AppSpacing.lg),
+              const SizedBox(width: AppSpacing.md),
               SizedBox(width: 360, child: recentActivity),
             ],
           )
@@ -864,7 +864,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               workspacePane,
-              const SizedBox(height: AppSpacing.lg),
+              const SizedBox(height: AppSpacing.md),
               recentActivity,
             ],
           ),
@@ -884,14 +884,14 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
         label: Text(l10n.homeAddServerAction),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
+        padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             _buildServerForm(context),
-            const SizedBox(height: AppSpacing.lg),
+            const SizedBox(height: AppSpacing.md),
             const Divider(height: 1),
-            const SizedBox(height: AppSpacing.lg),
+            const SizedBox(height: AppSpacing.md),
             _buildSavedServerList(context),
           ],
         ),
@@ -1035,7 +1035,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
         title: l10n.homeWorkspaceSectionTitle,
         subtitle: l10n.homeWorkspaceLoadingSubtitle,
         child: const Padding(
-          padding: EdgeInsets.all(AppSpacing.xl),
+          padding: EdgeInsets.all(AppSpacing.md),
           child: Center(child: CircularProgressIndicator()),
         ),
       );
@@ -1047,7 +1047,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
           title: l10n.homeChooseServerLabel,
           subtitle: l10n.homeWorkspaceSelectionHint,
           child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.lg),
+            padding: const EdgeInsets.all(AppSpacing.md),
             child: _EmptyStateBlock(
               title: l10n.homeChooseServerLabel,
               subtitle: l10n.homeWorkspaceSelectionHint,
@@ -1063,7 +1063,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
           title: selectedProfile.effectiveLabel,
           subtitle: l10n.homeActionCheckingServer,
           child: const Padding(
-            padding: EdgeInsets.all(AppSpacing.xl),
+            padding: EdgeInsets.all(AppSpacing.md),
             child: Center(child: CircularProgressIndicator()),
           ),
         ),
@@ -1079,13 +1079,13 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
             children: <Widget>[
               if (resumePanel != null) ...<Widget>[
                 resumePanel,
-                const SizedBox(height: AppSpacing.lg),
+                const SizedBox(height: AppSpacing.md),
               ],
               _SectionCard(
                 title: selectedProfile.effectiveLabel,
                 subtitle: l10n.homeWorkspaceTitleContinueFromHome,
                 child: Padding(
-                  padding: const EdgeInsets.all(AppSpacing.lg),
+                  padding: const EdgeInsets.all(AppSpacing.md),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
@@ -1136,7 +1136,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
           children: <Widget>[
             if (resumePanel != null) ...<Widget>[
               resumePanel,
-              const SizedBox(height: AppSpacing.lg),
+              const SizedBox(height: AppSpacing.md),
             ],
             builder(context, selectedProfile, _openProject),
           ],
@@ -1149,7 +1149,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
         title: selectedProfile.effectiveLabel,
         subtitle: l10n.homeWorkspaceConnectHint,
         child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.lg),
+          padding: const EdgeInsets.all(AppSpacing.md),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
@@ -1182,9 +1182,9 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         _buildHeader(context),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AppSpacing.md),
         _buildHeroCard(context),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AppSpacing.md),
         AnimatedSwitcher(
           duration: _motionMedium,
           switchInCurve: Curves.easeOutCubic,
@@ -1218,7 +1218,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         _buildSavedServersCard(context),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AppSpacing.md),
         _buildRecentActivityCard(context),
       ],
     );
@@ -1314,7 +1314,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
+        padding: const EdgeInsets.all(AppSpacing.md),
         child: DecoratedBox(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
@@ -1330,7 +1330,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
             border: Border.all(color: surfaces.line),
           ),
           child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.lg),
+            padding: const EdgeInsets.all(AppSpacing.md),
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final stacked = constraints.maxWidth < 780;
@@ -1341,7 +1341,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
                       intro,
-                      const SizedBox(height: AppSpacing.lg),
+                      const SizedBox(height: AppSpacing.md),
                       actions,
                     ],
                   );
@@ -1350,7 +1350,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Expanded(child: intro),
-                    const SizedBox(width: AppSpacing.lg),
+                    const SizedBox(width: AppSpacing.md),
                     Expanded(child: actions),
                   ],
                 );
@@ -1453,7 +1453,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
       children: <Widget>[
         if (resumePanel != null) ...<Widget>[
           resumePanel,
-          const SizedBox(height: AppSpacing.lg),
+          const SizedBox(height: AppSpacing.md),
         ],
         Wrap(
           spacing: AppSpacing.sm,
@@ -1482,7 +1482,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
               ),
           ],
         ),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AppSpacing.md),
         DecoratedBox(
           decoration: BoxDecoration(
             color: surfaces.panelMuted.withValues(alpha: 0.58),
@@ -1581,7 +1581,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
           title: l10n.homeWorkspaceSectionTitle,
           subtitle: l10n.homeWorkspaceLoadingSubtitle,
           child: const Padding(
-            padding: EdgeInsets.all(AppSpacing.xl),
+            padding: EdgeInsets.all(AppSpacing.md),
             child: Center(child: CircularProgressIndicator()),
           ),
         ),
@@ -1594,7 +1594,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
           title: l10n.homeWorkspaceSectionTitle,
           subtitle: l10n.homeWorkspaceEmptySubtitle,
           child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.lg),
+            padding: const EdgeInsets.all(AppSpacing.md),
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final stacked = constraints.maxWidth < 720;
@@ -1657,13 +1657,13 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
             children: <Widget>[
               if (resumePanel != null) ...<Widget>[
                 resumePanel,
-                const SizedBox(height: AppSpacing.lg),
+                const SizedBox(height: AppSpacing.md),
               ],
               _SectionCard(
                 title: selectedProfile.effectiveLabel,
                 subtitle: l10n.homeWorkspaceTitleContinueFromHome,
                 child: Padding(
-                  padding: const EdgeInsets.all(AppSpacing.lg),
+                  padding: const EdgeInsets.all(AppSpacing.md),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
@@ -1714,7 +1714,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
         title: l10n.homeWorkspaceSectionTitle,
         subtitle: _workspaceSubtitle(selectedStatus, l10n),
         child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.lg),
+          padding: const EdgeInsets.all(AppSpacing.md),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
@@ -1762,7 +1762,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
                     report: _selectedReport,
                   ),
                 ),
-              const SizedBox(height: AppSpacing.lg),
+              const SizedBox(height: AppSpacing.md),
               Wrap(
                 spacing: AppSpacing.sm,
                 runSpacing: AppSpacing.sm,
@@ -1906,7 +1906,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
         ),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
+        padding: const EdgeInsets.all(AppSpacing.md),
         child: sortedProfiles.isEmpty
             ? _EmptyStateBlock(
                 title: l10n.homeSavedServersEmptyTitle,
@@ -1992,7 +1992,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
       title: l10n.homeRecentActivityTitle,
       subtitle: l10n.homeRecentActivitySubtitle,
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
+        padding: const EdgeInsets.all(AppSpacing.md),
         child: _recentConnections.isEmpty
             ? _EmptyStateBlock(
                 title: l10n.homeRecentActivityEmptyTitle,

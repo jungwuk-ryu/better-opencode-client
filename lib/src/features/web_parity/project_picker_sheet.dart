@@ -173,10 +173,10 @@ class _ProjectPickerSheetState extends State<ProjectPickerSheet> {
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(
-          AppSpacing.md,
-          AppSpacing.md,
-          AppSpacing.md,
-          AppSpacing.md,
+          AppSpacing.xs,
+          AppSpacing.xs,
+          AppSpacing.xs,
+          AppSpacing.xs,
         ),
         child: Center(
           child: ConstrainedBox(
@@ -189,7 +189,7 @@ class _ProjectPickerSheetState extends State<ProjectPickerSheet> {
                   : 0.95,
               borderOpacity: 0.08,
               padding: EdgeInsets.all(
-                compactShell ? AppSpacing.md : AppSpacing.lg,
+                compactShell ? AppSpacing.sm : AppSpacing.md,
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -226,7 +226,7 @@ class _ProjectPickerSheetState extends State<ProjectPickerSheet> {
                     ],
                   ),
                   SizedBox(
-                    height: compactShell ? AppSpacing.md : AppSpacing.lg,
+                    height: compactShell ? AppSpacing.sm : AppSpacing.md,
                   ),
                   Container(
                     padding: const EdgeInsets.all(AppSpacing.md),
@@ -283,7 +283,7 @@ class _ProjectPickerSheetState extends State<ProjectPickerSheet> {
                     ),
                   ),
                   SizedBox(
-                    height: compactShell ? AppSpacing.md : AppSpacing.lg,
+                    height: compactShell ? AppSpacing.sm : AppSpacing.md,
                   ),
                   if (_error != null)
                     Container(
@@ -360,7 +360,10 @@ class _ProjectTargetTile extends StatelessWidget {
             borderRadius: BorderRadius.circular(18),
             border: Border.all(color: surfaces.lineSoft),
           ),
-          padding: const EdgeInsets.all(AppSpacing.md),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.sm,
+            vertical: AppSpacing.sm,
+          ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[

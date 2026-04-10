@@ -235,10 +235,10 @@ class _WorkspaceGitSheetState extends State<WorkspaceGitSheet> {
           tone: AppSurfaceTone.accent,
           blur: 24,
           padding: const EdgeInsets.fromLTRB(
-            AppSpacing.md,
+            AppSpacing.sm,
+            AppSpacing.sm,
             AppSpacing.sm,
             AppSpacing.md,
-            AppSpacing.lg,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -253,7 +253,7 @@ class _WorkspaceGitSheetState extends State<WorkspaceGitSheet> {
                   ),
                 ),
               ),
-              const SizedBox(height: AppSpacing.md),
+              const SizedBox(height: AppSpacing.sm),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
@@ -305,7 +305,7 @@ class _WorkspaceGitSheetState extends State<WorkspaceGitSheet> {
                   ),
                 ],
               ),
-              const SizedBox(height: AppSpacing.md),
+              const SizedBox(height: AppSpacing.sm),
               if (_loading)
                 const Expanded(
                   child: Center(child: CircularProgressIndicator()),
@@ -334,10 +334,10 @@ class _WorkspaceGitSheetState extends State<WorkspaceGitSheet> {
                     children: <Widget>[
                       _RepoSummaryCard(snapshot: snapshot),
                       if (snapshot.pullRequest != null) ...<Widget>[
-                        const SizedBox(height: AppSpacing.md),
+                        const SizedBox(height: AppSpacing.sm),
                         _RepoPullRequestCard(summary: snapshot.pullRequest!),
                       ],
-                      const SizedBox(height: AppSpacing.md),
+                      const SizedBox(height: AppSpacing.sm),
                       _GitActionRow(
                         running: _runningAction,
                         onStageAll: snapshot.clean
@@ -377,7 +377,7 @@ class _WorkspaceGitSheetState extends State<WorkspaceGitSheet> {
                         ),
                         onBranches: _showBranchSheet,
                       ),
-                      const SizedBox(height: AppSpacing.md),
+                      const SizedBox(height: AppSpacing.sm),
                       Row(
                         children: <Widget>[
                           Expanded(
@@ -420,7 +420,7 @@ class _WorkspaceGitSheetState extends State<WorkspaceGitSheet> {
                         ...snapshot.changedFiles.map(
                           (file) => Padding(
                             padding: const EdgeInsets.only(
-                              bottom: AppSpacing.sm,
+                              bottom: AppSpacing.xs,
                             ),
                             child: _RepoChangedFileTile(
                               file: file,
@@ -915,7 +915,7 @@ class _GitEmptyState extends StatelessWidget {
                 color: theme.colorScheme.primary,
               ),
             ),
-            const SizedBox(height: AppSpacing.md),
+            const SizedBox(height: AppSpacing.sm),
             Text(
               message,
               style: theme.textTheme.bodyMedium?.copyWith(
@@ -924,7 +924,7 @@ class _GitEmptyState extends StatelessWidget {
               ),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: AppSpacing.md),
+            const SizedBox(height: AppSpacing.sm),
             FilledButton.tonalIcon(
               onPressed: onOpenTerminalFallback,
               icon: const Icon(Icons.terminal_rounded),
@@ -959,8 +959,8 @@ class _RepoBadge extends StatelessWidget {
         : theme.colorScheme.primary;
     return Container(
       padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: AppSpacing.xs,
+        horizontal: AppSpacing.xs,
+        vertical: AppSpacing.xxs,
       ),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.12),
@@ -988,8 +988,8 @@ class _RepoMeta extends StatelessWidget {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     return Container(
       padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: AppSpacing.xs,
+        horizontal: AppSpacing.xs,
+        vertical: AppSpacing.xxs,
       ),
       decoration: BoxDecoration(
         color: emphasized
@@ -1125,10 +1125,10 @@ class _BranchPickerSheetState extends State<_BranchPickerSheet> {
           radius: AppSpacing.sheetRadius,
           tone: AppSurfaceTone.accent,
           padding: const EdgeInsets.fromLTRB(
-            AppSpacing.md,
+            AppSpacing.sm,
+            AppSpacing.sm,
             AppSpacing.sm,
             AppSpacing.md,
-            AppSpacing.lg,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1143,7 +1143,7 @@ class _BranchPickerSheetState extends State<_BranchPickerSheet> {
                   ),
                 ),
               ),
-              const SizedBox(height: AppSpacing.md),
+              const SizedBox(height: AppSpacing.sm),
               Text(
                 context.wp('Branches'),
                 style: theme.textTheme.titleLarge?.copyWith(
@@ -1160,13 +1160,13 @@ class _BranchPickerSheetState extends State<_BranchPickerSheet> {
                   height: 1.45,
                 ),
               ),
-              const SizedBox(height: AppSpacing.md),
+              const SizedBox(height: AppSpacing.sm),
               Expanded(
                 child: ListView(
                   children: <Widget>[
                     ...widget.branches.map(
                       (branch) => Padding(
-                        padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                        padding: const EdgeInsets.only(bottom: AppSpacing.xs),
                         child: Container(
                           padding: const EdgeInsets.all(AppSpacing.sm),
                           decoration: appSoftCardDecoration(

@@ -108,7 +108,7 @@ class AppReleaseNotesDialog extends StatelessWidget {
                             padding: EdgeInsets.only(
                               bottom: highlight == notes.highlights.last
                                   ? 0
-                                  : sectionGap,
+                                  : (compact ? AppSpacing.sm : AppSpacing.md),
                             ),
                             child: _ReleaseHighlightCard(
                               highlight: highlight,

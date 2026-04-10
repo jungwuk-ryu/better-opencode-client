@@ -54,10 +54,10 @@ class WorkspaceProjectActionsSheet extends StatelessWidget {
             tone: AppSurfaceTone.accent,
             blur: 22,
             padding: const EdgeInsets.fromLTRB(
-              AppSpacing.md,
+              AppSpacing.sm,
+              AppSpacing.sm,
               AppSpacing.sm,
               AppSpacing.md,
-              AppSpacing.lg,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -74,7 +74,7 @@ class WorkspaceProjectActionsSheet extends StatelessWidget {
                     ),
                   ),
                 ),
-                const SizedBox(height: AppSpacing.md),
+                const SizedBox(height: AppSpacing.sm),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
@@ -115,7 +115,7 @@ class WorkspaceProjectActionsSheet extends StatelessWidget {
                     ),
                   ],
                 ),
-                const SizedBox(height: AppSpacing.md),
+                const SizedBox(height: AppSpacing.sm),
                 Expanded(
                   child: ListView(
                     children: <Widget>[
@@ -126,7 +126,7 @@ class WorkspaceProjectActionsSheet extends StatelessWidget {
                         status: status,
                       ),
                       if (serviceSnapshots.isNotEmpty) ...<Widget>[
-                        const SizedBox(height: AppSpacing.md),
+                        const SizedBox(height: AppSpacing.sm),
                         _ProjectActionsSectionTitle(
                           title: context.wp('Runtime'),
                           subtitle: context.wp(
@@ -137,14 +137,14 @@ class WorkspaceProjectActionsSheet extends StatelessWidget {
                         ...serviceSnapshots.map(
                           (snapshot) => Padding(
                             padding: const EdgeInsets.only(
-                              bottom: AppSpacing.sm,
+                              bottom: AppSpacing.xs,
                             ),
                             child: _ProjectServiceCard(snapshot: snapshot),
                           ),
                         ),
                       ],
                       for (final section in sections) ...<Widget>[
-                        const SizedBox(height: AppSpacing.md),
+                        const SizedBox(height: AppSpacing.sm),
                         _ProjectActionsSectionTitle(
                           title: section.title,
                           subtitle: section.subtitle,
@@ -153,7 +153,7 @@ class WorkspaceProjectActionsSheet extends StatelessWidget {
                         ...section.items.map(
                           (item) => Padding(
                             padding: const EdgeInsets.only(
-                              bottom: AppSpacing.sm,
+                              bottom: AppSpacing.xs,
                             ),
                             child: _ProjectActionTile(
                               item: item,
@@ -166,7 +166,7 @@ class WorkspaceProjectActionsSheet extends StatelessWidget {
                         ),
                       ],
                       if (recentLinks.isNotEmpty) ...<Widget>[
-                        const SizedBox(height: AppSpacing.md),
+                        const SizedBox(height: AppSpacing.sm),
                         _ProjectActionsSectionTitle(
                           title: context.wp('Recent Links'),
                           subtitle: context.wp(
@@ -177,7 +177,7 @@ class WorkspaceProjectActionsSheet extends StatelessWidget {
                         ...recentLinks.map(
                           (link) => Padding(
                             padding: const EdgeInsets.only(
-                              bottom: AppSpacing.sm,
+                              bottom: AppSpacing.xs,
                             ),
                             child: _ProjectLinkTile(
                               link: link,
@@ -190,7 +190,7 @@ class WorkspaceProjectActionsSheet extends StatelessWidget {
                         ),
                       ],
                       if (portPresets.isNotEmpty) ...<Widget>[
-                        const SizedBox(height: AppSpacing.md),
+                        const SizedBox(height: AppSpacing.sm),
                         _ProjectActionsSectionTitle(
                           title: context.wp('Port Presets'),
                           subtitle: context.wp(
@@ -201,7 +201,7 @@ class WorkspaceProjectActionsSheet extends StatelessWidget {
                         ...portPresets.map(
                           (preset) => Padding(
                             padding: const EdgeInsets.only(
-                              bottom: AppSpacing.sm,
+                              bottom: AppSpacing.xs,
                             ),
                             child: _PortPresetTile(
                               preset: preset,
@@ -246,7 +246,7 @@ class _ProjectActionsOverviewCard extends StatelessWidget {
     final sessionTitle = session?.title.trim() ?? '';
     final statusLabel = _statusLabel(context, status);
     return Container(
-      padding: const EdgeInsets.all(AppSpacing.md),
+      padding: const EdgeInsets.all(AppSpacing.sm),
       decoration: appSoftCardDecoration(
         context,
         radius: 24,
@@ -372,7 +372,7 @@ class _ProjectActionTile extends StatelessWidget {
         onTap: item.enabled ? onTap : null,
         borderRadius: BorderRadius.circular(20),
         child: Ink(
-          padding: const EdgeInsets.all(AppSpacing.md),
+          padding: const EdgeInsets.all(AppSpacing.sm),
           decoration: appSoftCardDecoration(
             context,
             radius: 20,
@@ -414,7 +414,7 @@ class _ProjectActionTile extends StatelessWidget {
                         if (item.badge?.trim().isNotEmpty == true)
                           Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: AppSpacing.sm,
+                              horizontal: AppSpacing.xs,
                               vertical: AppSpacing.xxs,
                             ),
                             decoration: BoxDecoration(
@@ -462,7 +462,7 @@ class _ProjectActionTile extends StatelessWidget {
                       Container(
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.sm,
+                          horizontal: AppSpacing.xs,
                           vertical: AppSpacing.sm,
                         ),
                         decoration: BoxDecoration(
@@ -507,7 +507,7 @@ class _ProjectServiceCard extends StatelessWidget {
       ProjectRuntimeTone.neutral => surfaces.muted,
     };
     return Container(
-      padding: const EdgeInsets.all(AppSpacing.md),
+      padding: const EdgeInsets.all(AppSpacing.sm),
       decoration: appSoftCardDecoration(
         context,
         radius: 20,
@@ -591,7 +591,7 @@ class _ProjectLinkTile extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(20),
         child: Ink(
-          padding: const EdgeInsets.all(AppSpacing.md),
+          padding: const EdgeInsets.all(AppSpacing.sm),
           decoration: appSoftCardDecoration(
             context,
             radius: 20,
@@ -605,8 +605,8 @@ class _ProjectLinkTile extends StatelessWidget {
                   final stacked = constraints.maxWidth < 360;
                   final sourceChip = Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.sm,
-                      vertical: AppSpacing.xs,
+                      horizontal: AppSpacing.xs,
+                      vertical: AppSpacing.xxs,
                     ),
                     decoration: BoxDecoration(
                       color: surfaces.panel.withValues(alpha: 0.8),
@@ -728,7 +728,7 @@ class _PortPresetTile extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(20),
         child: Ink(
-          padding: const EdgeInsets.all(AppSpacing.md),
+          padding: const EdgeInsets.all(AppSpacing.sm),
           decoration: appSoftCardDecoration(
             context,
             radius: 20,
@@ -812,8 +812,8 @@ class _OverviewChip extends StatelessWidget {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     return Container(
       padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: AppSpacing.xs,
+        horizontal: AppSpacing.xs,
+        vertical: AppSpacing.xxs,
       ),
       decoration: appSoftCardDecoration(
         context,
