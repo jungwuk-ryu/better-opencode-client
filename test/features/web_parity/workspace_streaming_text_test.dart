@@ -142,7 +142,68 @@ void main() {
         findsOneWidget,
       );
     },
+  );
 
+  testWidgets('thinking summary shows live delta updates', (tester) async {
+    tester.view.physicalSize = const Size(1480, 960);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    late _StreamingWorkspaceController controller;
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            controller = _StreamingWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+            return controller;
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    controller.pushReasoningPlaceholder();
+    await tester.pump();
+
+    controller.pushReasoningDelta('Reviewing ');
+    await tester.pump();
+
+    expect(
+      find.textContaining('Thinking Reviewing', findRichText: true),
+      findsOneWidget,
+    );
+
+    controller.pushReasoningDelta('the timeline');
+    await tester.pump();
+
+    expect(
+      find.textContaining(
+        'Thinking Reviewing the timeline',
+        findRichText: true,
+      ),
+      findsOneWidget,
+    );
+  });
 
   testWidgets(
     'long multiline streaming updates catch up immediately instead of rendering blank space',
@@ -358,6 +419,30 @@ class _StreamingWorkspaceController extends WorkspaceController {
         'type': 'text',
         'content': text,
       },
+    }, selectedSessionId: 'ses_1');
+    notifyListeners();
+  }
+
+  void pushReasoningPlaceholder() {
+    _messages = applyMessagePartUpdatedEvent(_messages, <String, Object?>{
+      'part': <String, Object?>{
+        'id': 'part_reasoning_stream',
+        'messageID': 'msg_reasoning_stream',
+        'sessionID': 'ses_1',
+        'type': 'reasoning',
+        'text': '',
+      },
+    }, selectedSessionId: 'ses_1');
+    notifyListeners();
+  }
+
+  void pushReasoningDelta(String delta) {
+    _messages = applyMessagePartDeltaEvent(_messages, <String, Object?>{
+      'sessionID': 'ses_1',
+      'messageID': 'msg_reasoning_stream',
+      'partID': 'part_reasoning_stream',
+      'field': 'text',
+      'delta': delta,
     }, selectedSessionId: 'ses_1');
     notifyListeners();
   }

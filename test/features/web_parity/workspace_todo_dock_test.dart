@@ -168,7 +168,62 @@ void main() {
   });
 
   testWidgets(
-    'compact activity bar overlays the timeline instead of taking layout space',
+    'compact to-do sheet shows the list directly without a collapse control',
+    (tester) async {
+      tester.view.physicalSize = const Size(430, 932);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final workspaceController = _TodoDockWorkspaceController(
+        profile: profile,
+        directory: '/workspace/demo',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceController: workspaceController,
+      );
+      addTearDown(appController.dispose);
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          initialRoute: buildWorkspaceRoute(
+            '/workspace/demo',
+            sessionId: 'ses_1',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('compact-session-todos-button')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      expect(find.text('0 of 2 todos completed'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('session-todo-list')),
+        findsOneWidget,
+      );
+      expect(find.text('Planning session gap list'), findsOneWidget);
+      expect(find.text('Append acceptance criteria'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('session-todo-toggle-button')),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
+    'compact activity bar sits below the timeline instead of overlaying it',
     (tester) async {
       tester.view.physicalSize = const Size(430, 932);
       tester.view.devicePixelRatio = 1;
@@ -207,7 +262,8 @@ void main() {
       );
       final timelineRect = tester.getRect(_messageTimelineListFinder());
 
-      expect(timelineRect.overlaps(activityBarRect), isTrue);
+      expect(timelineRect.overlaps(activityBarRect), isFalse);
+      expect(timelineRect.bottom, lessThanOrEqualTo(activityBarRect.top));
     },
   );
 }

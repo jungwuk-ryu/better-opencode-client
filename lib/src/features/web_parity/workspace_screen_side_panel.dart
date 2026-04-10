@@ -8,94 +8,246 @@ class _SidePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
     final tab = controller.sideTab;
     final bundle = controller.fileBundle;
     final density = _workspaceDensity(context);
     final panelPadding = density.inset(AppSpacing.md, min: AppSpacing.sm);
+    final compact = density.compact;
+    final selectedTitle = switch (tab) {
+      WorkspaceSideTab.review => context.wp('Review canvas'),
+      WorkspaceSideTab.files => context.wp('Files canvas'),
+      WorkspaceSideTab.context => context.wp('Context canvas'),
+    };
+    final selectedSubtitle = switch (tab) {
+      WorkspaceSideTab.review => context.wp('Git diffs and review comments'),
+      WorkspaceSideTab.files => context.wp('File tree and preview'),
+      WorkspaceSideTab.context => context.wp(
+        'Context metrics and raw messages',
+      ),
+    };
     final reviewCount = controller.reviewStatuses.length;
     final fileCount = bundle?.nodes.length ?? 0;
     final contextUsage = controller.sessionContextMetrics.context?.usagePercent;
     final messageCount = controller.messages.length;
-    return Column(
-      children: <Widget>[
-        Padding(
-          padding: EdgeInsets.all(panelPadding),
-          child: _WorkspaceSideTabSwitcher(
-            selectedTab: tab,
-            items: <_WorkspaceSideTabItem>[
-              _WorkspaceSideTabItem(
-                tab: WorkspaceSideTab.review,
-                icon: Icons.rate_review_rounded,
-                title: context.wp('Review'),
-                subtitle: context.wp(reviewCount > 0 ? 'Diffs' : 'No changes'),
-                badge: reviewCount > 0 ? '$reviewCount' : null,
-              ),
-              _WorkspaceSideTabItem(
-                tab: WorkspaceSideTab.files,
-                icon: Icons.folder_copy_rounded,
-                title: context.wp('Files'),
-                subtitle: context.wp('Browse'),
-                badge: fileCount > 0 ? '$fileCount' : null,
-              ),
-              _WorkspaceSideTabItem(
-                tab: WorkspaceSideTab.context,
-                icon: Icons.tune_rounded,
-                title: context.wp('Context'),
-                subtitle: context.wp(
-                  contextUsage != null ? 'Tokens' : 'Session',
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Color.alphaBlend(
+          Colors.black.withValues(alpha: compact ? 0.08 : 0.12),
+          surfaces.background.withValues(alpha: compact ? 0.98 : 0.985),
+        ),
+        border: Border(
+          left: BorderSide(color: surfaces.lineSoft.withValues(alpha: 0.82)),
+        ),
+      ),
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          panelPadding,
+          panelPadding,
+          panelPadding,
+          panelPadding,
+        ),
+        child: Column(
+          children: <Widget>[
+            _WorkspaceSidePanelToolbar(
+              title: selectedTitle,
+              subtitle: selectedSubtitle,
+              accentCount: switch (tab) {
+                WorkspaceSideTab.review => reviewCount,
+                WorkspaceSideTab.files => fileCount,
+                WorkspaceSideTab.context =>
+                  contextUsage != null
+                      ? contextUsage.clamp(0, 999)
+                      : messageCount,
+              },
+              accentLabel: switch (tab) {
+                WorkspaceSideTab.review => context.wp('Diffs'),
+                WorkspaceSideTab.files => context.wp('Files'),
+                WorkspaceSideTab.context => context.wp('Context'),
+              },
+            ),
+            SizedBox(height: density.inset(AppSpacing.sm, min: 6)),
+            _WorkspaceSideTabSwitcher(
+              selectedTab: tab,
+              items: <_WorkspaceSideTabItem>[
+                _WorkspaceSideTabItem(
+                  tab: WorkspaceSideTab.review,
+                  icon: Icons.rate_review_rounded,
+                  title: context.wp('Review'),
+                  subtitle: context.wp(
+                    reviewCount > 0 ? 'Diffs' : 'No changes',
+                  ),
+                  badge: reviewCount > 0 ? '$reviewCount' : null,
                 ),
-                badge: contextUsage != null
-                    ? '${contextUsage.clamp(0, 999)}%'
-                    : (messageCount > 0 ? '$messageCount' : null),
+                _WorkspaceSideTabItem(
+                  tab: WorkspaceSideTab.files,
+                  icon: Icons.folder_copy_rounded,
+                  title: context.wp('Files'),
+                  subtitle: context.wp('Browse'),
+                  badge: fileCount > 0 ? '$fileCount' : null,
+                ),
+                _WorkspaceSideTabItem(
+                  tab: WorkspaceSideTab.context,
+                  icon: Icons.tune_rounded,
+                  title: context.wp('Context'),
+                  subtitle: context.wp(
+                    contextUsage != null ? 'Tokens' : 'Session',
+                  ),
+                  badge: contextUsage != null
+                      ? '${contextUsage.clamp(0, 999)}%'
+                      : (messageCount > 0 ? '$messageCount' : null),
+                ),
+              ],
+              onChanged: controller.setSideTab,
+            ),
+            SizedBox(height: density.inset(AppSpacing.sm, min: 6)),
+            Expanded(
+              child: DecoratedBox(
+                decoration: _workspaceSideCanvasDecoration(
+                  theme: Theme.of(context),
+                  surfaces: surfaces,
+                  compact: compact,
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(compact ? 18 : 20),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: switch (tab) {
+                      WorkspaceSideTab.review => _ReviewPanel(
+                        project: controller.project,
+                        configSnapshot: controller.configSnapshot,
+                        statuses: controller.reviewStatuses,
+                        selectedPath: controller.selectedReviewPath,
+                        diff: controller.reviewDiff,
+                        loadingDiff: controller.loadingReviewDiff,
+                        diffError: controller.reviewDiffError,
+                        initializingGitRepository:
+                            controller.initializingGitRepository,
+                        onInitializeGitRepository: () {
+                          unawaited(controller.initializeGitRepository());
+                        },
+                        onLineComment: onLineComment,
+                        onSelectFile: (path) {
+                          unawaited(controller.selectReviewFile(path));
+                        },
+                      ),
+                      WorkspaceSideTab.files => _FilesPanel(
+                        bundle: controller.fileBundle,
+                        loadingFiles: controller.loadingFilesPanel,
+                        loadingPreview: controller.loadingFilePreview,
+                        expandedDirectories: controller.expandedFileDirectories,
+                        loadingDirectoryPath:
+                            controller.loadingFileDirectoryPath,
+                        onSelectFile: (path) {
+                          unawaited(controller.selectFile(path));
+                        },
+                        onToggleDirectory: (path) {
+                          unawaited(controller.toggleFileDirectory(path));
+                        },
+                      ),
+                      WorkspaceSideTab.context => _ContextPanel(
+                        session: controller.selectedSession,
+                        messages: controller.messages,
+                        metrics: controller.sessionContextMetrics,
+                        systemPrompt: controller.sessionSystemPrompt,
+                        breakdown: controller.sessionContextBreakdown,
+                        userMessageCount: controller.userMessageCount,
+                        assistantMessageCount: controller.assistantMessageCount,
+                      ),
+                    },
+                  ),
+                ),
               ),
-            ],
-            onChanged: controller.setSideTab,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WorkspaceSidePanelToolbar extends StatelessWidget {
+  const _WorkspaceSidePanelToolbar({
+    required this.title,
+    required this.subtitle,
+    required this.accentCount,
+    required this.accentLabel,
+  });
+
+  final String title;
+  final String subtitle;
+  final num accentCount;
+  final String accentLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final density = _workspaceDensity(context);
+    final compact = density.compact;
+    return Container(
+      padding: EdgeInsets.all(density.inset(compact ? 10 : 12, min: 8)),
+      decoration: BoxDecoration(
+        color: Color.alphaBlend(
+          Colors.black.withValues(alpha: compact ? 0.04 : 0.06),
+          surfaces.panelMuted.withValues(alpha: compact ? 0.84 : 0.88),
+        ),
+        borderRadius: BorderRadius.circular(compact ? 16 : 18),
+        border: Border.all(color: surfaces.lineSoft.withValues(alpha: 0.82)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: surfaces.muted,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-        Expanded(
-          child: switch (tab) {
-            WorkspaceSideTab.review => _ReviewPanel(
-              project: controller.project,
-              configSnapshot: controller.configSnapshot,
-              statuses: controller.reviewStatuses,
-              selectedPath: controller.selectedReviewPath,
-              diff: controller.reviewDiff,
-              loadingDiff: controller.loadingReviewDiff,
-              diffError: controller.reviewDiffError,
-              initializingGitRepository: controller.initializingGitRepository,
-              onInitializeGitRepository: () {
-                unawaited(controller.initializeGitRepository());
-              },
-              onLineComment: onLineComment,
-              onSelectFile: (path) {
-                unawaited(controller.selectReviewFile(path));
-              },
-            ),
-            WorkspaceSideTab.files => _FilesPanel(
-              bundle: controller.fileBundle,
-              loadingFiles: controller.loadingFilesPanel,
-              loadingPreview: controller.loadingFilePreview,
-              expandedDirectories: controller.expandedFileDirectories,
-              loadingDirectoryPath: controller.loadingFileDirectoryPath,
-              onSelectFile: (path) {
-                unawaited(controller.selectFile(path));
-              },
-              onToggleDirectory: (path) {
-                unawaited(controller.toggleFileDirectory(path));
-              },
-            ),
-            WorkspaceSideTab.context => _ContextPanel(
-              session: controller.selectedSession,
-              messages: controller.messages,
-              metrics: controller.sessionContextMetrics,
-              systemPrompt: controller.sessionSystemPrompt,
-              breakdown: controller.sessionContextBreakdown,
-              userMessageCount: controller.userMessageCount,
-              assistantMessageCount: controller.assistantMessageCount,
-            ),
-          },
-        ),
-      ],
+          const SizedBox(width: AppSpacing.sm),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: <Widget>[
+              _WorkspaceSideBadge(
+                label: '$accentCount',
+                tint: theme.colorScheme.primary,
+                emphasized: true,
+              ),
+              if (!compact) ...<Widget>[
+                const SizedBox(height: 4),
+                Text(
+                  accentLabel,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: surfaces.muted,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -129,36 +281,19 @@ class _WorkspaceSideTabSwitcher extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
-    final switcherPadding = density.inset(6, min: 4);
+    final switcherPadding = density.inset(density.compact ? 6 : 8, min: 4);
     final compact = density.compact;
     return Container(
       key: const ValueKey<String>('workspace-side-tab-switcher'),
       padding: EdgeInsets.all(switcherPadding),
-      decoration: BoxDecoration(
-        color: compact ? surfaces.panelRaised.withValues(alpha: 0.96) : null,
-        gradient: compact
-            ? null
-            : LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: <Color>[
-                  surfaces.panelMuted.withValues(alpha: 0.88),
-                  surfaces.panelRaised.withValues(alpha: 0.97),
-                ],
-              ),
-        borderRadius: BorderRadius.circular(compact ? 18 : 22),
-        border: Border.all(color: surfaces.lineSoft),
-        boxShadow: compact
-            ? const <BoxShadow>[]
-            : <BoxShadow>[
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.16),
-                  blurRadius: 20,
-                  offset: const Offset(0, 10),
-                ),
-              ],
+      decoration: _workspaceSidePanelDecoration(
+        surfaces: surfaces,
+        compact: compact,
+        elevated: false,
+        tint: theme.colorScheme.primary,
       ),
       child: Row(
         children: <Widget>[
@@ -223,43 +358,26 @@ class _WorkspaceSideTabButton extends StatelessWidget {
             density.inset(compact ? 10 : AppSpacing.sm, min: 8),
           ),
           decoration: BoxDecoration(
-            color: compact
-                ? (selected
-                      ? accent.withValues(alpha: 0.14)
-                      : Colors.transparent)
-                : null,
-            gradient: compact
-                ? null
-                : LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: selected
-                        ? <Color>[
-                            accent.withValues(alpha: 0.18),
-                            accent.withValues(alpha: 0.07),
-                          ]
-                        : <Color>[
-                            surfaces.panelRaised.withValues(alpha: 0.94),
-                            surfaces.panel.withValues(alpha: 0.72),
-                          ],
+            color: selected
+                ? Color.alphaBlend(
+                    accent.withValues(alpha: compact ? 0.09 : 0.08),
+                    surfaces.background.withValues(
+                      alpha: compact ? 0.94 : 0.96,
+                    ),
+                  )
+                : Color.alphaBlend(
+                    Colors.black.withValues(alpha: compact ? 0.02 : 0.04),
+                    surfaces.panelMuted.withValues(
+                      alpha: compact ? 0.55 : 0.62,
+                    ),
                   ),
             borderRadius: BorderRadius.circular(compact ? 14 : 18),
             border: Border.all(
               color: selected
-                  ? accent.withValues(alpha: compact ? 0.22 : 0.34)
-                  : (compact
-                        ? Colors.transparent
-                        : Colors.white.withValues(alpha: 0.04)),
+                  ? accent.withValues(alpha: compact ? 0.22 : 0.24)
+                  : surfaces.lineSoft.withValues(alpha: 0.72),
             ),
-            boxShadow: selected && !compact
-                ? <BoxShadow>[
-                    BoxShadow(
-                      color: accent.withValues(alpha: 0.14),
-                      blurRadius: 18,
-                      offset: const Offset(0, 10),
-                    ),
-                  ]
-                : const <BoxShadow>[],
+            boxShadow: const <BoxShadow>[],
           ),
           child: compact
               ? Row(
@@ -268,7 +386,7 @@ class _WorkspaceSideTabButton extends StatelessWidget {
                       width: density.inset(24, min: 22),
                       height: density.inset(24, min: 22),
                       decoration: BoxDecoration(
-                        color: accent.withValues(alpha: selected ? 0.16 : 0.1),
+                        color: accent.withValues(alpha: selected ? 0.12 : 0.08),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Icon(item.icon, size: 14, color: accent),
@@ -287,28 +405,10 @@ class _WorkspaceSideTabButton extends StatelessWidget {
                     ),
                     if (item.badge != null) ...<Widget>[
                       const SizedBox(width: AppSpacing.xs),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.xs,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: selected
-                              ? accent.withValues(alpha: 0.14)
-                              : surfaces.panelEmphasis.withValues(alpha: 0.5),
-                          borderRadius: BorderRadius.circular(
-                            AppSpacing.pillRadius,
-                          ),
-                        ),
-                        child: Text(
-                          item.badge!,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: selected ? accent : surfaces.muted,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
+                      _WorkspaceSideBadge(
+                        label: item.badge!,
+                        tint: accent,
+                        emphasized: selected,
                       ),
                     ],
                   ],
@@ -323,12 +423,12 @@ class _WorkspaceSideTabButton extends StatelessWidget {
                           height: density.inset(28, min: 24),
                           decoration: BoxDecoration(
                             color: accent.withValues(
-                              alpha: selected ? 0.18 : 0.12,
+                              alpha: selected ? 0.14 : 0.09,
                             ),
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(
                               color: accent.withValues(
-                                alpha: selected ? 0.3 : 0.18,
+                                alpha: selected ? 0.26 : 0.16,
                               ),
                             ),
                           ),
@@ -342,38 +442,10 @@ class _WorkspaceSideTabButton extends StatelessWidget {
                                 ? const SizedBox.shrink()
                                 : FittedBox(
                                     fit: BoxFit.scaleDown,
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: AppSpacing.xs,
-                                        vertical: 4,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: selected
-                                            ? accent.withValues(alpha: 0.16)
-                                            : surfaces.panelEmphasis.withValues(
-                                                alpha: 0.58,
-                                              ),
-                                        borderRadius: BorderRadius.circular(
-                                          AppSpacing.pillRadius,
-                                        ),
-                                        border: Border.all(
-                                          color: selected
-                                              ? accent.withValues(alpha: 0.28)
-                                              : surfaces.lineSoft,
-                                        ),
-                                      ),
-                                      child: Text(
-                                        item.badge!,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: theme.textTheme.labelSmall
-                                            ?.copyWith(
-                                              color: selected
-                                                  ? accent
-                                                  : surfaces.muted,
-                                              fontWeight: FontWeight.w800,
-                                            ),
-                                      ),
+                                    child: _WorkspaceSideBadge(
+                                      label: item.badge!,
+                                      tint: accent,
+                                      emphasized: selected,
                                     ),
                                   ),
                           ),
@@ -421,6 +493,281 @@ Color _workspaceSideTabAccent(
     WorkspaceSideTab.files => theme.colorScheme.primary,
     WorkspaceSideTab.context => surfaces.success,
   };
+}
+
+BoxDecoration _workspaceSidePanelDecoration({
+  required AppSurfaces surfaces,
+  required bool compact,
+  Color? tint,
+  bool elevated = false,
+}) {
+  final fill = Color.alphaBlend(
+    Colors.black.withValues(alpha: compact ? 0.04 : 0.06),
+    Color.alphaBlend(
+      (tint ?? Colors.white).withValues(alpha: compact ? 0.02 : 0.03),
+      surfaces.background.withValues(alpha: compact ? 0.94 : 0.96),
+    ),
+  );
+  return BoxDecoration(
+    color: fill,
+    borderRadius: BorderRadius.circular(compact ? 16 : 20),
+    border: Border.all(color: surfaces.lineSoft.withValues(alpha: 0.8)),
+    boxShadow: elevated
+        ? <BoxShadow>[
+            BoxShadow(
+              color: Colors.black.withValues(alpha: compact ? 0.04 : 0.06),
+              blurRadius: compact ? 12 : 18,
+              offset: Offset(0, compact ? 6 : 10),
+              spreadRadius: compact ? -8 : -10,
+            ),
+          ]
+        : const <BoxShadow>[],
+  );
+}
+
+BoxDecoration _workspaceSideSelectionDecoration({
+  required ThemeData theme,
+  required AppSurfaces surfaces,
+  required bool compact,
+  Color? accent,
+}) {
+  final resolvedAccent = accent ?? theme.colorScheme.primary;
+  return BoxDecoration(
+    color: Color.alphaBlend(
+      resolvedAccent.withValues(alpha: compact ? 0.08 : 0.07),
+      surfaces.background.withValues(alpha: compact ? 0.94 : 0.96),
+    ),
+    borderRadius: BorderRadius.circular(compact ? 16 : 18),
+    border: Border.all(color: resolvedAccent.withValues(alpha: 0.18)),
+    boxShadow: const <BoxShadow>[],
+  );
+}
+
+BoxDecoration _workspaceSideCanvasDecoration({
+  required ThemeData theme,
+  required AppSurfaces surfaces,
+  required bool compact,
+}) {
+  final accent = theme.colorScheme.primary;
+  return BoxDecoration(
+    color: Color.alphaBlend(
+      Colors.black.withValues(alpha: compact ? 0.05 : 0.07),
+      Color.alphaBlend(
+        accent.withValues(alpha: compact ? 0.025 : 0.03),
+        surfaces.panelMuted.withValues(alpha: compact ? 0.8 : 0.84),
+      ),
+    ),
+    borderRadius: BorderRadius.circular(compact ? 18 : 22),
+    border: Border.all(color: surfaces.lineSoft.withValues(alpha: 0.76)),
+  );
+}
+
+class _WorkspaceSideSectionHeader extends StatelessWidget {
+  const _WorkspaceSideSectionHeader({
+    required this.title,
+    this.caption,
+    this.trailing,
+    this.dense = false,
+  });
+
+  final String title;
+  final String? caption;
+  final Widget? trailing;
+  final bool dense;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final density = _workspaceDensity(context);
+    final horizontal = density.inset(dense ? AppSpacing.sm : AppSpacing.md);
+    final vertical = density.inset(
+      dense ? AppSpacing.xs : AppSpacing.sm,
+      min: 6,
+    );
+    return Padding(
+      padding: EdgeInsets.fromLTRB(horizontal, vertical, horizontal, 0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  title,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+                if (caption != null) ...<Widget>[
+                  const SizedBox(height: 2),
+                  Text(
+                    caption!,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: surfaces.muted,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (trailing != null) ...<Widget>[
+            const SizedBox(width: AppSpacing.sm),
+            trailing!,
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _WorkspaceSideBadge extends StatelessWidget {
+  const _WorkspaceSideBadge({
+    required this.label,
+    this.tint,
+    this.emphasized = false,
+  });
+
+  final String label;
+  final Color? tint;
+  final bool emphasized;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final density = _workspaceDensity(context);
+    final resolvedTint = tint ?? surfaces.muted;
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: density.inset(AppSpacing.xs, min: 8),
+        vertical: emphasized ? 5 : 4,
+      ),
+      decoration: BoxDecoration(
+        color: emphasized
+            ? resolvedTint.withValues(alpha: 0.11)
+            : Color.alphaBlend(
+                Colors.black.withValues(alpha: 0.03),
+                surfaces.panelEmphasis.withValues(alpha: 0.58),
+              ),
+        borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
+        border: Border.all(
+          color: emphasized
+              ? resolvedTint.withValues(alpha: 0.2)
+              : surfaces.lineSoft.withValues(alpha: 0.82),
+        ),
+      ),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: emphasized ? resolvedTint : surfaces.muted,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.1,
+        ),
+      ),
+    );
+  }
+}
+
+class _WorkspaceSideEmptyState extends StatelessWidget {
+  const _WorkspaceSideEmptyState({
+    required this.icon,
+    required this.title,
+    required this.message,
+    this.action,
+    this.tint,
+    this.titleKey,
+    this.messageKey,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+  final Widget? action;
+  final Color? tint;
+  final Key? titleKey;
+  final Key? messageKey;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final density = _workspaceDensity(context);
+    final compact = density.compact;
+    final resolvedTint = tint ?? theme.colorScheme.primary;
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 440),
+        child: Container(
+          margin: EdgeInsets.all(
+            density.inset(AppSpacing.lg, min: AppSpacing.md),
+          ),
+          padding: EdgeInsets.all(
+            density.inset(compact ? AppSpacing.md : AppSpacing.lg),
+          ),
+          decoration: _workspaceSidePanelDecoration(
+            surfaces: surfaces,
+            compact: compact,
+            elevated: true,
+            tint: resolvedTint,
+          ),
+          child: SingleChildScrollView(
+            physics: const ClampingScrollPhysics(),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Container(
+                  width: density.inset(compact ? 48 : 56, min: 46),
+                  height: density.inset(compact ? 48 : 56, min: 46),
+                  decoration: BoxDecoration(
+                    color: resolvedTint.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(compact ? 16 : 18),
+                    border: Border.all(
+                      color: resolvedTint.withValues(alpha: 0.18),
+                    ),
+                  ),
+                  child: Icon(
+                    icon,
+                    size: compact ? 24 : 28,
+                    color: resolvedTint,
+                  ),
+                ),
+                SizedBox(height: density.inset(AppSpacing.sm)),
+                Text(
+                  title,
+                  key: titleKey,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+                SizedBox(height: density.inset(AppSpacing.xs)),
+                Text(
+                  message,
+                  key: messageKey,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: surfaces.muted,
+                    height: 1.45,
+                  ),
+                ),
+                if (action != null) ...<Widget>[
+                  SizedBox(height: density.inset(AppSpacing.md)),
+                  action!,
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _ReviewPanel extends StatefulWidget {
@@ -587,128 +934,77 @@ class _ReviewPanelState extends State<_ReviewPanel> {
         widget.configSnapshot?.snapshotTrackingEnabled == false;
     if (widget.statuses.isEmpty) {
       if (!hasGitRepository) {
-        return Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: Padding(
-              padding: EdgeInsets.all(density.inset(AppSpacing.lg)),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Icon(
-                    Icons.source_rounded,
-                    size: 30,
-                    color: theme.colorScheme.primary,
-                  ),
-                  SizedBox(height: density.inset(AppSpacing.sm)),
-                  Text(
-                    context.wp('Create a Git repository'),
-                    key: const ValueKey<String>('review-no-vcs-title'),
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  SizedBox(height: density.inset(AppSpacing.xs)),
-                  Text(
-                    context.wp(
-                      'Initialize Git for this project to unlock review diffs and tracked file changes.',
-                    ),
-                    key: const ValueKey<String>('review-no-vcs-message'),
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: surfaces.muted,
-                    ),
-                  ),
-                  SizedBox(height: density.inset(AppSpacing.md)),
-                  FilledButton.icon(
-                    key: const ValueKey<String>('review-init-git-button'),
-                    onPressed: widget.initializingGitRepository
-                        ? null
-                        : widget.onInitializeGitRepository,
-                    icon: widget.initializingGitRepository
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.add_link_rounded),
-                    label: Text(
-                      widget.initializingGitRepository
-                          ? context.wp('Creating repository...')
-                          : context.wp('Create Git repository'),
-                    ),
-                  ),
-                ],
-              ),
+        return _WorkspaceSideEmptyState(
+          icon: Icons.source_rounded,
+          title: context.wp('Create a Git repository'),
+          message: context.wp(
+            'Initialize Git for this project to unlock review diffs and tracked file changes.',
+          ),
+          tint: theme.colorScheme.primary,
+          titleKey: const ValueKey<String>('review-no-vcs-title'),
+          messageKey: const ValueKey<String>('review-no-vcs-message'),
+          action: FilledButton.icon(
+            key: const ValueKey<String>('review-init-git-button'),
+            onPressed: widget.initializingGitRepository
+                ? null
+                : widget.onInitializeGitRepository,
+            icon: widget.initializingGitRepository
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.add_link_rounded),
+            label: Text(
+              widget.initializingGitRepository
+                  ? context.wp('Creating repository...')
+                  : context.wp('Create Git repository'),
             ),
           ),
         );
       }
       if (snapshotTrackingDisabled) {
-        return Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: Padding(
-              padding: EdgeInsets.all(density.inset(AppSpacing.lg)),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Icon(
-                    Icons.history_toggle_off_rounded,
-                    size: 30,
-                    color: surfaces.warning,
-                  ),
-                  SizedBox(height: density.inset(AppSpacing.sm)),
-                  Text(
-                    context.wp('Snapshot tracking is disabled'),
-                    key: const ValueKey<String>('review-no-snapshot-title'),
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  SizedBox(height: density.inset(AppSpacing.xs)),
-                  Text(
-                    context.wp(
-                      'Snapshot tracking is disabled in config, so session changes are unavailable.',
-                    ),
-                    key: const ValueKey<String>('review-no-snapshot-message'),
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: surfaces.muted,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+        return _WorkspaceSideEmptyState(
+          icon: Icons.history_toggle_off_rounded,
+          title: context.wp('Snapshot tracking is disabled'),
+          message: context.wp(
+            'Snapshot tracking is disabled in config, so session changes are unavailable.',
           ),
+          tint: surfaces.warning,
+          titleKey: const ValueKey<String>('review-no-snapshot-title'),
+          messageKey: const ValueKey<String>('review-no-snapshot-message'),
         );
       }
       if (widget.loadingDiff) {
         return const Center(child: CircularProgressIndicator());
       }
       if (widget.diffError != null) {
-        return Center(
-          child: Text(
-            widget.diffError!,
-            textAlign: TextAlign.center,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
-          ),
+        return _WorkspaceSideEmptyState(
+          icon: Icons.error_outline_rounded,
+          title: context.wp('Review is unavailable'),
+          message: widget.diffError!,
+          tint: surfaces.danger,
         );
       }
-      return Center(
-        child: Text(
-          context.wp('No file changes yet.'),
-          style: Theme.of(
-            context,
-          ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
+      return _WorkspaceSideEmptyState(
+        icon: Icons.check_circle_outline_rounded,
+        title: context.wp('No file changes yet.'),
+        message: context.wp(
+          'Tracked file changes will appear here once the session edits your workspace.',
         ),
+        tint: surfaces.success,
       );
     }
     final hasPreview = widget.selectedPath != null;
+    FileStatusSummary? selectedItem;
+    if (hasPreview) {
+      for (final status in widget.statuses) {
+        if (status.path == widget.selectedPath) {
+          selectedItem = status;
+          break;
+        }
+      }
+    }
     return LayoutBuilder(
       builder: (context, constraints) {
         final availableHeight = constraints.maxHeight.isFinite
@@ -729,73 +1025,153 @@ class _ReviewPanelState extends State<_ReviewPanel> {
         return Column(
           children: <Widget>[
             Expanded(
-              child: ListView.separated(
-                padding: EdgeInsets.all(density.inset(AppSpacing.md)),
-                itemCount: widget.statuses.length,
-                separatorBuilder: (_, _) =>
-                    SizedBox(height: density.inset(AppSpacing.xs, min: 4)),
-                itemBuilder: (context, index) {
-                  final item = widget.statuses[index];
-                  final statusColor = _reviewStatusColor(item.status, surfaces);
-                  final addedColor = item.added > 0
-                      ? surfaces.success
-                      : surfaces.muted;
-                  final removedColor = item.removed > 0
-                      ? surfaces.danger
-                      : surfaces.muted;
-                  final selected = item.path == widget.selectedPath;
-                  return ListTile(
-                    selected: selected,
-                    tileColor: selected
-                        ? theme.colorScheme.primary.withValues(alpha: 0.12)
-                        : null,
-                    leading: Icon(
-                      _reviewStatusIcon(item.status),
-                      color: statusColor,
-                      size: 18,
+              child: Column(
+                children: <Widget>[
+                  _WorkspaceSideSectionHeader(
+                    title: context.wp('Changed files'),
+                    caption: hasPreview
+                        ? context.wp(
+                            '{count} files tracked. Preview stays pinned below while you switch between entries.',
+                            args: <String, Object?>{
+                              'count': widget.statuses.length,
+                            },
+                          )
+                        : context.wp(
+                            '{count} files tracked. Select one to open its diff preview.',
+                            args: <String, Object?>{
+                              'count': widget.statuses.length,
+                            },
+                          ),
+                    trailing: _WorkspaceSideBadge(
+                      label: '${widget.statuses.length}',
+                      tint: surfaces.warning,
+                      emphasized: true,
                     ),
-                    title: Text(
-                      item.path,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
+                  ),
+                  Expanded(
+                    child: ListView.separated(
+                      padding: EdgeInsets.all(density.inset(AppSpacing.md)),
+                      itemCount: widget.statuses.length,
+                      separatorBuilder: (_, _) => SizedBox(
+                        height: density.inset(AppSpacing.xs, min: 6),
                       ),
+                      itemBuilder: (context, index) {
+                        final item = widget.statuses[index];
+                        final statusColor = _reviewStatusColor(
+                          item.status,
+                          surfaces,
+                        );
+                        final addedColor = item.added > 0
+                            ? surfaces.success
+                            : surfaces.muted;
+                        final removedColor = item.removed > 0
+                            ? surfaces.danger
+                            : surfaces.muted;
+                        final selected = item.path == widget.selectedPath;
+                        return AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          curve: Curves.easeOutCubic,
+                          decoration: selected
+                              ? _workspaceSideSelectionDecoration(
+                                  theme: theme,
+                                  surfaces: surfaces,
+                                  compact: density.compact,
+                                  accent: statusColor,
+                                )
+                              : _workspaceSidePanelDecoration(
+                                  surfaces: surfaces,
+                                  compact: density.compact,
+                                  tint: statusColor,
+                                ),
+                          child: ListTile(
+                            dense: density.compact,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(
+                                density.compact ? 16 : 18,
+                              ),
+                            ),
+                            contentPadding: EdgeInsets.symmetric(
+                              horizontal: density.inset(AppSpacing.sm, min: 10),
+                              vertical: density.inset(AppSpacing.xs, min: 2),
+                            ),
+                            leading: Container(
+                              width: density.inset(34, min: 30),
+                              height: density.inset(34, min: 30),
+                              decoration: BoxDecoration(
+                                color: statusColor.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: statusColor.withValues(alpha: 0.18),
+                                ),
+                              ),
+                              child: Icon(
+                                _reviewStatusIcon(item.status),
+                                color: statusColor,
+                                size: 18,
+                              ),
+                            ),
+                            title: Text(
+                              item.path,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            subtitle: Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Text.rich(
+                                key: ValueKey<String>(
+                                  'review-status-${item.path}',
+                                ),
+                                TextSpan(
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: surfaces.muted,
+                                  ),
+                                  children: <InlineSpan>[
+                                    TextSpan(
+                                      text: item.status,
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                            color: statusColor,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
+                                    const TextSpan(text: '  •  '),
+                                    TextSpan(
+                                      text: '+${item.added}',
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                            color: addedColor,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
+                                    const TextSpan(text: '  '),
+                                    TextSpan(
+                                      text: '-${item.removed}',
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                            color: removedColor,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            trailing: selected
+                                ? Icon(
+                                    Icons.chevron_right_rounded,
+                                    color: statusColor,
+                                  )
+                                : null,
+                            onTap: () => widget.onSelectFile(item.path),
+                          ),
+                        );
+                      },
                     ),
-                    subtitle: Text.rich(
-                      key: ValueKey<String>('review-status-${item.path}'),
-                      TextSpan(
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: surfaces.muted,
-                        ),
-                        children: <InlineSpan>[
-                          TextSpan(
-                            text: item.status,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: statusColor,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const TextSpan(text: '  •  '),
-                          TextSpan(
-                            text: '+${item.added}',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: addedColor,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const TextSpan(text: '  '),
-                          TextSpan(
-                            text: '-${item.removed}',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: removedColor,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    onTap: () => widget.onSelectFile(item.path),
-                  );
-                },
+                  ),
+                ],
               ),
             ),
             if (hasPreview)
@@ -803,8 +1179,17 @@ class _ReviewPanelState extends State<_ReviewPanel> {
                 key: const ValueKey<String>('review-preview-panel'),
                 height: previewHeight,
                 width: double.infinity,
-                decoration: BoxDecoration(
-                  border: Border(top: BorderSide(color: surfaces.lineSoft)),
+                margin: EdgeInsets.fromLTRB(
+                  density.inset(AppSpacing.md),
+                  0,
+                  density.inset(AppSpacing.md),
+                  density.inset(AppSpacing.md),
+                ),
+                decoration: _workspaceSidePanelDecoration(
+                  surfaces: surfaces,
+                  compact: density.compact,
+                  elevated: true,
+                  tint: theme.colorScheme.primary,
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -824,14 +1209,14 @@ class _ReviewPanelState extends State<_ReviewPanel> {
                       child: MouseRegion(
                         cursor: SystemMouseCursors.resizeUpDown,
                         child: SizedBox(
-                          height: 20,
+                          height: 24,
                           width: double.infinity,
                           child: Center(
                             child: Container(
                               width: 42,
                               height: 4,
                               decoration: BoxDecoration(
-                                color: surfaces.muted.withValues(alpha: 0.75),
+                                color: surfaces.muted.withValues(alpha: 0.56),
                                 borderRadius: BorderRadius.circular(
                                   AppSpacing.pillRadius,
                                 ),
@@ -857,67 +1242,143 @@ class _ReviewPanelState extends State<_ReviewPanel> {
                                 bottom: density.inset(AppSpacing.sm),
                               ),
                               child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: <Widget>[
                                   Expanded(
-                                    child: Text(
-                                      widget.selectedPath!,
-                                      style: theme.textTheme.labelMedium
-                                          ?.copyWith(color: surfaces.muted),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: <Widget>[
+                                        Text(
+                                          context.wp('Preview'),
+                                          style: theme.textTheme.labelMedium
+                                              ?.copyWith(color: surfaces.muted),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          widget.selectedPath!,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: theme.textTheme.bodyMedium
+                                              ?.copyWith(
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                        ),
+                                        if (selectedItem != null) ...<Widget>[
+                                          const SizedBox(height: 6),
+                                          Wrap(
+                                            spacing: AppSpacing.xs,
+                                            runSpacing: AppSpacing.xs,
+                                            children: <Widget>[
+                                              _WorkspaceSideBadge(
+                                                label: selectedItem.status,
+                                                tint: _reviewStatusColor(
+                                                  selectedItem.status,
+                                                  surfaces,
+                                                ),
+                                                emphasized: true,
+                                              ),
+                                              _WorkspaceSideBadge(
+                                                label: '+${selectedItem.added}',
+                                                tint: surfaces.success,
+                                              ),
+                                              _WorkspaceSideBadge(
+                                                label:
+                                                    '-${selectedItem.removed}',
+                                                tint: surfaces.danger,
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ],
                                     ),
                                   ),
                                   SizedBox(
                                     width: density.inset(AppSpacing.sm, min: 6),
                                   ),
-                                  SegmentedButton<_ReviewDiffMode>(
-                                    key: const ValueKey<String>(
-                                      'review-diff-mode-toggle',
+                                  Flexible(
+                                    child: Align(
+                                      alignment: Alignment.topRight,
+                                      child: FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        alignment: Alignment.centerRight,
+                                        child: SegmentedButton<_ReviewDiffMode>(
+                                          key: const ValueKey<String>(
+                                            'review-diff-mode-toggle',
+                                          ),
+                                          showSelectedIcon: false,
+                                          segments:
+                                              <ButtonSegment<_ReviewDiffMode>>[
+                                                ButtonSegment<_ReviewDiffMode>(
+                                                  value:
+                                                      _ReviewDiffMode.unified,
+                                                  label: Text(
+                                                    context.wp('Unified'),
+                                                  ),
+                                                  icon: Icon(
+                                                    Icons.view_stream_rounded,
+                                                  ),
+                                                ),
+                                                ButtonSegment<_ReviewDiffMode>(
+                                                  value: _ReviewDiffMode.split,
+                                                  label: Text(
+                                                    context.wp('Split'),
+                                                  ),
+                                                  icon: Icon(
+                                                    Icons.view_week_rounded,
+                                                  ),
+                                                  enabled: splitEnabled,
+                                                ),
+                                              ],
+                                          selected: <_ReviewDiffMode>{
+                                            effectiveDiffMode,
+                                          },
+                                          onSelectionChanged: (selection) {
+                                            final next = selection.isEmpty
+                                                ? effectiveDiffMode
+                                                : selection.first;
+                                            if (!splitEnabled &&
+                                                next == _ReviewDiffMode.split) {
+                                              return;
+                                            }
+                                            if (next == _diffMode) {
+                                              return;
+                                            }
+                                            setState(() {
+                                              _diffMode = next;
+                                            });
+                                          },
+                                        ),
+                                      ),
                                     ),
-                                    showSelectedIcon: false,
-                                    segments: <ButtonSegment<_ReviewDiffMode>>[
-                                      ButtonSegment<_ReviewDiffMode>(
-                                        value: _ReviewDiffMode.unified,
-                                        label: Text(context.wp('Unified')),
-                                        icon: Icon(Icons.view_stream_rounded),
-                                      ),
-                                      ButtonSegment<_ReviewDiffMode>(
-                                        value: _ReviewDiffMode.split,
-                                        label: Text(context.wp('Split')),
-                                        icon: Icon(Icons.view_week_rounded),
-                                        enabled: splitEnabled,
-                                      ),
-                                    ],
-                                    selected: <_ReviewDiffMode>{
-                                      effectiveDiffMode,
-                                    },
-                                    onSelectionChanged: (selection) {
-                                      final next = selection.isEmpty
-                                          ? effectiveDiffMode
-                                          : selection.first;
-                                      if (!splitEnabled &&
-                                          next == _ReviewDiffMode.split) {
-                                        return;
-                                      }
-                                      if (next == _diffMode) {
-                                        return;
-                                      }
-                                      setState(() {
-                                        _diffMode = next;
-                                      });
-                                    },
                                   ),
                                 ],
                               ),
                             ),
                             if (diffModeHint != null)
-                              Padding(
-                                padding: EdgeInsets.only(
+                              Container(
+                                margin: EdgeInsets.only(
                                   bottom: density.inset(AppSpacing.sm),
+                                ),
+                                padding: EdgeInsets.all(
+                                  density.inset(AppSpacing.sm, min: 10),
+                                ),
+                                decoration: BoxDecoration(
+                                  color: surfaces.warning.withValues(
+                                    alpha: 0.1,
+                                  ),
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(
+                                    color: surfaces.warning.withValues(
+                                      alpha: 0.18,
+                                    ),
+                                  ),
                                 ),
                                 child: Text(
                                   diffModeHint,
                                   style: theme.textTheme.bodySmall?.copyWith(
                                     color: surfaces.warning,
-                                    fontWeight: FontWeight.w600,
+                                    fontWeight: FontWeight.w700,
                                   ),
                                 ),
                               ),
@@ -1052,28 +1513,28 @@ class _ReviewDiffView extends StatelessWidget {
     final density = _workspaceDensity(context);
     final selectionEnabled =
         !compactMode && lineCount <= _reviewDiffSelectionLineLimit;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(AppSpacing.md),
-      child: BackdropFilter(
-        key: const ValueKey<String>('review-diff-blur'),
-        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+    return KeyedSubtree(
+      key: const ValueKey<String>('review-diff-blur'),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppSpacing.md),
         child: Container(
           key: const ValueKey<String>('review-diff-surface'),
           width: double.infinity,
           padding: EdgeInsets.all(density.inset(AppSpacing.md)),
-          decoration: BoxDecoration(
-            color: surfaces.background.withValues(alpha: 0.38),
-            borderRadius: BorderRadius.circular(AppSpacing.md),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-            boxShadow: <BoxShadow>[
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.22),
-                blurRadius: 22,
-                spreadRadius: -10,
-                offset: const Offset(0, 12),
+          decoration:
+              _workspaceSidePanelDecoration(
+                surfaces: surfaces,
+                compact: density.compact,
+                tint: theme.colorScheme.primary,
+              ).copyWith(
+                color: Color.alphaBlend(
+                  theme.colorScheme.primary.withValues(alpha: 0.015),
+                  surfaces.background.withValues(
+                    alpha: density.compact ? 0.78 : 0.86,
+                  ),
+                ),
+                borderRadius: BorderRadius.circular(AppSpacing.md),
               ),
-            ],
-          ),
           child: LayoutBuilder(
             builder: (context, constraints) {
               final minWidth = mode == _ReviewDiffMode.split
@@ -1290,8 +1751,9 @@ class _ReviewDiffMetaRow extends StatelessWidget {
         vertical: density.compact ? 4 : 6,
       ),
       decoration: BoxDecoration(
-        color: surfaces.panelMuted.withValues(alpha: 0.72),
+        color: surfaces.panelMuted.withValues(alpha: 0.82),
         borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: surfaces.lineSoft.withValues(alpha: 0.68)),
       ),
       child: Text(
         text,
@@ -1323,10 +1785,10 @@ class _ReviewDiffHunkHeaderRow extends StatelessWidget {
         vertical: density.compact ? 4 : 6,
       ),
       decoration: BoxDecoration(
-        color: theme.colorScheme.primary.withValues(alpha: 0.12),
+        color: theme.colorScheme.primary.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: theme.colorScheme.primary.withValues(alpha: 0.22),
+          color: theme.colorScheme.primary.withValues(alpha: 0.18),
         ),
       ),
       child: Text(
@@ -1359,9 +1821,9 @@ class _ReviewDiffNoticeRow extends StatelessWidget {
         vertical: density.compact ? 6 : 8,
       ),
       decoration: BoxDecoration(
-        color: surfaces.warning.withValues(alpha: 0.12),
+        color: surfaces.warning.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: surfaces.warning.withValues(alpha: 0.28)),
+        border: Border.all(color: surfaces.warning.withValues(alpha: 0.2)),
       ),
       child: Text(
         text,
@@ -1966,15 +2428,17 @@ class _ReviewLineCommentEditor extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
+    final density = _workspaceDensity(context);
     return Container(
       key: const ValueKey<String>('review-line-comment-editor'),
       width: double.infinity,
-      padding: const EdgeInsets.all(AppSpacing.sm),
-      decoration: BoxDecoration(
-        color: surfaces.panelMuted,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: surfaces.lineSoft),
-      ),
+      padding: EdgeInsets.all(density.inset(AppSpacing.sm, min: 12)),
+      decoration: _workspaceSidePanelDecoration(
+        surfaces: surfaces,
+        compact: density.compact,
+        elevated: true,
+        tint: theme.colorScheme.primary,
+      ).copyWith(borderRadius: BorderRadius.circular(16)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -2421,20 +2885,21 @@ class _FilesPanelState extends State<_FilesPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
     final bundle = widget.bundle;
     if (bundle == null) {
       if (widget.loadingFiles) {
         return const Center(child: CircularProgressIndicator());
       }
-      return Center(
-        child: Text(
-          context.wp('Files are unavailable.'),
-          style: Theme.of(
-            context,
-          ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
+      return _WorkspaceSideEmptyState(
+        icon: Icons.folder_off_rounded,
+        title: context.wp('Files are unavailable'),
+        message: context.wp(
+          'The workspace file browser is not ready yet. Try again after the project finishes loading.',
         ),
+        tint: theme.colorScheme.primary,
       );
     }
     final visibleNodes = _cachedVisibleFileNodes(
@@ -2462,72 +2927,149 @@ class _FilesPanelState extends State<_FilesPanel> {
         return Column(
           children: <Widget>[
             Expanded(
-              child: ListView.separated(
-                padding: EdgeInsets.all(density.inset(AppSpacing.md)),
-                itemCount: visibleNodes.length,
-                separatorBuilder: (_, _) =>
-                    SizedBox(height: density.inset(AppSpacing.xs)),
-                itemBuilder: (context, index) {
-                  final entry = visibleNodes[index];
-                  final node = entry.node;
-                  final selected = node.path == bundle.selectedPath;
-                  final isDirectory = node.type == 'directory';
-                  return ListTile(
-                    dense: true,
-                    selected: selected,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppSpacing.md),
-                    ),
-                    contentPadding: EdgeInsets.only(
-                      left:
-                          density.inset(AppSpacing.md) +
-                          (entry.depth * density.inset(18, min: 14)),
-                      right: density.inset(AppSpacing.md),
-                    ),
-                    tileColor: selected
-                        ? Theme.of(
-                            context,
-                          ).colorScheme.primary.withValues(alpha: 0.12)
-                        : null,
-                    leading: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        SizedBox(
-                          width: 18,
-                          child: isDirectory
-                              ? Icon(
-                                  entry.expanded
-                                      ? Icons.expand_more_rounded
-                                      : Icons.chevron_right_rounded,
-                                  size: 18,
-                                  color: surfaces.muted,
-                                )
-                              : null,
-                        ),
-                        SizedBox(width: density.inset(AppSpacing.xs)),
-                        Icon(
-                          isDirectory
-                              ? (entry.expanded
-                                    ? Icons.folder_open_outlined
-                                    : Icons.folder_outlined)
-                              : Icons.insert_drive_file_outlined,
-                        ),
-                      ],
-                    ),
-                    title: Text(node.name),
-                    subtitle: Text(node.path),
-                    trailing: entry.loading
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+              child: Column(
+                children: <Widget>[
+                  _WorkspaceSideSectionHeader(
+                    title: context.wp('Workspace files'),
+                    caption: bundle.selectedPath == null
+                        ? context.wp(
+                            '{count} items available. Expand folders or choose a file to inspect its preview.',
+                            args: <String, Object?>{
+                              'count': visibleNodes.length,
+                            },
                           )
-                        : null,
-                    onTap: () => isDirectory
-                        ? widget.onToggleDirectory(node.path)
-                        : widget.onSelectFile(node.path),
-                  );
-                },
+                        : context.wp(
+                            '{count} items available. Preview stays pinned while you navigate the tree.',
+                            args: <String, Object?>{
+                              'count': visibleNodes.length,
+                            },
+                          ),
+                    trailing: _WorkspaceSideBadge(
+                      label: '${bundle.nodes.length}',
+                      tint: theme.colorScheme.primary,
+                      emphasized: true,
+                    ),
+                  ),
+                  Expanded(
+                    child: ListView.separated(
+                      padding: EdgeInsets.all(density.inset(AppSpacing.md)),
+                      itemCount: visibleNodes.length,
+                      separatorBuilder: (_, _) => SizedBox(
+                        height: density.inset(AppSpacing.xs, min: 6),
+                      ),
+                      itemBuilder: (context, index) {
+                        final entry = visibleNodes[index];
+                        final node = entry.node;
+                        final selected = node.path == bundle.selectedPath;
+                        final isDirectory = node.type == 'directory';
+                        final accent = isDirectory
+                            ? theme.colorScheme.primary
+                            : surfaces.accentSoft;
+                        return AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          curve: Curves.easeOutCubic,
+                          decoration: selected
+                              ? _workspaceSideSelectionDecoration(
+                                  theme: theme,
+                                  surfaces: surfaces,
+                                  compact: density.compact,
+                                  accent: theme.colorScheme.primary,
+                                )
+                              : _workspaceSidePanelDecoration(
+                                  surfaces: surfaces,
+                                  compact: density.compact,
+                                  tint: accent,
+                                ),
+                          child: ListTile(
+                            dense: true,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(
+                                density.compact ? 16 : 18,
+                              ),
+                            ),
+                            contentPadding: EdgeInsets.only(
+                              left:
+                                  density.inset(AppSpacing.sm, min: 10) +
+                                  (entry.depth * density.inset(18, min: 14)),
+                              right: density.inset(AppSpacing.sm, min: 10),
+                            ),
+                            leading: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                SizedBox(
+                                  width: 18,
+                                  child: isDirectory
+                                      ? Icon(
+                                          entry.expanded
+                                              ? Icons.expand_more_rounded
+                                              : Icons.chevron_right_rounded,
+                                          size: 18,
+                                          color: surfaces.muted,
+                                        )
+                                      : null,
+                                ),
+                                SizedBox(width: density.inset(AppSpacing.xs)),
+                                Container(
+                                  width: density.inset(28, min: 26),
+                                  height: density.inset(28, min: 26),
+                                  decoration: BoxDecoration(
+                                    color: accent.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(
+                                      color: accent.withValues(alpha: 0.16),
+                                    ),
+                                  ),
+                                  child: Icon(
+                                    isDirectory
+                                        ? (entry.expanded
+                                              ? Icons.folder_open_outlined
+                                              : Icons.folder_outlined)
+                                        : Icons.insert_drive_file_outlined,
+                                    size: 16,
+                                    color: accent,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            title: Text(
+                              node.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            subtitle: Text(
+                              node.path,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: surfaces.muted,
+                              ),
+                            ),
+                            trailing: entry.loading
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : (selected
+                                      ? Icon(
+                                          Icons.chevron_right_rounded,
+                                          color: theme.colorScheme.primary,
+                                        )
+                                      : null),
+                            onTap: () => isDirectory
+                                ? widget.onToggleDirectory(node.path)
+                                : widget.onSelectFile(node.path),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ),
             ),
             if (hasPreview)
@@ -2535,8 +3077,17 @@ class _FilesPanelState extends State<_FilesPanel> {
                 key: const ValueKey<String>('files-preview-panel'),
                 height: previewHeight,
                 width: double.infinity,
-                decoration: BoxDecoration(
-                  border: Border(top: BorderSide(color: surfaces.lineSoft)),
+                margin: EdgeInsets.fromLTRB(
+                  density.inset(AppSpacing.md),
+                  0,
+                  density.inset(AppSpacing.md),
+                  density.inset(AppSpacing.md),
+                ),
+                decoration: _workspaceSidePanelDecoration(
+                  surfaces: surfaces,
+                  compact: density.compact,
+                  elevated: true,
+                  tint: theme.colorScheme.primary,
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -2552,14 +3103,14 @@ class _FilesPanelState extends State<_FilesPanel> {
                       child: MouseRegion(
                         cursor: SystemMouseCursors.resizeUpDown,
                         child: SizedBox(
-                          height: 20,
+                          height: 24,
                           width: double.infinity,
                           child: Center(
                             child: Container(
                               width: 42,
                               height: 4,
                               decoration: BoxDecoration(
-                                color: surfaces.muted.withValues(alpha: 0.75),
+                                color: surfaces.muted.withValues(alpha: 0.56),
                                 borderRadius: BorderRadius.circular(
                                   AppSpacing.pillRadius,
                                 ),
@@ -2581,15 +3132,10 @@ class _FilesPanelState extends State<_FilesPanel> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: <Widget>[
                             if (bundle.selectedPath != null)
-                              Padding(
-                                padding: EdgeInsets.only(
-                                  bottom: density.inset(AppSpacing.sm),
-                                ),
-                                child: Text(
-                                  bundle.selectedPath!,
-                                  style: Theme.of(context).textTheme.labelMedium
-                                      ?.copyWith(color: surfaces.muted),
-                                ),
+                              _WorkspaceSideSectionHeader(
+                                title: context.wp('Preview'),
+                                caption: bundle.selectedPath!,
+                                dense: true,
                               ),
                             Expanded(
                               child: widget.loadingPreview
@@ -2602,9 +3148,7 @@ class _FilesPanelState extends State<_FilesPanel> {
                                         context.wp(
                                           'Preview unavailable for this item.',
                                         ),
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodyMedium
+                                        style: theme.textTheme.bodyMedium
                                             ?.copyWith(color: surfaces.muted),
                                       ),
                                     )
@@ -2613,15 +3157,16 @@ class _FilesPanelState extends State<_FilesPanel> {
                                       padding: EdgeInsets.all(
                                         density.inset(AppSpacing.md),
                                       ),
-                                      decoration: BoxDecoration(
-                                        color: surfaces.panelMuted,
-                                        borderRadius: BorderRadius.circular(
-                                          AppSpacing.md,
-                                        ),
-                                        border: Border.all(
-                                          color: surfaces.lineSoft,
-                                        ),
-                                      ),
+                                      decoration:
+                                          _workspaceSidePanelDecoration(
+                                            surfaces: surfaces,
+                                            compact: density.compact,
+                                            tint: surfaces.accentSoft,
+                                          ).copyWith(
+                                            borderRadius: BorderRadius.circular(
+                                              AppSpacing.md,
+                                            ),
+                                          ),
                                       child: LayoutBuilder(
                                         builder: (context, previewConstraints) {
                                           return _WorkspaceSafeFilePreview(
@@ -3672,6 +4217,10 @@ class _ContextPanelState extends State<_ContextPanel> {
     final snapshot = metrics.context;
     final systemPrompt = widget.systemPrompt;
     final breakdown = widget.breakdown;
+    final usageValue = snapshot?.usagePercent;
+    final usageRatio = usageValue == null
+        ? 0.0
+        : (usageValue / 100).clamp(0.0, 1.0);
     final stats = <_ContextStatEntry>[
       _ContextStatEntry(
         label: context.wp('Session'),
@@ -3759,33 +4308,136 @@ class _ContextPanelState extends State<_ContextPanel> {
             density.inset(AppSpacing.xl, min: AppSpacing.md),
           ),
           children: <Widget>[
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final gap = density.inset(AppSpacing.lg, min: AppSpacing.md);
-                final columns = constraints.maxWidth >= 300 ? 2 : 1;
-                final itemWidth = columns == 1
-                    ? constraints.maxWidth
-                    : (constraints.maxWidth - gap) / 2;
-                return Wrap(
-                  spacing: gap,
-                  runSpacing: AppSpacing.lg,
-                  children: stats
-                      .map(
-                        (entry) => SizedBox(
-                          width: itemWidth,
-                          child: _ContextStat(entry: entry),
+            Container(
+              padding: EdgeInsets.all(
+                density.inset(AppSpacing.md, min: AppSpacing.sm),
+              ),
+              decoration: _workspaceSidePanelDecoration(
+                surfaces: surfaces,
+                compact: density.compact,
+                elevated: true,
+                tint: surfaces.success,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Text(
+                              context.wp('Context overview'),
+                              style: theme.textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              context.wp(
+                                'Token usage, message volume, and provider details for the current session.',
+                              ),
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: surfaces.muted,
+                                height: 1.4,
+                              ),
+                            ),
+                          ],
                         ),
-                      )
-                      .toList(growable: false),
-                );
-              },
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      _WorkspaceSideBadge(
+                        label: _formatContextPercent(usageValue, decimal),
+                        tint: surfaces.success,
+                        emphasized: true,
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: density.inset(AppSpacing.md)),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
+                    child: LinearProgressIndicator(
+                      minHeight: density.compact ? 10 : 12,
+                      value: usageValue == null ? null : usageRatio,
+                      backgroundColor: surfaces.panelMuted.withValues(
+                        alpha: 0.9,
+                      ),
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        usageValue != null && usageValue >= 85
+                            ? surfaces.warning
+                            : surfaces.success,
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: density.inset(AppSpacing.sm)),
+                  Wrap(
+                    spacing: AppSpacing.sm,
+                    runSpacing: AppSpacing.sm,
+                    children: <Widget>[
+                      _WorkspaceSideBadge(
+                        label:
+                            '${context.wp('Messages')} ${decimal.format(widget.messages.length)}',
+                        tint: theme.colorScheme.primary,
+                      ),
+                      _WorkspaceSideBadge(
+                        label:
+                            '${context.wp('Model')} ${snapshot?.modelLabel ?? '—'}',
+                        tint: surfaces.accentSoft,
+                      ),
+                      _WorkspaceSideBadge(
+                        label:
+                            '${context.wp('Cost')} ${currency.format(metrics.totalCost)}',
+                        tint: surfaces.warning,
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: density.inset(AppSpacing.md)),
+                  Container(
+                    width: double.infinity,
+                    padding: EdgeInsets.symmetric(
+                      horizontal: density.inset(AppSpacing.sm, min: 10),
+                      vertical: density.inset(AppSpacing.sm, min: 10),
+                    ),
+                    decoration:
+                        _workspaceSidePanelDecoration(
+                          surfaces: surfaces,
+                          compact: density.compact,
+                          tint: theme.colorScheme.primary,
+                        ).copyWith(
+                          color: surfaces.panelMuted.withValues(alpha: 0.72),
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                    child: Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: Text(
+                            context.wp('Context Limit'),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: surfaces.muted,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          _formatContextNumber(snapshot?.contextLimit, decimal),
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
+            const SizedBox(height: AppSpacing.lg),
             if (breakdown.isNotEmpty) ...<Widget>[
-              const SizedBox(height: AppSpacing.xxl),
-              Text(
-                context.wp('Context Breakdown'),
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: surfaces.muted,
+              _WorkspaceSideSectionHeader(
+                title: context.wp('Context Breakdown'),
+                caption: context.wp(
+                  'Visual split between system, user, assistant, and tool content.',
                 ),
               ),
               const SizedBox(height: AppSpacing.sm),
@@ -3820,24 +4472,52 @@ class _ContextPanelState extends State<_ContextPanel> {
                     )
                     .toList(growable: false),
               ),
+              const SizedBox(height: AppSpacing.xxl),
             ],
+            _WorkspaceSideSectionHeader(
+              title: context.wp('Session metrics'),
+              caption: context.wp(
+                'Compact cards surface the operational numbers without forcing a dense table layout.',
+              ),
+            ),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final gap = density.inset(AppSpacing.lg, min: AppSpacing.md);
+                final columns = constraints.maxWidth >= 300 ? 2 : 1;
+                final itemWidth = columns == 1
+                    ? constraints.maxWidth
+                    : (constraints.maxWidth - gap) / 2;
+                return Wrap(
+                  spacing: gap,
+                  runSpacing: AppSpacing.lg,
+                  children: stats
+                      .map(
+                        (entry) => SizedBox(
+                          width: itemWidth,
+                          child: _ContextStat(entry: entry),
+                        ),
+                      )
+                      .toList(growable: false),
+                );
+              },
+            ),
             if (systemPrompt != null) ...<Widget>[
               const SizedBox(height: AppSpacing.xxl),
-              Text(
-                context.wp('System Prompt'),
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: surfaces.muted,
+              _WorkspaceSideSectionHeader(
+                title: context.wp('System Prompt'),
+                caption: context.wp(
+                  'Reference prompt currently shaping model behavior for this session.',
                 ),
               ),
               const SizedBox(height: AppSpacing.sm),
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(AppSpacing.md),
-                decoration: BoxDecoration(
-                  color: surfaces.panelMuted,
-                  borderRadius: BorderRadius.circular(AppSpacing.md),
-                  border: Border.all(color: surfaces.lineSoft),
-                ),
+                decoration: _workspaceSidePanelDecoration(
+                  surfaces: surfaces,
+                  compact: density.compact,
+                  tint: surfaces.success,
+                ).copyWith(borderRadius: BorderRadius.circular(AppSpacing.md)),
                 child: Text(
                   systemPrompt,
                   style: theme.textTheme.bodySmall?.copyWith(
@@ -3848,21 +4528,20 @@ class _ContextPanelState extends State<_ContextPanel> {
               ),
             ],
             const SizedBox(height: AppSpacing.xxl),
-            Text(
-              context.wp('Raw messages'),
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: surfaces.muted,
+            _WorkspaceSideSectionHeader(
+              title: context.wp('Raw messages'),
+              caption: context.wp(
+                'Expandable transport-level payloads for debugging and auditing.',
               ),
             ),
             const SizedBox(height: AppSpacing.sm),
             if (widget.messages.isEmpty)
               Container(
                 padding: const EdgeInsets.all(AppSpacing.md),
-                decoration: BoxDecoration(
-                  color: surfaces.panelMuted,
-                  borderRadius: BorderRadius.circular(AppSpacing.md),
-                  border: Border.all(color: surfaces.lineSoft),
-                ),
+                decoration: _workspaceSidePanelDecoration(
+                  surfaces: surfaces,
+                  compact: density.compact,
+                ).copyWith(borderRadius: BorderRadius.circular(AppSpacing.md)),
                 child: Text(
                   context.wp('No raw messages yet.'),
                   style: theme.textTheme.bodySmall?.copyWith(
@@ -3906,21 +4585,33 @@ class _ContextStat extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Text(
-          entry.label,
-          style: theme.textTheme.labelMedium?.copyWith(color: surfaces.muted),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          entry.value,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurface,
+    final density = _workspaceDensity(context);
+    return Container(
+      padding: EdgeInsets.all(density.inset(AppSpacing.md, min: AppSpacing.sm)),
+      decoration: _workspaceSidePanelDecoration(
+        surfaces: surfaces,
+        compact: density.compact,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            entry.label,
+            style: theme.textTheme.labelMedium?.copyWith(color: surfaces.muted),
           ),
-        ),
-      ],
+          const SizedBox(height: 4),
+          Text(
+            entry.value,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurface,
+              height: 1.4,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -3933,14 +4624,14 @@ class _ContextBreakdownBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final density = _workspaceDensity(context);
     return Container(
       key: const ValueKey<String>('context-breakdown-bar'),
-      height: 14,
-      decoration: BoxDecoration(
-        color: surfaces.panelMuted,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: surfaces.lineSoft),
-      ),
+      height: density.compact ? 12 : 14,
+      decoration: _workspaceSidePanelDecoration(
+        surfaces: surfaces,
+        compact: density.compact,
+      ).copyWith(borderRadius: BorderRadius.circular(999)),
       clipBehavior: Clip.antiAlias,
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -3992,14 +4683,18 @@ class _ContextRawMessageTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
+    final density = _workspaceDensity(context);
     return Container(
       key: ValueKey<String>('context-raw-message-tile-${message.info.id}'),
       clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(AppSpacing.md),
-        border: Border.all(color: surfaces.lineSoft),
-      ),
+      decoration:
+          _workspaceSidePanelDecoration(
+            surfaces: surfaces,
+            compact: density.compact,
+          ).copyWith(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(AppSpacing.md),
+          ),
       child: Theme(
         data: theme.copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
@@ -4067,11 +4762,15 @@ class _ContextRawMessageTile extends StatelessWidget {
                 AppSpacing.md,
               ),
               clipBehavior: Clip.antiAlias,
-              decoration: BoxDecoration(
-                color: surfaces.background,
-                borderRadius: BorderRadius.circular(AppSpacing.md),
-                border: Border.all(color: surfaces.lineSoft),
-              ),
+              decoration:
+                  _workspaceSidePanelDecoration(
+                    surfaces: surfaces,
+                    compact: density.compact,
+                    tint: surfaces.accentSoft,
+                  ).copyWith(
+                    color: surfaces.background.withValues(alpha: 0.78),
+                    borderRadius: BorderRadius.circular(AppSpacing.md),
+                  ),
               padding: const EdgeInsets.all(AppSpacing.md),
               child: Text(
                 _wrapRawMessageForDisplay(formatRawSessionMessage(message)),

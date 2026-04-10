@@ -2700,9 +2700,11 @@ void main() {
       label: 'Mock',
       baseUrl: 'http://localhost:3000',
     );
+    final persistedPaneLayouts = <String, WorkspacePaneLayoutSnapshot>{};
 
     final firstAppController = _StaticAppController(
       profile: profile,
+      workspacePaneLayouts: persistedPaneLayouts,
       workspaceControllerFactory:
           ({required profile, required directory, initialSessionId}) {
             return _RecordingWorkspaceController(
@@ -2749,6 +2751,7 @@ void main() {
 
     final restoredAppController = _StaticAppController(
       profile: profile,
+      workspacePaneLayouts: persistedPaneLayouts,
       workspaceControllerFactory:
           ({required profile, required directory, initialSessionId}) {
             return _RecordingWorkspaceController(
@@ -3239,6 +3242,84 @@ void main() {
         updatedPosition.pixels,
         closeTo(updatedPosition.maxScrollExtent, 96),
       );
+    },
+  );
+
+  testWidgets(
+    'timeline does not interrupt an active drag when streamed content updates',
+    (tester) async {
+      tester.view.physicalSize = const Size(430, 932);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final createdControllers = <_StreamingWorkspaceController>[];
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              final controller = _StreamingWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+              createdControllers.add(controller);
+              return controller;
+            },
+      );
+      addTearDown(appController.dispose);
+
+      final navigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          navigatorKey: navigatorKey,
+          initialRoute: '/',
+        ),
+      );
+      navigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+      );
+      await tester.pumpAndSettle();
+
+      final controller = createdControllers.single;
+      final listFinder = _messageTimelineListFinder();
+      final gesture = await tester.startGesture(tester.getCenter(listFinder));
+      await gesture.moveBy(const Offset(0, 100));
+      await tester.pump();
+
+      final scrolledPosition = tester
+          .widget<ListView>(listFinder)
+          .controller!
+          .position;
+      final scrolledPixels = scrolledPosition.pixels;
+      expect(scrolledPosition.maxScrollExtent - scrolledPixels, greaterThan(0));
+
+      controller.extendLastAssistantMessage(
+        '\n${List<String>.filled(120, 'streamed output line').join('\n')}',
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+      await tester.pumpAndSettle();
+
+      final updatedPosition = tester
+          .widget<ListView>(listFinder)
+          .controller!
+          .position;
+      expect(updatedPosition.maxScrollExtent, greaterThan(scrolledPixels));
+      expect(updatedPosition.pixels, closeTo(scrolledPixels, 24));
+      expect(
+        updatedPosition.maxScrollExtent - updatedPosition.pixels,
+        greaterThan(72),
+      );
+
+      await gesture.up();
     },
   );
 
@@ -3793,6 +3874,8 @@ class _StaticAppController extends WebParityAppController {
 
   final ServerProfile profile;
   final Map<String, WorkspacePaneLayoutSnapshot> _workspacePaneLayouts;
+  final WorkspacePaneLayoutStore _workspacePaneLayoutStore =
+      WorkspacePaneLayoutStore();
 
   @override
   ServerProfile? get selectedProfile => profile;
@@ -3809,7 +3892,15 @@ class _StaticAppController extends WebParityAppController {
   Future<WorkspacePaneLayoutSnapshot?> ensureWorkspacePaneLayout(
     ServerProfile profile,
   ) async {
-    return workspacePaneLayoutFor(profile);
+    final existing = workspacePaneLayoutFor(profile);
+    if (existing != null) {
+      return existing;
+    }
+    final restored = await _workspacePaneLayoutStore.load(profile.storageKey);
+    if (restored != null) {
+      _workspacePaneLayouts[profile.storageKey] = restored;
+    }
+    return restored;
   }
 
   @override
@@ -3818,6 +3909,7 @@ class _StaticAppController extends WebParityAppController {
     required WorkspacePaneLayoutSnapshot snapshot,
   }) async {
     _workspacePaneLayouts[profile.storageKey] = snapshot;
+    await _workspacePaneLayoutStore.save(profile.storageKey, snapshot);
   }
 }
 

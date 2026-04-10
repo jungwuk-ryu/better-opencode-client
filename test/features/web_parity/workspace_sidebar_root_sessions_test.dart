@@ -70,7 +70,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
 
-    expect(find.text('Demo'), findsOneWidget);
+    expect(find.text('Demo'), findsAtLeastNWidgets(1));
     expect(find.text('/workspace/demo'), findsAtLeastNWidgets(1));
     expect(find.text('New session'), findsOneWidget);
     expect(
@@ -1163,7 +1163,9 @@ void main() {
     expect(find.byTooltip('Lab'), findsOneWidget);
   });
 
-  testWidgets('project rail icons can be dragged to reorder', (tester) async {
+  testWidgets('project reorder handles can be dragged to reorder', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1600, 1000);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -1212,17 +1214,15 @@ void main() {
       lessThan(tester.getTopLeft(labTile).dy),
     );
 
-    expect(
-      find.byKey(
-        const ValueKey<String>(
-          'workspace-project-reorder-handle-/workspace/demo',
-        ),
+    final demoHandle = find.byKey(
+      const ValueKey<String>(
+        'workspace-project-reorder-handle-/workspace/demo',
       ),
-      findsNothing,
     );
-    expect(find.byIcon(Icons.drag_indicator_rounded), findsNothing);
+    expect(demoHandle, findsOneWidget);
+    expect(find.byIcon(Icons.drag_indicator_rounded), findsAtLeastNWidgets(2));
 
-    await tester.drag(demoTile, const Offset(0, 140));
+    await tester.drag(demoHandle, const Offset(0, 140));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 420));
 
@@ -1295,9 +1295,7 @@ void main() {
     expect(tester.getBottomRight(addProjectButton).dy, lessThanOrEqualTo(824));
   });
 
-  testWidgets('compact project rail uses a delayed reorder start', (
-    tester,
-  ) async {
+  testWidgets('compact drawer uses most of the viewport width', (tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -1308,17 +1306,15 @@ void main() {
       label: 'Mock',
       baseUrl: 'http://localhost:3000',
     );
-    late _EditableSidebarWorkspaceController controllerInstance;
     final appController = _StaticAppController(
       profile: profile,
       workspaceControllerFactory:
           ({required profile, required directory, initialSessionId}) {
-            controllerInstance = _EditableSidebarWorkspaceController(
+            return _SidebarWorkspaceController(
               profile: profile,
               directory: directory,
               initialSessionId: initialSessionId,
             );
-            return controllerInstance;
           },
     );
     addTearDown(appController.dispose);
@@ -1339,37 +1335,195 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 240));
 
-    final demoTile = find.byKey(
-      const ValueKey<String>('workspace-project-/workspace/demo'),
+    expect(tester.getSize(find.byType(Drawer)).width, closeTo(378, 0.1));
+  });
+
+  testWidgets('compact drawer puts threads ahead of workspace details', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
     );
-    final labTile = find.byKey(
-      const ValueKey<String>('workspace-project-/workspace/lab'),
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _SidebarWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
     );
-    expect(demoTile, findsOneWidget);
-    expect(labTile, findsOneWidget);
-    expect(
-      find.byWidgetPredicate(
-        (widget) => widget is ReorderableDelayedDragStartListener,
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
       ),
-      findsAtLeastNWidgets(2),
     );
-
-    final quickGesture = await tester.startGesture(
-      tester.getCenter(demoTile),
-      kind: PointerDeviceKind.touch,
-    );
-    await quickGesture.moveTo(tester.getCenter(labTile));
-    await quickGesture.up();
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 420));
+    await tester.pump(const Duration(milliseconds: 220));
 
+    await tester.tap(find.byIcon(Icons.menu_rounded).first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 240));
+
+    final drawer = find.byType(Drawer);
+    final threadsLabel = find.descendant(
+      of: drawer,
+      matching: find.text('Threads'),
+    );
+    final workspaceLabel = find.descendant(
+      of: drawer,
+      matching: find.text('Workspace'),
+    );
+
+    expect(threadsLabel, findsOneWidget);
+    expect(workspaceLabel, findsOneWidget);
     expect(
-      controllerInstance.availableProjects
-          .map((project) => project.directory)
-          .toList(growable: false),
-      const <String>['/workspace/demo', '/workspace/lab'],
+      tester.getTopLeft(threadsLabel).dy,
+      lessThan(tester.getTopLeft(workspaceLabel).dy),
     );
   });
+
+  testWidgets(
+    'compact drawer uses the project name instead of a generic label',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              return _SidebarWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+            },
+      );
+      addTearDown(appController.dispose);
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          initialRoute: buildWorkspaceRoute(
+            '/workspace/demo',
+            sessionId: 'ses_1',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 220));
+
+      await tester.tap(find.byIcon(Icons.menu_rounded).first);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 240));
+
+      expect(find.text('Demo'), findsAtLeastNWidgets(1));
+      expect(find.text('Current project'), findsNothing);
+      expect(find.text('현재 프로젝트'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'compact project rail keeps tile drags from reordering projects',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      late _EditableSidebarWorkspaceController controllerInstance;
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              controllerInstance = _EditableSidebarWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+              return controllerInstance;
+            },
+      );
+      addTearDown(appController.dispose);
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          initialRoute: buildWorkspaceRoute(
+            '/workspace/demo',
+            sessionId: 'ses_1',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 220));
+
+      await tester.tap(find.byIcon(Icons.menu_rounded).first);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 240));
+
+      final demoTile = find.byKey(
+        const ValueKey<String>('workspace-project-/workspace/demo'),
+      );
+      final labTile = find.byKey(
+        const ValueKey<String>('workspace-project-/workspace/lab'),
+      );
+      expect(demoTile, findsOneWidget);
+      expect(labTile, findsOneWidget);
+      expect(
+        find.byKey(
+          const ValueKey<String>(
+            'workspace-project-reorder-handle-/workspace/demo',
+          ),
+        ),
+        findsOneWidget,
+      );
+
+      final quickGesture = await tester.startGesture(
+        tester.getCenter(demoTile),
+        kind: PointerDeviceKind.touch,
+      );
+      await quickGesture.moveTo(tester.getCenter(labTile));
+      await quickGesture.up();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 420));
+
+      expect(
+        controllerInstance.availableProjects
+            .map((project) => project.directory)
+            .toList(growable: false),
+        const <String>['/workspace/demo', '/workspace/lab'],
+      );
+    },
+  );
 }
 
 class _WorkspaceRouteHarness extends StatelessWidget {

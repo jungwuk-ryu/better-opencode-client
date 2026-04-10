@@ -12,6 +12,7 @@ import 'package:flutter/gestures.dart'
         DragStartBehavior,
         MultiDragGestureRecognizer;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -28,6 +29,7 @@ import '../../core/connection/connection_models.dart';
 import '../../core/network/opencode_server_probe.dart';
 import '../../design_system/app_snack_bar.dart';
 import '../../design_system/app_spacing.dart';
+import '../../design_system/app_surface_decor.dart';
 import '../../design_system/app_theme.dart';
 import '../../i18n/locale_controller.dart';
 import '../../i18n/locale_scope.dart';
@@ -81,6 +83,10 @@ _WorkspaceDensity _workspaceDensity(BuildContext context) {
   return _WorkspaceDensity(AppScope.of(context).layoutDensity);
 }
 
+double _compactSidebarDrawerWidth(MediaQueryData mediaQuery) {
+  return math.min(420, math.max(0, mediaQuery.size.width - 12)).toDouble();
+}
+
 class _WorkspaceDensity {
   const _WorkspaceDensity(this.layoutDensity);
 
@@ -95,9 +101,11 @@ class _WorkspaceDensity {
     return math.max(min, value * 0.82).toDouble();
   }
 
-  double sidebarWidth(double value) => compact ? 308 : value;
+  double sidebarWidth(double value) =>
+      compact ? math.max(232, value * 0.86) : value;
   double sidebarRailWidth(double value) => compact ? 64 : value;
-  double sidePanelWidth(double value) => compact ? 320 : value;
+  double sidePanelWidth(double value) =>
+      compact ? math.max(320, value * 0.9) : value;
   double maxContentWidth(double value) => compact ? value + 80 : value;
 }
 
@@ -257,10 +265,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   static const String _desktopSidePanelWidthKeyPrefix =
       'workspace.desktopSidePanelWidth';
   static const int _maxComposerHistoryEntries = 100;
-  static const double _desktopSidebarDefaultWidth = 340;
-  static const double _desktopSidebarMinWidth = 260;
-  static const double _desktopSidebarMaxWidth = 520;
-  static const double _desktopSidePanelDefaultWidth = 360;
+  static const double _desktopSidebarDefaultWidth = 288;
+  static const double _desktopSidebarMinWidth = 240;
+  static const double _desktopSidebarMaxWidth = 420;
+  static const double _desktopSidePanelDefaultWidth = 430;
   static const double _desktopSidePanelMinWidth = 260;
   static const double _desktopSidePanelMaxWidth = 520;
   static const double _desktopCenterMinWidth = 480;
@@ -3271,12 +3279,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
             args: <String, Object?>{'project': project.title},
           ),
           category: context.wp('Project'),
-          description: isCurrentProject
-              ? context.wp(
-                  '{directory} • Current project',
-                  args: <String, Object?>{'directory': project.directory},
-                )
-              : project.directory,
+          description: project.directory,
           searchTerms: <String>[
             project.title,
             project.directory,
@@ -6167,6 +6170,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
           final mediaQuery = MediaQuery.of(context);
           final compact =
               mediaQuery.size.width < AppSpacing.wideLayoutBreakpoint;
+          final compactDrawerWidth = compact
+              ? _compactSidebarDrawerWidth(mediaQuery)
+              : null;
           final keyboardVisible = mediaQuery.viewInsets.bottom > 0;
           final terminalCompactFocusMode =
               compact && keyboardVisible && _terminalInputFocused;
@@ -6256,9 +6262,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
             resizeToAvoidBottomInset: !compact,
             drawer: compact
                 ? Drawer(
+                    width: compactDrawerWidth,
                     child: SafeArea(
                       child: _WorkspaceSidebar(
-                        width: _desktopSidebarDefaultWidth,
+                        width: compactDrawerWidth!,
                         currentDirectory: _currentDirectory,
                         currentSessionId: showProjectLoadingShell
                             ? null
@@ -7211,56 +7218,179 @@ class _WorkspaceTopBar extends StatelessWidget {
         projectDirectory.isNotEmpty ||
         headerActionChips.isNotEmpty;
     if (compact) {
-      return Material(
-        color: surfaces.panel,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final showContextRing =
-                session != null && constraints.maxWidth >= 340;
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Container(
-                  constraints: BoxConstraints(
-                    minHeight: density.inset(54, min: 46),
-                  ),
-                  padding: EdgeInsets.symmetric(
-                    horizontal: density.inset(AppSpacing.xxs, min: 2),
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    border: Border(
-                      bottom: BorderSide(color: surfaces.lineSoft),
-                    ),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: <Widget>[
-                      IconButton(
-                        onPressed: onOpenDrawer,
-                        icon: const Icon(Icons.menu_rounded, size: 18),
-                        splashRadius: 18,
+      return Padding(
+        padding: EdgeInsets.fromLTRB(
+          density.inset(AppSpacing.xs, min: 6),
+          density.inset(AppSpacing.xs, min: 6),
+          density.inset(AppSpacing.xs, min: 6),
+          0,
+        ),
+        child: AppGlassPanel(
+          radius: AppSpacing.sheetRadius,
+          blur: 26,
+          backgroundOpacity: theme.brightness == Brightness.dark ? 0.82 : 0.9,
+          padding: EdgeInsets.zero,
+          child: Material(
+            color: Colors.transparent,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final showContextRing =
+                    session != null && constraints.maxWidth >= 340;
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Container(
+                      constraints: BoxConstraints(
+                        minHeight: density.inset(56, min: 48),
                       ),
-                      if (canReturnToMain)
-                        IconButton(
-                          key: const ValueKey<String>(
-                            'workspace-back-to-main-session-button',
+                      padding: EdgeInsets.symmetric(
+                        horizontal: density.inset(AppSpacing.xxs, min: 2),
+                        vertical: density.inset(AppSpacing.xxs, min: 2),
+                      ),
+                      decoration: BoxDecoration(
+                        border: Border(
+                          bottom: BorderSide(
+                            color: surfaces.lineSoft.withValues(alpha: 0.9),
                           ),
-                          tooltip: context.wp('Back to main session'),
-                          onPressed: onBackToMainSession,
-                          icon: const Icon(
-                            Icons.subdirectory_arrow_left_rounded,
-                            size: 18,
-                          ),
-                          splashRadius: 18,
                         ),
-                      Expanded(
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: density.inset(AppSpacing.xxs, min: 2),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: <Widget>[
+                          IconButton(
+                            onPressed: onOpenDrawer,
+                            icon: const Icon(Icons.menu_rounded, size: 18),
+                            splashRadius: 18,
                           ),
-                          child: _SessionIdentity(
+                          if (canReturnToMain)
+                            IconButton(
+                              key: const ValueKey<String>(
+                                'workspace-back-to-main-session-button',
+                              ),
+                              tooltip: context.wp('Back to main session'),
+                              onPressed: onBackToMainSession,
+                              icon: const Icon(
+                                Icons.subdirectory_arrow_left_rounded,
+                                size: 18,
+                              ),
+                              splashRadius: 18,
+                            ),
+                          Expanded(
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: density.inset(
+                                  AppSpacing.xxs,
+                                  min: 2,
+                                ),
+                              ),
+                              child: _SessionIdentity(
+                                compact: true,
+                                title: title,
+                                titleKey: ValueKey<String>(
+                                  'session-header-title-${session?.id ?? 'new'}',
+                                ),
+                                titleStyle: titleStyle,
+                                busy: busy,
+                                busyKey: ValueKey<String>(
+                                  'session-header-busy-${session?.id ?? 'new'}',
+                                ),
+                              ),
+                            ),
+                          ),
+                          if (showContextRing)
+                            Padding(
+                              padding: EdgeInsets.only(
+                                right: density.inset(AppSpacing.xxs, min: 2),
+                              ),
+                              child: _SessionContextUsageRing(
+                                key: ValueKey<String>(
+                                  'session-header-context-ring-${session!.id}',
+                                ),
+                                usagePercent: contextSnapshot?.usagePercent,
+                                totalTokens: contextSnapshot?.totalTokens,
+                                contextLimit: contextSnapshot?.contextLimit,
+                                compact: true,
+                                onTap: onOpenContextPanel,
+                              ),
+                            ),
+                          _SessionOverflowMenuButton(
                             compact: true,
+                            sections: menuSections,
+                          ),
+                        ],
+                      ),
+                    ),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 180),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      child: searchBar,
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      );
+    }
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        desktopVertical,
+        desktopVertical,
+        desktopVertical,
+        0,
+      ),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: surfaces.panelMuted.withValues(alpha: 0.98),
+          borderRadius: BorderRadius.circular(AppSpacing.sheetRadius),
+          border: Border.all(color: surfaces.lineSoft.withValues(alpha: 0.9)),
+          boxShadow: <BoxShadow>[
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.18),
+              blurRadius: 22,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: desktopHorizontal,
+                  vertical: desktopVertical,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: <Widget>[
+                        if (compact)
+                          IconButton(
+                            onPressed: onOpenDrawer,
+                            icon: const Icon(Icons.menu_rounded),
+                          ),
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: surfaces.panel.withValues(alpha: 0.88),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: surfaces.lineSoft),
+                          ),
+                          child: IconButton(
+                            onPressed: onBackHome,
+                            icon: const Icon(Icons.arrow_back_rounded),
+                            tooltip: context.wp('Back Home'),
+                          ),
+                        ),
+                        SizedBox(width: density.inset(AppSpacing.sm, min: 6)),
+                        Expanded(
+                          child: _SessionIdentity(
+                            compact: false,
                             title: title,
                             titleKey: ValueKey<String>(
                               'session-header-title-${session?.id ?? 'new'}',
@@ -7272,206 +7402,157 @@ class _WorkspaceTopBar extends StatelessWidget {
                             ),
                           ),
                         ),
-                      ),
-                      if (showContextRing)
-                        Padding(
-                          padding: EdgeInsets.only(
-                            right: density.inset(AppSpacing.xxs, min: 2),
-                          ),
-                          child: _SessionContextUsageRing(
-                            key: ValueKey<String>(
-                              'session-header-context-ring-${session!.id}',
-                            ),
-                            usagePercent: contextSnapshot?.usagePercent,
-                            totalTokens: contextSnapshot?.totalTokens,
-                            contextLimit: contextSnapshot?.contextLimit,
-                            compact: true,
-                            onTap: onOpenContextPanel,
-                          ),
-                        ),
-                      _SessionOverflowMenuButton(
-                        compact: true,
-                        sections: menuSections,
-                      ),
-                    ],
-                  ),
-                ),
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 180),
-                  switchInCurve: Curves.easeOutCubic,
-                  switchOutCurve: Curves.easeInCubic,
-                  child: searchBar,
-                ),
-              ],
-            );
-          },
-        ),
-      );
-    }
-    return Material(
-      color: surfaces.panel,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: desktopHorizontal,
-              vertical: desktopVertical,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: <Widget>[
-                    if (compact)
-                      IconButton(
-                        onPressed: onOpenDrawer,
-                        icon: const Icon(Icons.menu_rounded),
-                      ),
-                    IconButton(
-                      onPressed: onBackHome,
-                      icon: const Icon(Icons.arrow_back_rounded),
-                    ),
-                    SizedBox(width: density.inset(AppSpacing.sm, min: 6)),
-                    Expanded(
-                      child: _SessionIdentity(
-                        compact: false,
-                        title: title,
-                        titleKey: ValueKey<String>(
-                          'session-header-title-${session?.id ?? 'new'}',
-                        ),
-                        titleStyle: titleStyle,
-                        busy: busy,
-                        busyKey: ValueKey<String>(
-                          'session-header-busy-${session?.id ?? 'new'}',
-                        ),
-                      ),
-                    ),
-                    if (session != null)
-                      Padding(
-                        padding: const EdgeInsets.only(left: AppSpacing.sm),
-                        child: _SessionContextUsageRing(
-                          key: ValueKey<String>(
-                            'session-header-context-ring-${session!.id}',
-                          ),
-                          usagePercent: contextSnapshot?.usagePercent,
-                          totalTokens: contextSnapshot?.totalTokens,
-                          contextLimit: contextSnapshot?.contextLimit,
-                          onTap: onOpenContextPanel,
-                        ),
-                      ),
-                    SizedBox(width: density.inset(AppSpacing.xs, min: 4)),
-                    IconButton(
-                      key: const ValueKey<String>(
-                        'workspace-command-palette-button',
-                      ),
-                      onPressed: onOpenCommandPalette,
-                      icon: const Icon(Icons.apps_rounded),
-                      tooltip:
-                          '${context.wp('Command palette')} (${_formatWorkspaceShortcutLabel('mod+k')})',
-                    ),
-                    IconButton(
-                      key: const ValueKey<String>(
-                        'workspace-project-actions-icon-button',
-                      ),
-                      onPressed: onOpenProjectActions,
-                      icon: const Icon(Icons.flash_on_outlined),
-                      tooltip: context.wp('Project Actions'),
-                    ),
-                    IconButton(
-                      key: const ValueKey<String>(
-                        'workspace-inbox-icon-button',
-                      ),
-                      onPressed: onOpenInbox,
-                      icon: Icon(
-                        inboxCount == 0
-                            ? Icons.inbox_outlined
-                            : Icons.mark_email_unread_outlined,
-                      ),
-                      tooltip: inboxCount == 0
-                          ? context.wp('Inbox')
-                          : context.wp(
-                              'Inbox ({count})',
-                              args: <String, Object?>{'count': inboxCount},
-                            ),
-                    ),
-                    IconButton(
-                      key: const ValueKey<String>(
-                        'workspace-mcp-picker-button',
-                      ),
-                      onPressed: onOpenMcpPicker,
-                      icon: const Icon(Icons.extension_rounded),
-                      tooltip:
-                          '${context.wp('Toggle MCPs')} (${_formatWorkspaceShortcutLabel('mod+;')})',
-                    ),
-                    IconButton(
-                      key: const ValueKey<String>(
-                        'workspace-chat-search-button',
-                      ),
-                      onPressed: onOpenChatSearch,
-                      icon: const Icon(Icons.search_rounded),
-                      tooltip: context.wp('Search chat'),
-                    ),
-                    IconButton(
-                      onPressed: onToggleTerminal,
-                      icon: Icon(
-                        terminalOpen
-                            ? Icons.terminal_rounded
-                            : Icons.terminal_outlined,
-                      ),
-                      tooltip: terminalOpen
-                          ? context.wp('Hide terminal')
-                          : context.wp('Show terminal'),
-                    ),
-                    _SessionOverflowMenuButton(sections: menuSections),
-                  ],
-                ),
-                if (hasSessionMeta) ...<Widget>[
-                  SizedBox(height: density.inset(AppSpacing.sm, min: 6)),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Expanded(
-                        child: _WorkspaceSessionHeaderMetaBlock(
-                          profileLabel: profileLabel,
-                          projectDirectory: projectDirectory,
-                          canReturnToMain: canReturnToMain,
-                          rootSessionTitle: rootSession?.title ?? '',
-                          onBackToMainSession: onBackToMainSession,
-                        ),
-                      ),
-                      if (headerActionChips.isNotEmpty) ...<Widget>[
-                        SizedBox(width: density.inset(AppSpacing.md, min: 10)),
-                        Flexible(
-                          child: Align(
-                            alignment: Alignment.topRight,
-                            child: Wrap(
-                              key: const ValueKey<String>(
-                                'workspace-session-header-action-chips',
+                        if (session != null)
+                          Padding(
+                            padding: const EdgeInsets.only(left: AppSpacing.sm),
+                            child: _SessionContextUsageRing(
+                              key: ValueKey<String>(
+                                'session-header-context-ring-${session!.id}',
                               ),
-                              alignment: WrapAlignment.end,
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              spacing: density.inset(AppSpacing.xs, min: 4),
-                              runSpacing: density.inset(AppSpacing.xs, min: 4),
-                              children: headerActionChips,
+                              usagePercent: contextSnapshot?.usagePercent,
+                              totalTokens: contextSnapshot?.totalTokens,
+                              contextLimit: contextSnapshot?.contextLimit,
+                              onTap: onOpenContextPanel,
                             ),
+                          ),
+                        SizedBox(width: density.inset(AppSpacing.xs, min: 4)),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: surfaces.panel.withValues(alpha: 0.9),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: surfaces.lineSoft),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              IconButton(
+                                key: const ValueKey<String>(
+                                  'workspace-command-palette-button',
+                                ),
+                                onPressed: onOpenCommandPalette,
+                                icon: const Icon(Icons.apps_rounded),
+                                tooltip:
+                                    '${context.wp('Command palette')} (${_formatWorkspaceShortcutLabel('mod+k')})',
+                              ),
+                              IconButton(
+                                key: const ValueKey<String>(
+                                  'workspace-project-actions-icon-button',
+                                ),
+                                onPressed: onOpenProjectActions,
+                                icon: const Icon(Icons.flash_on_outlined),
+                                tooltip: context.wp('Project Actions'),
+                              ),
+                              IconButton(
+                                key: const ValueKey<String>(
+                                  'workspace-inbox-icon-button',
+                                ),
+                                onPressed: onOpenInbox,
+                                icon: Icon(
+                                  inboxCount == 0
+                                      ? Icons.inbox_outlined
+                                      : Icons.mark_email_unread_outlined,
+                                ),
+                                tooltip: inboxCount == 0
+                                    ? context.wp('Inbox')
+                                    : context.wp(
+                                        'Inbox ({count})',
+                                        args: <String, Object?>{
+                                          'count': inboxCount,
+                                        },
+                                      ),
+                              ),
+                              IconButton(
+                                key: const ValueKey<String>(
+                                  'workspace-mcp-picker-button',
+                                ),
+                                onPressed: onOpenMcpPicker,
+                                icon: const Icon(Icons.extension_rounded),
+                                tooltip:
+                                    '${context.wp('Toggle MCPs')} (${_formatWorkspaceShortcutLabel('mod+;')})',
+                              ),
+                              IconButton(
+                                key: const ValueKey<String>(
+                                  'workspace-chat-search-button',
+                                ),
+                                onPressed: onOpenChatSearch,
+                                icon: const Icon(Icons.search_rounded),
+                                tooltip: context.wp('Search chat'),
+                              ),
+                              IconButton(
+                                onPressed: onToggleTerminal,
+                                icon: Icon(
+                                  terminalOpen
+                                      ? Icons.terminal_rounded
+                                      : Icons.terminal_outlined,
+                                ),
+                                tooltip: terminalOpen
+                                    ? context.wp('Hide terminal')
+                                    : context.wp('Show terminal'),
+                              ),
+                              _SessionOverflowMenuButton(
+                                sections: menuSections,
+                              ),
+                            ],
                           ),
                         ),
                       ],
+                    ),
+                    if (hasSessionMeta) ...<Widget>[
+                      SizedBox(height: density.inset(AppSpacing.sm, min: 6)),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Expanded(
+                            child: _WorkspaceSessionHeaderMetaBlock(
+                              profileLabel: profileLabel,
+                              projectDirectory: projectDirectory,
+                              canReturnToMain: canReturnToMain,
+                              rootSessionTitle: rootSession?.title ?? '',
+                              onBackToMainSession: onBackToMainSession,
+                            ),
+                          ),
+                          if (headerActionChips.isNotEmpty) ...<Widget>[
+                            SizedBox(
+                              width: density.inset(AppSpacing.md, min: 10),
+                            ),
+                            Flexible(
+                              child: Align(
+                                alignment: Alignment.topRight,
+                                child: Wrap(
+                                  key: const ValueKey<String>(
+                                    'workspace-session-header-action-chips',
+                                  ),
+                                  alignment: WrapAlignment.end,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  spacing: density.inset(AppSpacing.xs, min: 4),
+                                  runSpacing: density.inset(
+                                    AppSpacing.xs,
+                                    min: 4,
+                                  ),
+                                  children: headerActionChips,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
                     ],
-                  ),
-                ],
-              ],
-            ),
+                  ],
+                ),
+              ),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 180),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                child: searchBar,
+              ),
+            ],
           ),
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 180),
-            switchInCurve: Curves.easeOutCubic,
-            switchOutCurve: Curves.easeInCubic,
-            child: searchBar,
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -7705,17 +7786,14 @@ class _WorkspaceChatSearchBar extends StatelessWidget {
     final surfaces = theme.extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
     if (compact) {
-      return Container(
+      return AppGlassPanel(
         key: const ValueKey<String>('workspace-chat-search-panel'),
-        width: double.infinity,
+        radius: AppSpacing.panelRadius,
+        blur: 20,
+        backgroundOpacity: theme.brightness == Brightness.dark ? 0.78 : 0.9,
         padding: EdgeInsets.symmetric(
           horizontal: density.inset(AppSpacing.sm),
           vertical: density.inset(AppSpacing.xs),
-        ),
-        decoration: BoxDecoration(
-          color: surfaces.panelRaised.withValues(alpha: 0.94),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: surfaces.lineSoft),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -7807,17 +7885,14 @@ class _WorkspaceChatSearchBar extends StatelessWidget {
         ),
       );
     }
-    return Container(
+    return AppGlassPanel(
       key: const ValueKey<String>('workspace-chat-search-panel'),
-      width: double.infinity,
+      radius: AppSpacing.panelRadius,
+      blur: 22,
+      backgroundOpacity: theme.brightness == Brightness.dark ? 0.78 : 0.9,
       padding: EdgeInsets.symmetric(
         horizontal: density.inset(compact ? AppSpacing.sm : AppSpacing.md),
         vertical: density.inset(compact ? AppSpacing.xs : AppSpacing.sm),
-      ),
-      decoration: BoxDecoration(
-        color: surfaces.panelRaised.withValues(alpha: 0.94),
-        borderRadius: BorderRadius.circular(compact ? 16 : 18),
-        border: Border.all(color: surfaces.lineSoft),
       ),
       child: Row(
         children: <Widget>[
@@ -7915,14 +7990,9 @@ class _WorkspacePanelToggleChip extends StatelessWidget {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
-    final accent = theme.colorScheme.primary;
-    final backgroundColor = active
-        ? accent.withValues(alpha: 0.12)
-        : surfaces.panelRaised.withValues(alpha: 0.78);
-    final borderColor = active
-        ? accent.withValues(alpha: 0.26)
-        : surfaces.lineSoft;
-    final foregroundColor = active ? accent : surfaces.muted;
+    final foregroundColor = active
+        ? theme.colorScheme.onSurface
+        : surfaces.muted;
 
     return Tooltip(
       message: tooltip,
@@ -7930,7 +8000,7 @@ class _WorkspacePanelToggleChip extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
+          borderRadius: BorderRadius.circular(14),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
             curve: Curves.easeOutCubic,
@@ -7938,10 +8008,13 @@ class _WorkspacePanelToggleChip extends StatelessWidget {
               horizontal: density.inset(AppSpacing.sm),
               vertical: density.inset(AppSpacing.xs, min: 4),
             ),
-            decoration: BoxDecoration(
-              color: backgroundColor,
-              borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
-              border: Border.all(color: borderColor),
+            decoration: appSoftCardDecoration(
+              context,
+              radius: 14,
+              tone: AppSurfaceTone.accent,
+              muted: !active,
+              emphasized: false,
+              selected: active,
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -7951,7 +8024,7 @@ class _WorkspacePanelToggleChip extends StatelessWidget {
                 Text(
                   label,
                   style: theme.textTheme.labelMedium?.copyWith(
-                    color: active ? theme.colorScheme.onSurface : null,
+                    color: foregroundColor,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -7994,7 +8067,7 @@ class _WorkspaceActionChip extends StatelessWidget {
           color: Colors.transparent,
           child: InkWell(
             onTap: enabled ? onTap : null,
-            borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
+            borderRadius: BorderRadius.circular(14),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 180),
               curve: Curves.easeOutCubic,
@@ -8002,10 +8075,10 @@ class _WorkspaceActionChip extends StatelessWidget {
                 horizontal: density.inset(AppSpacing.sm),
                 vertical: density.inset(AppSpacing.xs, min: 4),
               ),
-              decoration: BoxDecoration(
-                color: surfaces.panelRaised.withValues(alpha: 0.82),
-                borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
-                border: Border.all(color: surfaces.lineSoft),
+              decoration: appSoftCardDecoration(
+                context,
+                radius: 14,
+                muted: true,
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -8194,26 +8267,24 @@ class _SessionOverflowMenuPanel extends StatelessWidget {
     final surfaces = theme.extension<AppSurfaces>()!;
 
     return ClipRRect(
-      borderRadius: BorderRadius.circular(22),
+      borderRadius: BorderRadius.circular(18),
       child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+        filter: ui.ImageFilter.blur(sigmaX: 14, sigmaY: 14),
         child: Container(
           key: const ValueKey<String>('session-header-overflow-menu-panel'),
           constraints: const BoxConstraints(maxWidth: 320, minWidth: 260),
           decoration: BoxDecoration(
-            color: surfaces.panelRaised.withValues(alpha: 0.78),
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.09)),
+            color: surfaces.panelRaised.withValues(alpha: 0.96),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: surfaces.lineSoft.withValues(alpha: 0.96),
+            ),
             boxShadow: <BoxShadow>[
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.42),
-                blurRadius: 34,
-                offset: const Offset(0, 20),
-              ),
-              BoxShadow(
-                color: surfaces.background.withValues(alpha: 0.24),
-                blurRadius: 8,
-                offset: const Offset(0, 3),
+                color: Colors.black.withValues(alpha: 0.22),
+                blurRadius: 20,
+                spreadRadius: -10,
+                offset: const Offset(0, 10),
               ),
             ],
           ),
@@ -10994,22 +11065,15 @@ class _WorkspaceCommandPaletteSheetState
               maxHeight: math.min(mediaQuery.size.height * 0.76, 640),
             ),
             child: Material(
-              key: const ValueKey<String>('workspace-command-palette-sheet'),
-              color: surfaces.panel,
-              borderRadius: BorderRadius.circular(28),
-              child: Container(
+              color: Colors.transparent,
+              child: AppGlassPanel(
+                key: const ValueKey<String>('workspace-command-palette-sheet'),
+                radius: AppSpacing.dialogRadius,
+                blur: 24,
+                backgroundOpacity: theme.brightness == Brightness.dark
+                    ? 0.82
+                    : 0.9,
                 padding: const EdgeInsets.all(AppSpacing.md),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(28),
-                  border: Border.all(color: surfaces.lineSoft),
-                  boxShadow: <BoxShadow>[
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.24),
-                      blurRadius: 28,
-                      offset: const Offset(0, 18),
-                    ),
-                  ],
-                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
@@ -11527,22 +11591,15 @@ class _WorkspaceMcpPickerSheetState extends State<_WorkspaceMcpPickerSheet> {
             maxHeight: math.min(mediaQuery.size.height * 0.86, 760),
           ),
           child: Material(
-            key: const ValueKey<String>('workspace-mcp-picker-sheet'),
-            color: surfaces.panel,
-            borderRadius: BorderRadius.circular(28),
-            child: Container(
+            color: Colors.transparent,
+            child: AppGlassPanel(
+              key: const ValueKey<String>('workspace-mcp-picker-sheet'),
+              radius: AppSpacing.sheetRadius,
+              blur: 24,
+              backgroundOpacity: theme.brightness == Brightness.dark
+                  ? 0.82
+                  : 0.9,
               padding: const EdgeInsets.all(AppSpacing.md),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(28),
-                border: Border.all(color: surfaces.lineSoft),
-                boxShadow: <BoxShadow>[
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.24),
-                    blurRadius: 28,
-                    offset: const Offset(0, 18),
-                  ),
-                ],
-              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
@@ -12165,9 +12222,9 @@ class _SessionIdentity extends StatelessWidget {
                         ),
                         decoration: BoxDecoration(
                           color: primary.withValues(alpha: 0.14),
-                          borderRadius: BorderRadius.circular(AppSpacing.md),
+                          borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: primary.withValues(alpha: 0.28),
+                            color: primary.withValues(alpha: 0.22),
                           ),
                         ),
                         child: Row(
@@ -12630,34 +12687,6 @@ class _WorkspaceSidebar extends StatefulWidget {
   State<_WorkspaceSidebar> createState() => _WorkspaceSidebarState();
 }
 
-void _triggerProjectReorderHapticFeedback() {
-  unawaited(HapticFeedback.selectionClick().catchError((_) {}));
-}
-
-class _HapticDelayedMultiDragGestureRecognizer
-    extends DelayedMultiDragGestureRecognizer {
-  _HapticDelayedMultiDragGestureRecognizer({super.debugOwner});
-
-  @override
-  void acceptGesture(int pointer) {
-    _triggerProjectReorderHapticFeedback();
-    super.acceptGesture(pointer);
-  }
-}
-
-class _HapticReorderableDelayedDragStartListener
-    extends ReorderableDelayedDragStartListener {
-  const _HapticReorderableDelayedDragStartListener({
-    required super.child,
-    required super.index,
-  });
-
-  @override
-  MultiDragGestureRecognizer createRecognizer() {
-    return _HapticDelayedMultiDragGestureRecognizer(debugOwner: this);
-  }
-}
-
 class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
   List<ProjectTarget> _orderedProjects = const <ProjectTarget>[];
 
@@ -12751,7 +12780,6 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
       _ => false,
     };
     final density = _workspaceDensity(context);
-    final railWidth = density.sidebarRailWidth(72);
     final panelPadding = density.inset(AppSpacing.md, min: AppSpacing.xs);
     final sectionGap = density.inset(AppSpacing.lg, min: AppSpacing.md);
     final microGap = density.inset(AppSpacing.sm, min: AppSpacing.xs);
@@ -12759,6 +12787,13 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
     final currentProject =
         widget.project ??
         _projectForDirectory(projects, widget.currentDirectory);
+    final currentProjectTitle = () {
+      final title = currentProject?.title.trim();
+      if (title != null && title.isNotEmpty) {
+        return title;
+      }
+      return projectDisplayLabel(widget.currentDirectory);
+    }();
     final rootSelectedSessionId = _rootSessionFor(
       widget.allSessions,
       _sessionById(widget.allSessions, widget.currentSessionId),
@@ -12770,257 +12805,447 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
       selectedSessionId: widget.currentSessionId,
       includeNested: widget.showSubsessions,
     );
-
-    return SizedBox(
-      width: density.sidebarWidth(widget.width),
-      child: Row(
-        children: <Widget>[
-          Container(
-            width: railWidth,
-            color: surfaces.panel,
-            child: Column(
-              children: <Widget>[
-                SizedBox(height: panelPadding),
-                Expanded(
-                  child: ReorderableListView.builder(
-                    key: const ValueKey<String>(
-                      'workspace-project-sidebar-reorder-list',
-                    ),
-                    buildDefaultDragHandles: false,
-                    padding: EdgeInsets.zero,
-                    itemCount: projects.length,
-                    onReorder: (oldIndex, newIndex) =>
-                        unawaited(_handleProjectReorder(oldIndex, newIndex)),
-                    proxyDecorator: (child, index, animation) {
-                      final curved = CurvedAnimation(
-                        parent: animation,
-                        curve: Curves.easeOutCubic,
-                      );
-                      return FadeTransition(
-                        opacity: Tween<double>(
-                          begin: 0.94,
-                          end: 1,
-                        ).animate(curved),
-                        child: ScaleTransition(
-                          scale: Tween<double>(
-                            begin: 1,
-                            end: 1.04,
-                          ).animate(curved),
-                          child: child,
-                        ),
-                      );
-                    },
-                    itemBuilder: (context, index) {
-                      final project = projects[index];
-                      final selected =
-                          project.directory == widget.currentDirectory;
-                      final tile = _ProjectSidebarTile(
-                        key: ValueKey<String>(
-                          'workspace-project-${project.directory}',
-                        ),
-                        project: project,
-                        notificationState: widget
-                            .projectNotificationStateForDirectory(
-                              project.directory,
-                            ),
-                        selected: selected,
-                        onSelect: () => widget.onSelectProject(project),
-                        onEdit: () => widget.onEditProject(project),
-                        onRemove: () => widget.onRemoveProject(project),
-                      );
-                      final reorderableTile = projects.length > 1
-                          ? compactLayout
-                                ? _HapticReorderableDelayedDragStartListener(
-                                    index: index,
-                                    child: tile,
-                                  )
-                                : ReorderableDragStartListener(
-                                    index: index,
-                                    child: tile,
-                                  )
-                          : tile;
-                      return Padding(
-                        key: ValueKey<String>(
-                          'workspace-project-item-${project.directory}',
-                        ),
-                        padding: EdgeInsets.fromLTRB(
-                          density.inset(AppSpacing.sm),
-                          0,
-                          density.inset(AppSpacing.sm),
-                          index == projects.length - 1 ? 0 : microGap,
-                        ),
-                        child: reorderableTile,
-                      );
-                    },
-                  ),
+    final projectListHeight = projects.isEmpty
+        ? 0.0
+        : math.min(
+            compactLayout ? 152.0 : 220.0,
+            projects.length * (compactLayout ? 54.0 : 62.0),
+          );
+    final workspaceSection = <Widget>[
+      _WorkspaceSidebarSectionLabel(
+        label: context.wp('Workspace'),
+        trailing: projects.isEmpty
+            ? null
+            : Text(
+                '${projects.length}',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: surfaces.muted,
+                  fontWeight: FontWeight.w700,
                 ),
-                IconButton(
-                  key: const ValueKey<String>(
-                    'workspace-sidebar-add-project-button',
+              ),
+      ),
+      SizedBox(height: microGap),
+      Container(
+        width: double.infinity,
+        padding: EdgeInsets.all(panelPadding),
+        decoration: appSoftCardDecoration(
+          context,
+          radius: 20,
+          muted: true,
+          selected: true,
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            _ProjectAvatar(
+              project:
+                  currentProject ??
+                  ProjectTarget(
+                    directory: widget.currentDirectory,
+                    label: projectDisplayLabel(widget.currentDirectory),
+                    source: 'workspace',
                   ),
-                  onPressed: widget.onAddProject,
-                  icon: const Icon(Icons.add_rounded),
-                  tooltip: context.wp('Add project'),
-                ),
-                IconButton(
-                  key: const ValueKey<String>(
-                    'workspace-sidebar-settings-button',
-                  ),
-                  onPressed: widget.onOpenSettings,
-                  icon: const Icon(Icons.settings_rounded),
-                  tooltip:
-                      '${context.wp('Workspace settings')} (${_formatWorkspaceShortcutLabel('mod+comma')})',
-                ),
-                SizedBox(height: panelPadding),
-              ],
+              size: 42,
+              fontSize: 18,
+              rounded: 12,
             ),
-          ),
-          Expanded(
-            child: Container(
-              color: surfaces.panelRaised,
-              padding: EdgeInsets.all(panelPadding),
+            SizedBox(width: microGap),
+            Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  if (currentProject != null) ...<Widget>[
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: <Widget>[
-                              Text(
-                                currentProject.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.titleLarge?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                currentProject.directory,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: GoogleFonts.ibmPlexMono(
-                                  fontSize: 12,
-                                  color: surfaces.muted,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        SizedBox(width: microGap),
-                        _SidebarProjectMenuButton(
-                          project: currentProject,
-                          onEdit: () => widget.onEditProject(currentProject),
-                          onRemove: () =>
-                              widget.onRemoveProject(currentProject),
-                        ),
-                      ],
-                    ),
-                    SizedBox(height: sectionGap),
-                  ] else ...<Widget>[
-                    Text(
-                      projectDisplayLabel(widget.currentDirectory),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    SizedBox(height: sectionGap),
-                  ],
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      key: const ValueKey<String>(
-                        'workspace-sidebar-new-session-button',
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: theme.colorScheme.onSurface,
-                        alignment: Alignment.centerLeft,
-                        padding: EdgeInsets.symmetric(
-                          horizontal: panelPadding,
-                          vertical: density.inset(AppSpacing.md),
-                        ),
-                        textStyle: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                        side: BorderSide(color: surfaces.lineSoft),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        backgroundColor: surfaces.panel,
-                      ),
-                      onPressed: widget.loadingProjectContents
-                          ? null
-                          : widget.onNewSession,
-                      icon: const Icon(Icons.edit_note_rounded, size: 18),
-                      label: Text(context.wp('New session')),
+                  Text(
+                    currentProjectTitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
-                  SizedBox(height: panelPadding),
-                  Expanded(
-                    child: widget.loadingProjectContents
-                        ? const _SidebarSessionLoadingState()
-                        : sessionEntries.isEmpty
-                        ? Text(
-                            context.wp('Start a new session to begin.'),
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: surfaces.muted,
-                            ),
-                          )
-                        : ListView.separated(
-                            itemCount: sessionEntries.length,
-                            separatorBuilder: (_, _) =>
-                                SizedBox(height: density.inset(AppSpacing.xs)),
-                            itemBuilder: (context, index) {
-                              final entry = sessionEntries[index];
-                              return _SidebarSessionTreeRow(
-                                key: ValueKey<String>(
-                                  'workspace-session-entry-${entry.session.id}-${entry.depth}',
-                                ),
-                                entry: entry,
-                                project: currentProject,
-                                notificationState: widget
-                                    .sessionNotificationStateForSession(
-                                      entry.session.id,
-                                    ),
-                                hoverPreviewState: widget
-                                    .hoverPreviewStateForSession(
-                                      entry.session.id,
-                                    ),
-                                selected: widget.showSubsessions
-                                    ? entry.session.id ==
-                                          widget.currentSessionId
-                                    : entry.rootId == rootSelectedSessionId,
-                                hoverPreviewEnabled: hoverPreviewEnabled,
-                                onHoverPreviewRequested: () {
-                                  unawaited(
-                                    widget.onPrefetchSessionHoverPreview(
-                                      entry.session.id,
-                                    ),
-                                  );
-                                },
-                                onFocusPreviewMessage: (messageId) =>
-                                    widget.onFocusSessionMessage(
-                                      entry.session.id,
-                                      messageId,
-                                    ),
-                                onTap: () =>
-                                    widget.onSelectSession(entry.session.id),
-                              );
-                            },
-                          ),
+                  const SizedBox(height: 4),
+                  Text(
+                    currentProject?.directory ?? widget.currentDirectory,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.ibmPlexMono(
+                      fontSize: 11.5,
+                      color: surfaces.muted,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ],
               ),
             ),
+            if (currentProject != null) ...<Widget>[
+              SizedBox(width: microGap),
+              _SidebarProjectMenuButton(
+                project: currentProject,
+                onEdit: () => widget.onEditProject(currentProject),
+                onRemove: () => widget.onRemoveProject(currentProject),
+              ),
+            ],
+          ],
+        ),
+      ),
+      if (projects.isNotEmpty) ...<Widget>[
+        SizedBox(height: panelPadding),
+        SizedBox(
+          height: projectListHeight,
+          child: ReorderableListView.builder(
+            key: const ValueKey<String>(
+              'workspace-project-sidebar-reorder-list',
+            ),
+            buildDefaultDragHandles: false,
+            padding: EdgeInsets.zero,
+            itemCount: projects.length,
+            onReorder: (oldIndex, newIndex) =>
+                unawaited(_handleProjectReorder(oldIndex, newIndex)),
+            proxyDecorator: (child, index, animation) {
+              final curved = CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeOutCubic,
+              );
+              return FadeTransition(
+                opacity: Tween<double>(begin: 0.94, end: 1).animate(curved),
+                child: ScaleTransition(
+                  scale: Tween<double>(begin: 1, end: 1.02).animate(curved),
+                  child: child,
+                ),
+              );
+            },
+            itemBuilder: (context, index) {
+              final project = projects[index];
+              final selected = project.directory == widget.currentDirectory;
+              final reorderHandle = projects.length > 1
+                  ? ReorderableDragStartListener(
+                      index: index,
+                      child: _ProjectReorderHandle(
+                        key: ValueKey<String>(
+                          'workspace-project-reorder-handle-${project.directory}',
+                        ),
+                      ),
+                    )
+                  : null;
+              final tile = _ProjectSidebarTile(
+                key: ValueKey<String>('workspace-project-${project.directory}'),
+                project: project,
+                notificationState: widget.projectNotificationStateForDirectory(
+                  project.directory,
+                ),
+                selected: selected,
+                reorderHandle: reorderHandle,
+                onSelect: () => widget.onSelectProject(project),
+                onEdit: () => widget.onEditProject(project),
+                onRemove: () => widget.onRemoveProject(project),
+              );
+              return Padding(
+                key: ValueKey<String>(
+                  'workspace-project-item-${project.directory}',
+                ),
+                padding: EdgeInsets.only(
+                  bottom: index == projects.length - 1 ? 0 : microGap,
+                ),
+                child: tile,
+              );
+            },
           ),
+        ),
+      ],
+    ];
+    final threadSection = <Widget>[
+      _WorkspaceSidebarSectionLabel(
+        label: context.wp('Threads'),
+        trailing: Text(
+          '${sessionEntries.length}',
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: surfaces.muted,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+      SizedBox(height: microGap),
+      SizedBox(
+        width: double.infinity,
+        child: FilledButton.tonalIcon(
+          key: const ValueKey<String>('workspace-sidebar-new-session-button'),
+          onPressed: widget.loadingProjectContents ? null : widget.onNewSession,
+          icon: const Icon(Icons.edit_note_rounded, size: 18),
+          label: Text(context.wp('New session')),
+          style: FilledButton.styleFrom(
+            alignment: Alignment.centerLeft,
+            padding: EdgeInsets.symmetric(
+              horizontal: panelPadding,
+              vertical: density.inset(AppSpacing.md),
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
+        ),
+      ),
+      SizedBox(height: panelPadding),
+      Expanded(
+        child: widget.loadingProjectContents
+            ? const _SidebarSessionLoadingState()
+            : sessionEntries.isEmpty
+            ? Center(
+                child: Text(
+                  context.wp('Start a new session to begin.'),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: surfaces.muted,
+                  ),
+                ),
+              )
+            : ListView.separated(
+                itemCount: sessionEntries.length,
+                separatorBuilder: (_, _) =>
+                    SizedBox(height: density.inset(AppSpacing.xs)),
+                itemBuilder: (context, index) {
+                  final entry = sessionEntries[index];
+                  return _SidebarSessionTreeRow(
+                    key: ValueKey<String>(
+                      'workspace-session-entry-${entry.session.id}-${entry.depth}',
+                    ),
+                    entry: entry,
+                    project: currentProject,
+                    notificationState: widget
+                        .sessionNotificationStateForSession(entry.session.id),
+                    hoverPreviewState: widget.hoverPreviewStateForSession(
+                      entry.session.id,
+                    ),
+                    selected: widget.showSubsessions
+                        ? entry.session.id == widget.currentSessionId
+                        : entry.rootId == rootSelectedSessionId,
+                    hoverPreviewEnabled: hoverPreviewEnabled,
+                    onHoverPreviewRequested: () {
+                      unawaited(
+                        widget.onPrefetchSessionHoverPreview(entry.session.id),
+                      );
+                    },
+                    onFocusPreviewMessage: (messageId) => widget
+                        .onFocusSessionMessage(entry.session.id, messageId),
+                    onTap: () => widget.onSelectSession(entry.session.id),
+                  );
+                },
+              ),
+      ),
+    ];
+    final sidebarWidth = compactLayout
+        ? widget.width
+        : density.sidebarWidth(widget.width);
+
+    return SizedBox(
+      width: sidebarWidth,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: surfaces.panelMuted,
+          border: Border(
+            right: BorderSide(color: surfaces.lineSoft.withValues(alpha: 0.85)),
+          ),
+        ),
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            panelPadding,
+            density.inset(AppSpacing.md, min: AppSpacing.sm),
+            panelPadding,
+            panelPadding,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              if (!compactLayout) ...<Widget>[
+                const _WorkspaceDesktopTrafficLights(),
+                SizedBox(height: sectionGap),
+              ],
+              _WorkspaceSidebarNavButton(
+                icon: Icons.add_comment_rounded,
+                label: context.wp('New thread'),
+                onTap: widget.loadingProjectContents
+                    ? null
+                    : widget.onNewSession,
+              ),
+              SizedBox(height: microGap),
+              _WorkspaceSidebarNavButton(
+                key: const ValueKey<String>(
+                  'workspace-sidebar-add-project-button',
+                ),
+                icon: Icons.folder_open_rounded,
+                label: context.wp('Open project'),
+                onTap: widget.onAddProject,
+              ),
+              SizedBox(height: microGap),
+              _WorkspaceSidebarNavButton(
+                icon: Icons.extension_rounded,
+                label: context.wp('Workspace tools'),
+                onTap: widget.onOpenSettings,
+                secondaryLabel: context.wp('Settings, themes, shortcuts'),
+              ),
+              SizedBox(height: sectionGap),
+              if (compactLayout) ...threadSection else ...workspaceSection,
+              SizedBox(height: sectionGap),
+              if (compactLayout) ...workspaceSection else ...threadSection,
+              SizedBox(height: panelPadding),
+              _WorkspaceSidebarNavButton(
+                key: const ValueKey<String>(
+                  'workspace-sidebar-settings-button',
+                ),
+                icon: Icons.settings_rounded,
+                label: context.wp('Settings'),
+                secondaryLabel: _formatWorkspaceShortcutLabel('mod+comma'),
+                onTap: widget.onOpenSettings,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WorkspaceDesktopTrafficLights extends StatelessWidget {
+  const _WorkspaceDesktopTrafficLights();
+
+  @override
+  Widget build(BuildContext context) {
+    const colors = <Color>[
+      Color(0xFFFF5F57),
+      Color(0xFFFEBB2E),
+      Color(0xFF28C840),
+    ];
+    return Row(
+      children: <Widget>[
+        for (final color in colors) ...<Widget>[
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          if (color != colors.last) const SizedBox(width: 6),
         ],
+      ],
+    );
+  }
+}
+
+class _WorkspaceSidebarSectionLabel extends StatelessWidget {
+  const _WorkspaceSidebarSectionLabel({required this.label, this.trailing});
+
+  final String label;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              color: surfaces.muted,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.3,
+            ),
+          ),
+        ),
+        ...?trailing == null ? null : <Widget>[trailing!],
+      ],
+    );
+  }
+}
+
+class _WorkspaceSidebarNavButton extends StatelessWidget {
+  const _WorkspaceSidebarNavButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.secondaryLabel,
+    super.key,
+  });
+
+  final IconData icon;
+  final String label;
+  final String? secondaryLabel;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final compactLayout =
+        MediaQuery.sizeOf(context).width < AppSpacing.wideLayoutBreakpoint;
+    final iconBoxSize = compactLayout ? 26.0 : 30.0;
+    final iconSize = compactLayout ? 14.0 : 16.0;
+    final borderRadius = compactLayout ? 14.0 : 16.0;
+    final horizontalPadding = compactLayout ? AppSpacing.sm : AppSpacing.md;
+    final verticalPadding = compactLayout ? 10.0 : AppSpacing.md;
+    final showSecondaryLabel =
+        !compactLayout &&
+        secondaryLabel != null &&
+        secondaryLabel!.trim().isNotEmpty;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(borderRadius),
+        child: Ink(
+          width: double.infinity,
+          padding: EdgeInsets.symmetric(
+            horizontal: horizontalPadding,
+            vertical: verticalPadding,
+          ),
+          decoration: appSoftCardDecoration(
+            context,
+            radius: borderRadius,
+            muted: true,
+            emphasized: true,
+          ),
+          child: Row(
+            children: <Widget>[
+              Container(
+                width: iconBoxSize,
+                height: iconBoxSize,
+                decoration: BoxDecoration(
+                  color: surfaces.panel.withValues(alpha: 0.9),
+                  borderRadius: BorderRadius.circular(compactLayout ? 8 : 10),
+                  border: Border.all(color: surfaces.lineSoft),
+                ),
+                child: Icon(
+                  icon,
+                  size: iconSize,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+              SizedBox(width: compactLayout ? AppSpacing.xs : AppSpacing.sm),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      label,
+                      style:
+                          (compactLayout
+                                  ? theme.textTheme.bodySmall
+                                  : theme.textTheme.bodyMedium)
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                    if (showSecondaryLabel) ...<Widget>[
+                      const SizedBox(height: 2),
+                      Text(
+                        secondaryLabel!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: surfaces.muted,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -13161,6 +13386,7 @@ class _ProjectSidebarTile extends StatefulWidget {
     required this.project,
     required this.notificationState,
     required this.selected,
+    this.reorderHandle,
     required this.onSelect,
     required this.onEdit,
     required this.onRemove,
@@ -13170,6 +13396,7 @@ class _ProjectSidebarTile extends StatefulWidget {
   final ProjectTarget project;
   final WorkspaceSidebarNotificationState notificationState;
   final bool selected;
+  final Widget? reorderHandle;
   final VoidCallback onSelect;
   final VoidCallback onEdit;
   final VoidCallback onRemove;
@@ -13198,6 +13425,7 @@ class _ProjectSidebarTileState extends State<_ProjectSidebarTile> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     return Tooltip(
       message: widget.project.title,
@@ -13209,47 +13437,96 @@ class _ProjectSidebarTileState extends State<_ProjectSidebarTile> {
           onLongPressStart: (details) => _showMenu(details.globalPosition),
           child: InkWell(
             onTap: widget.onSelect,
-            borderRadius: BorderRadius.circular(AppSpacing.md),
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: <Widget>[
-                Container(
-                  height: 48,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: widget.selected
-                        ? Theme.of(
-                            context,
-                          ).colorScheme.primary.withValues(alpha: 0.16)
-                        : surfaces.panelRaised,
-                    borderRadius: BorderRadius.circular(AppSpacing.md),
-                    border: Border.all(
-                      color: widget.selected
-                          ? Theme.of(context).colorScheme.primary
-                          : surfaces.lineSoft,
-                    ),
-                  ),
-                  child: _ProjectAvatar(
+            borderRadius: BorderRadius.circular(16),
+            child: Ink(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.md,
+                vertical: AppSpacing.sm,
+              ),
+              decoration: appSoftCardDecoration(
+                context,
+                radius: 16,
+                muted: !widget.selected,
+                selected: widget.selected,
+              ),
+              child: Row(
+                children: <Widget>[
+                  _ProjectAvatar(
                     project: widget.project,
-                    size: 38,
-                    fontSize: 22,
+                    size: 32,
+                    fontSize: 15,
                     rounded: 10,
                   ),
-                ),
-                if (widget.notificationState.visible)
-                  Positioned(
-                    top: 6,
-                    right: 6,
-                    child: _WorkspaceSidebarNotificationBadge(
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          widget.project.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          projectDisplayLabel(widget.project.directory),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: surfaces.muted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (widget.notificationState.visible) ...<Widget>[
+                    const SizedBox(width: AppSpacing.xs),
+                    _WorkspaceSidebarNotificationBadge(
                       key: ValueKey<String>(
                         'workspace-project-notification-badge-${widget.project.directory}',
                       ),
                       state: widget.notificationState,
                       compact: true,
                     ),
-                  ),
-              ],
+                  ],
+                  if (widget.reorderHandle != null) ...<Widget>[
+                    const SizedBox(width: AppSpacing.xs),
+                    widget.reorderHandle!,
+                  ],
+                ],
+              ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ProjectReorderHandle extends StatelessWidget {
+  const _ProjectReorderHandle({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return Tooltip(
+      message: context.wp('Reorder project'),
+      waitDuration: const Duration(milliseconds: 150),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: surfaces.panelRaised,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: surfaces.lineSoft),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.xs),
+          child: Icon(
+            Icons.drag_indicator_rounded,
+            size: 18,
+            color: surfaces.muted,
           ),
         ),
       ),
@@ -13396,12 +13673,14 @@ class _SidebarSessionTreeRowState extends State<_SidebarSessionTreeRow> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
+    final compactLayout =
+        MediaQuery.sizeOf(context).width < AppSpacing.wideLayoutBreakpoint;
     final title = widget.entry.session.title.trim().isEmpty
         ? context.wp('Untitled session')
         : widget.entry.session.title.trim();
     final active = widget.entry.active;
     final isRoot = widget.entry.depth == 0;
-    final indent = widget.entry.depth * 18.0;
+    final indent = widget.entry.depth * (compactLayout ? 12.0 : 18.0);
     final previewVisible =
         widget.hoverPreviewEnabled &&
         _hovering &&
@@ -13419,30 +13698,32 @@ class _SidebarSessionTreeRowState extends State<_SidebarSessionTreeRow> {
             Material(
               color: Colors.transparent,
               child: InkWell(
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(compactLayout ? 12 : 14),
                 onTap: widget.onTap,
                 child: Ink(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.sm,
-                    vertical: AppSpacing.sm,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: compactLayout ? AppSpacing.xs : AppSpacing.sm,
+                    vertical: compactLayout ? AppSpacing.xs : AppSpacing.sm,
                   ),
                   decoration: BoxDecoration(
                     color: widget.selected
                         ? theme.colorScheme.primary.withValues(alpha: 0.12)
                         : Colors.transparent,
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(
+                      compactLayout ? 12 : 14,
+                    ),
                   ),
                   child: Row(
                     children: <Widget>[
                       SizedBox(
-                        width: 22,
+                        width: compactLayout ? 18 : 22,
                         child: Center(
                           child: isRoot
                               ? (widget.project != null
                                     ? _ProjectAvatar(
                                         project: widget.project!,
-                                        size: 16,
-                                        fontSize: 10,
+                                        size: compactLayout ? 14 : 16,
+                                        fontSize: compactLayout ? 9 : 10,
                                         rounded: 5,
                                       )
                                     : Container(
@@ -13454,7 +13735,7 @@ class _SidebarSessionTreeRowState extends State<_SidebarSessionTreeRow> {
                                         ),
                                       ))
                               : Container(
-                                  width: 10,
+                                  width: compactLayout ? 8 : 10,
                                   height: 2,
                                   decoration: BoxDecoration(
                                     color: surfaces.muted,
@@ -13463,7 +13744,9 @@ class _SidebarSessionTreeRowState extends State<_SidebarSessionTreeRow> {
                                 ),
                         ),
                       ),
-                      const SizedBox(width: AppSpacing.sm),
+                      SizedBox(
+                        width: compactLayout ? AppSpacing.xs : AppSpacing.sm,
+                      ),
                       Expanded(
                         child: _ShimmeringRichText(
                           key: ValueKey<String>(
@@ -13737,70 +14020,52 @@ class _ProjectContextMenuPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final surfaces = theme.extension<AppSurfaces>()!;
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(18),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          constraints: const BoxConstraints(minWidth: 220, maxWidth: 236),
-          decoration: BoxDecoration(
-            color: surfaces.panelRaised.withValues(alpha: 0.82),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-            boxShadow: <BoxShadow>[
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.34),
-                blurRadius: 28,
-                offset: const Offset(0, 18),
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 220, maxWidth: 236),
+      child: AppGlassPanel(
+        radius: 18,
+        blur: 20,
+        backgroundOpacity: theme.brightness == Brightness.dark ? 0.8 : 0.9,
+        borderOpacity: 0.1,
+        padding: const EdgeInsets.all(AppSpacing.xs),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.sm,
+                AppSpacing.xs,
+                AppSpacing.sm,
+                AppSpacing.sm,
               ),
-            ],
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.xs),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.sm,
-                    AppSpacing.xs,
-                    AppSpacing.sm,
-                    AppSpacing.sm,
+              child: Row(
+                children: <Widget>[
+                  _ProjectAvatar(project: project, size: 34, fontSize: 18),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Text(
+                      project.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall,
+                    ),
                   ),
-                  child: Row(
-                    children: <Widget>[
-                      _ProjectAvatar(project: project, size: 34, fontSize: 18),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: Text(
-                          project.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.titleSmall,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                _ProjectContextMenuItem(
-                  label: context.wp('Edit project'),
-                  icon: Icons.edit_rounded,
-                  onTap: () =>
-                      Navigator.of(context).pop(_ProjectMenuAction.edit),
-                ),
-                _ProjectContextMenuItem(
-                  label: context.wp('Delete project'),
-                  icon: Icons.delete_outline_rounded,
-                  destructive: true,
-                  onTap: () =>
-                      Navigator.of(context).pop(_ProjectMenuAction.remove),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
+            _ProjectContextMenuItem(
+              label: context.wp('Edit project'),
+              icon: Icons.edit_rounded,
+              onTap: () => Navigator.of(context).pop(_ProjectMenuAction.edit),
+            ),
+            _ProjectContextMenuItem(
+              label: context.wp('Delete project'),
+              icon: Icons.delete_outline_rounded,
+              destructive: true,
+              onTap: () => Navigator.of(context).pop(_ProjectMenuAction.remove),
+            ),
+          ],
         ),
       ),
     );
@@ -13963,265 +14228,242 @@ class _EditProjectDialogState extends State<_EditProjectDialog> {
         horizontal: AppSpacing.lg,
         vertical: AppSpacing.xl,
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(28),
-        child: BackdropFilter(
-          filter: ui.ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 520),
-            decoration: BoxDecoration(
-              color: surfaces.panel.withValues(alpha: 0.92),
-              borderRadius: BorderRadius.circular(28),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-              boxShadow: <BoxShadow>[
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.42),
-                  blurRadius: 42,
-                  offset: const Offset(0, 24),
-                ),
-              ],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(AppSpacing.xl),
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: AppGlassPanel(
+          radius: AppSpacing.dialogRadius,
+          blur: 24,
+          backgroundOpacity: theme.brightness == Brightness.dark ? 0.84 : 0.92,
+          borderOpacity: 0.1,
+          padding: const EdgeInsets.all(AppSpacing.xl),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Row(
                   children: <Widget>[
-                    Row(
-                      children: <Widget>[
-                        Expanded(
-                          child: Text(
-                            context.wp('Edit project'),
-                            style: theme.textTheme.titleLarge,
-                          ),
-                        ),
-                        IconButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          icon: const Icon(Icons.close_rounded),
-                          tooltip: context.wp('Close'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.lg),
-                    TextField(
-                      controller: _nameController,
-                      decoration: InputDecoration(
-                        labelText: context.wp('Name'),
-                      ),
-                      autofocus: true,
-                    ),
-                    const SizedBox(height: AppSpacing.lg),
-                    Text(
-                      context.wp('Icon'),
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        color: surfaces.muted,
+                    Expanded(
+                      child: Text(
+                        context.wp('Edit project'),
+                        style: theme.textTheme.titleLarge,
                       ),
                     ),
-                    const SizedBox(height: AppSpacing.sm),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Stack(
-                          children: <Widget>[
-                            InkWell(
-                              onTap: _pickIcon,
-                              borderRadius: BorderRadius.circular(14),
-                              child: Container(
-                                width: 92,
-                                height: 92,
-                                decoration: BoxDecoration(
-                                  color: surfaces.panelRaised,
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(color: surfaces.lineSoft),
-                                ),
-                                alignment: Alignment.center,
-                                child: _ProjectAvatar(
-                                  project: widget.project.copyWith(
-                                    name: _nameController.text.trim().isEmpty
-                                        ? widget.project.name
-                                        : _nameController.text.trim(),
-                                    label: projectDisplayLabel(
-                                      widget.project.directory,
-                                      name: _nameController.text.trim().isEmpty
-                                          ? widget.project.name
-                                          : _nameController.text.trim(),
-                                    ),
-                                    icon: ProjectIconInfo(
-                                      url: _iconDataUrl,
-                                      override: _iconDataUrl,
-                                      color: _selectedColor,
-                                    ),
-                                  ),
-                                  size: 84,
-                                  fontSize: 34,
-                                  rounded: 10,
-                                ),
-                              ),
-                            ),
-                            if (hasCustomIcon)
-                              Positioned(
-                                right: 6,
-                                top: 6,
-                                child: Material(
-                                  color: Colors.black.withValues(alpha: 0.56),
-                                  shape: const CircleBorder(),
-                                  child: InkWell(
-                                    customBorder: const CircleBorder(),
-                                    onTap: () {
-                                      setState(() {
-                                        _iconDataUrl = null;
-                                      });
-                                    },
-                                    child: const Padding(
-                                      padding: EdgeInsets.all(6),
-                                      child: Icon(
-                                        Icons.close_rounded,
-                                        size: 16,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(width: AppSpacing.md),
-                        Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.only(top: AppSpacing.xs),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: <Widget>[
-                                Text(
-                                  _pickingIcon
-                                      ? context.wp('Loading image...')
-                                      : context.wp('Click to choose an image'),
-                                  style: theme.textTheme.bodyMedium,
-                                ),
-                                const SizedBox(height: AppSpacing.xxs),
-                                Text(
-                                  context.wp('Recommended: 128x128px'),
-                                  style: theme.textTheme.bodySmall,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (!hasCustomIcon) ...<Widget>[
-                      const SizedBox(height: AppSpacing.lg),
-                      Text(
-                        context.wp('Color'),
-                        style: theme.textTheme.labelLarge?.copyWith(
-                          color: surfaces.muted,
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.sm),
-                      Wrap(
-                        spacing: AppSpacing.sm,
-                        runSpacing: AppSpacing.sm,
-                        children: _projectAvatarColorKeys
-                            .map((colorKey) {
-                              final palette = _projectAvatarPalette(colorKey);
-                              final selected = colorKey == _selectedColor;
-                              return InkWell(
-                                onTap: () {
-                                  setState(() {
-                                    _selectedColor = colorKey;
-                                  });
-                                },
-                                borderRadius: BorderRadius.circular(12),
-                                child: AnimatedContainer(
-                                  duration: const Duration(milliseconds: 160),
-                                  width: 46,
-                                  height: 46,
-                                  decoration: BoxDecoration(
-                                    color: selected
-                                        ? Colors.white.withValues(alpha: 0.08)
-                                        : Colors.transparent,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: selected
-                                          ? Colors.white.withValues(alpha: 0.9)
-                                          : Colors.white.withValues(
-                                              alpha: 0.06,
-                                            ),
-                                      width: selected ? 2 : 1,
-                                    ),
-                                  ),
-                                  padding: const EdgeInsets.all(4),
-                                  child: DecoratedBox(
-                                    decoration: BoxDecoration(
-                                      color: palette.background,
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Center(
-                                      child: Text(
-                                        _projectInitial(
-                                          widget.project.copyWith(
-                                            name:
-                                                _nameController.text
-                                                    .trim()
-                                                    .isEmpty
-                                                ? widget.project.name
-                                                : _nameController.text.trim(),
-                                            label: projectDisplayLabel(
-                                              widget.project.directory,
-                                              name:
-                                                  _nameController.text
-                                                      .trim()
-                                                      .isEmpty
-                                                  ? widget.project.name
-                                                  : _nameController.text.trim(),
-                                            ),
-                                          ),
-                                        ),
-                                        style: theme.textTheme.titleMedium
-                                            ?.copyWith(
-                                              color: palette.foreground,
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              );
-                            })
-                            .toList(growable: false),
-                      ),
-                    ],
-                    const SizedBox(height: AppSpacing.lg),
-                    TextField(
-                      controller: _startupController,
-                      maxLines: 3,
-                      minLines: 3,
-                      decoration: InputDecoration(
-                        labelText: context.wp('Workspace startup script'),
-                        hintText: context.wp('e.g. bun install'),
-                        helperText: context.wp(
-                          'Runs after creating a new workspace (worktree).',
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.xl),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: <Widget>[
-                        TextButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          child: Text(context.wp('Cancel')),
-                        ),
-                        const SizedBox(width: AppSpacing.sm),
-                        FilledButton(
-                          onPressed: _submit,
-                          child: Text(context.wp('Save')),
-                        ),
-                      ],
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close_rounded),
+                      tooltip: context.wp('Close'),
                     ),
                   ],
                 ),
-              ),
+                const SizedBox(height: AppSpacing.lg),
+                TextField(
+                  controller: _nameController,
+                  decoration: InputDecoration(labelText: context.wp('Name')),
+                  autofocus: true,
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                Text(
+                  context.wp('Icon'),
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: surfaces.muted,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Stack(
+                      children: <Widget>[
+                        InkWell(
+                          onTap: _pickIcon,
+                          borderRadius: BorderRadius.circular(14),
+                          child: Container(
+                            width: 92,
+                            height: 92,
+                            decoration: BoxDecoration(
+                              color: surfaces.panelRaised,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: surfaces.lineSoft),
+                            ),
+                            alignment: Alignment.center,
+                            child: _ProjectAvatar(
+                              project: widget.project.copyWith(
+                                name: _nameController.text.trim().isEmpty
+                                    ? widget.project.name
+                                    : _nameController.text.trim(),
+                                label: projectDisplayLabel(
+                                  widget.project.directory,
+                                  name: _nameController.text.trim().isEmpty
+                                      ? widget.project.name
+                                      : _nameController.text.trim(),
+                                ),
+                                icon: ProjectIconInfo(
+                                  url: _iconDataUrl,
+                                  override: _iconDataUrl,
+                                  color: _selectedColor,
+                                ),
+                              ),
+                              size: 84,
+                              fontSize: 34,
+                              rounded: 10,
+                            ),
+                          ),
+                        ),
+                        if (hasCustomIcon)
+                          Positioned(
+                            right: 6,
+                            top: 6,
+                            child: Material(
+                              color: Colors.black.withValues(alpha: 0.56),
+                              shape: const CircleBorder(),
+                              child: InkWell(
+                                customBorder: const CircleBorder(),
+                                onTap: () {
+                                  setState(() {
+                                    _iconDataUrl = null;
+                                  });
+                                },
+                                child: const Padding(
+                                  padding: EdgeInsets.all(6),
+                                  child: Icon(Icons.close_rounded, size: 16),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: AppSpacing.xs),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Text(
+                              _pickingIcon
+                                  ? context.wp('Loading image...')
+                                  : context.wp('Click to choose an image'),
+                              style: theme.textTheme.bodyMedium,
+                            ),
+                            const SizedBox(height: AppSpacing.xxs),
+                            Text(
+                              context.wp('Recommended: 128x128px'),
+                              style: theme.textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (!hasCustomIcon) ...<Widget>[
+                  const SizedBox(height: AppSpacing.lg),
+                  Text(
+                    context.wp('Color'),
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: surfaces.muted,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Wrap(
+                    spacing: AppSpacing.sm,
+                    runSpacing: AppSpacing.sm,
+                    children: _projectAvatarColorKeys
+                        .map((colorKey) {
+                          final palette = _projectAvatarPalette(colorKey);
+                          final selected = colorKey == _selectedColor;
+                          return InkWell(
+                            onTap: () {
+                              setState(() {
+                                _selectedColor = colorKey;
+                              });
+                            },
+                            borderRadius: BorderRadius.circular(12),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 160),
+                              width: 46,
+                              height: 46,
+                              decoration: BoxDecoration(
+                                color: selected
+                                    ? Colors.white.withValues(alpha: 0.08)
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: selected
+                                      ? Colors.white.withValues(alpha: 0.9)
+                                      : Colors.white.withValues(alpha: 0.06),
+                                  width: selected ? 2 : 1,
+                                ),
+                              ),
+                              padding: const EdgeInsets.all(4),
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: palette.background,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    _projectInitial(
+                                      widget.project.copyWith(
+                                        name:
+                                            _nameController.text.trim().isEmpty
+                                            ? widget.project.name
+                                            : _nameController.text.trim(),
+                                        label: projectDisplayLabel(
+                                          widget.project.directory,
+                                          name:
+                                              _nameController.text
+                                                  .trim()
+                                                  .isEmpty
+                                              ? widget.project.name
+                                              : _nameController.text.trim(),
+                                        ),
+                                      ),
+                                    ),
+                                    style: theme.textTheme.titleMedium
+                                        ?.copyWith(
+                                          color: palette.foreground,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        })
+                        .toList(growable: false),
+                  ),
+                ],
+                const SizedBox(height: AppSpacing.lg),
+                TextField(
+                  controller: _startupController,
+                  maxLines: 3,
+                  minLines: 3,
+                  decoration: InputDecoration(
+                    labelText: context.wp('Workspace startup script'),
+                    hintText: context.wp('e.g. bun install'),
+                    helperText: context.wp(
+                      'Runs after creating a new workspace (worktree).',
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xl),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: <Widget>[
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: Text(context.wp('Cancel')),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    FilledButton(
+                      onPressed: _submit,
+                      child: Text(context.wp('Save')),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ),
@@ -14622,25 +14864,69 @@ class _RenameSessionDialogState extends State<_RenameSessionDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
     return AlertDialog(
-      title: Text(context.wp('Rename Session')),
-      content: TextField(
-        controller: _titleController,
-        autofocus: true,
-        decoration: InputDecoration(labelText: context.wp('Session title')),
-        onSubmitted: (value) => Navigator.of(context).pop(value.trim()),
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.xl,
       ),
-      actions: <Widget>[
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(context.wp('Cancel')),
+      contentPadding: EdgeInsets.zero,
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: AppGlassPanel(
+          radius: AppSpacing.dialogRadius,
+          blur: 24,
+          backgroundOpacity: theme.brightness == Brightness.dark ? 0.84 : 0.92,
+          borderOpacity: 0.1,
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                context.wp('Rename Session'),
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.xxs),
+              Text(
+                context.wp('Give this session a short, recognizable title.'),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: surfaces.muted,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              TextField(
+                controller: _titleController,
+                autofocus: true,
+                decoration: InputDecoration(
+                  labelText: context.wp('Session title'),
+                ),
+                onSubmitted: (value) => Navigator.of(context).pop(value.trim()),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: <Widget>[
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: Text(context.wp('Cancel')),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  FilledButton(
+                    onPressed: () =>
+                        Navigator.of(context).pop(_titleController.text.trim()),
+                    child: Text(context.wp('Save')),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
-        FilledButton(
-          onPressed: () =>
-              Navigator.of(context).pop(_titleController.text.trim()),
-          child: Text(context.wp('Save')),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -14810,164 +15096,164 @@ class _WorkspaceBody extends StatelessWidget {
     final questionRequest = controller.currentQuestionRequest;
     final permissionRequest = controller.currentPermissionRequest;
     final usesInlinePaneComposer = inlineComposerBuilder != null;
-    final content = LayoutBuilder(
-      builder: (context, constraints) {
-        final expandedTerminalHeight = constraints.maxHeight.isFinite
-            ? constraints.maxHeight
-            : null;
+    Widget buildWorkspaceStream({required bool includeTerminalSlot}) {
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          final expandedTerminalHeight = constraints.maxHeight.isFinite
+              ? constraints.maxHeight
+              : null;
 
-        return Column(
-          children: <Widget>[
-            if (!terminalFocusMode)
-              Expanded(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: surfaces.background,
-                    borderRadius: compact
-                        ? null
-                        : const BorderRadius.only(
-                            topLeft: Radius.circular(AppSpacing.cardRadius),
-                          ),
-                  ),
-                  child: _WorkspaceSessionPaneDeck(
-                    compact: compact,
-                    paneViewModels: paneViewModels,
-                    activePaneId: activePaneId,
-                    shellToolDisplayMode: shellToolDisplayMode,
-                    timelineProgressDetailsVisible:
-                        timelineProgressDetailsVisible,
-                    chatSearchQuery: chatSearchQuery,
-                    chatSearchMatchMessageIds: chatSearchMatchMessageIds,
-                    chatSearchActiveMessageId: chatSearchActiveMessageId,
-                    chatSearchRevision: chatSearchRevision,
-                    timelineJumpEpoch: timelineJumpEpoch,
-                    focusedTimelineMessageIdForScope:
-                        focusedTimelineMessageIdForScope,
-                    focusedTimelineMessageRevisionForScope:
-                        focusedTimelineMessageRevisionForScope,
-                    todoDockCollapsedForScope: todoDockCollapsedForScope,
-                    onTodoDockCollapsedChanged: onTodoDockCollapsedChanged,
-                    subAgentPanelCollapsedForScope:
-                        subAgentPanelCollapsedForScope,
-                    onSubAgentPanelCollapsedChanged:
-                        onSubAgentPanelCollapsedChanged,
-                    onSelectPane: onSelectSessionPane,
-                    onClosePane: onCloseSessionPane,
-                    onForkMessage: onForkMessage,
-                    onRevertMessage: onRevertMessage,
-                    onOpenSession: onOpenSession,
-                    onRetrySelectedSession:
-                        controller.retrySelectedSessionMessages,
-                    inlineComposerBuilder: inlineComposerBuilder,
-                  ),
-                ),
-              ),
-            if (!terminalFocusMode &&
-                !usesInlinePaneComposer &&
-                activeWorkspaceLoading)
-              Container(
-                padding: EdgeInsets.fromLTRB(
-                  density.inset(compact ? AppSpacing.sm : AppSpacing.lg),
-                  density.inset(compact ? AppSpacing.xs : AppSpacing.md),
-                  density.inset(compact ? AppSpacing.sm : AppSpacing.lg),
-                  density.inset(compact ? AppSpacing.sm : AppSpacing.lg),
-                ),
-                decoration: BoxDecoration(
-                  color: surfaces.panel,
-                  border: Border(top: BorderSide(color: surfaces.lineSoft)),
-                ),
-                child: _PromptComposerLoadingPlaceholder(compact: compact),
-              )
-            else if (!terminalFocusMode &&
-                !usesInlinePaneComposer &&
-                activeWorkspaceError == null &&
-                questionRequest != null)
-              _PendingQuestionComposerNotice(
-                request: questionRequest,
-                compact: compact,
-              )
-            else if (!terminalFocusMode &&
-                !usesInlinePaneComposer &&
-                activeWorkspaceError == null &&
-                permissionRequest != null)
-              _PendingPermissionComposerNotice(
-                request: permissionRequest,
-                compact: compact,
-              )
-            else if (!terminalFocusMode &&
-                !usesInlinePaneComposer &&
-                activeWorkspaceError == null)
-              _PromptComposer(
-                controller: promptController,
-                compact: compact,
-                scopeKey:
-                    '${controller.directory}::${controller.selectedSessionId ?? 'new'}',
-                focusRequestToken: promptFocusRequestToken,
-                submitting: submittingPrompt,
-                busyFollowupMode: busyFollowupMode,
-                interruptible: interruptiblePrompt,
-                interrupting: interruptingPrompt,
-                pickingAttachments: pickingAttachments,
-                attachments: attachments,
-                queuedPrompts: controller.selectedSessionQueuedPrompts,
-                failedQueuedPromptId:
-                    controller.selectedSessionFailedQueuedPromptId,
-                sendingQueuedPromptId:
-                    controller.selectedSessionSendingQueuedPromptId,
-                agents: controller.composerAgents,
-                models: controller.composerModels,
-                selectedAgentName: controller.selectedAgentName,
-                selectedModel: controller.selectedModel,
-                selectedReasoning: controller.selectedReasoning,
-                reasoningValues: controller.availableReasoningValues,
-                customCommands: controller.composerCommands,
-                historyEntries: historyEntries,
-                permissionAutoAccepting: controller
-                    .autoAcceptsPermissionForSession(
-                      controller.selectedSessionId,
+          return Column(
+            children: <Widget>[
+              if (!terminalFocusMode)
+                Expanded(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: surfaces.background,
+                      borderRadius: compact
+                          ? null
+                          : BorderRadius.circular(AppSpacing.cardRadius),
                     ),
-                onSelectAgent: controller.selectAgent,
-                onSelectModel: controller.selectModel,
-                onSelectReasoning: controller.selectReasoning,
-                onTogglePermissionAutoAccept: onTogglePermissionAutoAccept,
-                onCreateSession: onCreateSession,
-                onInterrupt: onInterruptPrompt,
-                onPickAttachments: onPickAttachments,
-                onDropFiles: onDropFiles,
-                onPasteClipboardImage: onPasteClipboardImage,
-                onContentInserted: onContentInserted,
-                dropRegionBuilder: dropRegionBuilder,
-                onRemoveAttachment: onRemoveAttachment,
-                onEditQueuedPrompt: onEditQueuedPrompt,
-                onDeleteQueuedPrompt: onDeleteQueuedPrompt,
-                onSendQueuedPromptNow: onSendQueuedPromptNow,
-                onShareSession: onShareSession,
-                onUnshareSession: onUnshareSession,
-                onSummarizeSession: onSummarizeSession,
-                submittedDraftEpoch: submittedDraftEpoch,
-                recentSubmittedDraft: recentSubmittedDraft,
-                onOpenMcpPicker: onOpenMcpPicker,
-                onToggleTerminal: onToggleTerminal,
-                onSelectSideTab: (tab) {
-                  if (!compact && !sidePanelVisible) {
-                    onShowSidePanel?.call();
-                  }
-                  controller.setSideTab(tab);
-                },
-                onSubmit: onSubmitPrompt,
-              ),
-            if (terminalPanel != null)
-              _WorkspaceTerminalPanelSlot(
-                open: terminalPanelOpen,
-                hidden: collapseInlineTerminal,
-                expanded: terminalFocusMode,
-                expandedHeight: expandedTerminalHeight,
-                child: terminalPanel!,
-              ),
-          ],
-        );
-      },
-    );
+                    child: _WorkspaceSessionPaneDeck(
+                      compact: compact,
+                      paneViewModels: paneViewModels,
+                      activePaneId: activePaneId,
+                      shellToolDisplayMode: shellToolDisplayMode,
+                      timelineProgressDetailsVisible:
+                          timelineProgressDetailsVisible,
+                      chatSearchQuery: chatSearchQuery,
+                      chatSearchMatchMessageIds: chatSearchMatchMessageIds,
+                      chatSearchActiveMessageId: chatSearchActiveMessageId,
+                      chatSearchRevision: chatSearchRevision,
+                      timelineJumpEpoch: timelineJumpEpoch,
+                      focusedTimelineMessageIdForScope:
+                          focusedTimelineMessageIdForScope,
+                      focusedTimelineMessageRevisionForScope:
+                          focusedTimelineMessageRevisionForScope,
+                      todoDockCollapsedForScope: todoDockCollapsedForScope,
+                      onTodoDockCollapsedChanged: onTodoDockCollapsedChanged,
+                      subAgentPanelCollapsedForScope:
+                          subAgentPanelCollapsedForScope,
+                      onSubAgentPanelCollapsedChanged:
+                          onSubAgentPanelCollapsedChanged,
+                      onSelectPane: onSelectSessionPane,
+                      onClosePane: onCloseSessionPane,
+                      onForkMessage: onForkMessage,
+                      onRevertMessage: onRevertMessage,
+                      onOpenSession: onOpenSession,
+                      onRetrySelectedSession:
+                          controller.retrySelectedSessionMessages,
+                      inlineComposerBuilder: inlineComposerBuilder,
+                    ),
+                  ),
+                ),
+              if (!terminalFocusMode &&
+                  !usesInlinePaneComposer &&
+                  activeWorkspaceLoading)
+                Container(
+                  padding: EdgeInsets.fromLTRB(
+                    density.inset(compact ? AppSpacing.sm : AppSpacing.lg),
+                    density.inset(compact ? AppSpacing.xs : AppSpacing.md),
+                    density.inset(compact ? AppSpacing.sm : AppSpacing.lg),
+                    density.inset(compact ? AppSpacing.sm : AppSpacing.lg),
+                  ),
+                  decoration: BoxDecoration(
+                    color: surfaces.panel,
+                    border: Border(top: BorderSide(color: surfaces.lineSoft)),
+                  ),
+                  child: _PromptComposerLoadingPlaceholder(compact: compact),
+                )
+              else if (!terminalFocusMode &&
+                  !usesInlinePaneComposer &&
+                  activeWorkspaceError == null &&
+                  questionRequest != null)
+                _PendingQuestionComposerNotice(
+                  request: questionRequest,
+                  compact: compact,
+                )
+              else if (!terminalFocusMode &&
+                  !usesInlinePaneComposer &&
+                  activeWorkspaceError == null &&
+                  permissionRequest != null)
+                _PendingPermissionComposerNotice(
+                  request: permissionRequest,
+                  compact: compact,
+                )
+              else if (!terminalFocusMode &&
+                  !usesInlinePaneComposer &&
+                  activeWorkspaceError == null)
+                _PromptComposer(
+                  controller: promptController,
+                  compact: compact,
+                  scopeKey:
+                      '${controller.directory}::${controller.selectedSessionId ?? 'new'}',
+                  focusRequestToken: promptFocusRequestToken,
+                  submitting: submittingPrompt,
+                  busyFollowupMode: busyFollowupMode,
+                  interruptible: interruptiblePrompt,
+                  interrupting: interruptingPrompt,
+                  pickingAttachments: pickingAttachments,
+                  attachments: attachments,
+                  queuedPrompts: controller.selectedSessionQueuedPrompts,
+                  failedQueuedPromptId:
+                      controller.selectedSessionFailedQueuedPromptId,
+                  sendingQueuedPromptId:
+                      controller.selectedSessionSendingQueuedPromptId,
+                  agents: controller.composerAgents,
+                  models: controller.composerModels,
+                  selectedAgentName: controller.selectedAgentName,
+                  selectedModel: controller.selectedModel,
+                  selectedReasoning: controller.selectedReasoning,
+                  reasoningValues: controller.availableReasoningValues,
+                  customCommands: controller.composerCommands,
+                  historyEntries: historyEntries,
+                  permissionAutoAccepting: controller
+                      .autoAcceptsPermissionForSession(
+                        controller.selectedSessionId,
+                      ),
+                  onSelectAgent: controller.selectAgent,
+                  onSelectModel: controller.selectModel,
+                  onSelectReasoning: controller.selectReasoning,
+                  onTogglePermissionAutoAccept: onTogglePermissionAutoAccept,
+                  onCreateSession: onCreateSession,
+                  onInterrupt: onInterruptPrompt,
+                  onPickAttachments: onPickAttachments,
+                  onDropFiles: onDropFiles,
+                  onPasteClipboardImage: onPasteClipboardImage,
+                  onContentInserted: onContentInserted,
+                  dropRegionBuilder: dropRegionBuilder,
+                  onRemoveAttachment: onRemoveAttachment,
+                  onEditQueuedPrompt: onEditQueuedPrompt,
+                  onDeleteQueuedPrompt: onDeleteQueuedPrompt,
+                  onSendQueuedPromptNow: onSendQueuedPromptNow,
+                  onShareSession: onShareSession,
+                  onUnshareSession: onUnshareSession,
+                  onSummarizeSession: onSummarizeSession,
+                  submittedDraftEpoch: submittedDraftEpoch,
+                  recentSubmittedDraft: recentSubmittedDraft,
+                  onOpenMcpPicker: onOpenMcpPicker,
+                  onToggleTerminal: onToggleTerminal,
+                  onSelectSideTab: (tab) {
+                    if (!compact && !sidePanelVisible) {
+                      onShowSidePanel?.call();
+                    }
+                    controller.setSideTab(tab);
+                  },
+                  onSubmit: onSubmitPrompt,
+                ),
+              if (includeTerminalSlot && terminalPanel != null)
+                _WorkspaceTerminalPanelSlot(
+                  open: terminalPanelOpen,
+                  hidden: collapseInlineTerminal,
+                  expanded: terminalFocusMode,
+                  expandedHeight: expandedTerminalHeight,
+                  child: terminalPanel!,
+                ),
+            ],
+          );
+        },
+      );
+    }
 
     final sidePanel = _SidePanel(
       controller: controller,
@@ -14989,42 +15275,94 @@ class _WorkspaceBody extends StatelessWidget {
                     padding: EdgeInsets.only(
                       bottom: mediaQuery.viewInsets.bottom,
                     ),
-                    child: content,
+                    child: buildWorkspaceStream(includeTerminalSlot: true),
                   )
                 : sidePanel,
           ),
         ],
       );
     }
+    final desktopGap = density.inset(AppSpacing.sm, min: AppSpacing.xs);
+    final desktopBody = buildWorkspaceStream(includeTerminalSlot: false);
 
-    return Row(
-      children: <Widget>[
-        Expanded(child: content),
-        _HorizontalReveal(
-          key: const ValueKey<String>('workspace-desktop-side-panel-reveal'),
-          visible: sidePanelVisible,
-          alignment: Alignment.centerRight,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              _DesktopResizeHandle(
-                key: const ValueKey<String>(
-                  'workspace-desktop-side-panel-resize-handle',
+    return Padding(
+      padding: EdgeInsets.fromLTRB(desktopGap, 0, desktopGap, desktopGap),
+      child: Column(
+        children: <Widget>[
+          Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Expanded(
+                  child: DecoratedBox(
+                    decoration: appSoftCardDecoration(
+                      context,
+                      radius: 24,
+                      muted: true,
+                      emphasized: true,
+                    ),
+                    child: desktopBody,
+                  ),
                 ),
-                onDragUpdate: onResizeSidePanel,
-                onDragEnd: onFinishResizeSidePanel,
-              ),
-              Container(width: 1, color: Theme.of(context).dividerColor),
-              SizedBox(
-                key: const ValueKey<String>('workspace-desktop-side-panel'),
-                width: density.sidePanelWidth(sidePanelWidth),
-                child: sidePanel,
-              ),
-            ],
+                _HorizontalReveal(
+                  key: const ValueKey<String>(
+                    'workspace-desktop-side-panel-reveal',
+                  ),
+                  visible: sidePanelVisible,
+                  alignment: Alignment.centerRight,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      SizedBox(width: desktopGap),
+                      _DesktopResizeHandle(
+                        key: const ValueKey<String>(
+                          'workspace-desktop-side-panel-resize-handle',
+                        ),
+                        onDragUpdate: onResizeSidePanel,
+                        onDragEnd: onFinishResizeSidePanel,
+                      ),
+                      SizedBox(width: desktopGap),
+                      SizedBox(
+                        key: const ValueKey<String>(
+                          'workspace-desktop-side-panel',
+                        ),
+                        width: density.sidePanelWidth(sidePanelWidth),
+                        child: DecoratedBox(
+                          decoration: appSoftCardDecoration(
+                            context,
+                            radius: 24,
+                            muted: true,
+                            emphasized: true,
+                          ),
+                          child: sidePanel,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-      ],
+          if (terminalPanel != null) ...<Widget>[
+            SizedBox(height: desktopGap),
+            DecoratedBox(
+              decoration: appSoftCardDecoration(
+                context,
+                radius: 22,
+                muted: true,
+                emphasized: true,
+              ),
+              child: _WorkspaceTerminalPanelSlot(
+                open: terminalPanelOpen,
+                hidden: false,
+                expanded: false,
+                child: terminalPanel!,
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -15089,21 +15427,14 @@ Future<void> _showCompactWorkspaceSheet(
               alignment: Alignment.bottomCenter,
               child: FractionallySizedBox(
                 heightFactor: 0.82,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: surfaces.background,
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(28),
-                    ),
-                    border: Border.all(color: surfaces.lineSoft),
-                    boxShadow: <BoxShadow>[
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.28),
-                        blurRadius: 28,
-                        offset: const Offset(0, -6),
-                      ),
-                    ],
-                  ),
+                child: AppGlassPanel(
+                  radius: AppSpacing.sheetRadius,
+                  blur: 28,
+                  tone: AppSurfaceTone.accent,
+                  backgroundOpacity: theme.brightness == Brightness.dark
+                      ? 0.84
+                      : 0.92,
+                  padding: EdgeInsets.zero,
                   child: SafeArea(
                     top: false,
                     child: Column(
@@ -15242,22 +15573,34 @@ class _CompactSessionActivityBar extends StatelessWidget {
         AppSpacing.sm,
         AppSpacing.xs,
         AppSpacing.sm,
-        AppSpacing.sm,
+        AppSpacing.xs,
       ),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 920),
-          child: SingleChildScrollView(
+          child: AppGlassPanel(
             key: const ValueKey<String>('compact-session-activity-bar'),
-            scrollDirection: Axis.horizontal,
-            padding: EdgeInsets.zero,
-            child: Row(
-              children: <Widget>[
-                for (var index = 0; index < items.length; index += 1) ...[
-                  if (index > 0) const SizedBox(width: AppSpacing.xs),
-                  items[index],
+            radius: AppSpacing.panelRadius,
+            blur: 12,
+            backgroundOpacity: theme.brightness == Brightness.dark
+                ? 0.76
+                : 0.92,
+            showShadow: false,
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.xs,
+              vertical: AppSpacing.xs,
+            ),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: EdgeInsets.zero,
+              child: Row(
+                children: <Widget>[
+                  for (var index = 0; index < items.length; index += 1) ...[
+                    if (index > 0) const SizedBox(width: AppSpacing.xs),
+                    items[index],
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ),
@@ -15295,7 +15638,10 @@ class _CompactActivitySummaryButton extends StatelessWidget {
             vertical: AppSpacing.xs,
           ),
           decoration: BoxDecoration(
-            color: surfaces.panelMuted.withValues(alpha: 0.78),
+            color: Color.alphaBlend(
+              accent.withValues(alpha: 0.1),
+              surfaces.panelRaised.withValues(alpha: 0.94),
+            ),
             borderRadius: BorderRadius.circular(999),
             border: Border.all(color: accent.withValues(alpha: 0.28)),
           ),
@@ -15799,22 +16145,18 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
       if (currentSessionId == null || paneTodos.isEmpty) {
         return;
       }
-      var collapsed = false;
       await _showCompactWorkspaceSheet(
         context,
         title: context.wp('To-do'),
-        contentBuilder: (sheetContext, setModalState) => _SessionTodoDock(
+        contentBuilder: (sheetContext, _) => _SessionTodoDock(
           sessionId: currentSessionId,
           todos: paneTodos,
           live: paneTodoLive,
           blocked: false,
           compact: true,
-          collapsed: collapsed,
-          onCollapsedChanged: (nextCollapsed) {
-            setModalState(() {
-              collapsed = nextCollapsed;
-            });
-          },
+          collapsible: false,
+          collapsed: false,
+          onCollapsedChanged: (_) {},
           onClearStale: () => controller.clearTodosForSession(currentSessionId),
         ),
       );
@@ -15848,6 +16190,7 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
       );
     }
 
+    final paneRadius = compact ? 16.0 : 18.0;
     return Semantics(
       selected: selected,
       label: title,
@@ -15856,7 +16199,7 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
         child: InkWell(
           key: ValueKey<String>('workspace-session-pane-${pane.id}'),
           onTap: selected ? null : () => unawaited(handleFocus()),
-          borderRadius: BorderRadius.circular(compact ? 18 : 22),
+          borderRadius: BorderRadius.circular(paneRadius),
           child: AnimatedContainer(
             key: ValueKey<String>(
               'workspace-session-pane-container-${pane.id}',
@@ -15865,14 +16208,14 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
             curve: Curves.easeOutCubic,
             decoration: BoxDecoration(
               color: visuallySelected
-                  ? surfaces.panel.withValues(alpha: 0.98)
-                  : surfaces.panelRaised.withValues(alpha: 0.94),
-              borderRadius: BorderRadius.circular(compact ? 18 : 22),
+                  ? surfaces.panelRaised.withValues(alpha: 0.98)
+                  : surfaces.panel.withValues(alpha: 0.96),
+              borderRadius: BorderRadius.circular(paneRadius),
               border: Border.all(
                 color: visuallySelected
-                    ? theme.colorScheme.primary.withValues(alpha: 0.78)
-                    : surfaces.lineSoft,
-                width: visuallySelected ? 1.8 : 1,
+                    ? theme.colorScheme.primary.withValues(alpha: 0.58)
+                    : surfaces.lineSoft.withValues(alpha: 0.95),
+                width: visuallySelected ? 1.4 : 1,
               ),
               boxShadow: <BoxShadow>[
                 BoxShadow(
@@ -15880,9 +16223,9 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                       (visuallySelected
                               ? theme.colorScheme.primary
                               : Colors.black)
-                          .withValues(alpha: visuallySelected ? 0.14 : 0.08),
-                  blurRadius: visuallySelected ? 24 : 14,
-                  offset: const Offset(0, 10),
+                          .withValues(alpha: visuallySelected ? 0.12 : 0.06),
+                  blurRadius: visuallySelected ? 18 : 10,
+                  offset: const Offset(0, 6),
                 ),
               ],
             ),
@@ -16198,47 +16541,33 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                                           : 0,
                                     ),
                             ),
-                            if (compact &&
-                                sessionId != null &&
-                                (paneQuestionRequest != null ||
-                                    panePermissionRequest != null ||
-                                    compactTodoCount > 0 ||
-                                    activeChildSessions.isNotEmpty))
-                              Positioned.fill(
-                                child: Align(
-                                  alignment: Alignment.bottomCenter,
-                                  child: _CompactSessionActivityBar(
-                                    todoCount: compactTodoCount,
-                                    subAgentCount: activeChildSessions.length,
-                                    hasQuestion: paneQuestionRequest != null,
-                                    hasPermission:
-                                        panePermissionRequest != null,
-                                    onOpenQuestion: paneQuestionRequest == null
-                                        ? null
-                                        : () => unawaited(
-                                            showCompactQuestionSheet(),
-                                          ),
-                                    onOpenPermission:
-                                        panePermissionRequest == null
-                                        ? null
-                                        : () => unawaited(
-                                            showCompactPermissionSheet(),
-                                          ),
-                                    onOpenTodos: compactTodoCount == 0
-                                        ? null
-                                        : () =>
-                                              unawaited(showCompactTodoSheet()),
-                                    onOpenSubAgents: activeChildSessions.isEmpty
-                                        ? null
-                                        : () => unawaited(
-                                            showCompactSubAgentSheet(),
-                                          ),
-                                  ),
-                                ),
-                              ),
                           ],
                         ),
                       ),
+                      if (compact &&
+                          sessionId != null &&
+                          (paneQuestionRequest != null ||
+                              panePermissionRequest != null ||
+                              compactTodoCount > 0 ||
+                              activeChildSessions.isNotEmpty))
+                        _CompactSessionActivityBar(
+                          todoCount: compactTodoCount,
+                          subAgentCount: activeChildSessions.length,
+                          hasQuestion: paneQuestionRequest != null,
+                          hasPermission: panePermissionRequest != null,
+                          onOpenQuestion: paneQuestionRequest == null
+                              ? null
+                              : () => unawaited(showCompactQuestionSheet()),
+                          onOpenPermission: panePermissionRequest == null
+                              ? null
+                              : () => unawaited(showCompactPermissionSheet()),
+                          onOpenTodos: compactTodoCount == 0
+                              ? null
+                              : () => unawaited(showCompactTodoSheet()),
+                          onOpenSubAgents: activeChildSessions.isEmpty
+                              ? null
+                              : () => unawaited(showCompactSubAgentSheet()),
+                        ),
                       if (!compact &&
                           sessionId != null &&
                           paneQuestionRequest != null)
@@ -17391,6 +17720,9 @@ class _MessageTimelineState extends State<_MessageTimeline> {
   bool _awaitingOlderHistoryInsert = false;
   bool _showJumpToLatest = false;
   final Map<String, GlobalKey> _messageItemKeys = <String, GlobalKey>{};
+  bool _manualScrollInProgress = false;
+  bool _deferredAutoScrollToBottom = false;
+  int _programmaticScrollDepth = 0;
 
   List<ChatMessage> get _visibleMessages => widget.messages.sublist(
     _visibleStartIndex.clamp(0, widget.messages.length),
@@ -17564,7 +17896,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     final delta = position.maxScrollExtent - beforeExtent;
     final target = (beforePixels + delta).clamp(0.0, position.maxScrollExtent);
     if ((target - position.pixels).abs() > 1) {
-      _scrollController.jumpTo(target);
+      _runProgrammaticJump(() => _scrollController.jumpTo(target));
     }
     _wasNearBottom = false;
   }
@@ -17587,7 +17919,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
           return;
         }
         if (_scrollController.hasClients) {
-          _scrollController.jumpTo(0);
+          _runProgrammaticJump(() => _scrollController.jumpTo(0));
         }
         _revealSearchMatch(messageId);
       });
@@ -17596,7 +17928,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     if (_scrollController.hasClients &&
         _scrollController.position.hasPixels &&
         _scrollController.offset > 1) {
-      _scrollController.jumpTo(0);
+      _runProgrammaticJump(() => _scrollController.jumpTo(0));
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
@@ -17629,6 +17961,76 @@ class _MessageTimelineState extends State<_MessageTimeline> {
       return;
     }
     await _loadOlderMessages();
+  }
+
+  bool _handleScrollNotification(ScrollNotification notification) {
+    if (notification.metrics.axis != Axis.vertical ||
+        _programmaticScrollDepth > 0) {
+      return false;
+    }
+    if (notification is ScrollStartNotification &&
+        notification.dragDetails != null) {
+      _manualScrollInProgress = true;
+      return false;
+    }
+    if (notification is ScrollUpdateNotification &&
+        notification.dragDetails != null) {
+      _manualScrollInProgress = true;
+      return false;
+    }
+    if (notification is UserScrollNotification &&
+        notification.direction == ScrollDirection.idle) {
+      _manualScrollInProgress = false;
+      _flushDeferredAutoScroll();
+      return false;
+    }
+    if (notification is ScrollEndNotification) {
+      _manualScrollInProgress = false;
+      _flushDeferredAutoScroll();
+    }
+    return false;
+  }
+
+  void _runProgrammaticJump(VoidCallback action) {
+    _programmaticScrollDepth += 1;
+    try {
+      action();
+    } finally {
+      _programmaticScrollDepth = math.max(0, _programmaticScrollDepth - 1);
+    }
+  }
+
+  Future<void> _runProgrammaticAnimate(Future<void> Function() action) async {
+    _programmaticScrollDepth += 1;
+    try {
+      await action();
+    } finally {
+      _programmaticScrollDepth = math.max(0, _programmaticScrollDepth - 1);
+    }
+  }
+
+  void _flushDeferredAutoScroll() {
+    if (!_deferredAutoScrollToBottom || _manualScrollInProgress) {
+      return;
+    }
+    _deferredAutoScrollToBottom = false;
+    if (!_scrollController.hasClients) {
+      return;
+    }
+    final position = _scrollController.position;
+    if (!position.hasContentDimensions) {
+      return;
+    }
+    final nearBottomNow = _positionNearBottom(position);
+    if (!(_wasNearBottom || nearBottomNow || _bottomLockScopeKey != null)) {
+      _updateJumpToLatestVisibility();
+      return;
+    }
+    if (_bottomLockScopeKey != null) {
+      _scheduleBottomLock();
+      return;
+    }
+    _jumpToBottomIfPossible(animate: true);
   }
 
   void _scheduleLoadOlderCheck() {
@@ -17754,14 +18156,16 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     }
     _wasNearBottom = true;
     if (!position.hasPixels || (target - position.pixels).abs() <= 1) {
-      _scrollController.jumpTo(target);
+      _runProgrammaticJump(() => _scrollController.jumpTo(target));
       _updateJumpToLatestVisibility(notify: false);
       return;
     }
-    await _scrollController.animateTo(
-      target,
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOutCubic,
+    await _runProgrammaticAnimate(
+      () => _scrollController.animateTo(
+        target,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      ),
     );
     if (!mounted) {
       return;
@@ -17785,14 +18189,16 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     }
     if (animate && position.hasPixels) {
       unawaited(
-        _scrollController.animateTo(
-          target,
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOutCubic,
+        _runProgrammaticAnimate(
+          () => _scrollController.animateTo(
+            target,
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+          ),
         ),
       );
     } else {
-      _scrollController.jumpTo(target);
+      _runProgrammaticJump(() => _scrollController.jumpTo(target));
     }
     _wasNearBottom = true;
     _updateJumpToLatestVisibility(notify: false);
@@ -17802,6 +18208,10 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     unawaited(
       Future<void>.delayed(delay, () {
         if (!mounted || !_scrollController.hasClients) {
+          return;
+        }
+        if (_manualScrollInProgress) {
+          _deferredAutoScrollToBottom = true;
           return;
         }
         _jumpToBottomIfPossible();
@@ -17855,6 +18265,10 @@ class _MessageTimelineState extends State<_MessageTimeline> {
       if (expectedScopeKey == null) {
         return;
       }
+      if (_manualScrollInProgress) {
+        _deferredAutoScrollToBottom = true;
+        return;
+      }
       if (!_scrollController.hasClients) {
         _scheduleBottomLock();
         return;
@@ -17870,7 +18284,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
       }
       final target = position.maxScrollExtent;
       if (!position.hasPixels || (target - position.pixels).abs() > 1) {
-        _scrollController.jumpTo(target);
+        _runProgrammaticJump(() => _scrollController.jumpTo(target));
       }
       _wasNearBottom = true;
       _updateJumpToLatestVisibility(notify: false);
@@ -17895,6 +18309,10 @@ class _MessageTimelineState extends State<_MessageTimeline> {
   void _scheduleKeyboardInsetFollow({bool force = false}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scrollController.hasClients || _searchActive) {
+        return;
+      }
+      if (_manualScrollInProgress) {
+        _deferredAutoScrollToBottom = true;
         return;
       }
       final position = _scrollController.position;
@@ -17953,19 +18371,27 @@ class _MessageTimelineState extends State<_MessageTimeline> {
         (contentChanged && (_wasNearBottom || nearBottomNow));
 
     if (shouldFollowTimeline) {
-      final target = position.maxScrollExtent;
-      if ((target - position.pixels).abs() <= 1) {
-        _wasNearBottom = true;
-      } else if (sessionChanged || !position.hasPixels) {
-        _scrollController.jumpTo(target);
-        _wasNearBottom = true;
+      if (_manualScrollInProgress) {
+        _deferredAutoScrollToBottom = true;
       } else {
-        _scrollController.animateTo(
-          target,
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOutCubic,
-        );
-        _wasNearBottom = true;
+        final target = position.maxScrollExtent;
+        if ((target - position.pixels).abs() <= 1) {
+          _wasNearBottom = true;
+        } else if (sessionChanged || !position.hasPixels) {
+          _runProgrammaticJump(() => _scrollController.jumpTo(target));
+          _wasNearBottom = true;
+        } else {
+          unawaited(
+            _runProgrammaticAnimate(
+              () => _scrollController.animateTo(
+                target,
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOutCubic,
+              ),
+            ),
+          );
+          _wasNearBottom = true;
+        }
       }
     }
 
@@ -18077,154 +18503,169 @@ class _MessageTimelineState extends State<_MessageTimeline> {
         Expanded(
           child: Stack(
             children: <Widget>[
-              Scrollbar(
-                controller: _scrollController,
-                thumbVisibility: true,
-                interactive: true,
-                child: Builder(
-                  builder: (context) {
-                    final visibleMessages = _visibleMessages;
-                    final showLoadOlderIndicator =
-                        _hiddenMessageCount > 0 ||
-                        widget.historyMore ||
-                        widget.historyLoading;
-                    final placeholderIndex =
-                        visibleMessages.length +
-                        (showLoadOlderIndicator ? 1 : 0);
-                    final itemCount =
-                        placeholderIndex + (showThinkingPlaceholder ? 1 : 0);
-                    final normalizedSearchTerms = _searchActive
-                        ? _normalizedSearchTerms(widget.searchQuery)
-                        : const <String>[];
+              Listener(
+                onPointerSignal: (_) => _manualScrollInProgress = true,
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: _handleScrollNotification,
+                  child: Scrollbar(
+                    controller: _scrollController,
+                    thumbVisibility: true,
+                    interactive: true,
+                    child: Builder(
+                      builder: (context) {
+                        final visibleMessages = _visibleMessages;
+                        final showLoadOlderIndicator =
+                            _hiddenMessageCount > 0 ||
+                            widget.historyMore ||
+                            widget.historyLoading;
+                        final placeholderIndex =
+                            visibleMessages.length +
+                            (showLoadOlderIndicator ? 1 : 0);
+                        final itemCount =
+                            placeholderIndex +
+                            (showThinkingPlaceholder ? 1 : 0);
+                        final normalizedSearchTerms = _searchActive
+                            ? _normalizedSearchTerms(widget.searchQuery)
+                            : const <String>[];
 
-                    return ListView.builder(
-                      controller: _scrollController,
-                      key: PageStorageKey<String>(widget.pageStorageKeyValue),
-                      padding: EdgeInsets.fromLTRB(
-                        density.inset(
-                          widget.compact ? AppSpacing.sm : AppSpacing.xl,
-                        ),
-                        density.inset(
-                          widget.compact ? AppSpacing.sm : AppSpacing.xl,
-                        ),
-                        density.inset(
-                          widget.compact ? AppSpacing.sm : AppSpacing.xl,
-                        ),
-                        density.inset(
-                          widget.compact ? AppSpacing.xs : AppSpacing.lg,
-                        ),
-                      ),
-                      itemCount: itemCount,
-                      cacheExtent: _searchActive ? 200000 : 1600,
-                      itemBuilder: (context, index) {
-                        if (showThinkingPlaceholder &&
-                            index == placeholderIndex) {
-                          return Center(
-                            child: ConstrainedBox(
-                              constraints: BoxConstraints(
-                                maxWidth: density.maxContentWidth(860),
-                              ),
-                              child: Padding(
-                                padding: EdgeInsets.only(
-                                  top: visibleMessages.isEmpty
-                                      ? 0
-                                      : (widget.compact
-                                            ? density.inset(AppSpacing.sm)
-                                            : density.inset(AppSpacing.md)),
-                                ),
-                                child: _TimelineThinkingPlaceholder(
-                                  compact: widget.compact,
-                                ),
-                              ),
+                        return ListView.builder(
+                          controller: _scrollController,
+                          key: PageStorageKey<String>(
+                            widget.pageStorageKeyValue,
+                          ),
+                          padding: EdgeInsets.fromLTRB(
+                            density.inset(
+                              widget.compact ? AppSpacing.sm : AppSpacing.xl,
                             ),
-                          );
-                        }
-                        if (showLoadOlderIndicator && index == 0) {
-                          return KeyedSubtree(
-                            key: _loadOlderItemKey,
-                            child: Center(
-                              child: ConstrainedBox(
-                                constraints: BoxConstraints(
-                                  maxWidth: density.maxContentWidth(860),
-                                ),
-                                child: Padding(
-                                  padding: EdgeInsets.only(
-                                    bottom: widget.compact
-                                        ? density.inset(AppSpacing.sm)
-                                        : density.inset(AppSpacing.md),
-                                  ),
-                                  child: _TimelineLoadOlderIndicator(
-                                    hiddenCount: _hiddenMessageCount,
-                                    loading:
-                                        _loadingOlder || widget.historyLoading,
-                                    serverMore: widget.historyMore,
-                                    compact: widget.compact,
-                                    onPressed: () =>
-                                        unawaited(_loadOlderMessages()),
-                                  ),
-                                ),
-                              ),
+                            density.inset(
+                              widget.compact ? AppSpacing.sm : AppSpacing.xl,
                             ),
-                          );
-                        }
-
-                        final messageIndex =
-                            index - (showLoadOlderIndicator ? 1 : 0);
-                        final message = visibleMessages[messageIndex];
-                        final isLast =
-                            messageIndex == visibleMessages.length - 1;
-                        final matched = widget.matchingMessageIds.contains(
-                          message.info.id,
-                        );
-                        final activeMatch =
-                            widget.activeMatchMessageId == message.info.id;
-                        return KeyedSubtree(
-                          key: _messageItemKey(message.info.id),
-                          child: RepaintBoundary(
-                            child: Center(
-                              child: ConstrainedBox(
-                                constraints: BoxConstraints(
-                                  maxWidth: density.maxContentWidth(860),
-                                ),
-                                child: Padding(
-                                  padding: EdgeInsets.only(
-                                    bottom: isLast
-                                        ? 0
-                                        : (widget.compact
-                                              ? density.inset(AppSpacing.md)
-                                              : density.inset(AppSpacing.xl)),
+                            density.inset(
+                              widget.compact ? AppSpacing.sm : AppSpacing.xl,
+                            ),
+                            density.inset(
+                              widget.compact ? AppSpacing.xs : AppSpacing.lg,
+                            ),
+                          ),
+                          itemCount: itemCount,
+                          cacheExtent: _searchActive ? 200000 : 1600,
+                          itemBuilder: (context, index) {
+                            if (showThinkingPlaceholder &&
+                                index == placeholderIndex) {
+                              return Center(
+                                child: ConstrainedBox(
+                                  constraints: BoxConstraints(
+                                    maxWidth: density.maxContentWidth(860),
                                   ),
-                                  child: SizedBox(
-                                    width: double.infinity,
-                                    child: _TimelineMessage(
-                                      currentSessionId: widget.currentSessionId,
-                                      message: message,
+                                  child: Padding(
+                                    padding: EdgeInsets.only(
+                                      top: visibleMessages.isEmpty
+                                          ? 0
+                                          : (widget.compact
+                                                ? density.inset(AppSpacing.sm)
+                                                : density.inset(AppSpacing.md)),
+                                    ),
+                                    child: _TimelineThinkingPlaceholder(
                                       compact: widget.compact,
-                                      searchTerms: matched
-                                          ? normalizedSearchTerms
-                                          : const <String>[],
-                                      searchMatched: matched,
-                                      searchActive: activeMatch,
-                                      sessions: widget.sessions,
-                                      selectedSession: widget.selectedSession,
-                                      configSnapshot: widget.configSnapshot,
-                                      shellToolDisplayMode:
-                                          widget.shellToolDisplayMode,
-                                      timelineProgressDetailsVisible:
-                                          widget.timelineProgressDetailsVisible,
-                                      onForkMessage: widget.onForkMessage,
-                                      onRevertMessage: widget.onRevertMessage,
-                                      onOpenSession: widget.onOpenSession,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }
+                            if (showLoadOlderIndicator && index == 0) {
+                              return KeyedSubtree(
+                                key: _loadOlderItemKey,
+                                child: Center(
+                                  child: ConstrainedBox(
+                                    constraints: BoxConstraints(
+                                      maxWidth: density.maxContentWidth(860),
+                                    ),
+                                    child: Padding(
+                                      padding: EdgeInsets.only(
+                                        bottom: widget.compact
+                                            ? density.inset(AppSpacing.sm)
+                                            : density.inset(AppSpacing.md),
+                                      ),
+                                      child: _TimelineLoadOlderIndicator(
+                                        hiddenCount: _hiddenMessageCount,
+                                        loading:
+                                            _loadingOlder ||
+                                            widget.historyLoading,
+                                        serverMore: widget.historyMore,
+                                        compact: widget.compact,
+                                        onPressed: () =>
+                                            unawaited(_loadOlderMessages()),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }
+
+                            final messageIndex =
+                                index - (showLoadOlderIndicator ? 1 : 0);
+                            final message = visibleMessages[messageIndex];
+                            final isLast =
+                                messageIndex == visibleMessages.length - 1;
+                            final matched = widget.matchingMessageIds.contains(
+                              message.info.id,
+                            );
+                            final activeMatch =
+                                widget.activeMatchMessageId == message.info.id;
+                            return KeyedSubtree(
+                              key: _messageItemKey(message.info.id),
+                              child: RepaintBoundary(
+                                child: Center(
+                                  child: ConstrainedBox(
+                                    constraints: BoxConstraints(
+                                      maxWidth: density.maxContentWidth(860),
+                                    ),
+                                    child: Padding(
+                                      padding: EdgeInsets.only(
+                                        bottom: isLast
+                                            ? 0
+                                            : (widget.compact
+                                                  ? density.inset(AppSpacing.md)
+                                                  : density.inset(
+                                                      AppSpacing.xl,
+                                                    )),
+                                      ),
+                                      child: SizedBox(
+                                        width: double.infinity,
+                                        child: _TimelineMessage(
+                                          currentSessionId:
+                                              widget.currentSessionId,
+                                          message: message,
+                                          compact: widget.compact,
+                                          searchTerms: matched
+                                              ? normalizedSearchTerms
+                                              : const <String>[],
+                                          searchMatched: matched,
+                                          searchActive: activeMatch,
+                                          sessions: widget.sessions,
+                                          selectedSession:
+                                              widget.selectedSession,
+                                          configSnapshot: widget.configSnapshot,
+                                          shellToolDisplayMode:
+                                              widget.shellToolDisplayMode,
+                                          timelineProgressDetailsVisible: widget
+                                              .timelineProgressDetailsVisible,
+                                          onForkMessage: widget.onForkMessage,
+                                          onRevertMessage:
+                                              widget.onRevertMessage,
+                                          onOpenSession: widget.onOpenSession,
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 ),
                               ),
-                            ),
-                          ),
+                            );
+                          },
                         );
                       },
-                    );
-                  },
+                    ),
+                  ),
                 ),
               ),
               Positioned(
@@ -18381,45 +18822,59 @@ class _TimelineLoadOlderIndicator extends StatelessWidget {
         ? context.wp('Earlier messages available')
         : context.wp('Load earlier messages');
     final hint = loading ? null : context.wp('Scroll up or tap to load more');
-    final content = Container(
-      key: const ValueKey<String>('timeline-load-older-indicator'),
-      padding: EdgeInsets.symmetric(
-        horizontal: density.inset(compact ? AppSpacing.sm : AppSpacing.md),
-        vertical: density.inset(compact ? AppSpacing.xs : AppSpacing.sm),
-      ),
-      decoration: BoxDecoration(
-        color: surfaces.panelMuted.withValues(alpha: 0.92),
-        borderRadius: BorderRadius.circular(compact ? 12 : 14),
-        border: Border.all(color: surfaces.lineSoft),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          if (loading) ...<Widget>[
-            const SizedBox(
-              width: 14,
-              height: 14,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
+    final content = ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: compact ? 300 : 540),
+      child: Container(
+        key: const ValueKey<String>('timeline-load-older-indicator'),
+        padding: EdgeInsets.symmetric(
+          horizontal: density.inset(compact ? AppSpacing.sm : AppSpacing.md),
+          vertical: density.inset(compact ? AppSpacing.xs : AppSpacing.sm),
+        ),
+        decoration: BoxDecoration(
+          color: surfaces.panelMuted.withValues(alpha: 0.92),
+          borderRadius: BorderRadius.circular(compact ? 12 : 14),
+          border: Border.all(color: surfaces.lineSoft),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.max,
+          children: <Widget>[
+            if (loading)
+              const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            else
+              Icon(Icons.expand_less_rounded, size: 16, color: surfaces.muted),
             const SizedBox(width: AppSpacing.xs),
-          ] else
-            Icon(Icons.expand_less_rounded, size: 16, color: surfaces.muted),
-          Text(
-            label,
-            style:
-                (compact
-                        ? theme.textTheme.labelMedium
-                        : theme.textTheme.bodySmall)
-                    ?.copyWith(fontWeight: FontWeight.w600),
-          ),
-          if (hint != null) ...<Widget>[
-            const SizedBox(width: AppSpacing.xs),
-            Text(
-              hint,
-              style: theme.textTheme.bodySmall?.copyWith(color: surfaces.muted),
+            Expanded(
+              child: Text.rich(
+                TextSpan(
+                  children: <InlineSpan>[
+                    TextSpan(
+                      text: label,
+                      style:
+                          (compact
+                                  ? theme.textTheme.labelMedium
+                                  : theme.textTheme.bodySmall)
+                              ?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                    if (hint != null)
+                      TextSpan(
+                        text: ' $hint',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: surfaces.muted,
+                        ),
+                      ),
+                  ],
+                ),
+                textAlign: TextAlign.center,
+                softWrap: true,
+                maxLines: compact ? 3 : 2,
+              ),
             ),
           ],
-        ],
+        ),
       ),
     );
     return Align(
@@ -19747,297 +20202,328 @@ class _PromptComposerState extends State<_PromptComposer> {
                   _setDraggingFiles(false);
                   await widget.onDropFiles(files);
                 },
-                child: Container(
+                child: AppGlassPanel(
+                  radius: isCompact
+                      ? AppSpacing.compactPanelRadius
+                      : AppSpacing.panelRadius,
+                  blur: isCompact ? 18 : 24,
+                  tone: AppSurfaceTone.accent,
+                  backgroundOpacity:
+                      Theme.of(context).brightness == Brightness.dark
+                      ? 0.78
+                      : 0.9,
+                  borderOpacity: _draggingFiles ? 0.24 : 0.12,
                   padding: EdgeInsets.all(
                     density.inset(isCompact ? AppSpacing.sm : AppSpacing.md),
                   ),
-                  decoration: BoxDecoration(
-                    color: surfaces.panel,
-                    borderRadius: BorderRadius.circular(isCompact ? 16 : 20),
-                    border: Border.all(
-                      color: _draggingFiles
-                          ? Theme.of(
-                              context,
-                            ).colorScheme.primary.withValues(alpha: 0.55)
-                          : surfaces.lineSoft,
-                      width: _draggingFiles ? 1.5 : 1,
-                    ),
-                    boxShadow: <BoxShadow>[
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.22),
-                        blurRadius: isCompact ? 16 : 24,
-                        offset: Offset(0, isCompact ? 6 : 10),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(
+                        isCompact
+                            ? AppSpacing.compactPanelRadius
+                            : AppSpacing.panelRadius,
                       ),
-                    ],
-                  ),
-                  child: Column(
-                    children: <Widget>[
-                      if (widget.queuedPrompts.isNotEmpty) ...<Widget>[
-                        if (isCompact)
-                          _CompactActivitySummaryButton(
-                            key: const ValueKey<String>(
-                              'composer-queued-summary-button',
+                      border: Border.all(
+                        color: _draggingFiles
+                            ? Theme.of(
+                                context,
+                              ).colorScheme.primary.withValues(alpha: 0.55)
+                            : Colors.transparent,
+                        width: _draggingFiles ? 1.5 : 0,
+                      ),
+                    ),
+                    child: Column(
+                      children: <Widget>[
+                        if (widget.queuedPrompts.isNotEmpty) ...<Widget>[
+                          if (isCompact)
+                            _CompactActivitySummaryButton(
+                              key: const ValueKey<String>(
+                                'composer-queued-summary-button',
+                              ),
+                              icon: Icons.schedule_send_rounded,
+                              label: context.wp(
+                                widget.queuedPrompts.length == 1
+                                    ? '1 queued follow-up'
+                                    : '{count} queued follow-ups',
+                                args: <String, Object?>{
+                                  'count': widget.queuedPrompts.length,
+                                },
+                              ),
+                              accent: Theme.of(context).colorScheme.primary,
+                              onTap: () => unawaited(_openQueuedPromptsSheet()),
+                            )
+                          else
+                            _ComposerQueuedPromptDock(
+                              compact: isCompact,
+                              queuedPrompts: widget.queuedPrompts,
+                              failedQueuedPromptId: widget.failedQueuedPromptId,
+                              sendingQueuedPromptId:
+                                  widget.sendingQueuedPromptId,
+                              busy: widget.interruptible,
+                              onEditQueuedPrompt: widget.onEditQueuedPrompt,
+                              onDeleteQueuedPrompt: widget.onDeleteQueuedPrompt,
+                              onSendQueuedPromptNow:
+                                  widget.onSendQueuedPromptNow,
                             ),
-                            icon: Icons.schedule_send_rounded,
-                            label: context.wp(
-                              widget.queuedPrompts.length == 1
-                                  ? '1 queued follow-up'
-                                  : '{count} queued follow-ups',
-                              args: <String, Object?>{
-                                'count': widget.queuedPrompts.length,
-                              },
+                          SizedBox(
+                            height: density.inset(
+                              isCompact ? AppSpacing.sm : AppSpacing.md,
                             ),
-                            accent: Theme.of(context).colorScheme.primary,
-                            onTap: () => unawaited(_openQueuedPromptsSheet()),
-                          )
-                        else
-                          _ComposerQueuedPromptDock(
-                            compact: isCompact,
-                            queuedPrompts: widget.queuedPrompts,
-                            failedQueuedPromptId: widget.failedQueuedPromptId,
-                            sendingQueuedPromptId: widget.sendingQueuedPromptId,
-                            busy: widget.interruptible,
-                            onEditQueuedPrompt: widget.onEditQueuedPrompt,
-                            onDeleteQueuedPrompt: widget.onDeleteQueuedPrompt,
-                            onSendQueuedPromptNow: widget.onSendQueuedPromptNow,
                           ),
-                        SizedBox(
-                          height: density.inset(
-                            isCompact ? AppSpacing.sm : AppSpacing.md,
+                        ],
+                        if (slashCommands.isNotEmpty) ...<Widget>[
+                          ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxHeight: density.inset(
+                                isCompact ? 240 : 320,
+                                min: 220,
+                              ),
+                            ),
+                            child: DecoratedBox(
+                              key: const ValueKey<String>(
+                                'composer-slash-popover',
+                              ),
+                              decoration: appSoftCardDecoration(
+                                context,
+                                radius: isCompact ? 18 : 22,
+                                muted: true,
+                                emphasized: true,
+                              ),
+                              child: ListView.separated(
+                                shrinkWrap: true,
+                                padding: EdgeInsets.all(
+                                  density.inset(
+                                    isCompact ? AppSpacing.xs : AppSpacing.sm,
+                                  ),
+                                ),
+                                itemCount: slashCommands.length,
+                                separatorBuilder: (_, _) =>
+                                    const SizedBox(height: AppSpacing.xs),
+                                itemBuilder: (context, index) {
+                                  final command = slashCommands[index];
+                                  return Material(
+                                    color: Colors.transparent,
+                                    child: InkWell(
+                                      key: ValueKey<String>(
+                                        'composer-slash-option-${command.id}',
+                                      ),
+                                      borderRadius: BorderRadius.circular(12),
+                                      onTap: () => _selectSlashCommand(command),
+                                      child: Ink(
+                                        decoration: appSoftCardDecoration(
+                                          context,
+                                          radius: isCompact ? 14 : 16,
+                                          tone: AppSurfaceTone.accent,
+                                          muted: index != 0,
+                                          selected: index == 0,
+                                        ),
+                                        padding: EdgeInsets.symmetric(
+                                          horizontal: isCompact
+                                              ? density.inset(AppSpacing.sm)
+                                              : density.inset(AppSpacing.md),
+                                          vertical: isCompact
+                                              ? density.inset(AppSpacing.xs)
+                                              : density.inset(AppSpacing.sm),
+                                        ),
+                                        child: Row(
+                                          children: <Widget>[
+                                            Expanded(
+                                              child: Row(
+                                                children: <Widget>[
+                                                  Text(
+                                                    '/${command.trigger}',
+                                                    style: Theme.of(context)
+                                                        .textTheme
+                                                        .titleMedium
+                                                        ?.copyWith(
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                        ),
+                                                  ),
+                                                  if ((command.description ??
+                                                          '')
+                                                      .trim()
+                                                      .isNotEmpty) ...<Widget>[
+                                                    const SizedBox(
+                                                      width: AppSpacing.sm,
+                                                    ),
+                                                    Expanded(
+                                                      child: Text(
+                                                        command.description!,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                        style: Theme.of(context)
+                                                            .textTheme
+                                                            .bodyMedium
+                                                            ?.copyWith(
+                                                              color: surfaces
+                                                                  .muted,
+                                                            ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ],
+                                              ),
+                                            ),
+                                            if (command.type ==
+                                                    _ComposerSlashCommandType
+                                                        .custom &&
+                                                command.source != null &&
+                                                command.source !=
+                                                    'command') ...<Widget>[
+                                              const SizedBox(
+                                                width: AppSpacing.sm,
+                                              ),
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: AppSpacing.sm,
+                                                      vertical: 4,
+                                                    ),
+                                                decoration:
+                                                    appSoftCardDecoration(
+                                                      context,
+                                                      radius:
+                                                          AppSpacing.pillRadius,
+                                                      muted: true,
+                                                    ),
+                                                child: Text(
+                                                  command.source!,
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .labelSmall
+                                                      ?.copyWith(
+                                                        color: surfaces.muted,
+                                                      ),
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                          SizedBox(
+                            height: density.inset(
+                              isCompact ? AppSpacing.sm : AppSpacing.md,
+                            ),
+                          ),
+                        ],
+                        if (widget.attachments.isNotEmpty) ...<Widget>[
+                          _ComposerAttachmentStrip(
+                            attachments: widget.attachments,
+                            onRemove: widget.onRemoveAttachment,
+                          ),
+                          SizedBox(
+                            height: density.inset(
+                              isCompact ? AppSpacing.sm : AppSpacing.md,
+                            ),
+                          ),
+                        ],
+                        Actions(
+                          actions: <Type, Action<Intent>>{
+                            PasteTextIntent: _ComposerPasteTextAction(
+                              onPasteImage: widget.onPasteClipboardImage,
+                              onPasteText: _pasteClipboardText,
+                            ),
+                          },
+                          child: Focus(
+                            canRequestFocus: false,
+                            skipTraversal: true,
+                            onKeyEvent: _handleComposerKeyEvent,
+                            child: TextField(
+                              key: widget.textFieldKey,
+                              controller: widget.controller,
+                              focusNode: _focusNode,
+                              minLines: isCompact ? 2 : 3,
+                              maxLines: isCompact ? 6 : 8,
+                              contextMenuBuilder: kIsWeb
+                                  ? null
+                                  : (
+                                      BuildContext context,
+                                      EditableTextState editableTextState,
+                                    ) {
+                                      return AdaptiveTextSelectionToolbar.buttonItems(
+                                        anchors: editableTextState
+                                            .contextMenuAnchors,
+                                        buttonItems: _contextMenuButtonItems(
+                                          editableTextState,
+                                        ),
+                                      );
+                                    },
+                              contentInsertionConfiguration:
+                                  ContentInsertionConfiguration(
+                                    allowedMimeTypes: PromptAttachmentService
+                                        .supportedContentInsertionMimeTypes,
+                                    onContentInserted: (content) {
+                                      unawaited(
+                                        widget.onContentInserted(content),
+                                      );
+                                    },
+                                  ),
+                              decoration: InputDecoration(
+                                border: InputBorder.none,
+                                enabledBorder: InputBorder.none,
+                                focusedBorder: InputBorder.none,
+                                filled: false,
+                                hintText: context.wp('Ask anything...'),
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                              style: Theme.of(
+                                context,
+                              ).textTheme.bodyLarge?.copyWith(height: 1.55),
+                              onTap: widget.onActivateComposer,
+                              onSubmitted: (_) => _handleSubmit(),
+                            ),
                           ),
                         ),
-                      ],
-                      if (slashCommands.isNotEmpty) ...<Widget>[
-                        ConstrainedBox(
-                          constraints: BoxConstraints(
-                            maxHeight: density.inset(
-                              isCompact ? 240 : 320,
-                              min: 220,
-                            ),
+                        SizedBox(
+                          height: density.inset(
+                            isCompact ? AppSpacing.xs : AppSpacing.sm,
                           ),
-                          child: DecoratedBox(
-                            key: const ValueKey<String>(
-                              'composer-slash-popover',
-                            ),
-                            decoration: BoxDecoration(
-                              color: surfaces.panelMuted,
-                              borderRadius: BorderRadius.circular(
-                                isCompact ? 14 : 18,
+                        ),
+                        Row(
+                          children: <Widget>[
+                            _ComposerIconButton(
+                              key: const ValueKey<String>(
+                                'composer-attach-button',
                               ),
-                              border: Border.all(color: surfaces.lineSoft),
+                              compact: isCompact,
+                              icon: Icons.add_rounded,
+                              onTap:
+                                  widget.submitting || widget.pickingAttachments
+                                  ? null
+                                  : () {
+                                      unawaited(widget.onPickAttachments());
+                                    },
+                              busy: widget.pickingAttachments,
                             ),
-                            child: ListView.separated(
-                              shrinkWrap: true,
-                              padding: EdgeInsets.all(
-                                density.inset(
+                            if (_supportsVoiceInput) ...<Widget>[
+                              SizedBox(
+                                width: density.inset(
                                   isCompact ? AppSpacing.xs : AppSpacing.sm,
                                 ),
                               ),
-                              itemCount: slashCommands.length,
-                              separatorBuilder: (_, _) =>
-                                  const SizedBox(height: AppSpacing.xs),
-                              itemBuilder: (context, index) {
-                                final command = slashCommands[index];
-                                return Material(
-                                  color: Colors.transparent,
-                                  child: InkWell(
-                                    key: ValueKey<String>(
-                                      'composer-slash-option-${command.id}',
-                                    ),
-                                    borderRadius: BorderRadius.circular(12),
-                                    onTap: () => _selectSlashCommand(command),
-                                    child: Ink(
-                                      decoration: BoxDecoration(
-                                        color: index == 0
-                                            ? surfaces.panel
-                                            : Colors.transparent,
-                                        borderRadius: BorderRadius.circular(
-                                          isCompact ? 10 : 12,
-                                        ),
-                                      ),
-                                      padding: EdgeInsets.symmetric(
-                                        horizontal: isCompact
-                                            ? density.inset(AppSpacing.sm)
-                                            : density.inset(AppSpacing.md),
-                                        vertical: isCompact
-                                            ? density.inset(AppSpacing.xs)
-                                            : density.inset(AppSpacing.sm),
-                                      ),
-                                      child: Row(
-                                        children: <Widget>[
-                                          Expanded(
-                                            child: Row(
-                                              children: <Widget>[
-                                                Text(
-                                                  '/${command.trigger}',
-                                                  style: Theme.of(context)
-                                                      .textTheme
-                                                      .titleMedium
-                                                      ?.copyWith(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                      ),
-                                                ),
-                                                if ((command.description ?? '')
-                                                    .trim()
-                                                    .isNotEmpty) ...<Widget>[
-                                                  const SizedBox(
-                                                    width: AppSpacing.sm,
-                                                  ),
-                                                  Expanded(
-                                                    child: Text(
-                                                      command.description!,
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                      style: Theme.of(context)
-                                                          .textTheme
-                                                          .bodyMedium
-                                                          ?.copyWith(
-                                                            color:
-                                                                surfaces.muted,
-                                                          ),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ],
-                                            ),
-                                          ),
-                                          if (command.type ==
-                                                  _ComposerSlashCommandType
-                                                      .custom &&
-                                              command.source != null &&
-                                              command.source !=
-                                                  'command') ...<Widget>[
-                                            const SizedBox(
-                                              width: AppSpacing.sm,
-                                            ),
-                                            Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: AppSpacing.sm,
-                                                    vertical: 4,
-                                                  ),
-                                              decoration: BoxDecoration(
-                                                color: surfaces.panel,
-                                                borderRadius:
-                                                    BorderRadius.circular(999),
-                                              ),
-                                              child: Text(
-                                                command.source!,
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .labelSmall
-                                                    ?.copyWith(
-                                                      color: surfaces.muted,
-                                                    ),
-                                              ),
-                                            ),
-                                          ],
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                        ),
-                        SizedBox(
-                          height: density.inset(
-                            isCompact ? AppSpacing.sm : AppSpacing.md,
-                          ),
-                        ),
-                      ],
-                      if (widget.attachments.isNotEmpty) ...<Widget>[
-                        _ComposerAttachmentStrip(
-                          attachments: widget.attachments,
-                          onRemove: widget.onRemoveAttachment,
-                        ),
-                        SizedBox(
-                          height: density.inset(
-                            isCompact ? AppSpacing.sm : AppSpacing.md,
-                          ),
-                        ),
-                      ],
-                      Actions(
-                        actions: <Type, Action<Intent>>{
-                          PasteTextIntent: _ComposerPasteTextAction(
-                            onPasteImage: widget.onPasteClipboardImage,
-                            onPasteText: _pasteClipboardText,
-                          ),
-                        },
-                        child: Focus(
-                          canRequestFocus: false,
-                          skipTraversal: true,
-                          onKeyEvent: _handleComposerKeyEvent,
-                          child: TextField(
-                            key: widget.textFieldKey,
-                            controller: widget.controller,
-                            focusNode: _focusNode,
-                            minLines: isCompact ? 2 : 3,
-                            maxLines: isCompact ? 6 : 8,
-                            contextMenuBuilder: kIsWeb
-                                ? null
-                                : (
-                                    BuildContext context,
-                                    EditableTextState editableTextState,
-                                  ) {
-                                    return AdaptiveTextSelectionToolbar.buttonItems(
-                                      anchors:
-                                          editableTextState.contextMenuAnchors,
-                                      buttonItems: _contextMenuButtonItems(
-                                        editableTextState,
-                                      ),
-                                    );
-                                  },
-                            contentInsertionConfiguration:
-                                ContentInsertionConfiguration(
-                                  allowedMimeTypes: PromptAttachmentService
-                                      .supportedContentInsertionMimeTypes,
-                                  onContentInserted: (content) {
-                                    unawaited(
-                                      widget.onContentInserted(content),
-                                    );
-                                  },
+                              _ComposerIconButton(
+                                key: const ValueKey<String>(
+                                  'composer-voice-button',
                                 ),
-                            decoration: InputDecoration(
-                              border: InputBorder.none,
-                              enabledBorder: InputBorder.none,
-                              focusedBorder: InputBorder.none,
-                              filled: false,
-                              hintText: context.wp('Ask anything...'),
-                              contentPadding: EdgeInsets.zero,
-                            ),
-                            style: Theme.of(
-                              context,
-                            ).textTheme.bodyLarge?.copyWith(height: 1.55),
-                            onTap: widget.onActivateComposer,
-                            onSubmitted: (_) => _handleSubmit(),
-                          ),
-                        ),
-                      ),
-                      SizedBox(
-                        height: density.inset(
-                          isCompact ? AppSpacing.xs : AppSpacing.sm,
-                        ),
-                      ),
-                      Row(
-                        children: <Widget>[
-                          _ComposerIconButton(
-                            key: const ValueKey<String>(
-                              'composer-attach-button',
-                            ),
-                            compact: isCompact,
-                            icon: Icons.add_rounded,
-                            onTap:
-                                widget.submitting || widget.pickingAttachments
-                                ? null
-                                : () {
-                                    unawaited(widget.onPickAttachments());
-                                  },
-                            busy: widget.pickingAttachments,
-                          ),
-                          if (_supportsVoiceInput) ...<Widget>[
+                                compact: isCompact,
+                                icon: _voiceListening
+                                    ? Icons.stop_circle_outlined
+                                    : Icons.mic_none_rounded,
+                                onTap: widget.submitting
+                                    ? null
+                                    : () {
+                                        unawaited(_toggleVoiceInput());
+                                      },
+                                filled: _voiceListening,
+                              ),
+                            ],
                             SizedBox(
                               width: density.inset(
                                 isCompact ? AppSpacing.xs : AppSpacing.sm,
@@ -20045,145 +20531,131 @@ class _PromptComposerState extends State<_PromptComposer> {
                             ),
                             _ComposerIconButton(
                               key: const ValueKey<String>(
-                                'composer-voice-button',
+                                'composer-permissions-button',
                               ),
                               compact: isCompact,
-                              icon: _voiceListening
-                                  ? Icons.stop_circle_outlined
-                                  : Icons.mic_none_rounded,
-                              onTap: widget.submitting
-                                  ? null
-                                  : () {
-                                      unawaited(_toggleVoiceInput());
-                                    },
-                              filled: _voiceListening,
+                              icon: widget.permissionAutoAccepting
+                                  ? Icons.verified_user_rounded
+                                  : Icons.policy_outlined,
+                              onTap: () {
+                                unawaited(
+                                  widget.onTogglePermissionAutoAccept(),
+                                );
+                              },
+                              filled: widget.permissionAutoAccepting,
                             ),
-                          ],
-                          SizedBox(
-                            width: density.inset(
-                              isCompact ? AppSpacing.xs : AppSpacing.sm,
-                            ),
-                          ),
-                          _ComposerIconButton(
-                            key: const ValueKey<String>(
-                              'composer-permissions-button',
-                            ),
-                            compact: isCompact,
-                            icon: widget.permissionAutoAccepting
-                                ? Icons.verified_user_rounded
-                                : Icons.policy_outlined,
-                            onTap: () {
-                              unawaited(widget.onTogglePermissionAutoAccept());
-                            },
-                            filled: widget.permissionAutoAccepting,
-                          ),
-                          SizedBox(
-                            width: density.inset(
-                              isCompact ? AppSpacing.xs : AppSpacing.sm,
-                            ),
-                          ),
-                          Expanded(
-                            child: SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              child: Row(
-                                children: <Widget>[
-                                  _ComposerSelectionPill(
-                                    compact: isCompact,
-                                    label:
-                                        widget.selectedAgentName ??
-                                        context.wp('Agent'),
-                                    onTap: widget.agents.isEmpty
-                                        ? null
-                                        : () async {
-                                            final selection =
-                                                await _showAgentPicker(context);
-                                            if (selection != null) {
-                                              widget.onSelectAgent(selection);
-                                            }
-                                          },
-                                  ),
-                                  SizedBox(
-                                    width: density.inset(
-                                      isCompact
-                                          ? AppSpacing.xxs
-                                          : AppSpacing.xs,
-                                      min: 3,
-                                    ),
-                                  ),
-                                  _ComposerSelectionPill(
-                                    compact: isCompact,
-                                    label:
-                                        widget.selectedModel?.name ??
-                                        context.wp('Model'),
-                                    onTap: widget.models.isEmpty
-                                        ? null
-                                        : () async {
-                                            final selection =
-                                                await _showModelPicker(context);
-                                            if (selection != null) {
-                                              widget.onSelectModel(selection);
-                                            }
-                                          },
-                                  ),
-                                  SizedBox(
-                                    width: density.inset(
-                                      isCompact
-                                          ? AppSpacing.xxs
-                                          : AppSpacing.xs,
-                                      min: 3,
-                                    ),
-                                  ),
-                                  _ComposerSelectionPill(
-                                    compact: isCompact,
-                                    label: reasoningLabel,
-                                    onTap: widget.selectedModel == null
-                                        ? null
-                                        : () async {
-                                            final selection =
-                                                await _showReasoningPicker(
-                                                  context,
-                                                );
-                                            if (selection == null) {
-                                              return;
-                                            }
-                                            widget.onSelectReasoning(
-                                              selection ==
-                                                      _PromptComposer
-                                                          ._defaultReasoningSentinel
-                                                  ? null
-                                                  : selection,
-                                            );
-                                          },
-                                  ),
-                                ],
+                            SizedBox(
+                              width: density.inset(
+                                isCompact ? AppSpacing.xs : AppSpacing.sm,
                               ),
                             ),
-                          ),
-                          SizedBox(
-                            width: density.inset(
-                              isCompact ? AppSpacing.xs : AppSpacing.sm,
+                            Expanded(
+                              child: SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: Row(
+                                  children: <Widget>[
+                                    _ComposerSelectionPill(
+                                      compact: isCompact,
+                                      label:
+                                          widget.selectedAgentName ??
+                                          context.wp('Agent'),
+                                      onTap: widget.agents.isEmpty
+                                          ? null
+                                          : () async {
+                                              final selection =
+                                                  await _showAgentPicker(
+                                                    context,
+                                                  );
+                                              if (selection != null) {
+                                                widget.onSelectAgent(selection);
+                                              }
+                                            },
+                                    ),
+                                    SizedBox(
+                                      width: density.inset(
+                                        isCompact
+                                            ? AppSpacing.xxs
+                                            : AppSpacing.xs,
+                                        min: 3,
+                                      ),
+                                    ),
+                                    _ComposerSelectionPill(
+                                      compact: isCompact,
+                                      label:
+                                          widget.selectedModel?.name ??
+                                          context.wp('Model'),
+                                      onTap: widget.models.isEmpty
+                                          ? null
+                                          : () async {
+                                              final selection =
+                                                  await _showModelPicker(
+                                                    context,
+                                                  );
+                                              if (selection != null) {
+                                                widget.onSelectModel(selection);
+                                              }
+                                            },
+                                    ),
+                                    SizedBox(
+                                      width: density.inset(
+                                        isCompact
+                                            ? AppSpacing.xxs
+                                            : AppSpacing.xs,
+                                        min: 3,
+                                      ),
+                                    ),
+                                    _ComposerSelectionPill(
+                                      compact: isCompact,
+                                      label: reasoningLabel,
+                                      onTap: widget.selectedModel == null
+                                          ? null
+                                          : () async {
+                                              final selection =
+                                                  await _showReasoningPicker(
+                                                    context,
+                                                  );
+                                              if (selection == null) {
+                                                return;
+                                              }
+                                              widget.onSelectReasoning(
+                                                selection ==
+                                                        _PromptComposer
+                                                            ._defaultReasoningSentinel
+                                                    ? null
+                                                    : selection,
+                                              );
+                                            },
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
-                          ),
-                          _ComposerIconButton(
-                            key: const ValueKey<String>(
-                              'composer-submit-button',
+                            SizedBox(
+                              width: density.inset(
+                                isCompact ? AppSpacing.xs : AppSpacing.sm,
+                              ),
                             ),
-                            compact: isCompact,
-                            icon: submitIcon,
-                            onTap: submitEnabled
-                                ? () => unawaited(_handleSubmit())
-                                : null,
-                            onLongPress: submitEnabled
-                                ? () => unawaited(_handleSubmitLongPress())
-                                : null,
-                            filled: true,
-                            busy: _showsInterruptAction
-                                ? widget.interrupting
-                                : submitBusy,
-                          ),
-                        ],
-                      ),
-                    ],
+                            _ComposerIconButton(
+                              key: const ValueKey<String>(
+                                'composer-submit-button',
+                              ),
+                              compact: isCompact,
+                              icon: submitIcon,
+                              onTap: submitEnabled
+                                  ? () => unawaited(_handleSubmit())
+                                  : null,
+                              onLongPress: submitEnabled
+                                  ? () => unawaited(_handleSubmitLongPress())
+                                  : null,
+                              filled: true,
+                              busy: _showsInterruptAction
+                                  ? widget.interrupting
+                                  : submitBusy,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -20211,7 +20683,12 @@ class _PromptComposerState extends State<_PromptComposer> {
                             ),
                           ),
                           decoration: BoxDecoration(
-                            color: surfaces.panelRaised.withValues(alpha: 0.96),
+                            color: Color.alphaBlend(
+                              Theme.of(
+                                context,
+                              ).colorScheme.primary.withValues(alpha: 0.08),
+                              surfaces.panelRaised.withValues(alpha: 0.96),
+                            ),
                             borderRadius: BorderRadius.circular(
                               isCompact ? 14 : 18,
                             ),
@@ -20423,11 +20900,7 @@ class _ComposerAttachmentTile extends StatelessWidget {
     return Container(
       width: attachment.isImage ? 112 : 200,
       padding: EdgeInsets.all(density.inset(AppSpacing.sm)),
-      decoration: BoxDecoration(
-        color: surfaces.panelMuted,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: surfaces.lineSoft),
-      ),
+      decoration: appSoftCardDecoration(context, radius: 14, muted: true),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -20585,14 +21058,15 @@ class _PendingQuestionComposerNotice extends StatelessWidget {
       child: Center(
         child: ConstrainedBox(
           constraints: BoxConstraints(maxWidth: density.maxContentWidth(920)),
-          child: Container(
+          child: AppGlassPanel(
+            radius: compact
+                ? AppSpacing.compactPanelRadius
+                : AppSpacing.panelRadius,
+            blur: compact ? 18 : 22,
+            tone: AppSurfaceTone.accent,
+            showShadow: false,
             padding: EdgeInsets.all(
               density.inset(compact ? AppSpacing.sm : AppSpacing.md),
-            ),
-            decoration: BoxDecoration(
-              color: surfaces.panel,
-              borderRadius: BorderRadius.circular(compact ? 16 : 20),
-              border: Border.all(color: surfaces.lineSoft),
             ),
             child: Row(
               children: <Widget>[
@@ -20679,14 +21153,15 @@ class _PendingPermissionComposerNotice extends StatelessWidget {
       child: Center(
         child: ConstrainedBox(
           constraints: BoxConstraints(maxWidth: density.maxContentWidth(920)),
-          child: Container(
+          child: AppGlassPanel(
+            radius: compact
+                ? AppSpacing.compactPanelRadius
+                : AppSpacing.panelRadius,
+            blur: compact ? 18 : 22,
+            tone: AppSurfaceTone.warning,
+            showShadow: false,
             padding: EdgeInsets.all(
               density.inset(compact ? AppSpacing.sm : AppSpacing.md),
-            ),
-            decoration: BoxDecoration(
-              color: surfaces.panel,
-              borderRadius: BorderRadius.circular(compact ? 16 : 20),
-              border: Border.all(color: surfaces.lineSoft),
             ),
             child: Row(
               children: <Widget>[
@@ -21082,20 +21557,13 @@ class _QuestionPromptDockState extends State<_QuestionPromptDock> {
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 920),
-          child: Container(
+          child: AppGlassPanel(
+            radius: isCompact
+                ? AppSpacing.compactPanelRadius
+                : AppSpacing.panelRadius,
+            blur: isCompact ? 20 : 24,
+            tone: AppSurfaceTone.accent,
             padding: EdgeInsets.all(isCompact ? AppSpacing.sm : AppSpacing.md),
-            decoration: BoxDecoration(
-              color: surfaces.panel,
-              borderRadius: BorderRadius.circular(isCompact ? 16 : 20),
-              border: Border.all(color: surfaces.lineSoft),
-              boxShadow: <BoxShadow>[
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.22),
-                  blurRadius: isCompact ? 16 : 24,
-                  offset: Offset(0, isCompact ? 6 : 10),
-                ),
-              ],
-            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
@@ -21349,20 +21817,13 @@ class _PermissionPromptDock extends StatelessWidget {
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 920),
-          child: Container(
+          child: AppGlassPanel(
+            radius: compact
+                ? AppSpacing.compactPanelRadius
+                : AppSpacing.panelRadius,
+            blur: compact ? 20 : 24,
+            tone: AppSurfaceTone.warning,
             padding: EdgeInsets.all(compact ? AppSpacing.sm : AppSpacing.md),
-            decoration: BoxDecoration(
-              color: surfaces.panel,
-              borderRadius: BorderRadius.circular(compact ? 16 : 20),
-              border: Border.all(color: surfaces.lineSoft),
-              boxShadow: <BoxShadow>[
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.22),
-                  blurRadius: compact ? 16 : 24,
-                  offset: Offset(0, compact ? 6 : 10),
-                ),
-              ],
-            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -21430,10 +21891,11 @@ class _PermissionPromptDock extends StatelessWidget {
                               horizontal: AppSpacing.sm,
                               vertical: AppSpacing.xxs,
                             ),
-                            decoration: BoxDecoration(
-                              color: surfaces.panelMuted,
-                              borderRadius: BorderRadius.circular(999),
-                              border: Border.all(color: surfaces.lineSoft),
+                            decoration: appSoftCardDecoration(
+                              context,
+                              radius: AppSpacing.pillRadius,
+                              tone: AppSurfaceTone.warning,
+                              muted: true,
                             ),
                             child: Text(
                               pattern,
@@ -21554,10 +22016,12 @@ class _QuestionChoiceTile extends StatelessWidget {
         child: Container(
           width: double.infinity,
           padding: EdgeInsets.all(compact ? AppSpacing.sm : AppSpacing.md),
-          decoration: BoxDecoration(
-            color: selected ? surfaces.panelRaised : surfaces.panelMuted,
-            borderRadius: BorderRadius.circular(compact ? 14 : 16),
-            border: Border.all(color: borderColor),
+          decoration: appSoftCardDecoration(
+            context,
+            radius: compact ? 14 : 16,
+            tone: AppSurfaceTone.accent,
+            muted: !selected,
+            selected: selected,
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -21628,6 +22092,7 @@ class _SessionTodoDock extends StatefulWidget {
     required this.collapsed,
     required this.onCollapsedChanged,
     required this.onClearStale,
+    this.collapsible = true,
     super.key,
   });
 
@@ -21639,6 +22104,7 @@ class _SessionTodoDock extends StatefulWidget {
   final bool collapsed;
   final ValueChanged<bool> onCollapsedChanged;
   final VoidCallback onClearStale;
+  final bool collapsible;
 
   @override
   State<_SessionTodoDock> createState() => _SessionTodoDockState();
@@ -21738,6 +22204,8 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
     return widget.todos.isEmpty ? null : widget.todos.first;
   }
 
+  bool get _effectiveCollapsed => widget.collapsible && widget.collapsed;
+
   void _handleScroll() {
     if (!_scrollController.hasClients) {
       return;
@@ -21793,7 +22261,7 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
           _closing = false;
         });
       }
-      if (!widget.collapsed) {
+      if (!_effectiveCollapsed) {
         _scheduleEnsureVisible();
       }
       return;
@@ -21811,7 +22279,7 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
       });
     }
     _scheduleClose(todoSignature);
-    if (initial && !widget.collapsed) {
+    if (initial && !_effectiveCollapsed) {
       _scheduleEnsureVisible();
     }
   }
@@ -21863,7 +22331,7 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final activeTodo = _activeTodo;
       if (!mounted ||
-          widget.collapsed ||
+          _effectiveCollapsed ||
           !_visible ||
           widget.blocked ||
           activeTodo == null) {
@@ -21895,6 +22363,9 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
   }
 
   void _toggleCollapsed() {
+    if (!widget.collapsible) {
+      return;
+    }
     final nextCollapsed = !widget.collapsed;
     widget.onCollapsedChanged(nextCollapsed);
     if (!nextCollapsed) {
@@ -21911,6 +22382,8 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
     final preview = _activeTodo?.content.trim() ?? '';
     final shouldRender = _visible && widget.todos.isNotEmpty && !widget.blocked;
     final isCompact = widget.compact;
+    final collapsible = widget.collapsible;
+    final collapsed = _effectiveCollapsed;
 
     return AnimatedSize(
       duration: const Duration(milliseconds: 220),
@@ -21927,16 +22400,17 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
               child: Center(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 920),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: surfaces.panel,
-                      borderRadius: BorderRadius.circular(isCompact ? 16 : 20),
-                      border: Border.all(color: surfaces.lineSoft),
-                    ),
+                  child: AppGlassPanel(
+                    radius: isCompact
+                        ? AppSpacing.compactPanelRadius
+                        : AppSpacing.panelRadius,
+                    blur: isCompact ? 18 : 22,
+                    tone: AppSurfaceTone.success,
+                    padding: EdgeInsets.zero,
                     child: Column(
                       children: <Widget>[
                         InkWell(
-                          onTap: _toggleCollapsed,
+                          onTap: collapsible ? _toggleCollapsed : null,
                           borderRadius: BorderRadius.vertical(
                             top: Radius.circular(isCompact ? 16 : 20),
                             bottom: Radius.circular(isCompact ? 16 : 20),
@@ -21951,7 +22425,7 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
                             child: Row(
                               children: <Widget>[
                                 Expanded(
-                                  child: widget.collapsed && preview.isNotEmpty
+                                  child: collapsed && preview.isNotEmpty
                                       ? Row(
                                           children: <Widget>[
                                             Flexible(
@@ -22013,24 +22487,25 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
                                                   ),
                                         ),
                                 ),
-                                IconButton(
-                                  key: const ValueKey<String>(
-                                    'session-todo-toggle-button',
-                                  ),
-                                  onPressed: _toggleCollapsed,
-                                  icon: AnimatedRotation(
-                                    turns: widget.collapsed ? 0.5 : 0,
-                                    duration: const Duration(milliseconds: 180),
-                                    child: Icon(
-                                      Icons.keyboard_arrow_down_rounded,
-                                      color: surfaces.muted,
+                                if (collapsible)
+                                  IconButton(
+                                    key: const ValueKey<String>(
+                                      'session-todo-toggle-button',
                                     ),
+                                    onPressed: _toggleCollapsed,
+                                    icon: AnimatedRotation(
+                                      turns: collapsed ? 0.5 : 0,
+                                      duration: const Duration(
+                                        milliseconds: 180,
+                                      ),
+                                      child: Icon(
+                                        Icons.keyboard_arrow_down_rounded,
+                                        color: surfaces.muted,
+                                      ),
+                                    ),
+                                    splashRadius: isCompact ? 16 : 18,
+                                    tooltip: collapsed ? 'Expand' : 'Collapse',
                                   ),
-                                  splashRadius: isCompact ? 16 : 18,
-                                  tooltip: widget.collapsed
-                                      ? 'Expand'
-                                      : 'Collapse',
-                                ),
                               ],
                             ),
                           ),
@@ -22039,7 +22514,7 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
                           child: AnimatedSize(
                             duration: const Duration(milliseconds: 220),
                             curve: Curves.easeOutCubic,
-                            child: widget.collapsed
+                            child: collapsed
                                 ? const SizedBox.shrink()
                                 : Stack(
                                     children: <Widget>[
@@ -22222,36 +22697,53 @@ class _CompactPaneSwitcher extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
-    return Container(
-      key: const ValueKey<String>('workspace-compact-pane-switcher'),
-      height: height,
-      decoration: BoxDecoration(
-        color: surfaces.panel,
-        border: Border(bottom: BorderSide(color: surfaces.lineSoft)),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.sm,
+        AppSpacing.xs,
+        AppSpacing.sm,
+        0,
       ),
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: _CompactPaneButton(
-              key: const ValueKey<String>(
-                'workspace-compact-pane-session-button',
-              ),
-              label: context.wp('Session'),
-              selected: activePane == _CompactWorkspacePane.session,
-              onTap: () => onChanged(_CompactWorkspacePane.session),
+      child: AppGlassPanel(
+        key: const ValueKey<String>('workspace-compact-pane-switcher'),
+        radius: AppSpacing.panelRadius,
+        blur: 18,
+        backgroundOpacity: Theme.of(context).brightness == Brightness.dark
+            ? 0.78
+            : 0.9,
+        showShadow: false,
+        padding: EdgeInsets.zero,
+        child: SizedBox(
+          height: height,
+          child: Padding(
+            padding: const EdgeInsets.all(4),
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: _CompactPaneButton(
+                    key: const ValueKey<String>(
+                      'workspace-compact-pane-session-button',
+                    ),
+                    label: context.wp('Session'),
+                    selected: activePane == _CompactWorkspacePane.session,
+                    onTap: () => onChanged(_CompactWorkspacePane.session),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                Expanded(
+                  child: _CompactPaneButton(
+                    key: const ValueKey<String>(
+                      'workspace-compact-pane-side-button',
+                    ),
+                    label: sideLabel,
+                    selected: activePane == _CompactWorkspacePane.side,
+                    onTap: () => onChanged(_CompactWorkspacePane.side),
+                  ),
+                ),
+              ],
             ),
           ),
-          Container(width: 1, color: surfaces.lineSoft),
-          Expanded(
-            child: _CompactPaneButton(
-              key: const ValueKey<String>('workspace-compact-pane-side-button'),
-              label: sideLabel,
-              selected: activePane == _CompactWorkspacePane.side,
-              onTap: () => onChanged(_CompactWorkspacePane.side),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -22272,19 +22764,31 @@ class _CompactPaneButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final accent = Theme.of(context).colorScheme.primary;
     return InkWell(
       onTap: onTap,
+      borderRadius: BorderRadius.circular(AppSpacing.formFieldRadius),
       child: Container(
         alignment: Alignment.center,
+        margin: const EdgeInsets.symmetric(vertical: 2),
         decoration: BoxDecoration(
-          border: Border(
-            bottom: BorderSide(
-              color: selected
-                  ? Theme.of(context).colorScheme.onSurface
-                  : Colors.transparent,
-              width: 1.5,
-            ),
+          color: selected ? accent.withValues(alpha: 0.12) : Colors.transparent,
+          borderRadius: BorderRadius.circular(AppSpacing.formFieldRadius),
+          border: Border.all(
+            color: selected
+                ? accent.withValues(alpha: 0.22)
+                : Colors.transparent,
           ),
+          boxShadow: selected
+              ? <BoxShadow>[
+                  BoxShadow(
+                    color: accent.withValues(alpha: 0.12),
+                    blurRadius: 16,
+                    spreadRadius: -10,
+                    offset: const Offset(0, 8),
+                  ),
+                ]
+              : const <BoxShadow>[],
         ),
         child: Text(
           label,
@@ -25312,9 +25816,10 @@ class _ComposerIconButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final enabled = onTap != null || busy;
+    final accent = Theme.of(context).colorScheme.primary;
     final color = filled
         ? enabled
-              ? Theme.of(context).colorScheme.primary
+              ? accent
               : surfaces.panelRaised
         : surfaces.panelRaised;
     final foreground = filled
@@ -25331,11 +25836,26 @@ class _ComposerIconButton extends StatelessWidget {
       child: Container(
         width: compact ? 36 : 40,
         height: compact ? 36 : 40,
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(compact ? 10 : 12),
-          border: Border.all(color: filled ? color : surfaces.lineSoft),
-        ),
+        decoration: filled
+            ? BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(compact ? 10 : 12),
+                border: Border.all(color: color),
+                boxShadow: <BoxShadow>[
+                  BoxShadow(
+                    color: accent.withValues(alpha: 0.18),
+                    blurRadius: 18,
+                    spreadRadius: -10,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              )
+            : appSoftCardDecoration(
+                context,
+                radius: compact ? 10 : 12,
+                muted: !enabled,
+                emphasized: enabled,
+              ),
         child: Center(
           child: busy
               ? SizedBox(
@@ -25382,10 +25902,11 @@ class _ComposerQueuedPromptDock extends StatelessWidget {
     return Container(
       key: const ValueKey<String>('composer-queued-dock'),
       padding: EdgeInsets.all(compact ? AppSpacing.sm : AppSpacing.md),
-      decoration: BoxDecoration(
-        color: surfaces.panelMuted,
-        borderRadius: BorderRadius.circular(compact ? 14 : 18),
-        border: Border.all(color: surfaces.lineSoft),
+      decoration: appSoftCardDecoration(
+        context,
+        radius: compact ? 14 : 18,
+        muted: true,
+        emphasized: true,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -25484,16 +26005,12 @@ class _ComposerQueuedPromptRow extends StatelessWidget {
     return Container(
       key: ValueKey<String>('composer-queued-item-${queuedPrompt.id}'),
       padding: EdgeInsets.all(compact ? AppSpacing.sm : AppSpacing.md),
-      decoration: BoxDecoration(
-        color: failed
-            ? colorScheme.error.withValues(alpha: 0.08)
-            : surfaces.panel,
-        borderRadius: BorderRadius.circular(compact ? 12 : 16),
-        border: Border.all(
-          color: failed
-              ? colorScheme.error.withValues(alpha: 0.4)
-              : surfaces.lineSoft,
-        ),
+      decoration: appSoftCardDecoration(
+        context,
+        radius: compact ? 12 : 16,
+        tone: failed ? AppSurfaceTone.danger : AppSurfaceTone.neutral,
+        muted: !failed,
+        selected: failed,
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -25614,66 +26131,62 @@ class _ComposerSubmitModeSheet extends StatelessWidget {
           AppSpacing.md,
           AppSpacing.lg,
         ),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: surfaces.panel,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: surfaces.lineSoft),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.lg),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  context.wp('Send this message'),
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+        child: AppGlassPanel(
+          radius: AppSpacing.dialogRadius,
+          blur: 24,
+          backgroundOpacity: theme.brightness == Brightness.dark ? 0.82 : 0.9,
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                context.wp('Send this message'),
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
                 ),
-                const SizedBox(height: AppSpacing.xxs),
-                Text(
-                  context.wp(
-                    'Default while busy: {mode}',
-                    args: <String, Object?>{'mode': defaultLabel},
-                  ),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: surfaces.muted,
-                  ),
+              ),
+              const SizedBox(height: AppSpacing.xxs),
+              Text(
+                context.wp(
+                  'Default while busy: {mode}',
+                  args: <String, Object?>{'mode': defaultLabel},
                 ),
-                const SizedBox(height: AppSpacing.md),
-                _ComposerSubmitModeTile(
-                  key: const ValueKey<String>('composer-submit-mode-queue'),
-                  title: context.wp('Queue'),
-                  subtitle: busy
-                      ? context.wp(
-                          'Keep this follow-up waiting and send it automatically when the current run finishes.',
-                        )
-                      : context.wp(
-                          'Send normally now, and keep this mode queued by default when the session is already busy.',
-                        ),
-                  icon: Icons.schedule_send_rounded,
-                  onTap: () => Navigator.of(
-                    context,
-                  ).pop(WorkspacePromptDispatchMode.queue),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: surfaces.muted,
                 ),
-                const SizedBox(height: AppSpacing.sm),
-                _ComposerSubmitModeTile(
-                  key: const ValueKey<String>('composer-submit-mode-steer'),
-                  title: context.wp('Steer'),
-                  subtitle: busy
-                      ? context.wp(
-                          'Send immediately to the running agent instead of waiting in the queue.',
-                        )
-                      : context.wp('Send immediately without queueing.'),
-                  icon: Icons.arrow_upward_rounded,
-                  onTap: () => Navigator.of(
-                    context,
-                  ).pop(WorkspacePromptDispatchMode.steer),
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              _ComposerSubmitModeTile(
+                key: const ValueKey<String>('composer-submit-mode-queue'),
+                title: context.wp('Queue'),
+                subtitle: busy
+                    ? context.wp(
+                        'Keep this follow-up waiting and send it automatically when the current run finishes.',
+                      )
+                    : context.wp(
+                        'Send normally now, and keep this mode queued by default when the session is already busy.',
+                      ),
+                icon: Icons.schedule_send_rounded,
+                onTap: () => Navigator.of(
+                  context,
+                ).pop(WorkspacePromptDispatchMode.queue),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              _ComposerSubmitModeTile(
+                key: const ValueKey<String>('composer-submit-mode-steer'),
+                title: context.wp('Steer'),
+                subtitle: busy
+                    ? context.wp(
+                        'Send immediately to the running agent instead of waiting in the queue.',
+                      )
+                    : context.wp('Send immediately without queueing.'),
+                icon: Icons.arrow_upward_rounded,
+                onTap: () => Navigator.of(
+                  context,
+                ).pop(WorkspacePromptDispatchMode.steer),
+              ),
+            ],
           ),
         ),
       ),
@@ -25706,10 +26219,11 @@ class _ComposerSubmitModeTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(18),
         child: Ink(
           padding: const EdgeInsets.all(AppSpacing.md),
-          decoration: BoxDecoration(
-            color: surfaces.panelMuted,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: surfaces.lineSoft),
+          decoration: appSoftCardDecoration(
+            context,
+            radius: 18,
+            muted: true,
+            emphasized: true,
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -25777,10 +26291,10 @@ class _ComposerSelectionPill extends StatelessWidget {
           horizontal: compact ? AppSpacing.xs : AppSpacing.sm,
           vertical: compact ? 6 : AppSpacing.xs,
         ),
-        decoration: BoxDecoration(
-          color: surfaces.panelRaised,
-          borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
-          border: Border.all(color: surfaces.lineSoft),
+        decoration: appSoftCardDecoration(
+          context,
+          radius: AppSpacing.pillRadius,
+          muted: true,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -26016,7 +26530,6 @@ class _SelectionSheetFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final mediaQuery = MediaQuery.of(context);
     return SafeArea(
       child: Padding(
@@ -26030,14 +26543,15 @@ class _SelectionSheetFrame extends StatelessWidget {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 560, maxHeight: 520),
             child: Material(
-              color: surfaces.panel,
-              borderRadius: BorderRadius.circular(24),
-              child: Container(
+              color: Colors.transparent,
+              child: AppGlassPanel(
+                radius: AppSpacing.dialogRadius,
+                blur: 24,
+                backgroundOpacity:
+                    Theme.of(context).brightness == Brightness.dark
+                    ? 0.82
+                    : 0.9,
                 padding: const EdgeInsets.all(AppSpacing.md),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: surfaces.lineSoft),
-                ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -26091,16 +26605,12 @@ class _SelectionTile extends StatelessWidget {
           horizontal: AppSpacing.md,
           vertical: AppSpacing.sm,
         ),
-        decoration: BoxDecoration(
-          color: selected
-              ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.14)
-              : surfaces.panelRaised,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: selected
-                ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.4)
-                : surfaces.lineSoft,
-          ),
+        decoration: appSoftCardDecoration(
+          context,
+          radius: 18,
+          tone: AppSurfaceTone.accent,
+          muted: !selected,
+          selected: selected,
         ),
         child: Row(
           children: <Widget>[
@@ -26348,6 +26858,9 @@ String _partText(ChatPart part) {
 
   final lines = <String>[];
   for (final entry in part.metadata.entries) {
+    if (_isStructuralPartMetadataKey(entry.key)) {
+      continue;
+    }
     final value = entry.value;
     if (value == null) {
       continue;
@@ -26357,6 +26870,21 @@ String _partText(ChatPart part) {
     }
   }
   return lines.join('\n');
+}
+
+bool _isStructuralPartMetadataKey(String key) {
+  return switch (key.trim().toLowerCase()) {
+    'id' ||
+    'messageid' ||
+    'sessionid' ||
+    'type' ||
+    'tool' ||
+    'filename' ||
+    'url' ||
+    'mime' ||
+    '_streaming' => true,
+    _ => false,
+  };
 }
 
 String _partDisplayText(BuildContext context, ChatPart part) {

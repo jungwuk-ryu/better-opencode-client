@@ -117,6 +117,94 @@ void main() {
   });
 
   testWidgets(
+    'reasoning fallback does not expose transport ids while streaming starts',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        initialTimelineProgressDetailsVisible: false,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              return _OptimisticTimelineWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+                messages: <ChatMessage>[
+                  ChatMessage(
+                    info: ChatMessageInfo(
+                      id: 'msg_reasoning_stream',
+                      role: 'assistant',
+                      sessionId: 'ses_1',
+                      createdAt: DateTime.fromMillisecondsSinceEpoch(
+                        1711421101000,
+                      ),
+                    ),
+                    parts: const <ChatPart>[
+                      ChatPart(
+                        id: 'prtd_streaming_reasoning',
+                        type: 'reasoning',
+                        text: '',
+                        messageId: 'msg_reasoning_stream',
+                        sessionId: 'ses_1',
+                        metadata: <String, Object?>{
+                          'id': 'prtd_streaming_reasoning',
+                          'messageID': 'msg_reasoning_stream',
+                          'sessionID': 'ses_1',
+                          'type': 'reasoning',
+                          '_streaming': true,
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              );
+            },
+      );
+      addTearDown(appController.dispose);
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          initialRoute: buildWorkspaceRoute(
+            '/workspace/demo',
+            sessionId: 'ses_1',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      expect(
+        find.byKey(
+          const ValueKey<String>('timeline-activity-prtd_streaming_reasoning'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Thinking', findRichText: true),
+        findsOneWidget,
+      );
+      expect(find.textContaining('id: prtd', findRichText: true), findsNothing);
+      expect(
+        find.textContaining(
+          'messageID: msg_reasoning_stream',
+          findRichText: true,
+        ),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
     'shell output and activity detail share the same leading margin',
     (tester) async {
       tester.view.physicalSize = const Size(1600, 1000);
