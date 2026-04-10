@@ -22533,7 +22533,7 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
                                                 ? AppSpacing.sm
                                                 : AppSpacing.md,
                                             isCompact
-                                                ? AppSpacing.lg
+                                                ? AppSpacing.md
                                                 : AppSpacing.xl,
                                           ),
                                           child: Column(
@@ -24105,7 +24105,7 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
           Container(
             width: double.infinity,
             margin: _timelineExpandableBodyMargin,
-            padding: _timelineShellBodyPadding,
+            padding: _timelineShellBodyPadding(widget.compact),
             decoration: BoxDecoration(
               color: previewSurface,
               borderRadius: BorderRadius.circular(16),
@@ -24178,7 +24178,7 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
                         ),
                         child: SingleChildScrollView(
                           controller: _logScrollController,
-                          padding: _timelineShellBodyPadding,
+                          padding: _timelineShellBodyPadding(widget.compact),
                           child: SingleChildScrollView(
                             scrollDirection: Axis.horizontal,
                             child: Text.rich(
@@ -24564,7 +24564,7 @@ const EdgeInsets _timelineExpandableHeaderPadding = EdgeInsets.symmetric(
 );
 
 const EdgeInsets _timelineExpandableBodyMargin = EdgeInsets.only(
-  top: AppSpacing.xs,
+  top: AppSpacing.xxs,
 );
 
 const EdgeInsets _timelineExpandableBodyPadding = EdgeInsets.fromLTRB(
@@ -24574,15 +24574,17 @@ const EdgeInsets _timelineExpandableBodyPadding = EdgeInsets.fromLTRB(
   AppSpacing.md,
 );
 
-const EdgeInsets _timelineShellBodyPadding = EdgeInsets.fromLTRB(
-  AppSpacing.sm,
-  AppSpacing.md,
-  56,
-  AppSpacing.md,
-);
+EdgeInsets _timelineShellBodyPadding(bool compact) {
+  return EdgeInsets.fromLTRB(
+    AppSpacing.sm,
+    compact ? AppSpacing.sm : AppSpacing.md,
+    compact ? AppSpacing.sm : AppSpacing.lg,
+    compact ? AppSpacing.sm : AppSpacing.md,
+  );
+}
 
 const EdgeInsets _timelineExploredContextDetailPadding = EdgeInsets.only(
-  top: AppSpacing.xs,
+  top: AppSpacing.xxs,
 );
 
 class _ShimmeringRichText extends StatefulWidget {
@@ -26313,7 +26315,7 @@ class _ComposerSelectionPill extends StatelessWidget {
                         ),
               ),
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: AppSpacing.xxs),
             Icon(
               Icons.keyboard_arrow_down_rounded,
               size: 16,
