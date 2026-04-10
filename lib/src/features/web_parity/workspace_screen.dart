@@ -12240,7 +12240,7 @@ class _SessionGlyph extends StatelessWidget {
   }
 }
 
-class _SessionContextUsageRing extends StatelessWidget {
+class _SessionContextUsageRing extends StatefulWidget {
   const _SessionContextUsageRing({
     required this.usagePercent,
     required this.totalTokens,
@@ -12257,17 +12257,118 @@ class _SessionContextUsageRing extends StatelessWidget {
   final VoidCallback? onTap;
 
   @override
+  State<_SessionContextUsageRing> createState() =>
+      _SessionContextUsageRingState();
+}
+
+class _SessionContextUsageRingState extends State<_SessionContextUsageRing>
+    with TickerProviderStateMixin {
+  late final AnimationController _progressController;
+  late final AnimationController _pulseController;
+  late Animation<double> _progressAnimation;
+  late Animation<Color?> _colorAnimation;
+  late double _targetValue;
+  late Color _targetColor;
+
+  @override
+  void initState() {
+    super.initState();
+    _targetValue = _normalizedUsageValue(widget.usagePercent);
+    _targetColor = const Color(0x00000000);
+    _progressController = AnimationController(
+      vsync: this,
+      duration: Duration.zero,
+    )..value = 1;
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 680),
+    );
+    _progressAnimation = AlwaysStoppedAnimation<double>(_targetValue);
+    _colorAnimation = AlwaysStoppedAnimation<Color?>(_targetColor);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final resolvedColor = _resolvedUsageColor();
+    if (_targetColor.value == resolvedColor.value &&
+        (_colorAnimation.value?.value ?? _targetColor.value) ==
+            resolvedColor.value) {
+      return;
+    }
+    _targetColor = resolvedColor;
+    _colorAnimation = AlwaysStoppedAnimation<Color?>(resolvedColor);
+  }
+
+  @override
+  void didUpdateWidget(covariant _SessionContextUsageRing oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final nextValue = _normalizedUsageValue(widget.usagePercent);
+    final nextColor = _resolvedUsageColor();
+    final currentValue = _progressAnimation.value;
+    final currentColor = _colorAnimation.value ?? _targetColor;
+    final valueDelta = (nextValue - currentValue).abs();
+    final colorChanged = currentColor.value != nextColor.value;
+    if (valueDelta < 0.0001 && !colorChanged) {
+      return;
+    }
+
+    final curve = CurvedAnimation(
+      parent: _progressController,
+      curve: Curves.easeOutCubic,
+    );
+    _progressAnimation = Tween<double>(
+      begin: currentValue,
+      end: nextValue,
+    ).animate(curve);
+    _colorAnimation = ColorTween(
+      begin: currentColor,
+      end: nextColor,
+    ).animate(curve);
+    _targetValue = nextValue;
+    _targetColor = nextColor;
+    _progressController.duration = _contextUsageAnimationDuration(valueDelta);
+    _progressController.forward(from: 0);
+    if (widget.usagePercent != null) {
+      _pulseController.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _progressController.dispose();
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  double _normalizedUsageValue(int? usagePercent) {
+    if (usagePercent == null) {
+      return 0;
+    }
+    return usagePercent.clamp(0, 100) / 100;
+  }
+
+  Color _resolvedUsageColor() {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final percent = widget.usagePercent?.clamp(0, 100);
+    return _sessionContextUsageColor(percent, theme, surfaces);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
     final locale = Localizations.localeOf(context).toLanguageTag();
     final numberFormat = NumberFormat.decimalPattern(locale);
-    final percent = usagePercent?.clamp(0, 100);
-    final value = percent == null ? 0.0 : percent / 100;
-    final color = _sessionContextUsageColor(percent, theme, surfaces);
-    final strokeWidth = compact ? 2.8 : 3.2;
-    final size = compact ? 24.0 : 28.0;
-    final tooltip = switch ((percent, totalTokens, contextLimit)) {
+    final percent = widget.usagePercent?.clamp(0, 100);
+    final strokeWidth = widget.compact ? 2.8 : 3.2;
+    final size = widget.compact ? 24.0 : 28.0;
+    final tooltip = switch ((
+      percent,
+      widget.totalTokens,
+      widget.contextLimit,
+    )) {
       (null, _, _) => 'Context window usage unavailable',
       (final usage?, final total?, final limit?) =>
         '$usage% of context window used '
@@ -12277,66 +12378,197 @@ class _SessionContextUsageRing extends StatelessWidget {
 
     final indicator = Semantics(
       label: tooltip,
-      button: onTap != null,
-      child: SizedBox(
-        width: size,
-        height: size,
-        child: Stack(
-          fit: StackFit.expand,
-          children: <Widget>[
-            DecoratedBox(
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: surfaces.lineSoft,
-                  width: strokeWidth,
+      button: widget.onTap != null,
+      child: AnimatedBuilder(
+        animation: Listenable.merge(<Listenable>[
+          _progressController,
+          _pulseController,
+        ]),
+        child: null,
+        builder: (context, _) {
+          final displayedValue = _progressAnimation.value.clamp(0.0, 1.0);
+          final displayedColor = _colorAnimation.value ?? _targetColor;
+          final pulse = math
+              .sin(_pulseController.value * math.pi)
+              .clamp(0.0, 1.0);
+          final glow =
+              (pulse +
+                      (_progressController.isAnimating
+                          ? (1 - _progressController.value) * 0.28
+                          : 0))
+                  .clamp(0.0, 1.0);
+          return SizedBox(
+            width: size,
+            height: size,
+            child: Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                RepaintBoundary(
+                  child: CustomPaint(
+                    painter: _SessionContextUsageRingPainter(
+                      progress: displayedValue,
+                      color: displayedColor,
+                      trackColor: surfaces.lineSoft,
+                      strokeWidth: strokeWidth,
+                      glow: glow,
+                    ),
+                  ),
                 ),
-              ),
+                Center(
+                  child: Transform.scale(
+                    scale: 1 + (glow * 0.14),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: displayedColor.withValues(
+                          alpha: percent == null ? 0.28 : 0.92,
+                        ),
+                        shape: BoxShape.circle,
+                        boxShadow: <BoxShadow>[
+                          BoxShadow(
+                            color: displayedColor.withValues(
+                              alpha: percent == null
+                                  ? 0.0
+                                  : 0.18 + (glow * 0.2),
+                            ),
+                            blurRadius: 8 + (glow * 10),
+                            spreadRadius: -2,
+                          ),
+                        ],
+                      ),
+                      child: SizedBox(
+                        width: widget.compact ? 4.2 : 5.2,
+                        height: widget.compact ? 4.2 : 5.2,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-            if (percent != null)
-              Padding(
-                padding: const EdgeInsets.all(0.5),
-                child: CircularProgressIndicator(
-                  value: value,
-                  strokeWidth: strokeWidth,
-                  backgroundColor: Colors.transparent,
-                  color: color,
-                  strokeCap: StrokeCap.round,
-                ),
-              ),
-            Center(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: percent == null ? 0.28 : 0.85),
-                  shape: BoxShape.circle,
-                ),
-                child: SizedBox(
-                  width: compact ? 4 : 5,
-                  height: compact ? 4 : 5,
-                ),
-              ),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
 
     return Tooltip(
       message: tooltip,
       waitDuration: const Duration(milliseconds: 120),
-      child: onTap == null
+      child: widget.onTap == null
           ? indicator
           : Material(
               color: Colors.transparent,
               shape: const CircleBorder(),
               child: InkResponse(
-                onTap: onTap,
+                onTap: widget.onTap,
                 radius: size * 0.9,
                 customBorder: const CircleBorder(),
                 child: indicator,
               ),
             ),
     );
+  }
+}
+
+class _SessionContextUsageRingPainter extends CustomPainter {
+  const _SessionContextUsageRingPainter({
+    required this.progress,
+    required this.color,
+    required this.trackColor,
+    required this.strokeWidth,
+    required this.glow,
+  });
+
+  final double progress;
+  final Color color;
+  final Color trackColor;
+  final double strokeWidth;
+  final double glow;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = size.center(Offset.zero);
+    final radius = math.max(
+      0.0,
+      (math.min(size.width, size.height) / 2) - strokeWidth,
+    );
+    final trackPaint = Paint()
+      ..color = trackColor.withValues(alpha: 0.92)
+      ..strokeWidth = strokeWidth
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    final tickPaint = Paint()
+      ..color = trackColor.withValues(alpha: 0.34)
+      ..strokeWidth = 1.15
+      ..strokeCap = StrokeCap.round;
+
+    for (final fraction in const <double>[0, 0.25, 0.5, 0.75]) {
+      final angle = (-math.pi / 2) + (math.pi * 2 * fraction);
+      final direction = Offset(math.cos(angle), math.sin(angle));
+      canvas.drawLine(
+        center + (direction * (radius + (strokeWidth * 0.35))),
+        center + (direction * (radius + (strokeWidth * 1.05))),
+        tickPaint,
+      );
+    }
+
+    if (glow > 0.01) {
+      canvas.drawCircle(
+        center,
+        radius + strokeWidth,
+        Paint()
+          ..color = color.withValues(alpha: 0.08 + (glow * 0.08))
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = strokeWidth + (glow * 2.6)
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, 6 + (glow * 8)),
+      );
+    }
+
+    canvas.drawCircle(center, radius, trackPaint);
+    if (progress <= 0) {
+      return;
+    }
+
+    final arcPaint = Paint()
+      ..color = color
+      ..strokeWidth = strokeWidth
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      -math.pi / 2,
+      math.max(progress, 0.02) * math.pi * 2,
+      false,
+      arcPaint,
+    );
+
+    final headAngle = (-math.pi / 2) + (math.pi * 2 * progress);
+    final headOffset =
+        center + (Offset(math.cos(headAngle), math.sin(headAngle)) * radius);
+    canvas.drawCircle(
+      headOffset,
+      strokeWidth * (0.9 + (glow * 0.65)),
+      Paint()
+        ..color = color.withValues(alpha: 0.24 + (glow * 0.22))
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 5 + (glow * 7)),
+    );
+    canvas.drawCircle(
+      headOffset,
+      strokeWidth * 0.58,
+      Paint()..color = Colors.white.withValues(alpha: 0.92),
+    );
+    canvas.drawCircle(
+      headOffset,
+      strokeWidth * 0.4,
+      Paint()..color = color.withValues(alpha: 0.98),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _SessionContextUsageRingPainter oldDelegate) {
+    return progress != oldDelegate.progress ||
+        color != oldDelegate.color ||
+        trackColor != oldDelegate.trackColor ||
+        strokeWidth != oldDelegate.strokeWidth ||
+        glow != oldDelegate.glow;
   }
 }
 
@@ -27182,6 +27414,11 @@ Color _sessionContextUsageColor(
     return surfaces.warning;
   }
   return theme.colorScheme.primary;
+}
+
+Duration _contextUsageAnimationDuration(double delta) {
+  final normalized = delta.clamp(0.0, 1.0);
+  return Duration(milliseconds: (240 + (normalized * 560)).round());
 }
 
 class _LruCache<K, V> {
