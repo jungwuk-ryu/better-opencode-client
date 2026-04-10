@@ -48,10 +48,10 @@ class WorkspaceInboxSheet extends StatelessWidget {
             tone: AppSurfaceTone.accent,
             blur: 22,
             padding: const EdgeInsets.fromLTRB(
-              AppSpacing.lg,
+              AppSpacing.md,
+              AppSpacing.sm,
               AppSpacing.md,
               AppSpacing.lg,
-              AppSpacing.xl,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -110,10 +110,10 @@ class WorkspaceInboxSheet extends StatelessWidget {
                     ),
                   ],
                 ),
-                const SizedBox(height: AppSpacing.md),
+                const SizedBox(height: AppSpacing.sm),
                 Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.all(AppSpacing.md),
+                  padding: const EdgeInsets.all(AppSpacing.sm),
                   decoration: appSoftCardDecoration(
                     context,
                     radius: 22,
@@ -176,7 +176,7 @@ class WorkspaceInboxSheet extends StatelessWidget {
                     ],
                   ),
                 ),
-                const SizedBox(height: AppSpacing.lg),
+                const SizedBox(height: AppSpacing.md),
                 Expanded(
                   child: ListView(
                     children: <Widget>[
@@ -199,7 +199,7 @@ class WorkspaceInboxSheet extends StatelessWidget {
                             )
                             .toList(growable: false),
                       ),
-                      const SizedBox(height: AppSpacing.lg),
+                      const SizedBox(height: AppSpacing.md),
                       _InboxSection(
                         title: context.wp('Approvals'),
                         emptyLabel: context.wp(
@@ -221,7 +221,7 @@ class WorkspaceInboxSheet extends StatelessWidget {
                             )
                             .toList(growable: false),
                       ),
-                      const SizedBox(height: AppSpacing.lg),
+                      const SizedBox(height: AppSpacing.md),
                       _InboxSection(
                         title: context.wp('Unread Activity'),
                         emptyLabel: context.wp(
@@ -318,11 +318,11 @@ class _InboxSection extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: AppSpacing.sm),
+        const SizedBox(height: AppSpacing.xs),
         if (children.isEmpty)
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(AppSpacing.md),
+            padding: const EdgeInsets.all(AppSpacing.sm),
             decoration: appSoftCardDecoration(context, radius: 20, muted: true),
             child: Text(
               emptyLabel,
@@ -368,8 +368,8 @@ class _InboxSummaryChip extends StatelessWidget {
     };
     return Container(
       padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: 10,
+        horizontal: AppSpacing.xs,
+        vertical: AppSpacing.xs,
       ),
       decoration: appSoftCardDecoration(
         context,
@@ -421,7 +421,7 @@ class _InboxTileFrame extends StatelessWidget {
       AppSurfaceTone.accent => theme.colorScheme.primary,
     };
     return Container(
-      padding: const EdgeInsets.all(AppSpacing.md),
+      padding: const EdgeInsets.all(AppSpacing.sm),
       decoration: appSoftCardDecoration(
         context,
         radius: 22,
@@ -443,7 +443,7 @@ class _InboxTileFrame extends StatelessWidget {
                 ),
                 child: Icon(icon, color: accent, size: 22),
               ),
-              const SizedBox(width: AppSpacing.md),
+              const SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -550,12 +550,13 @@ class _PermissionInboxTile extends StatelessWidget {
           : request.permission.trim(),
       subtitle: sessionLabel,
       children: <Widget>[
-        if (request.patterns.isNotEmpty)
+        if (request.patterns.isNotEmpty) ...<Widget>[
           Text(
             request.patterns.join('\n'),
             style: theme.textTheme.bodySmall?.copyWith(color: surfaces.muted),
           ),
-        const SizedBox(height: AppSpacing.sm),
+          const SizedBox(height: AppSpacing.xs),
+        ],
         Wrap(
           spacing: AppSpacing.sm,
           runSpacing: AppSpacing.sm,

@@ -54,10 +54,10 @@ class WorkspaceProjectActionsSheet extends StatelessWidget {
             tone: AppSurfaceTone.accent,
             blur: 22,
             padding: const EdgeInsets.fromLTRB(
-              AppSpacing.lg,
+              AppSpacing.md,
+              AppSpacing.sm,
               AppSpacing.md,
               AppSpacing.lg,
-              AppSpacing.xl,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -115,7 +115,7 @@ class WorkspaceProjectActionsSheet extends StatelessWidget {
                     ),
                   ],
                 ),
-                const SizedBox(height: AppSpacing.lg),
+                const SizedBox(height: AppSpacing.md),
                 Expanded(
                   child: ListView(
                     children: <Widget>[
@@ -126,7 +126,7 @@ class WorkspaceProjectActionsSheet extends StatelessWidget {
                         status: status,
                       ),
                       if (serviceSnapshots.isNotEmpty) ...<Widget>[
-                        const SizedBox(height: AppSpacing.lg),
+                        const SizedBox(height: AppSpacing.md),
                         _ProjectActionsSectionTitle(
                           title: context.wp('Runtime'),
                           subtitle: context.wp(
@@ -144,7 +144,7 @@ class WorkspaceProjectActionsSheet extends StatelessWidget {
                         ),
                       ],
                       for (final section in sections) ...<Widget>[
-                        const SizedBox(height: AppSpacing.lg),
+                        const SizedBox(height: AppSpacing.md),
                         _ProjectActionsSectionTitle(
                           title: section.title,
                           subtitle: section.subtitle,
@@ -166,7 +166,7 @@ class WorkspaceProjectActionsSheet extends StatelessWidget {
                         ),
                       ],
                       if (recentLinks.isNotEmpty) ...<Widget>[
-                        const SizedBox(height: AppSpacing.lg),
+                        const SizedBox(height: AppSpacing.md),
                         _ProjectActionsSectionTitle(
                           title: context.wp('Recent Links'),
                           subtitle: context.wp(
@@ -190,7 +190,7 @@ class WorkspaceProjectActionsSheet extends StatelessWidget {
                         ),
                       ],
                       if (portPresets.isNotEmpty) ...<Widget>[
-                        const SizedBox(height: AppSpacing.lg),
+                        const SizedBox(height: AppSpacing.md),
                         _ProjectActionsSectionTitle(
                           title: context.wp('Port Presets'),
                           subtitle: context.wp(
@@ -246,7 +246,7 @@ class _ProjectActionsOverviewCard extends StatelessWidget {
     final sessionTitle = session?.title.trim() ?? '';
     final statusLabel = _statusLabel(context, status);
     return Container(
-      padding: const EdgeInsets.all(AppSpacing.lg),
+      padding: const EdgeInsets.all(AppSpacing.md),
       decoration: appSoftCardDecoration(
         context,
         radius: 24,
@@ -268,7 +268,7 @@ class _ProjectActionsOverviewCard extends StatelessWidget {
               color: theme.colorScheme.primary,
             ),
           ),
-          const SizedBox(height: AppSpacing.md),
+          const SizedBox(height: AppSpacing.sm),
           Text(
             project?.title ?? context.wp('Workspace'),
             style: theme.textTheme.titleMedium?.copyWith(
@@ -283,7 +283,7 @@ class _ProjectActionsOverviewCard extends StatelessWidget {
               height: 1.45,
             ),
           ),
-          const SizedBox(height: AppSpacing.md),
+          const SizedBox(height: AppSpacing.sm),
           Wrap(
             spacing: AppSpacing.xs,
             runSpacing: AppSpacing.xs,
@@ -395,7 +395,7 @@ class _ProjectActionTile extends StatelessWidget {
                 ),
                 child: Icon(item.icon, color: accent, size: 20),
               ),
-              const SizedBox(width: AppSpacing.md),
+              const SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -415,7 +415,7 @@ class _ProjectActionTile extends StatelessWidget {
                           Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: AppSpacing.sm,
-                              vertical: 4,
+                              vertical: AppSpacing.xxs,
                             ),
                             decoration: BoxDecoration(
                               color: accent.withValues(alpha: 0.1),
@@ -642,7 +642,7 @@ class _ProjectLinkTile extends StatelessWidget {
                                 color: theme.colorScheme.primary,
                               ),
                             ),
-                            const SizedBox(width: AppSpacing.md),
+                            const SizedBox(width: AppSpacing.sm),
                             Expanded(
                               child: Text(
                                 link.label,
@@ -653,7 +653,7 @@ class _ProjectLinkTile extends StatelessWidget {
                             ),
                           ],
                         ),
-                        const SizedBox(height: AppSpacing.sm),
+                        const SizedBox(height: AppSpacing.xs),
                         sourceChip,
                       ],
                     );
@@ -674,7 +674,7 @@ class _ProjectLinkTile extends StatelessWidget {
                           color: theme.colorScheme.primary,
                         ),
                       ),
-                      const SizedBox(width: AppSpacing.md),
+                      const SizedBox(width: AppSpacing.sm),
                       Expanded(
                         child: Text(
                           link.label,
@@ -751,7 +751,7 @@ class _PortPresetTile extends StatelessWidget {
                       color: theme.colorScheme.primary,
                     ),
                   ),
-                  const SizedBox(width: AppSpacing.md),
+                  const SizedBox(width: AppSpacing.sm),
                   Expanded(
                     child: Text(
                       preset.label,
