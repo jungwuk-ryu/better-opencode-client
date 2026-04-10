@@ -5309,118 +5309,138 @@ class WorkspaceController extends ChangeNotifier {
       }
     } else if (type == 'message.updated') {
       final infoJson = event.properties['info'] as Map?;
+      final eventSessionId = infoJson?['sessionID']?.toString();
       _applyWatchedSessionTimelineEvent(
         event.properties,
-        sessionId: infoJson?['sessionID']?.toString(),
+        sessionId: eventSessionId,
         applyEvent: (messages) => applyMessageUpdatedEvent(
           messages,
           event.properties,
-          selectedSessionId: infoJson?['sessionID']?.toString(),
+          selectedSessionId: eventSessionId,
         ),
         persistImmediately: true,
       );
+      _refreshActiveChildLivePreviewForSession(eventSessionId);
       final project = _project;
       final sessionId = _selectedSessionId;
-      final baseMessages =
-          project != null && sessionId != null && sessionId.isNotEmpty
-          ? _stripOptimisticMessages(
+      final normalizedSelectedSessionId = sessionId?.trim();
+      final normalizedEventSessionId = eventSessionId?.trim();
+      final touchesSelectedSession =
+          normalizedSelectedSessionId == null ||
+          normalizedSelectedSessionId.isEmpty ||
+          normalizedSelectedSessionId == normalizedEventSessionId;
+      if (touchesSelectedSession) {
+        final baseMessages =
+            project != null && sessionId != null && sessionId.isNotEmpty
+            ? _stripOptimisticMessages(
+                project: project,
+                sessionId: sessionId,
+                messages: _messages,
+              )
+            : _messages;
+        final nextServerMessages = applyMessageUpdatedEvent(
+          baseMessages,
+          event.properties,
+          selectedSessionId: _selectedSessionId,
+        );
+        final nextMessages =
+            project != null && sessionId != null && sessionId.isNotEmpty
+            ? _mergeSessionMessages(
+                project: project,
+                sessionId: sessionId,
+                serverMessages: nextServerMessages,
+              )
+            : nextServerMessages;
+        final changed = !identical(nextMessages, _messages);
+        if (changed) {
+          _sessionLoading = false;
+          _showingCachedSessionMessages = false;
+          _sessionLoadError = null;
+          unawaited(
+            _persistSelectedSessionMessagesCache(
+              nextServerMessages,
+              immediate: true,
+            ),
+          );
+        }
+        _messages = nextMessages;
+        if (changed &&
+            project != null &&
+            sessionId != null &&
+            sessionId.isNotEmpty) {
+          unawaited(
+            _enforceSelectedSessionMemoryWindow(
               project: project,
               sessionId: sessionId,
-              messages: _messages,
-            )
-          : _messages;
-      final nextServerMessages = applyMessageUpdatedEvent(
-        baseMessages,
-        event.properties,
-        selectedSessionId: _selectedSessionId,
-      );
-      final nextMessages =
-          project != null && sessionId != null && sessionId.isNotEmpty
-          ? _mergeSessionMessages(
-              project: project,
-              sessionId: sessionId,
-              serverMessages: nextServerMessages,
-            )
-          : nextServerMessages;
-      final changed = !identical(nextMessages, _messages);
-      if (changed) {
-        _sessionLoading = false;
-        _showingCachedSessionMessages = false;
-        _sessionLoadError = null;
-        unawaited(
-          _persistSelectedSessionMessagesCache(
-            nextServerMessages,
-            immediate: true,
-          ),
-        );
-      }
-      _messages = nextMessages;
-      if (changed &&
-          project != null &&
-          sessionId != null &&
-          sessionId.isNotEmpty) {
-        unawaited(
-          _enforceSelectedSessionMemoryWindow(
-            project: project,
-            sessionId: sessionId,
-            notify: true,
-          ),
-        );
+              notify: true,
+            ),
+          );
+        }
       }
     } else if (type == 'message.part.updated') {
       _applyActiveChildLivePreviewPartEvent(event.properties);
       final partJson = event.properties['part'] as Map?;
+      final eventSessionId = partJson?['sessionID']?.toString();
       _applyWatchedSessionTimelineEvent(
         event.properties,
-        sessionId: partJson?['sessionID']?.toString(),
+        sessionId: eventSessionId,
         applyEvent: (messages) => applyMessagePartUpdatedEvent(
           messages,
           event.properties,
-          selectedSessionId: partJson?['sessionID']?.toString(),
+          selectedSessionId: eventSessionId,
         ),
       );
+      _refreshActiveChildLivePreviewForSession(eventSessionId);
       final project = _project;
       final sessionId = _selectedSessionId;
-      final baseMessages =
-          project != null && sessionId != null && sessionId.isNotEmpty
-          ? _stripOptimisticMessages(
-              project: project,
-              sessionId: sessionId,
-              messages: _messages,
-            )
-          : _messages;
-      final nextServerMessages = applyMessagePartUpdatedEvent(
-        baseMessages,
-        event.properties,
-        selectedSessionId: _selectedSessionId,
-      );
-      final nextMessages =
-          project != null && sessionId != null && sessionId.isNotEmpty
-          ? _mergeSessionMessages(
-              project: project,
-              sessionId: sessionId,
-              serverMessages: nextServerMessages,
-            )
-          : nextServerMessages;
-      final changed = !identical(nextMessages, _messages);
-      if (changed) {
-        _sessionLoading = false;
-        _showingCachedSessionMessages = false;
-        _sessionLoadError = null;
-        unawaited(_persistSelectedSessionMessagesCache(nextServerMessages));
-      }
-      _messages = nextMessages;
-      if (changed &&
-          project != null &&
-          sessionId != null &&
-          sessionId.isNotEmpty) {
-        unawaited(
-          _enforceSelectedSessionMemoryWindow(
-            project: project,
-            sessionId: sessionId,
-            notify: true,
-          ),
+      final normalizedSelectedSessionId = sessionId?.trim();
+      final normalizedEventSessionId = eventSessionId?.trim();
+      final touchesSelectedSession =
+          normalizedSelectedSessionId == null ||
+          normalizedSelectedSessionId.isEmpty ||
+          normalizedSelectedSessionId == normalizedEventSessionId;
+      if (touchesSelectedSession) {
+        final baseMessages =
+            project != null && sessionId != null && sessionId.isNotEmpty
+            ? _stripOptimisticMessages(
+                project: project,
+                sessionId: sessionId,
+                messages: _messages,
+              )
+            : _messages;
+        final nextServerMessages = applyMessagePartUpdatedEvent(
+          baseMessages,
+          event.properties,
+          selectedSessionId: _selectedSessionId,
         );
+        final nextMessages =
+            project != null && sessionId != null && sessionId.isNotEmpty
+            ? _mergeSessionMessages(
+                project: project,
+                sessionId: sessionId,
+                serverMessages: nextServerMessages,
+              )
+            : nextServerMessages;
+        final changed = !identical(nextMessages, _messages);
+        if (changed) {
+          _sessionLoading = false;
+          _showingCachedSessionMessages = false;
+          _sessionLoadError = null;
+          unawaited(_persistSelectedSessionMessagesCache(nextServerMessages));
+        }
+        _messages = nextMessages;
+        if (changed &&
+            project != null &&
+            sessionId != null &&
+            sessionId.isNotEmpty) {
+          unawaited(
+            _enforceSelectedSessionMemoryWindow(
+              project: project,
+              sessionId: sessionId,
+              notify: true,
+            ),
+          );
+        }
       }
     } else if (type == 'message.part.delta') {
       final sessionId = event.properties['sessionID']?.toString();
@@ -5436,63 +5456,81 @@ class WorkspaceController extends ChangeNotifier {
       _refreshActiveChildLivePreviewForSession(sessionId);
       final project = _project;
       final selectedSessionId = _selectedSessionId;
-      final baseMessages =
-          project != null &&
-              selectedSessionId != null &&
-              selectedSessionId.isNotEmpty
-          ? _stripOptimisticMessages(
-              project: project,
-              sessionId: selectedSessionId,
-              messages: _messages,
-            )
-          : _messages;
-      final nextServerMessages = applyMessagePartDeltaEvent(
-        baseMessages,
-        event.properties,
-        selectedSessionId: _selectedSessionId,
-      );
-      final nextMessages =
-          project != null &&
-              selectedSessionId != null &&
-              selectedSessionId.isNotEmpty
-          ? _mergeSessionMessages(
-              project: project,
-              sessionId: selectedSessionId,
-              serverMessages: nextServerMessages,
-            )
-          : nextServerMessages;
-      final changed = !identical(nextMessages, _messages);
-      if (changed) {
-        _sessionLoading = false;
-        _showingCachedSessionMessages = false;
-        _sessionLoadError = null;
-        unawaited(_persistSelectedSessionMessagesCache(nextServerMessages));
-      }
-      _messages = nextMessages;
-      if (changed &&
-          project != null &&
-          selectedSessionId != null &&
-          selectedSessionId.isNotEmpty) {
-        unawaited(
-          _enforceSelectedSessionMemoryWindow(
-            project: project,
-            sessionId: selectedSessionId,
-            notify: true,
-          ),
+      final normalizedSelectedSessionId = selectedSessionId?.trim();
+      final normalizedEventSessionId = sessionId?.trim();
+      final touchesSelectedSession =
+          normalizedSelectedSessionId == null ||
+          normalizedSelectedSessionId.isEmpty ||
+          normalizedSelectedSessionId == normalizedEventSessionId;
+      if (touchesSelectedSession) {
+        final baseMessages =
+            project != null &&
+                selectedSessionId != null &&
+                selectedSessionId.isNotEmpty
+            ? _stripOptimisticMessages(
+                project: project,
+                sessionId: selectedSessionId,
+                messages: _messages,
+              )
+            : _messages;
+        final nextServerMessages = applyMessagePartDeltaEvent(
+          baseMessages,
+          event.properties,
+          selectedSessionId: _selectedSessionId,
         );
+        final nextMessages =
+            project != null &&
+                selectedSessionId != null &&
+                selectedSessionId.isNotEmpty
+            ? _mergeSessionMessages(
+                project: project,
+                sessionId: selectedSessionId,
+                serverMessages: nextServerMessages,
+              )
+            : nextServerMessages;
+        final changed = !identical(nextMessages, _messages);
+        if (changed) {
+          _sessionLoading = false;
+          _showingCachedSessionMessages = false;
+          _sessionLoadError = null;
+          unawaited(_persistSelectedSessionMessagesCache(nextServerMessages));
+        }
+        _messages = nextMessages;
+        if (changed &&
+            project != null &&
+            selectedSessionId != null &&
+            selectedSessionId.isNotEmpty) {
+          unawaited(
+            _enforceSelectedSessionMemoryWindow(
+              project: project,
+              sessionId: selectedSessionId,
+              notify: true,
+            ),
+          );
+        }
       }
     } else if (type == 'message.removed') {
-      _clearActiveChildLivePreviewForMessageEvent(event.properties);
+      final eventSessionId = event.properties['sessionID']?.toString();
+      final normalizedEventSessionId = eventSessionId?.trim() ?? '';
+      final refreshActiveChildPreviewFromTimeline =
+          normalizedEventSessionId.isNotEmpty &&
+          _watchedSessionIds.contains(normalizedEventSessionId);
+      if (!refreshActiveChildPreviewFromTimeline) {
+        _clearActiveChildLivePreviewForMessageEvent(event.properties);
+      }
       _applyWatchedSessionTimelineEvent(
         event.properties,
-        sessionId: event.properties['sessionID']?.toString(),
+        sessionId: eventSessionId,
         applyEvent: (messages) => applyMessageRemovedEvent(
           messages,
           event.properties,
-          selectedSessionId: event.properties['sessionID']?.toString(),
+          selectedSessionId: eventSessionId,
         ),
         persistImmediately: true,
       );
+      if (refreshActiveChildPreviewFromTimeline) {
+        _refreshActiveChildLivePreviewForSession(eventSessionId);
+      }
       final project = _project;
       final sessionId = _selectedSessionId;
       final baseMessages =
@@ -6700,7 +6738,7 @@ class WorkspaceController extends ChangeNotifier {
         message.parts.length,
       );
       for (final part in message.parts) {
-        signature = Object.hash(
+        signature = Object.hashAll(<Object?>[
           signature,
           part.id,
           part.type,
@@ -6709,11 +6747,67 @@ class WorkspaceController extends ChangeNotifier {
           _stringSignature(part.text),
           _stringSignature(part.metadata['summary']?.toString()),
           _stringSignature(part.metadata['content']?.toString()),
+          _stringSignature(part.metadata['description']?.toString()),
+          _stringSignature(part.metadata['message']?.toString()),
           _stringSignature(part.metadata['command']?.toString()),
+          _stringSignature(part.metadata['query']?.toString()),
+          _stringSignature(part.metadata['path']?.toString()),
+          _stringSignature(part.metadata['url']?.toString()),
           _stringSignature(part.metadata['output']?.toString()),
           _stringSignature(part.metadata['title']?.toString()),
+          _stringSignature(
+            _previewNestedString(part.metadata, const <String>['state', 'title']),
+          ),
+          _stringSignature(
+            _previewNestedString(
+              part.metadata,
+              const <String>['state', 'input', 'description'],
+            ),
+          ),
+          _stringSignature(
+            _previewNestedString(
+              part.metadata,
+              const <String>['state', 'input', 'command'],
+            ),
+          ),
+          _stringSignature(
+            _previewNestedString(
+              part.metadata,
+              const <String>['state', 'input', 'query'],
+            ),
+          ),
+          _stringSignature(
+            _previewNestedString(
+              part.metadata,
+              const <String>['state', 'input', 'path'],
+            ),
+          ),
+          _stringSignature(
+            _previewNestedString(
+              part.metadata,
+              const <String>['state', 'input', 'url'],
+            ),
+          ),
+          _stringSignature(
+            _previewNestedString(
+              part.metadata,
+              const <String>['input', 'description'],
+            ),
+          ),
+          _stringSignature(
+            _previewNestedString(part.metadata, const <String>['input', 'command']),
+          ),
+          _stringSignature(
+            _previewNestedString(part.metadata, const <String>['input', 'query']),
+          ),
+          _stringSignature(
+            _previewNestedString(part.metadata, const <String>['input', 'path']),
+          ),
+          _stringSignature(
+            _previewNestedString(part.metadata, const <String>['input', 'url']),
+          ),
           _stringSignature(part.metadata['status']?.toString()),
-        );
+        ]);
       }
     }
     return signature;

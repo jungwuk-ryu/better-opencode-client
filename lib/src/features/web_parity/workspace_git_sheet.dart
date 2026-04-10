@@ -330,131 +330,155 @@ class _WorkspaceGitSheetState extends State<WorkspaceGitSheet> {
                 )
               else
                 Expanded(
-                  child: ListView(
-                    children: <Widget>[
-                      _RepoSummaryCard(snapshot: snapshot),
+                  child: CustomScrollView(
+                    slivers: <Widget>[
+                      SliverToBoxAdapter(
+                        child: _RepoSummaryCard(snapshot: snapshot),
+                      ),
                       if (snapshot.pullRequest != null) ...<Widget>[
-                        const SizedBox(height: AppSpacing.sm),
-                        _RepoPullRequestCard(summary: snapshot.pullRequest!),
+                        const SliverToBoxAdapter(
+                          child: SizedBox(height: AppSpacing.sm),
+                        ),
+                        SliverToBoxAdapter(
+                          child: _RepoPullRequestCard(
+                            summary: snapshot.pullRequest!,
+                          ),
+                        ),
                       ],
-                      const SizedBox(height: AppSpacing.sm),
-                      _GitActionRow(
-                        running: _runningAction,
-                        onStageAll: snapshot.clean
-                            ? null
-                            : () => _runAction(
-                                (sessionId) => widget.service.stageAll(
-                                  profile: widget.profile,
-                                  project: widget.project,
-                                  sessionId: sessionId,
-                                ),
-                                successMessage: context.wp(
-                                  'All changes were staged.',
-                                ),
-                              ),
-                        onCommit: snapshot.stagedCount == 0
-                            ? null
-                            : _showCommitComposer,
-                        onPull: () => _runAction(
-                          (sessionId) => widget.service.pull(
-                            profile: widget.profile,
-                            project: widget.project,
-                            sessionId: sessionId,
-                          ),
-                          successMessage: context.wp(
-                            'Pulled the latest remote changes.',
-                          ),
-                        ),
-                        onPush: () => _runAction(
-                          (sessionId) => widget.service.push(
-                            profile: widget.profile,
-                            project: widget.project,
-                            sessionId: sessionId,
-                          ),
-                          successMessage: context.wp(
-                            'Pushed the active branch.',
-                          ),
-                        ),
-                        onBranches: _showBranchSheet,
+                      const SliverToBoxAdapter(
+                        child: SizedBox(height: AppSpacing.sm),
                       ),
-                      const SizedBox(height: AppSpacing.sm),
-                      Row(
-                        children: <Widget>[
-                          Expanded(
-                            child: Text(
-                              context.wp('Changed Files'),
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w800,
-                              ),
+                      SliverToBoxAdapter(
+                        child: _GitActionRow(
+                          running: _runningAction,
+                          onStageAll: snapshot.clean
+                              ? null
+                              : () => _runAction(
+                                  (sessionId) => widget.service.stageAll(
+                                    profile: widget.profile,
+                                    project: widget.project,
+                                    sessionId: sessionId,
+                                  ),
+                                  successMessage: context.wp(
+                                    'All changes were staged.',
+                                  ),
+                                ),
+                          onCommit: snapshot.stagedCount == 0
+                              ? null
+                              : _showCommitComposer,
+                          onPull: () => _runAction(
+                            (sessionId) => widget.service.pull(
+                              profile: widget.profile,
+                              project: widget.project,
+                              sessionId: sessionId,
+                            ),
+                            successMessage: context.wp(
+                              'Pulled the latest remote changes.',
                             ),
                           ),
-                          _RepoMeta(
-                            label: context.wp(
-                              '{count} total',
-                              args: <String, Object?>{
-                                'count': snapshot.changedFiles.length,
-                              },
+                          onPush: () => _runAction(
+                            (sessionId) => widget.service.push(
+                              profile: widget.profile,
+                              project: widget.project,
+                              sessionId: sessionId,
                             ),
-                            emphasized: snapshot.changedFiles.isNotEmpty,
+                            successMessage: context.wp(
+                              'Pushed the active branch.',
+                            ),
                           ),
-                        ],
+                          onBranches: _showBranchSheet,
+                        ),
                       ),
-                      const SizedBox(height: AppSpacing.sm),
+                      const SliverToBoxAdapter(
+                        child: SizedBox(height: AppSpacing.sm),
+                      ),
+                      SliverToBoxAdapter(
+                        child: Row(
+                          children: <Widget>[
+                            Expanded(
+                              child: Text(
+                                context.wp('Changed Files'),
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                            _RepoMeta(
+                              label: context.wp(
+                                '{count} total',
+                                args: <String, Object?>{
+                                  'count': snapshot.changedFiles.length,
+                                },
+                              ),
+                              emphasized: snapshot.changedFiles.isNotEmpty,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SliverToBoxAdapter(
+                        child: SizedBox(height: AppSpacing.sm),
+                      ),
                       if (snapshot.changedFiles.isEmpty)
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(AppSpacing.sm),
-                          decoration: appSoftCardDecoration(
-                            context,
-                            radius: 20,
-                            muted: true,
-                          ),
-                          child: Text(
-                            context.wp('The working tree is clean.'),
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: surfaces.muted,
+                        SliverToBoxAdapter(
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(AppSpacing.sm),
+                            decoration: appSoftCardDecoration(
+                              context,
+                              radius: 20,
+                              muted: true,
+                            ),
+                            child: Text(
+                              context.wp('The working tree is clean.'),
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: surfaces.muted,
+                              ),
                             ),
                           ),
                         )
                       else
-                        ...snapshot.changedFiles.map(
-                          (file) => Padding(
-                            padding: const EdgeInsets.only(
-                              bottom: AppSpacing.xs,
-                            ),
-                            child: _RepoChangedFileTile(
-                              file: file,
-                              busy: _runningAction,
-                              onToggleStage: () => _runAction(
-                                (sessionId) => file.staged
-                                    ? widget.service.unstageFile(
-                                        profile: widget.profile,
-                                        project: widget.project,
-                                        sessionId: sessionId,
-                                        path: file.path,
-                                      )
-                                    : widget.service.stageFile(
-                                        profile: widget.profile,
-                                        project: widget.project,
-                                        sessionId: sessionId,
-                                        path: file.path,
-                                      ),
-                                successMessage: file.staged
-                                    ? context.wp(
-                                        'Moved "{path}" back to unstaged changes.',
-                                        args: <String, Object?>{
-                                          'path': file.path,
-                                        },
-                                      )
-                                    : context.wp(
-                                        'Staged "{path}".',
-                                        args: <String, Object?>{
-                                          'path': file.path,
-                                        },
-                                      ),
+                        SliverList.builder(
+                          itemCount: snapshot.changedFiles.length,
+                          itemBuilder: (context, index) {
+                            final file = snapshot.changedFiles[index];
+                            return Padding(
+                              padding: const EdgeInsets.only(
+                                bottom: AppSpacing.xs,
                               ),
-                            ),
-                          ),
+                              child: _RepoChangedFileTile(
+                                file: file,
+                                busy: _runningAction,
+                                onToggleStage: () => _runAction(
+                                  (sessionId) => file.staged
+                                      ? widget.service.unstageFile(
+                                          profile: widget.profile,
+                                          project: widget.project,
+                                          sessionId: sessionId,
+                                          path: file.path,
+                                        )
+                                      : widget.service.stageFile(
+                                          profile: widget.profile,
+                                          project: widget.project,
+                                          sessionId: sessionId,
+                                          path: file.path,
+                                        ),
+                                  successMessage: file.staged
+                                      ? context.wp(
+                                          'Moved "{path}" back to unstaged changes.',
+                                          args: <String, Object?>{
+                                            'path': file.path,
+                                          },
+                                        )
+                                      : context.wp(
+                                          'Staged "{path}".',
+                                          args: <String, Object?>{
+                                            'path': file.path,
+                                          },
+                                        ),
+                                ),
+                              ),
+                            );
+                          },
                         ),
                     ],
                   ),
@@ -1162,10 +1186,12 @@ class _BranchPickerSheetState extends State<_BranchPickerSheet> {
               ),
               const SizedBox(height: AppSpacing.sm),
               Expanded(
-                child: ListView(
-                  children: <Widget>[
-                    ...widget.branches.map(
-                      (branch) => Padding(
+                child: ListView.builder(
+                  itemCount: widget.branches.length + 2,
+                  itemBuilder: (context, index) {
+                    if (index < widget.branches.length) {
+                      final branch = widget.branches[index];
+                      return Padding(
                         padding: const EdgeInsets.only(bottom: AppSpacing.xs),
                         child: Container(
                           padding: const EdgeInsets.all(AppSpacing.sm),
@@ -1241,10 +1267,12 @@ class _BranchPickerSheetState extends State<_BranchPickerSheet> {
                             ],
                           ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    Container(
+                      );
+                    }
+                    if (index == widget.branches.length) {
+                      return const SizedBox(height: AppSpacing.sm);
+                    }
+                    return Container(
                       padding: const EdgeInsets.all(AppSpacing.md),
                       decoration: appSoftCardDecoration(
                         context,
@@ -1258,8 +1286,8 @@ class _BranchPickerSheetState extends State<_BranchPickerSheet> {
                           hintText: context.wp('feature/mobile-triage'),
                         ),
                       ),
-                    ),
-                  ],
+                    );
+                  },
                 ),
               ),
               const SizedBox(height: AppSpacing.sm),

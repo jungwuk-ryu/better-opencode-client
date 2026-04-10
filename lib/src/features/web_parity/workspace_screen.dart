@@ -352,6 +352,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       const <WorkspaceController, PendingRequestBundle>{};
   Set<WorkspaceController> _primedPendingRequestNotificationControllers =
       const <WorkspaceController>{};
+  Map<WorkspaceController, String> _observedPaneShellSignatureByController =
+      const <WorkspaceController, String>{};
   bool _watchedSessionSyncScheduled = false;
   int _desktopSessionPaneLayoutRevision = 0;
   late String _activeDirectory;
@@ -4308,7 +4310,19 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       return;
     }
     _dispatchObservedPendingRequestNotifications();
-    setState(() {});
+    final nextShellSignatures = <WorkspaceController, String>{
+      for (final controller in _observedPaneControllers)
+        controller: _observedPaneShellSignature(controller),
+    };
+    final shouldRebuild = !_sameObservedPaneShellSignatures(
+      _observedPaneShellSignatureByController,
+      nextShellSignatures,
+    );
+    _observedPaneShellSignatureByController =
+        Map<WorkspaceController, String>.unmodifiable(nextShellSignatures);
+    if (shouldRebuild) {
+      setState(() {});
+    }
   }
 
   void _clearObservedPaneControllers() {
@@ -4320,6 +4334,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         const <WorkspaceController, PendingRequestBundle>{};
     _primedPendingRequestNotificationControllers =
         const <WorkspaceController>{};
+    _observedPaneShellSignatureByController =
+        const <WorkspaceController, String>{};
   }
 
   void _syncObservedPaneControllers(Iterable<WorkspaceController> controllers) {
@@ -4358,6 +4374,42 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
           ))
             controller,
         });
+    _observedPaneShellSignatureByController =
+        Map<WorkspaceController, String>.unmodifiable(
+          <WorkspaceController, String>{
+            for (final entry in _observedPaneShellSignatureByController.entries)
+              if (next.contains(entry.key)) entry.key: entry.value,
+            for (final controller in next)
+              if (!_observedPaneShellSignatureByController.containsKey(
+                controller,
+              ))
+                controller: _observedPaneShellSignature(controller),
+          },
+        );
+  }
+
+  bool _sameObservedPaneShellSignatures(
+    Map<WorkspaceController, String> left,
+    Map<WorkspaceController, String> right,
+  ) {
+    if (left.length != right.length) {
+      return false;
+    }
+    for (final entry in left.entries) {
+      if (right[entry.key] != entry.value) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  String _observedPaneShellSignature(WorkspaceController controller) {
+    final sessionIds = controller.sessions
+        .map((session) => session.id)
+        .join('|');
+    final error = controller.error ?? '';
+    final selectedSessionId = controller.selectedSessionId ?? '';
+    return '${controller.loading}|$selectedSessionId|$error|$sessionIds';
   }
 
   void _dispatchObservedPendingRequestNotifications() {
@@ -15770,6 +15822,28 @@ class _HorizontalReveal extends StatelessWidget {
   }
 }
 
+ProjectTarget _workspacePaneProjectForController(
+  WorkspaceController controller,
+  String directory, {
+  ProjectTarget? fallbackProject,
+}) {
+  final currentProject = controller.project;
+  if (currentProject != null && currentProject.directory == directory) {
+    return currentProject;
+  }
+  for (final project in controller.availableProjects) {
+    if (project.directory == directory) {
+      return project;
+    }
+  }
+  return fallbackProject ??
+      ProjectTarget(
+        directory: directory,
+        label: projectDisplayLabel(directory),
+        source: 'session-pane',
+      );
+}
+
 class _WorkspaceSessionPaneDeck extends StatelessWidget {
   const _WorkspaceSessionPaneDeck({
     required this.compact,
@@ -15851,35 +15925,43 @@ class _WorkspaceSessionPaneDeck extends StatelessWidget {
         children: [
           for (var index = 0; index < paneViewModels.length; index += 1) ...[
             Expanded(
-              child: _WorkspaceSessionPaneCard(
-                paneViewModel: paneViewModels[index],
-                compact: compact,
-                selected: paneViewModels[index].pane.id == resolvedActivePaneId,
-                showSelectionChrome: showSelectionChrome,
-                canClose: !compact && paneViewModels.length > 1,
-                shellToolDisplayMode: shellToolDisplayMode,
-                timelineProgressDetailsVisible: timelineProgressDetailsVisible,
-                chatSearchQuery: chatSearchQuery,
-                chatSearchMatchMessageIds: chatSearchMatchMessageIds,
-                chatSearchActiveMessageId: chatSearchActiveMessageId,
-                chatSearchRevision: chatSearchRevision,
-                timelineJumpEpoch: timelineJumpEpoch,
-                focusedTimelineMessageIdForScope:
-                    focusedTimelineMessageIdForScope,
-                focusedTimelineMessageRevisionForScope:
-                    focusedTimelineMessageRevisionForScope,
-                todoDockCollapsedForScope: todoDockCollapsedForScope,
-                onTodoDockCollapsedChanged: onTodoDockCollapsedChanged,
-                subAgentPanelCollapsedForScope: subAgentPanelCollapsedForScope,
-                onSubAgentPanelCollapsedChanged:
-                    onSubAgentPanelCollapsedChanged,
-                onSelectPane: onSelectPane,
-                onClosePane: onClosePane,
-                onForkMessage: onForkMessage,
-                onRevertMessage: onRevertMessage,
-                onOpenSession: onOpenSession,
-                onRetrySelectedSession: onRetrySelectedSession,
-                inlineComposerBuilder: inlineComposerBuilder,
+              child: AnimatedBuilder(
+                animation: paneViewModels[index].controller,
+                builder: (context, _) {
+                  return _WorkspaceSessionPaneCard(
+                    paneViewModel: paneViewModels[index],
+                    compact: compact,
+                    selected:
+                        paneViewModels[index].pane.id == resolvedActivePaneId,
+                    showSelectionChrome: showSelectionChrome,
+                    canClose: !compact && paneViewModels.length > 1,
+                    shellToolDisplayMode: shellToolDisplayMode,
+                    timelineProgressDetailsVisible:
+                        timelineProgressDetailsVisible,
+                    chatSearchQuery: chatSearchQuery,
+                    chatSearchMatchMessageIds: chatSearchMatchMessageIds,
+                    chatSearchActiveMessageId: chatSearchActiveMessageId,
+                    chatSearchRevision: chatSearchRevision,
+                    timelineJumpEpoch: timelineJumpEpoch,
+                    focusedTimelineMessageIdForScope:
+                        focusedTimelineMessageIdForScope,
+                    focusedTimelineMessageRevisionForScope:
+                        focusedTimelineMessageRevisionForScope,
+                    todoDockCollapsedForScope: todoDockCollapsedForScope,
+                    onTodoDockCollapsedChanged: onTodoDockCollapsedChanged,
+                    subAgentPanelCollapsedForScope:
+                        subAgentPanelCollapsedForScope,
+                    onSubAgentPanelCollapsedChanged:
+                        onSubAgentPanelCollapsedChanged,
+                    onSelectPane: onSelectPane,
+                    onClosePane: onClosePane,
+                    onForkMessage: onForkMessage,
+                    onRevertMessage: onRevertMessage,
+                    onOpenSession: onOpenSession,
+                    onRetrySelectedSession: onRetrySelectedSession,
+                    inlineComposerBuilder: inlineComposerBuilder,
+                  );
+                },
               ),
             ),
             if (index < paneViewModels.length - 1) SizedBox(width: spacing),
@@ -15959,15 +16041,19 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
     final density = _workspaceDensity(context);
     final pane = paneViewModel.pane;
     final controller = paneViewModel.controller;
-    final project = paneViewModel.project;
+    final project = _workspacePaneProjectForController(
+      controller,
+      pane.directory,
+      fallbackProject: paneViewModel.project,
+    );
     final sessionId = pane.sessionId?.trim();
     final session = _sessionById(controller.sessions, sessionId);
     final timelineState = controller.timelineStateForSession(sessionId);
     final busy = controller.sessionBusyForSession(sessionId);
     final title = _sessionHeaderTitle(context, session, project);
     final projectLabel = (() {
-      final label = project?.label.trim();
-      if (label != null && label.isNotEmpty) {
+      final label = project.label.trim();
+      if (label.isNotEmpty) {
         return label;
       }
       return projectDisplayLabel(pane.directory);

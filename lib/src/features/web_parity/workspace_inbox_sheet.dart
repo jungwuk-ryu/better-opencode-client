@@ -33,6 +33,12 @@ class WorkspaceInboxSheet extends StatelessWidget {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
     final viewInsets = MediaQuery.viewInsetsOf(context);
+    final sessionLabels = <String, String>{
+      for (final session in sessions)
+        session.id: session.title.trim().isEmpty
+            ? session.id
+            : session.title.trim(),
+    };
     final unseenNotifications =
         notifications
             .where((notification) => !notification.viewed)
@@ -178,39 +184,81 @@ class WorkspaceInboxSheet extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 Expanded(
-                  child: ListView(
-                    children: <Widget>[
-                      _InboxSection(
-                        title: context.wp('Questions'),
-                        emptyLabel: context.wp(
-                          'No pending questions right now.',
+                  child: CustomScrollView(
+                    slivers: <Widget>[
+                      SliverToBoxAdapter(
+                        child: _InboxSectionHeader(
+                          title: context.wp('Questions'),
+                          count: pendingRequests.questions.length,
                         ),
-                        count: pendingRequests.questions.length,
-                        children: pendingRequests.questions
-                            .map(
-                              (request) => _QuestionInboxTile(
+                      ),
+                      const SliverToBoxAdapter(
+                        child: SizedBox(height: AppSpacing.xs),
+                      ),
+                      if (pendingRequests.questions.isEmpty)
+                        SliverToBoxAdapter(
+                          child: _InboxSectionEmptyState(
+                            label: context.wp(
+                              'No pending questions right now.',
+                            ),
+                          ),
+                        )
+                      else
+                        SliverList.builder(
+                          itemCount: pendingRequests.questions.length,
+                          itemBuilder: (context, index) {
+                            final request = pendingRequests.questions[index];
+                            return Padding(
+                              padding: const EdgeInsets.only(
+                                bottom: AppSpacing.xs,
+                              ),
+                              child: _QuestionInboxTile(
                                 request: request,
-                                sessionLabel: _sessionLabel(request.sessionId),
+                                sessionLabel:
+                                    sessionLabels[request.sessionId] ??
+                                    request.sessionId,
                                 onTap: () async {
                                   Navigator.of(context).pop();
                                   await onOpenSession(request.sessionId);
                                 },
                               ),
-                            )
-                            .toList(growable: false),
-                      ),
-                      const SizedBox(height: AppSpacing.sm),
-                      _InboxSection(
-                        title: context.wp('Approvals'),
-                        emptyLabel: context.wp(
-                          'No permission requests right now.',
+                            );
+                          },
                         ),
-                        count: pendingRequests.permissions.length,
-                        children: pendingRequests.permissions
-                            .map(
-                              (request) => _PermissionInboxTile(
+                      const SliverToBoxAdapter(
+                        child: SizedBox(height: AppSpacing.sm),
+                      ),
+                      SliverToBoxAdapter(
+                        child: _InboxSectionHeader(
+                          title: context.wp('Approvals'),
+                          count: pendingRequests.permissions.length,
+                        ),
+                      ),
+                      const SliverToBoxAdapter(
+                        child: SizedBox(height: AppSpacing.xs),
+                      ),
+                      if (pendingRequests.permissions.isEmpty)
+                        SliverToBoxAdapter(
+                          child: _InboxSectionEmptyState(
+                            label: context.wp(
+                              'No permission requests right now.',
+                            ),
+                          ),
+                        )
+                      else
+                        SliverList.builder(
+                          itemCount: pendingRequests.permissions.length,
+                          itemBuilder: (context, index) {
+                            final request = pendingRequests.permissions[index];
+                            return Padding(
+                              padding: const EdgeInsets.only(
+                                bottom: AppSpacing.xs,
+                              ),
+                              child: _PermissionInboxTile(
                                 request: request,
-                                sessionLabel: _sessionLabel(request.sessionId),
+                                sessionLabel:
+                                    sessionLabels[request.sessionId] ??
+                                    request.sessionId,
                                 onOpen: () async {
                                   Navigator.of(context).pop();
                                   await onOpenSession(request.sessionId);
@@ -218,23 +266,43 @@ class WorkspaceInboxSheet extends StatelessWidget {
                                 onAllow: () => onAllowPermission(request.id),
                                 onReject: () => onRejectPermission(request.id),
                               ),
-                            )
-                            .toList(growable: false),
-                      ),
-                      const SizedBox(height: AppSpacing.sm),
-                      _InboxSection(
-                        title: context.wp('Unread Activity'),
-                        emptyLabel: context.wp(
-                          'All workspace activity is caught up.',
+                            );
+                          },
                         ),
-                        count: unseenNotifications.length,
-                        children: unseenNotifications
-                            .map(
-                              (notification) => _NotificationInboxTile(
+                      const SliverToBoxAdapter(
+                        child: SizedBox(height: AppSpacing.sm),
+                      ),
+                      SliverToBoxAdapter(
+                        child: _InboxSectionHeader(
+                          title: context.wp('Unread Activity'),
+                          count: unseenNotifications.length,
+                        ),
+                      ),
+                      const SliverToBoxAdapter(
+                        child: SizedBox(height: AppSpacing.xs),
+                      ),
+                      if (unseenNotifications.isEmpty)
+                        SliverToBoxAdapter(
+                          child: _InboxSectionEmptyState(
+                            label: context.wp(
+                              'All workspace activity is caught up.',
+                            ),
+                          ),
+                        )
+                      else
+                        SliverList.builder(
+                          itemCount: unseenNotifications.length,
+                          itemBuilder: (context, index) {
+                            final notification = unseenNotifications[index];
+                            return Padding(
+                              padding: const EdgeInsets.only(
+                                bottom: AppSpacing.xs,
+                              ),
+                              child: _NotificationInboxTile(
                                 notification: notification,
-                                sessionLabel: _sessionLabel(
-                                  notification.sessionId,
-                                ),
+                                sessionLabel:
+                                    sessionLabels[notification.sessionId] ??
+                                    notification.sessionId,
                                 statusLabel:
                                     statuses[notification.sessionId]?.type,
                                 onTap: () async {
@@ -242,9 +310,9 @@ class WorkspaceInboxSheet extends StatelessWidget {
                                   await onOpenSession(notification.sessionId);
                                 },
                               ),
-                            )
-                            .toList(growable: false),
-                      ),
+                            );
+                          },
+                        ),
                     ],
                   ),
                 ),
@@ -255,30 +323,13 @@ class WorkspaceInboxSheet extends StatelessWidget {
       ),
     );
   }
-
-  String _sessionLabel(String sessionId) {
-    for (final session in sessions) {
-      if (session.id == sessionId) {
-        final title = session.title.trim();
-        return title.isEmpty ? session.id : title;
-      }
-    }
-    return sessionId;
-  }
 }
 
-class _InboxSection extends StatelessWidget {
-  const _InboxSection({
-    required this.title,
-    required this.emptyLabel,
-    required this.count,
-    required this.children,
-  });
+class _InboxSectionHeader extends StatelessWidget {
+  const _InboxSectionHeader({required this.title, required this.count});
 
   final String title;
-  final String emptyLabel;
   final int count;
-  final List<Widget> children;
 
   @override
   Widget build(BuildContext context) {
@@ -319,27 +370,31 @@ class _InboxSection extends StatelessWidget {
           ],
         ),
         const SizedBox(height: AppSpacing.xs),
-        if (children.isEmpty)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(AppSpacing.sm),
-            decoration: appSoftCardDecoration(context, radius: 20, muted: true),
-            child: Text(
-              emptyLabel,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: surfaces.muted,
-                height: 1.45,
-              ),
-            ),
-          )
-        else
-          ...children.map(
-            (child) => Padding(
-              padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-              child: child,
-            ),
-          ),
       ],
+    );
+  }
+}
+
+class _InboxSectionEmptyState extends StatelessWidget {
+  const _InboxSectionEmptyState({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      decoration: appSoftCardDecoration(context, radius: 20, muted: true),
+      child: Text(
+        label,
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: surfaces.muted,
+          height: 1.45,
+        ),
+      ),
     );
   }
 }

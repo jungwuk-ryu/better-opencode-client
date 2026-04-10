@@ -4920,10 +4920,16 @@ class _ContextPanelState extends State<_ContextPanel> {
             else
               ...widget.messages.map(
                 (message) => Padding(
+                  key: ValueKey<String>(
+                    'context-raw-message-item-${message.info.id}',
+                  ),
                   padding: EdgeInsets.only(
                     bottom: density.inset(AppSpacing.xxs, min: 4),
                   ),
                   child: _ContextRawMessageTile(
+                    key: ValueKey<String>(
+                      'context-raw-message-widget-${message.info.id}',
+                    ),
                     message: message,
                     timestampLabel: _formatContextTime(
                       message.info.createdAt,
@@ -5042,14 +5048,74 @@ class _ContextBreakdownBar extends StatelessWidget {
   }
 }
 
-class _ContextRawMessageTile extends StatelessWidget {
+class _ContextRawMessageTile extends StatefulWidget {
   const _ContextRawMessageTile({
     required this.message,
     required this.timestampLabel,
+    super.key,
   });
 
   final ChatMessage message;
   final String timestampLabel;
+
+  @override
+  State<_ContextRawMessageTile> createState() => _ContextRawMessageTileState();
+}
+
+class _ContextRawMessageTileState extends State<_ContextRawMessageTile> {
+  String? _formattedMessage;
+  bool _expanded = false;
+  bool _restoredPageState = false;
+
+  String get _pageStorageId =>
+      'context-raw-message-expansion-state-${widget.message.info.id}';
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_restoredPageState) {
+      return;
+    }
+    final restored =
+        PageStorage.maybeOf(
+              context,
+            )?.readState(context, identifier: _pageStorageId)
+            as bool?;
+    _expanded = restored ?? false;
+    if (_expanded) {
+      _formattedMessage = _formatContextRawMessageForDisplay(widget.message);
+    }
+    _restoredPageState = true;
+  }
+
+  @override
+  void didUpdateWidget(covariant _ContextRawMessageTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.message.info.id != widget.message.info.id) {
+      _restoredPageState = false;
+      _expanded = false;
+      _formattedMessage = null;
+      return;
+    }
+    if (_formattedMessage != null &&
+        (!identical(oldWidget.message.info, widget.message.info) ||
+            !identical(oldWidget.message.parts, widget.message.parts))) {
+      _formattedMessage = _formatContextRawMessageForDisplay(widget.message);
+    }
+  }
+
+  void _handleExpansionChanged(bool expanded) {
+    PageStorage.maybeOf(
+      context,
+    )?.writeState(context, expanded, identifier: _pageStorageId);
+    setState(() {
+      _expanded = expanded;
+      _formattedMessage = expanded
+          ? (_formattedMessage ??
+                _formatContextRawMessageForDisplay(widget.message))
+          : null;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -5057,7 +5123,9 @@ class _ContextRawMessageTile extends StatelessWidget {
     final surfaces = theme.extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
     return Container(
-      key: ValueKey<String>('context-raw-message-tile-${message.info.id}'),
+      key: ValueKey<String>(
+        'context-raw-message-tile-${widget.message.info.id}',
+      ),
       clipBehavior: Clip.antiAlias,
       decoration:
           _workspaceSidePanelDecoration(
@@ -5071,8 +5139,9 @@ class _ContextRawMessageTile extends StatelessWidget {
         data: theme.copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           key: PageStorageKey<String>(
-            'context-raw-message-expansion-${message.info.id}',
+            'context-raw-message-expansion-${widget.message.info.id}',
           ),
+          initiallyExpanded: _expanded,
           backgroundColor: Colors.transparent,
           collapsedBackgroundColor: Colors.transparent,
           shape: const Border(),
@@ -5081,19 +5150,20 @@ class _ContextRawMessageTile extends StatelessWidget {
           childrenPadding: EdgeInsets.zero,
           iconColor: surfaces.muted,
           collapsedIconColor: surfaces.muted,
+          onExpansionChanged: _handleExpansionChanged,
           title: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Expanded(
                 child: Text.rich(
                   TextSpan(
-                    text: message.info.role,
+                    text: widget.message.info.role,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.onSurface,
                     ),
                     children: <InlineSpan>[
                       TextSpan(
-                        text: ' • ${message.info.id}',
+                        text: ' • ${widget.message.info.id}',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: surfaces.muted,
                         ),
@@ -5107,7 +5177,7 @@ class _ContextRawMessageTile extends StatelessWidget {
               const SizedBox(width: AppSpacing.xxs),
               Flexible(
                 child: Text(
-                  timestampLabel,
+                  widget.timestampLabel,
                   style: theme.textTheme.labelMedium?.copyWith(
                     color: surfaces.muted,
                   ),
@@ -5121,7 +5191,7 @@ class _ContextRawMessageTile extends StatelessWidget {
           children: <Widget>[
             Container(
               key: ValueKey<String>(
-                'context-raw-message-content-${message.info.id}',
+                'context-raw-message-content-${widget.message.info.id}',
               ),
               width: double.infinity,
               margin: const EdgeInsets.fromLTRB(
@@ -5142,7 +5212,8 @@ class _ContextRawMessageTile extends StatelessWidget {
                   ),
               padding: const EdgeInsets.all(AppSpacing.sm),
               child: Text(
-                _wrapRawMessageForDisplay(formatRawSessionMessage(message)),
+                _formattedMessage ??
+                    _formatContextRawMessageForDisplay(widget.message),
                 style: GoogleFonts.ibmPlexMono(
                   fontSize: 11,
                   height: 1.5,
@@ -5155,6 +5226,10 @@ class _ContextRawMessageTile extends StatelessWidget {
       ),
     );
   }
+}
+
+String _formatContextRawMessageForDisplay(ChatMessage message) {
+  return _wrapRawMessageForDisplay(formatRawSessionMessage(message));
 }
 
 String _formatContextNumber(int? value, NumberFormat formatter) {

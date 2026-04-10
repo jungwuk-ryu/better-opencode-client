@@ -1615,14 +1615,13 @@ void main() {
       );
       await _waitFor(
         () =>
-            controller.selectedSessionId == 'ses_other' &&
-            controller.messages.any(
-              (message) => message.info.id == 'msg_other',
-            ),
+            asyncPrompts.length == 1 &&
+            controller.selectedSessionQueuedPrompts.isEmpty,
       );
 
       expect(asyncPrompts, <String>['Queue this follow-up']);
       expect(controller.selectedSessionQueuedPrompts, isEmpty);
+      expect(controller.selectedSessionId, 'ses_1');
     },
   );
 
@@ -2479,6 +2478,328 @@ void main() {
   );
 
   test(
+    'controller persists selected tool state title updates to session cache',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final cacheStore = _RecordingCacheStore();
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        cacheStore: cacheStore,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+
+      final cacheKey =
+          'workspace.messages::${profile.storageKey}::${project.directory}::ses_1';
+
+      List<ChatMessage> savedMessagesForCache() {
+        final entry = cacheStore.entries[cacheKey];
+        if (entry == null) {
+          return const <ChatMessage>[];
+        }
+        return ((jsonDecode(entry.payloadJson) as List).cast<Map<String, Object?>>())
+            .map(ChatMessage.fromJson)
+            .toList(growable: false);
+      }
+
+      void emitToolUpdate(String title) {
+        eventStreamService.emitToScope(
+          profile,
+          project,
+          EventEnvelope(
+            type: 'message.part.updated',
+            properties: <String, Object?>{
+              'part': <String, Object?>{
+                'id': 'part_selected_tool',
+                'messageID': 'msg_selected_tool',
+                'sessionID': 'ses_1',
+                'type': 'tool',
+                'tool': 'bash',
+                'state': <String, Object?>{'title': title},
+              },
+            },
+          ),
+        );
+      }
+
+      emitToolUpdate('Inspecting release notes');
+      await _waitFor(() {
+        final saved = savedMessagesForCache();
+        if (saved.length != 1) {
+          return false;
+        }
+        final state = (saved.single.parts.single.metadata['state'] as Map?)
+            ?.cast<String, Object?>();
+        return state?['title'] == 'Inspecting release notes';
+      });
+
+      final saveCallsAfterFirstWrite = cacheStore.saveCalls;
+      emitToolUpdate('Comparing release notes');
+      await _waitFor(() {
+        final saved = savedMessagesForCache();
+        if (saved.length != 1 || cacheStore.saveCalls <= saveCallsAfterFirstWrite) {
+          return false;
+        }
+        final state = (saved.single.parts.single.metadata['state'] as Map?)
+            ?.cast<String, Object?>();
+        return state?['title'] == 'Comparing release notes';
+      });
+
+      final saveCallsAfterTitleUpdate = cacheStore.saveCalls;
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'message.part.updated',
+          properties: <String, Object?>{
+            'part': <String, Object?>{
+              'id': 'part_selected_tool',
+              'messageID': 'msg_selected_tool',
+              'sessionID': 'ses_1',
+              'type': 'tool',
+              'tool': 'bash',
+              'state': <String, Object?>{
+                'title': 'Comparing release notes',
+                'input': <String, Object?>{'command': 'git status'},
+              },
+            },
+          },
+        ),
+      );
+      await _waitFor(() {
+        final saved = savedMessagesForCache();
+        if (saved.length != 1 || cacheStore.saveCalls <= saveCallsAfterTitleUpdate) {
+          return false;
+        }
+        final state = (saved.single.parts.single.metadata['state'] as Map?)
+            ?.cast<String, Object?>();
+        final input = (state?['input'] as Map?)?.cast<String, Object?>();
+        return state?['title'] == 'Comparing release notes' &&
+            input?['command'] == 'git status';
+      });
+    },
+  );
+
+  test(
+    'controller keeps selected messages stable while child delta updates active child preview',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      const childSessionId = 'ses_child_busy';
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_root',
+              title: 'Root session',
+              createdAt: 1710000001000,
+              updatedAt: 1710000005000,
+            ),
+            _session(
+              id: childSessionId,
+              title: 'Busy child',
+              createdAt: 1710000002000,
+              updatedAt: 1710000007000,
+              parentId: 'ses_root',
+            ),
+          ],
+          statuses: <String, SessionStatusSummary>{
+            'ses_root': const SessionStatusSummary(type: 'idle'),
+            childSessionId: const SessionStatusSummary(type: 'busy'),
+          },
+          messages: const <ChatMessage>[],
+          selectedSessionId: 'ses_root',
+        ),
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+      controller.updateWatchedSessionIds(<String>[childSessionId]);
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'message.part.updated',
+          properties: <String, Object?>{
+            'part': <String, Object?>{
+              'id': 'part_root',
+              'messageID': 'msg_root',
+              'sessionID': 'ses_root',
+              'type': 'text',
+              'text': 'Root timeline stays put',
+            },
+          },
+        ),
+      );
+      await _waitFor(
+        () =>
+            controller.messages.length == 1 &&
+            controller.messages.single.parts.single.text ==
+                'Root timeline stays put',
+      );
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'message.part.updated',
+          properties: <String, Object?>{
+            'part': <String, Object?>{
+              'id': 'part_child_reasoning',
+              'messageID': 'msg_child_reasoning',
+              'sessionID': childSessionId,
+              'type': 'reasoning',
+              'text': '',
+            },
+          },
+        ),
+      );
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'message.part.delta',
+          properties: <String, Object?>{
+            'sessionID': childSessionId,
+            'messageID': 'msg_child_reasoning',
+            'partID': 'part_child_reasoning',
+            'field': 'text',
+            'delta': 'Inspecting background child work',
+          },
+        ),
+      );
+
+      await _waitFor(
+        () =>
+            controller.activeChildSessionPreviewById[childSessionId] ==
+            'Inspecting background child work',
+      );
+      final watchedTimeline = controller.timelineStateForSession(childSessionId);
+      expect(
+        controller.activeChildSessionPreviewById[childSessionId],
+        'Inspecting background child work',
+      );
+      expect(watchedTimeline.messages, hasLength(1));
+      expect(
+        watchedTimeline.messages.single.parts.single.text,
+        'Inspecting background child work',
+      );
+      expect(controller.messages, hasLength(1));
+      expect(
+        controller.messages.single.parts.single.text,
+        'Root timeline stays put',
+      );
+      expect(controller.selectedSessionId, 'ses_root');
+    },
+  );
+
+  test(
+    'controller keeps selected messages stable while child message updates watched timeline',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      const childSessionId = 'ses_child_busy';
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_root',
+              title: 'Root session',
+              createdAt: 1710000001000,
+              updatedAt: 1710000005000,
+            ),
+            _session(
+              id: childSessionId,
+              title: 'Busy child',
+              createdAt: 1710000002000,
+              updatedAt: 1710000007000,
+              parentId: 'ses_root',
+            ),
+          ],
+          statuses: <String, SessionStatusSummary>{
+            'ses_root': const SessionStatusSummary(type: 'idle'),
+            childSessionId: const SessionStatusSummary(type: 'busy'),
+          },
+          messages: const <ChatMessage>[],
+          selectedSessionId: 'ses_root',
+        ),
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+      controller.updateWatchedSessionIds(<String>[childSessionId]);
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'message.part.updated',
+          properties: <String, Object?>{
+            'part': <String, Object?>{
+              'id': 'part_root',
+              'messageID': 'msg_root',
+              'sessionID': 'ses_root',
+              'type': 'text',
+              'text': 'Root timeline stays put',
+            },
+          },
+        ),
+      );
+      await _waitFor(
+        () =>
+            controller.messages.length == 1 &&
+            controller.messages.single.parts.single.text ==
+                'Root timeline stays put',
+      );
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'message.updated',
+          properties: <String, Object?>{
+            'info': <String, Object?>{
+              'id': 'msg_child',
+              'role': 'assistant',
+              'sessionID': childSessionId,
+            },
+          },
+        ),
+      );
+
+      await _waitFor(
+        () =>
+            controller.timelineStateForSession(childSessionId).messages.length ==
+            1,
+      );
+      final watchedTimeline = controller.timelineStateForSession(childSessionId);
+      expect(watchedTimeline.messages, hasLength(1));
+      expect(watchedTimeline.messages.single.info.id, 'msg_child');
+      expect(controller.messages, hasLength(1));
+      expect(
+        controller.messages.single.parts.single.text,
+        'Root timeline stays put',
+      );
+      expect(controller.selectedSessionId, 'ses_root');
+    },
+  );
+
+  test(
     'controller keeps per-session composer selections across revisit and reconnect',
     () async {
       final sessions = <SessionSummary>[
@@ -2911,6 +3232,30 @@ void main() {
       addTearDown(controller.dispose);
 
       await controller.load();
+      controller.updateWatchedSessionIds(<String>[childSessionId]);
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'message.part.updated',
+          properties: <String, Object?>{
+            'part': <String, Object?>{
+              'id': 'part_root',
+              'messageID': 'msg_root',
+              'sessionID': 'ses_root',
+              'type': 'text',
+              'text': 'Root timeline stays put',
+            },
+          },
+        ),
+      );
+      await _waitFor(
+        () =>
+            controller.messages.length == 1 &&
+            controller.messages.single.parts.single.text ==
+                'Root timeline stays put',
+      );
 
       expect(
         controller.activeChildSessionPreviewById[childSessionId],
@@ -2947,6 +3292,239 @@ void main() {
       expect(
         controller.activeChildSessionPreviewById[childSessionId],
         'Shell: Comparing release notes',
+      );
+      final watchedTimeline = controller.timelineStateForSession(childSessionId);
+      expect(watchedTimeline.messages, hasLength(1));
+      expect(
+        ((watchedTimeline.messages.single.parts.single.metadata['state']
+                as Map?)
+            ?.cast<String, Object?>())?['title'],
+        'Comparing release notes',
+      );
+      expect(controller.messages, hasLength(1));
+      expect(
+        controller.messages.single.parts.single.text,
+        'Root timeline stays put',
+      );
+    },
+  );
+
+  test(
+    'controller keeps active child preview on the newest watched message when older child parts update',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      const childSessionId = 'ses_child_busy';
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_root',
+              title: 'Root session',
+              createdAt: 1710000001000,
+              updatedAt: 1710000005000,
+            ),
+            _session(
+              id: childSessionId,
+              title: 'Busy child',
+              createdAt: 1710000002000,
+              updatedAt: 1710000007000,
+              parentId: 'ses_root',
+            ),
+          ],
+          statuses: <String, SessionStatusSummary>{
+            'ses_root': const SessionStatusSummary(type: 'idle'),
+            childSessionId: const SessionStatusSummary(type: 'busy'),
+          },
+          messages: const <ChatMessage>[],
+          selectedSessionId: 'ses_root',
+        ),
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+      controller.updateWatchedSessionIds(<String>[childSessionId]);
+
+      void emitChildPart({
+        required String messageId,
+        required String partId,
+        required String text,
+      }) {
+        eventStreamService.emitToScope(
+          profile,
+          project,
+          EventEnvelope(
+            type: 'message.part.updated',
+            properties: <String, Object?>{
+              'part': <String, Object?>{
+                'id': partId,
+                'messageID': messageId,
+                'sessionID': childSessionId,
+                'type': 'text',
+                'text': text,
+              },
+            },
+          ),
+        );
+      }
+
+      emitChildPart(
+        messageId: 'msg_child_old',
+        partId: 'part_child_old',
+        text: 'Older child activity',
+      );
+      emitChildPart(
+        messageId: 'msg_child_new',
+        partId: 'part_child_new',
+        text: 'Latest child activity',
+      );
+
+      await _waitFor(
+        () =>
+            controller.timelineStateForSession(childSessionId).messages.length == 2 &&
+            controller.activeChildSessionPreviewById[childSessionId] ==
+                'Latest child activity',
+      );
+
+      emitChildPart(
+        messageId: 'msg_child_old',
+        partId: 'part_child_old',
+        text: 'Older child retry details',
+      );
+
+      await _waitFor(
+        () =>
+            controller.activeChildSessionPreviewById[childSessionId] ==
+            'Latest child activity',
+      );
+      final watchedTimeline = controller.timelineStateForSession(childSessionId);
+      expect(watchedTimeline.messages, hasLength(2));
+      expect(
+        watchedTimeline.messages
+            .firstWhere((message) => message.info.id == 'msg_child_old')
+            .parts
+            .single
+            .text,
+        'Older child retry details',
+      );
+      expect(
+        controller.activeChildSessionPreviewById[childSessionId],
+        'Latest child activity',
+      );
+    },
+  );
+
+  test(
+    'controller recomputes active child preview after removing an older watched child message',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      const childSessionId = 'ses_child_busy';
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_root',
+              title: 'Root session',
+              createdAt: 1710000001000,
+              updatedAt: 1710000005000,
+            ),
+            _session(
+              id: childSessionId,
+              title: 'Busy child',
+              createdAt: 1710000002000,
+              updatedAt: 1710000007000,
+              parentId: 'ses_root',
+            ),
+          ],
+          statuses: <String, SessionStatusSummary>{
+            'ses_root': const SessionStatusSummary(type: 'idle'),
+            childSessionId: const SessionStatusSummary(type: 'busy'),
+          },
+          messages: const <ChatMessage>[],
+          selectedSessionId: 'ses_root',
+        ),
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+      controller.updateWatchedSessionIds(<String>[childSessionId]);
+
+      void emitChildPart({
+        required String messageId,
+        required String partId,
+        required String text,
+      }) {
+        eventStreamService.emitToScope(
+          profile,
+          project,
+          EventEnvelope(
+            type: 'message.part.updated',
+            properties: <String, Object?>{
+              'part': <String, Object?>{
+                'id': partId,
+                'messageID': messageId,
+                'sessionID': childSessionId,
+                'type': 'text',
+                'text': text,
+              },
+            },
+          ),
+        );
+      }
+
+      emitChildPart(
+        messageId: 'msg_child_old',
+        partId: 'part_child_old',
+        text: 'Older child activity',
+      );
+      emitChildPart(
+        messageId: 'msg_child_new',
+        partId: 'part_child_new',
+        text: 'Latest child activity',
+      );
+
+      await _waitFor(
+        () =>
+            controller.timelineStateForSession(childSessionId).messages.length == 2 &&
+            controller.activeChildSessionPreviewById[childSessionId] ==
+                'Latest child activity',
+      );
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'message.removed',
+          properties: <String, Object?>{
+            'sessionID': childSessionId,
+            'messageID': 'msg_child_old',
+          },
+        ),
+      );
+
+      await _waitFor(
+        () =>
+            controller.timelineStateForSession(childSessionId).messages.length == 1 &&
+            controller.activeChildSessionPreviewById[childSessionId] ==
+                'Latest child activity',
+      );
+      final watchedTimeline = controller.timelineStateForSession(childSessionId);
+      expect(watchedTimeline.messages, hasLength(1));
+      expect(watchedTimeline.messages.single.info.id, 'msg_child_new');
+      expect(
+        controller.activeChildSessionPreviewById[childSessionId],
+        'Latest child activity',
       );
     },
   );
@@ -3067,13 +3645,14 @@ ChatMessage _message({
   );
 }
 
-Future<void> _waitFor(bool Function() condition, {int maxTicks = 80}) async {
+Future<void> _waitFor(bool Function() condition, {int maxTicks = 400}) async {
   for (var index = 0; index < maxTicks; index += 1) {
     if (condition()) {
       return;
     }
     await Future<void>.delayed(const Duration(milliseconds: 5));
   }
+  expect(condition(), isTrue, reason: 'Timed out waiting for condition.');
 }
 
 class _ControlledEventStreamService extends EventStreamService {
