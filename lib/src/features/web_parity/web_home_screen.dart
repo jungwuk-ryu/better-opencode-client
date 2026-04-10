@@ -1012,7 +1012,7 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
                 child: Padding(
                   padding: EdgeInsets.all(
                     MediaQuery.sizeOf(context).width < 600
-                        ? AppSpacing.md
+                        ? AppSpacing.sm
                         : AppSpacing.lg,
                   ),
                   child: controller.loading
@@ -1109,7 +1109,7 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
                                             flex: 4,
                                             child: serverListPanel,
                                           ),
-                                          const SizedBox(width: AppSpacing.lg),
+                                          const SizedBox(width: AppSpacing.md),
                                           Flexible(flex: 6, child: detailPanel),
                                         ],
                                       )
@@ -1119,7 +1119,7 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
                                             flex: 4,
                                             child: serverListPanel,
                                           ),
-                                          const SizedBox(height: AppSpacing.lg),
+                                          const SizedBox(height: AppSpacing.md),
                                           Expanded(flex: 6, child: detailPanel),
                                         ],
                                       );
@@ -1130,9 +1130,9 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
                                           CrossAxisAlignment.start,
                                       children: <Widget>[
                                         headerSection,
-                                        const SizedBox(height: AppSpacing.lg),
+                                        const SizedBox(height: AppSpacing.md),
                                         serverListPanel,
-                                        const SizedBox(height: AppSpacing.lg),
+                                        const SizedBox(height: AppSpacing.md),
                                         detailPanel,
                                       ],
                                     ),
@@ -1142,7 +1142,7 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: <Widget>[
                                     headerSection,
-                                    const SizedBox(height: AppSpacing.lg),
+                                    const SizedBox(height: AppSpacing.md),
                                     Expanded(child: contentSection),
                                   ],
                                 );
@@ -1275,7 +1275,7 @@ class _HomeHeroHeader extends StatelessWidget {
       backgroundOpacity: 0.9,
       borderOpacity: 0.06,
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
+        padding: const EdgeInsets.all(AppSpacing.md),
         child: LayoutBuilder(
           builder: (context, constraints) {
             final compact = constraints.maxWidth < 760;
@@ -1337,7 +1337,7 @@ class _HomeHeroHeader extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   description,
-                  const SizedBox(height: AppSpacing.md),
+                  const SizedBox(height: AppSpacing.sm),
                   actions,
                 ],
               );
@@ -1381,7 +1381,7 @@ class _HomeHeroHeader extends StatelessWidget {
                     ],
                   ),
                 ),
-                const SizedBox(width: AppSpacing.lg),
+                const SizedBox(width: AppSpacing.md),
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 340),
                   child: actions,
@@ -1486,7 +1486,7 @@ class _HomeServerListPanel extends StatelessWidget {
                       children: <Widget>[
                         titleBlock,
                         SizedBox(
-                          height: compressed ? AppSpacing.sm : AppSpacing.md,
+                          height: compressed ? AppSpacing.xs : AppSpacing.sm,
                         ),
                         actions,
                       ],
@@ -1495,13 +1495,13 @@ class _HomeServerListPanel extends StatelessWidget {
                   return Row(
                     children: <Widget>[
                       Expanded(child: titleBlock),
-                      const SizedBox(width: AppSpacing.md),
+                      const SizedBox(width: AppSpacing.sm),
                       actions,
                     ],
                   );
                 },
               ),
-              SizedBox(height: compressed ? AppSpacing.md : AppSpacing.lg),
+              SizedBox(height: compressed ? AppSpacing.sm : AppSpacing.md),
               if (profiles.isEmpty)
                 embeddedInPage
                     ? Center(
@@ -1592,7 +1592,7 @@ class _HomeServerListPanel extends StatelessWidget {
                             padding: EdgeInsets.only(
                               bottom: index == profiles.length - 1
                                   ? 0
-                                  : AppSpacing.sm,
+                                  : AppSpacing.xs,
                             ),
                             child: _ServerManagementCard(
                               key: ValueKey<String>(
@@ -1631,7 +1631,7 @@ class _HomeServerListPanel extends StatelessWidget {
                         child: ListView.separated(
                           itemCount: profiles.length,
                           separatorBuilder: (_, _) =>
-                              const SizedBox(height: AppSpacing.sm),
+                              const SizedBox(height: AppSpacing.xs),
                           itemBuilder: (context, index) {
                             final profile = profiles[index];
                             final selected = selectedProfile?.id == profile.id;
@@ -1858,7 +1858,7 @@ class _HomeServerDetailPanel extends StatelessWidget {
                   ),
                 ],
               ),
-            const SizedBox(height: AppSpacing.lg),
+            const SizedBox(height: AppSpacing.md),
             _HomeDetailSection(
               title: context.wp('Workspace'),
               subtitle: context.wp(
@@ -1871,14 +1871,14 @@ class _HomeServerDetailPanel extends StatelessWidget {
                       ),
                     )
                   : Wrap(
-                      spacing: AppSpacing.sm,
-                      runSpacing: AppSpacing.sm,
+                      spacing: AppSpacing.xs,
+                      runSpacing: AppSpacing.xs,
                       children: paneSnapshots
                           .map((pane) => _HomePaneCard(pane: pane))
                           .toList(growable: false),
                     ),
             ),
-            const SizedBox(height: AppSpacing.lg),
+            const SizedBox(height: AppSpacing.md),
             _HomeDetailSection(
               title: context.wp('Running Now'),
               subtitle: context.wp(
@@ -1900,7 +1900,7 @@ class _HomeServerDetailPanel extends StatelessWidget {
                           .map(
                             (session) => Padding(
                               padding: const EdgeInsets.only(
-                                bottom: AppSpacing.sm,
+                                bottom: AppSpacing.xs,
                               ),
                               child: _HomeRunningSessionCard(session: session),
                             ),
@@ -1908,7 +1908,7 @@ class _HomeServerDetailPanel extends StatelessWidget {
                           .toList(growable: false),
                     ),
             ),
-            const SizedBox(height: AppSpacing.lg),
+            const SizedBox(height: AppSpacing.md),
             _HomeDetailSection(
               title: context.wp('Projects'),
               subtitle: context.wp(
@@ -1920,8 +1920,8 @@ class _HomeServerDetailPanel extends StatelessWidget {
                       expanded: true,
                     )
                   : Wrap(
-                      spacing: AppSpacing.sm,
-                      runSpacing: AppSpacing.sm,
+                      spacing: AppSpacing.xs,
+                      runSpacing: AppSpacing.xs,
                       children: <Widget>[
                         _HomeAddProjectTile(onTap: onOpenProjectPicker),
                         ...projectTargets.map(
@@ -2111,7 +2111,7 @@ class _HomeServerDetailActions extends StatelessWidget {
 class _HomeSectionCard extends StatelessWidget {
   const _HomeSectionCard({
     required this.child,
-    this.padding = const EdgeInsets.all(AppSpacing.lg),
+    this.padding = const EdgeInsets.all(AppSpacing.md),
   });
 
   final Widget child;
@@ -2147,7 +2147,7 @@ class _HomeDetailSection extends StatelessWidget {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(AppSpacing.md),
+      padding: const EdgeInsets.all(AppSpacing.sm),
       decoration: appSoftCardDecoration(
         context,
         radius: AppSpacing.panelRadius,
@@ -2163,14 +2163,14 @@ class _HomeDetailSection extends StatelessWidget {
               context,
             ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
           ),
-          const SizedBox(height: AppSpacing.xs),
+          const SizedBox(height: AppSpacing.xxs),
           Text(
             subtitle,
             style: Theme.of(
               context,
             ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
           ),
-          const SizedBox(height: AppSpacing.md),
+          const SizedBox(height: AppSpacing.sm),
           child,
         ],
       ),
@@ -2199,7 +2199,7 @@ class _HomePaneCard extends StatelessWidget {
         emphasized: pane.active,
       ),
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
+        padding: const EdgeInsets.all(AppSpacing.sm),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
@@ -2288,7 +2288,7 @@ class _HomeRunningSessionCard extends StatelessWidget {
     return Container(
       key: ValueKey<String>('home-running-session-${session.sessionId}'),
       width: double.infinity,
-      padding: const EdgeInsets.all(AppSpacing.md),
+      padding: const EdgeInsets.all(AppSpacing.sm),
       decoration: appSoftCardDecoration(
         context,
         radius: AppSpacing.lg,
@@ -2399,7 +2399,7 @@ class _HomeAddProjectTile extends StatelessWidget {
           ),
           child: Center(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
               child: FittedBox(
                 fit: BoxFit.scaleDown,
                 child: Row(
