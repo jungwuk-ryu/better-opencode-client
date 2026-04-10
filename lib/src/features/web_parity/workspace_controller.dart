@@ -2827,6 +2827,8 @@ class WorkspaceController extends ChangeNotifier {
     WorkspacePromptDispatchMode? mode,
   }) async {
     final trimmed = prompt.trim();
+    final compactSlashPrompt =
+        attachments.isEmpty && isCompactSlashCommandPrompt(trimmed);
     final project = _project;
     final selectedAgent = this.selectedAgent;
     final selectedModel = this.selectedModel;
@@ -2836,6 +2838,11 @@ class WorkspaceController extends ChangeNotifier {
 
     var sessionId = _selectedSessionId;
     if (sessionId == null || sessionId.isEmpty) {
+      if (compactSlashPrompt) {
+        throw const SessionActionException(
+          'Select a session before compacting.',
+        );
+      }
       final created = await _chatService.createSession(
         profile: profile,
         project: project,
@@ -3132,8 +3139,10 @@ class WorkspaceController extends ChangeNotifier {
     required String? reasoning,
     bool preferAsync = false,
   }) async {
+    final compactSlashPrompt =
+        attachments.isEmpty && isCompactSlashCommandPrompt(prompt);
     ChatMessage? optimisticMessage;
-    if (prompt.isNotEmpty || attachments.isNotEmpty) {
+    if (!compactSlashPrompt && (prompt.isNotEmpty || attachments.isNotEmpty)) {
       optimisticMessage = _appendOptimisticUserMessage(
         project: project,
         sessionId: sessionId,
@@ -3144,7 +3153,16 @@ class WorkspaceController extends ChangeNotifier {
 
     final slashCommand = _parseSlashCommand(prompt);
     try {
-      if (slashCommand != null &&
+      if (compactSlashPrompt) {
+        await _sessionActionService.summarizeSession(
+          profile: profile,
+          project: project,
+          sessionId: sessionId,
+          providerId: providerId,
+          modelId: modelId,
+        );
+        _actionNotice = 'Session compaction requested.';
+      } else if (slashCommand != null &&
           _findComposerCommand(slashCommand.name) != null) {
         await _chatService.sendCommand(
           profile: profile,
@@ -6756,52 +6774,69 @@ class WorkspaceController extends ChangeNotifier {
           _stringSignature(part.metadata['output']?.toString()),
           _stringSignature(part.metadata['title']?.toString()),
           _stringSignature(
-            _previewNestedString(part.metadata, const <String>['state', 'title']),
+            _previewNestedString(part.metadata, const <String>[
+              'state',
+              'title',
+            ]),
           ),
           _stringSignature(
-            _previewNestedString(
-              part.metadata,
-              const <String>['state', 'input', 'description'],
-            ),
+            _previewNestedString(part.metadata, const <String>[
+              'state',
+              'input',
+              'description',
+            ]),
           ),
           _stringSignature(
-            _previewNestedString(
-              part.metadata,
-              const <String>['state', 'input', 'command'],
-            ),
+            _previewNestedString(part.metadata, const <String>[
+              'state',
+              'input',
+              'command',
+            ]),
           ),
           _stringSignature(
-            _previewNestedString(
-              part.metadata,
-              const <String>['state', 'input', 'query'],
-            ),
+            _previewNestedString(part.metadata, const <String>[
+              'state',
+              'input',
+              'query',
+            ]),
           ),
           _stringSignature(
-            _previewNestedString(
-              part.metadata,
-              const <String>['state', 'input', 'path'],
-            ),
+            _previewNestedString(part.metadata, const <String>[
+              'state',
+              'input',
+              'path',
+            ]),
           ),
           _stringSignature(
-            _previewNestedString(
-              part.metadata,
-              const <String>['state', 'input', 'url'],
-            ),
+            _previewNestedString(part.metadata, const <String>[
+              'state',
+              'input',
+              'url',
+            ]),
           ),
           _stringSignature(
-            _previewNestedString(
-              part.metadata,
-              const <String>['input', 'description'],
-            ),
+            _previewNestedString(part.metadata, const <String>[
+              'input',
+              'description',
+            ]),
           ),
           _stringSignature(
-            _previewNestedString(part.metadata, const <String>['input', 'command']),
+            _previewNestedString(part.metadata, const <String>[
+              'input',
+              'command',
+            ]),
           ),
           _stringSignature(
-            _previewNestedString(part.metadata, const <String>['input', 'query']),
+            _previewNestedString(part.metadata, const <String>[
+              'input',
+              'query',
+            ]),
           ),
           _stringSignature(
-            _previewNestedString(part.metadata, const <String>['input', 'path']),
+            _previewNestedString(part.metadata, const <String>[
+              'input',
+              'path',
+            ]),
           ),
           _stringSignature(
             _previewNestedString(part.metadata, const <String>['input', 'url']),

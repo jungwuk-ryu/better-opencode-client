@@ -17,6 +17,8 @@ class SessionActionException implements Exception {
   String toString() => message;
 }
 
+bool isCompactSlashCommandPrompt(String prompt) => prompt.trim() == '/compact';
+
 class SessionActionService {
   SessionActionService({http.Client? client})
     : _client = client ?? http.Client();
@@ -214,57 +216,27 @@ class SessionActionService {
       );
     }
 
-    // The dedicated summarize endpoint is not reliable on some servers; send
-    // the equivalent slash command through the normal prompt path instead.
-    final uri = _uri(profile, project, '/session/$sessionId/prompt_async');
-    final response = await _client.post(
-      uri,
-      headers: _headers(profile, jsonBody: true),
-      body: jsonEncode(<String, Object?>{
-        'parts': const <Map<String, Object?>>[
-          <String, Object?>{'type': 'text', 'text': '/compact'},
-        ],
-        if (hasModelSelection)
-          'model': <String, Object?>{
-            'providerID': resolvedProviderId,
-            'modelID': resolvedModelId,
-          },
-        if (hasModelSelection) 'providerID': resolvedProviderId,
-        if (hasModelSelection) 'modelID': resolvedModelId,
-      }),
-    );
-    if (response.statusCode == 404 ||
-        response.statusCode == 405 ||
-        response.statusCode == 501) {
-      if (!hasModelSelection) {
-        throw const SessionActionException(
-          'Session compaction requires a selected model on this server.',
-        );
-      }
-      return _summarizeSessionViaEndpoint(
+    if (hasModelSelection) {
+      final completed = await _trySummarizeSessionViaEndpoint(
         profile: profile,
         project: project,
         sessionId: sessionId,
         providerId: resolvedProviderId,
         modelId: resolvedModelId,
       );
+      if (completed) {
+        return true;
+      }
     }
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw StateError(
-        'Request failed for $uri with status ${response.statusCode}.',
-      );
-    }
-    if (response.body.trim().isEmpty) {
-      return true;
-    }
-    final body = jsonDecode(response.body);
-    if (body == true) {
-      return true;
-    }
-    if (body is Map) {
-      return true;
-    }
-    return false;
+
+    return _summarizeSessionViaPromptAsync(
+      profile: profile,
+      project: project,
+      sessionId: sessionId,
+      providerId: resolvedProviderId,
+      modelId: resolvedModelId,
+      requireModelSelectionOnUnsupported: !hasModelSelection,
+    );
   }
 
   Future<bool> _summarizeSessionViaEndpoint({
@@ -286,6 +258,102 @@ class SessionActionService {
       },
     );
     return body == true;
+  }
+
+  Future<bool> _trySummarizeSessionViaEndpoint({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String sessionId,
+    required String providerId,
+    required String modelId,
+  }) async {
+    final uri = _uri(profile, project, '/session/$sessionId/summarize');
+    final response = await _client.post(
+      uri,
+      headers: _headers(profile, jsonBody: true),
+      body: jsonEncode(<String, Object?>{
+        'providerID': providerId,
+        'modelID': modelId,
+        'auto': false,
+      }),
+    );
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return true;
+    }
+    if (_shouldFallbackToPromptAsyncForCompaction(response)) {
+      return false;
+    }
+    throw StateError(
+      'Request failed for $uri with status ${response.statusCode}.',
+    );
+  }
+
+  Future<bool> _summarizeSessionViaPromptAsync({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String sessionId,
+    required String? providerId,
+    required String? modelId,
+    required bool requireModelSelectionOnUnsupported,
+  }) async {
+    final uri = _uri(profile, project, '/session/$sessionId/prompt_async');
+    final requestBody = <String, Object?>{
+      'parts': const <Map<String, Object?>>[
+        <String, Object?>{'type': 'text', 'text': '/compact'},
+      ],
+    };
+    if (providerId != null && modelId != null) {
+      requestBody['model'] = <String, Object?>{
+        'providerID': providerId,
+        'modelID': modelId,
+      };
+    }
+    if (providerId != null) {
+      requestBody['providerID'] = providerId;
+    }
+    if (modelId != null) {
+      requestBody['modelID'] = modelId;
+    }
+    final response = await _client.post(
+      uri,
+      headers: _headers(profile, jsonBody: true),
+      body: jsonEncode(requestBody),
+    );
+    if (response.statusCode == 404 ||
+        response.statusCode == 405 ||
+        response.statusCode == 501) {
+      if (requireModelSelectionOnUnsupported) {
+        throw const SessionActionException(
+          'Session compaction requires a selected model on this server.',
+        );
+      }
+      throw StateError(
+        'Request failed for $uri with status ${response.statusCode}.',
+      );
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw StateError(
+        'Request failed for $uri with status ${response.statusCode}.',
+      );
+    }
+    if (response.body.trim().isEmpty) {
+      return true;
+    }
+    final body = jsonDecode(response.body);
+    return body == true || body is Map;
+  }
+
+  bool _shouldFallbackToPromptAsyncForCompaction(http.Response response) {
+    final statusCode = response.statusCode;
+    if (statusCode == 404 || statusCode == 405 || statusCode == 501) {
+      return true;
+    }
+    if (statusCode < 500) {
+      return false;
+    }
+    final normalizedBody = response.body.toLowerCase();
+    return normalizedBody.contains('default agent') &&
+        normalizedBody.contains('not found');
   }
 
   Future<Object?> _postJson({

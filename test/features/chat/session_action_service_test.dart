@@ -10,6 +10,8 @@ void main() {
   late HttpServer server;
   late Uri baseUri;
   bool promptAsyncUnsupported = false;
+  int summarizeEndpointStatusCode = 200;
+  Object? summarizeEndpointResponseBody = true;
   int promptAsyncCalls = 0;
   int summarizeEndpointCalls = 0;
   String? summarizeRoutePath;
@@ -18,6 +20,8 @@ void main() {
 
   setUp(() async {
     promptAsyncUnsupported = false;
+    summarizeEndpointStatusCode = 200;
+    summarizeEndpointResponseBody = true;
     promptAsyncCalls = 0;
     summarizeEndpointCalls = 0;
     summarizeRoutePath = null;
@@ -121,7 +125,17 @@ void main() {
       if (request.method == 'POST' && routePath == '/session/ses_1/summarize') {
         summarizeEndpointCalls += 1;
         summarizeEndpointRequestBody = decodedRequestBody;
-        body = true;
+        if (summarizeEndpointStatusCode < 200 ||
+            summarizeEndpointStatusCode >= 300) {
+          request.response.statusCode = summarizeEndpointStatusCode;
+          request.response.headers.contentType = ContentType.json;
+          request.response.add(
+            utf8.encode(jsonEncode(summarizeEndpointResponseBody)),
+          );
+          await request.response.close();
+          return;
+        }
+        body = summarizeEndpointResponseBody;
       }
       if (body == null) {
         request.response.statusCode = 404;
@@ -231,24 +245,26 @@ void main() {
       ),
       isTrue,
     );
-    expect(summarizeRoutePath, '/session/ses_1/prompt_async');
-    expect(summarizeRequestBody, <String, Object?>{
-      'parts': const <Map<String, Object?>>[
-        <String, Object?>{'type': 'text', 'text': '/compact'},
-      ],
-      'model': <String, Object?>{'providerID': 'openai', 'modelID': 'gpt-5'},
+    expect(promptAsyncCalls, 0);
+    expect(summarizeEndpointCalls, 1);
+    expect(summarizeEndpointRequestBody, <String, Object?>{
       'providerID': 'openai',
       'modelID': 'gpt-5',
+      'auto': false,
     });
-    expect(promptAsyncCalls, 1);
-    expect(summarizeEndpointCalls, 0);
     service.dispose();
   });
 
   test(
-    'summarize falls back to the legacy endpoint when prompt_async is unsupported',
+    'summarize falls back to prompt_async when the summarize endpoint is broken',
     () async {
-      promptAsyncUnsupported = true;
+      summarizeEndpointStatusCode = 500;
+      summarizeEndpointResponseBody = <String, Object?>{
+        'name': 'UnknownError',
+        'data': <String, Object?>{
+          'message': 'default agent "Sisyphus - Ultraworker" not found',
+        },
+      };
       final service = SessionActionService();
       final profile = ServerProfile(
         id: 'server',
@@ -272,10 +288,14 @@ void main() {
       );
       expect(promptAsyncCalls, 1);
       expect(summarizeEndpointCalls, 1);
-      expect(summarizeEndpointRequestBody, <String, Object?>{
+      expect(summarizeRoutePath, '/session/ses_1/prompt_async');
+      expect(summarizeRequestBody, <String, Object?>{
+        'parts': const <Map<String, Object?>>[
+          <String, Object?>{'type': 'text', 'text': '/compact'},
+        ],
+        'model': <String, Object?>{'providerID': 'openai', 'modelID': 'gpt-5'},
         'providerID': 'openai',
         'modelID': 'gpt-5',
-        'auto': false,
       });
       service.dispose();
     },

@@ -1558,6 +1558,111 @@ void main() {
   );
 
   test(
+    'controller routes exact /compact prompts through session compaction',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final sessionActionService = _RecordingSessionActionService();
+      var sendMessageCalls = 0;
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_1',
+              title: 'Initial session',
+              createdAt: 1710000001000,
+              updatedAt: 1710000005000,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{
+            'ses_1': SessionStatusSummary(type: 'idle'),
+          },
+          messages: const <ChatMessage>[],
+          selectedSessionId: 'ses_1',
+        ),
+        sendMessageHandler:
+            ({
+              required ServerProfile profile,
+              required ProjectTarget project,
+              required String sessionId,
+              required String prompt,
+              List<PromptAttachment> attachments = const <PromptAttachment>[],
+              String? agent,
+              String? providerId,
+              String? modelId,
+              String? variant,
+              String? reasoning,
+            }) async {
+              sendMessageCalls += 1;
+              return ChatMessage(
+                info: ChatMessageInfo(
+                  id: 'msg_stub',
+                  role: 'assistant',
+                  sessionId: sessionId,
+                ),
+                parts: const <ChatPart>[],
+              );
+            },
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+        sessionActionService: sessionActionService,
+        configService: _FakeConfigService(),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+      await controller.submitPrompt('/compact');
+
+      expect(sessionActionService.summarizeCalls, 1);
+      expect(sessionActionService.lastSummarizedSessionId, 'ses_1');
+      expect(sendMessageCalls, 0);
+      expect(controller.actionNotice, 'Session compaction requested.');
+    },
+  );
+
+  test(
+    'controller refuses exact /compact prompts without an existing session',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final sessionActionService = _RecordingSessionActionService();
+      final chatService = _FakeChatService(
+        bundle: const ChatSessionBundle(
+          sessions: <SessionSummary>[],
+          statuses: <String, SessionStatusSummary>{},
+          messages: <ChatMessage>[],
+          selectedSessionId: null,
+        ),
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+        sessionActionService: sessionActionService,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+
+      await expectLater(
+        () => controller.submitPrompt('/compact'),
+        throwsA(
+          isA<SessionActionException>().having(
+            (error) => error.message,
+            'message',
+            'Select a session before compacting.',
+          ),
+        ),
+      );
+      expect(chatService.createSessionCalls, 0);
+      expect(sessionActionService.summarizeCalls, 0);
+    },
+  );
+
+  test(
     'controller queues busy follow-ups and auto flushes them once idle',
     () async {
       final eventStreamService = _ControlledEventStreamService();
@@ -2527,7 +2632,8 @@ void main() {
         if (entry == null) {
           return const <ChatMessage>[];
         }
-        return ((jsonDecode(entry.payloadJson) as List).cast<Map<String, Object?>>())
+        return ((jsonDecode(entry.payloadJson) as List)
+                .cast<Map<String, Object?>>())
             .map(ChatMessage.fromJson)
             .toList(growable: false);
       }
@@ -2567,7 +2673,8 @@ void main() {
       emitToolUpdate('Comparing release notes');
       await _waitFor(() {
         final saved = savedMessagesForCache();
-        if (saved.length != 1 || cacheStore.saveCalls <= saveCallsAfterFirstWrite) {
+        if (saved.length != 1 ||
+            cacheStore.saveCalls <= saveCallsAfterFirstWrite) {
           return false;
         }
         final state = (saved.single.parts.single.metadata['state'] as Map?)
@@ -2598,7 +2705,8 @@ void main() {
       );
       await _waitFor(() {
         final saved = savedMessagesForCache();
-        if (saved.length != 1 || cacheStore.saveCalls <= saveCallsAfterTitleUpdate) {
+        if (saved.length != 1 ||
+            cacheStore.saveCalls <= saveCallsAfterTitleUpdate) {
           return false;
         }
         final state = (saved.single.parts.single.metadata['state'] as Map?)
@@ -2711,7 +2819,9 @@ void main() {
             controller.activeChildSessionPreviewById[childSessionId] ==
             'Inspecting background child work',
       );
-      final watchedTimeline = controller.timelineStateForSession(childSessionId);
+      final watchedTimeline = controller.timelineStateForSession(
+        childSessionId,
+      );
       expect(
         controller.activeChildSessionPreviewById[childSessionId],
         'Inspecting background child work',
@@ -2811,10 +2921,15 @@ void main() {
 
       await _waitFor(
         () =>
-            controller.timelineStateForSession(childSessionId).messages.length ==
+            controller
+                .timelineStateForSession(childSessionId)
+                .messages
+                .length ==
             1,
       );
-      final watchedTimeline = controller.timelineStateForSession(childSessionId);
+      final watchedTimeline = controller.timelineStateForSession(
+        childSessionId,
+      );
       expect(watchedTimeline.messages, hasLength(1));
       expect(watchedTimeline.messages.single.info.id, 'msg_child');
       expect(controller.messages, hasLength(1));
@@ -3320,7 +3435,9 @@ void main() {
         controller.activeChildSessionPreviewById[childSessionId],
         'Shell: Comparing release notes',
       );
-      final watchedTimeline = controller.timelineStateForSession(childSessionId);
+      final watchedTimeline = controller.timelineStateForSession(
+        childSessionId,
+      );
       expect(watchedTimeline.messages, hasLength(1));
       expect(
         ((watchedTimeline.messages.single.parts.single.metadata['state']
@@ -3413,7 +3530,11 @@ void main() {
 
       await _waitFor(
         () =>
-            controller.timelineStateForSession(childSessionId).messages.length == 2 &&
+            controller
+                    .timelineStateForSession(childSessionId)
+                    .messages
+                    .length ==
+                2 &&
             controller.activeChildSessionPreviewById[childSessionId] ==
                 'Latest child activity',
       );
@@ -3429,7 +3550,9 @@ void main() {
             controller.activeChildSessionPreviewById[childSessionId] ==
             'Latest child activity',
       );
-      final watchedTimeline = controller.timelineStateForSession(childSessionId);
+      final watchedTimeline = controller.timelineStateForSession(
+        childSessionId,
+      );
       expect(watchedTimeline.messages, hasLength(2));
       expect(
         watchedTimeline.messages
@@ -3523,7 +3646,11 @@ void main() {
 
       await _waitFor(
         () =>
-            controller.timelineStateForSession(childSessionId).messages.length == 2 &&
+            controller
+                    .timelineStateForSession(childSessionId)
+                    .messages
+                    .length ==
+                2 &&
             controller.activeChildSessionPreviewById[childSessionId] ==
                 'Latest child activity',
       );
@@ -3542,11 +3669,17 @@ void main() {
 
       await _waitFor(
         () =>
-            controller.timelineStateForSession(childSessionId).messages.length == 1 &&
+            controller
+                    .timelineStateForSession(childSessionId)
+                    .messages
+                    .length ==
+                1 &&
             controller.activeChildSessionPreviewById[childSessionId] ==
                 'Latest child activity',
       );
-      final watchedTimeline = controller.timelineStateForSession(childSessionId);
+      final watchedTimeline = controller.timelineStateForSession(
+        childSessionId,
+      );
       expect(watchedTimeline.messages, hasLength(1));
       expect(watchedTimeline.messages.single.info.id, 'msg_child_new');
       expect(
@@ -3983,6 +4116,7 @@ class _FakeChatService extends ChatService {
   });
 
   final ChatSessionBundle bundle;
+  int createSessionCalls = 0;
   final Future<List<ChatMessage>> Function({
     required ServerProfile profile,
     required ProjectTarget project,
@@ -4032,6 +4166,23 @@ class _FakeChatService extends ChatService {
     bool includeSelectedSessionMessages = true,
   }) async {
     return bundle;
+  }
+
+  @override
+  Future<SessionSummary> createSession({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    String? title,
+  }) async {
+    createSessionCalls += 1;
+    return SessionSummary(
+      id: 'ses_created',
+      directory: project.directory,
+      title: title ?? 'Created session',
+      version: '1',
+      createdAt: DateTime.fromMillisecondsSinceEpoch(1710000010000),
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(1710000010000),
+    );
   }
 
   @override

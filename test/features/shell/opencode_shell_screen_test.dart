@@ -296,6 +296,104 @@ void main() {
   );
 
   testWidgets(
+    'shell composer routes exact /compact prompts through session compaction',
+    (tester) async {
+      final sessionActionService = _RecordingSessionActionService();
+      final configService = _ControlledConfigService(
+        snapshotsByScopeKey: <String, ConfigSnapshot>{
+          _scopeKeyFor(profile, project): _configSnapshotWithModelChoices(),
+        },
+      );
+      final chatService = _ControlledChatService(
+        bundlesByScopeKey: <String, ChatSessionBundle>{
+          _scopeKeyFor(profile, project): ChatSessionBundle(
+            sessions: <SessionSummary>[
+              _testSession(
+                'session-1',
+                'First session',
+                directory: project.directory,
+              ),
+            ],
+            statuses: const <String, SessionStatusSummary>{
+              'session-1': SessionStatusSummary(type: 'idle'),
+            },
+            messages: const <ChatMessage>[],
+            selectedSessionId: 'session-1',
+          ),
+        },
+      );
+
+      await pumpShellWithCapabilities(
+        tester,
+        size: const Size(1440, 1600),
+        capabilitiesToUse: capabilities,
+        chatService: chatService,
+        todoService: _RecordingTodoService(),
+        fileBrowserService: _ControlledFileBrowserService.empty(),
+        requestService: _ControlledRequestService.empty(),
+        configService: configService,
+        integrationStatusService: _ControlledIntegrationStatusService.empty(),
+        sessionActionService: sessionActionService,
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('composer-model-select')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('anthropic / claude-sonnet-4.5').last);
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField).first, '/compact');
+      await tester.tap(find.text('Send'));
+      await _pumpShellFrames(tester);
+
+      expect(sessionActionService.summarizeCalls, 1);
+      expect(sessionActionService.lastSummarizedSessionId, 'session-1');
+      expect(sessionActionService.lastSummarizedProviderId, 'anthropic');
+      expect(sessionActionService.lastSummarizedModelId, 'claude-sonnet-4.5');
+      expect(chatService.sentPrompts, isEmpty);
+    },
+  );
+
+  testWidgets(
+    'shell composer refuses exact /compact prompts without an existing session',
+    (tester) async {
+      final sessionActionService = _RecordingSessionActionService();
+      final chatService = _ControlledChatService(
+        bundlesByScopeKey: <String, ChatSessionBundle>{
+          _scopeKeyFor(profile, project): const ChatSessionBundle(
+            sessions: <SessionSummary>[],
+            statuses: <String, SessionStatusSummary>{},
+            messages: <ChatMessage>[],
+            selectedSessionId: null,
+          ),
+        },
+      );
+
+      await pumpShellWithCapabilities(
+        tester,
+        size: const Size(1440, 1600),
+        capabilitiesToUse: capabilities,
+        chatService: chatService,
+        todoService: _RecordingTodoService(),
+        fileBrowserService: _ControlledFileBrowserService.empty(),
+        requestService: _ControlledRequestService.empty(),
+        configService: _ControlledConfigService.empty(),
+        integrationStatusService: _ControlledIntegrationStatusService.empty(),
+        sessionActionService: sessionActionService,
+      );
+
+      await tester.enterText(find.byType(TextField).first, '/compact');
+      await tester.tap(find.widgetWithIcon(ElevatedButton, Icons.send_rounded));
+      await _pumpShellFrames(tester);
+
+      expect(chatService.createSessionCalls, 0);
+      expect(sessionActionService.summarizeCalls, 0);
+      expect(find.text('Select a session before compacting.'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
     'shell summarize action ignores stale transcript models during session switches',
     (tester) async {
       final secondSessionGate = Completer<void>();
@@ -3541,6 +3639,7 @@ class _ControlledChatService extends ChatService {
         })
       >[];
   final Map<String, int> fetchBundleCountByScopeKey = <String, int>{};
+  int createSessionCalls = 0;
 
   @override
   Future<SessionSummary> createSession({
@@ -3548,6 +3647,7 @@ class _ControlledChatService extends ChatService {
     required ProjectTarget project,
     String? title,
   }) async {
+    createSessionCalls += 1;
     final scopeKey = _scopeKeyFor(profile, project);
     final gate = createSessionGateByScopeKey[scopeKey];
     if (gate != null) {

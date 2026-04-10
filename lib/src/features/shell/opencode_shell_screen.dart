@@ -1568,6 +1568,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     _ComposerSubmissionOptions options,
   ) async {
     final trimmed = prompt.trim();
+    final compactSlashPrompt = isCompactSlashCommandPrompt(trimmed);
     if (trimmed.isEmpty) {
       return false;
     }
@@ -1581,6 +1582,11 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     try {
       var sessionId = _selectedSessionId;
       if (sessionId == null || sessionId.isEmpty) {
+        if (compactSlashPrompt) {
+          throw const SessionActionException(
+            'Select a session before compacting.',
+          );
+        }
         final created = await _chatService.createSession(
           profile: widget.profile,
           project: widget.project,
@@ -1609,42 +1615,74 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         }
       }
 
-      final reply = await _chatService.sendMessage(
-        profile: widget.profile,
-        project: widget.project,
-        sessionId: sessionId,
-        prompt: trimmed,
-        providerId: options.providerId,
-        modelId: options.modelId,
-        reasoning: options.reasoning,
-      );
-      if (!_isActivePromptSubmission(
-        requestToken,
-        scopeKey,
-        selectedSessionId: expectedSelectedSessionId,
-      )) {
-        return false;
+      if (compactSlashPrompt) {
+        await _sessionActionService.summarizeSession(
+          profile: widget.profile,
+          project: widget.project,
+          sessionId: sessionId,
+          providerId: options.providerId,
+          modelId: options.modelId,
+        );
+        if (!_isActivePromptSubmission(
+          requestToken,
+          scopeKey,
+          selectedSessionId: expectedSelectedSessionId,
+        )) {
+          return false;
+        }
+        await _loadBundle();
+        if (!_isActivePromptSubmission(
+          requestToken,
+          scopeKey,
+          selectedSessionId: expectedSelectedSessionId,
+        )) {
+          return false;
+        }
+        setState(() {
+          _selectedSessionId = sessionId;
+          _submittingPrompt = false;
+        });
+        await _persistWorkspaceHint(sessionId, _sessions, _statuses);
+        await _loadPendingRequests();
+        return true;
+      } else {
+        final reply = await _chatService.sendMessage(
+          profile: widget.profile,
+          project: widget.project,
+          sessionId: sessionId,
+          prompt: trimmed,
+          providerId: options.providerId,
+          modelId: options.modelId,
+          reasoning: options.reasoning,
+        );
+        if (!_isActivePromptSubmission(
+          requestToken,
+          scopeKey,
+          selectedSessionId: expectedSelectedSessionId,
+        )) {
+          return false;
+        }
+        final messages = await _chatService.fetchMessages(
+          profile: widget.profile,
+          project: widget.project,
+          sessionId: sessionId,
+        );
+        if (!_isActivePromptSubmission(
+          requestToken,
+          scopeKey,
+          selectedSessionId: expectedSelectedSessionId,
+        )) {
+          return false;
+        }
+        setState(() {
+          _selectedSessionId = sessionId;
+          _messages = messages.isEmpty ? <ChatMessage>[reply] : messages;
+          _submittingPrompt = false;
+        });
+        await _persistWorkspaceHint(sessionId, _sessions, _statuses);
+        await _loadPendingRequests();
+        return true;
       }
-      final messages = await _chatService.fetchMessages(
-        profile: widget.profile,
-        project: widget.project,
-        sessionId: sessionId,
-      );
-      if (!_isActivePromptSubmission(
-        requestToken,
-        scopeKey,
-        selectedSessionId: expectedSelectedSessionId,
-      )) {
-        return false;
-      }
-      setState(() {
-        _selectedSessionId = sessionId;
-        _messages = messages.isEmpty ? <ChatMessage>[reply] : messages;
-        _submittingPrompt = false;
-      });
-      await _persistWorkspaceHint(sessionId, _sessions, _statuses);
-      await _loadPendingRequests();
-      return true;
     } catch (error) {
       if (!_isActivePromptSubmission(
         requestToken,
