@@ -168,6 +168,7 @@ class _ProjectPickerSheetState extends State<ProjectPickerSheet> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final compactShell = MediaQuery.sizeOf(context).width < 560;
 
     return SafeArea(
       child: Padding(
@@ -175,7 +176,7 @@ class _ProjectPickerSheetState extends State<ProjectPickerSheet> {
           AppSpacing.md,
           AppSpacing.md,
           AppSpacing.md,
-          AppSpacing.lg,
+          AppSpacing.md,
         ),
         child: Center(
           child: ConstrainedBox(
@@ -187,7 +188,9 @@ class _ProjectPickerSheetState extends State<ProjectPickerSheet> {
                   ? 0.9
                   : 0.95,
               borderOpacity: 0.08,
-              padding: const EdgeInsets.all(AppSpacing.lg),
+              padding: EdgeInsets.all(
+                compactShell ? AppSpacing.md : AppSpacing.lg,
+              ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -222,7 +225,9 @@ class _ProjectPickerSheetState extends State<ProjectPickerSheet> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: AppSpacing.lg),
+                  SizedBox(
+                    height: compactShell ? AppSpacing.md : AppSpacing.lg,
+                  ),
                   Container(
                     padding: const EdgeInsets.all(AppSpacing.md),
                     decoration: appSoftCardDecoration(
@@ -277,12 +282,13 @@ class _ProjectPickerSheetState extends State<ProjectPickerSheet> {
                       },
                     ),
                   ),
-                  const SizedBox(height: AppSpacing.lg),
+                  SizedBox(
+                    height: compactShell ? AppSpacing.md : AppSpacing.lg,
+                  ),
                   if (_error != null)
                     Container(
                       width: double.infinity,
-                      margin: const EdgeInsets.only(bottom: AppSpacing.sm),
-                      padding: const EdgeInsets.all(AppSpacing.sm),
+                      padding: const EdgeInsets.all(AppSpacing.xs),
                       decoration: BoxDecoration(
                         color: surfaces.warning.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(16),
@@ -313,7 +319,7 @@ class _ProjectPickerSheetState extends State<ProjectPickerSheet> {
                             shrinkWrap: true,
                             itemCount: _targets.length,
                             separatorBuilder: (_, _) =>
-                                const SizedBox(height: AppSpacing.xs),
+                                const SizedBox(height: AppSpacing.xxs),
                             itemBuilder: (context, index) {
                               final target = _targets[index];
                               return _ProjectTargetTile(

@@ -165,6 +165,7 @@ class _ServersSheetState extends State<_ServersSheet> {
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final compactShell = MediaQuery.sizeOf(context).width < 620;
 
     return AnimatedBuilder(
       animation: controller,
@@ -175,7 +176,7 @@ class _ServersSheetState extends State<_ServersSheet> {
           blur: 12,
           backgroundOpacity: 0.9,
           borderOpacity: 0.06,
-          padding: const EdgeInsets.all(AppSpacing.lg),
+          padding: EdgeInsets.all(compactShell ? AppSpacing.md : AppSpacing.lg),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
@@ -189,7 +190,7 @@ class _ServersSheetState extends State<_ServersSheet> {
                   ),
                 ),
               ),
-              const SizedBox(height: AppSpacing.md),
+              SizedBox(height: compactShell ? AppSpacing.sm : AppSpacing.md),
               LayoutBuilder(
                 builder: (context, constraints) {
                   final compact = constraints.maxWidth < 620;
@@ -241,7 +242,7 @@ class _ServersSheetState extends State<_ServersSheet> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
                         titleBlock,
-                        const SizedBox(height: AppSpacing.md),
+                        const SizedBox(height: AppSpacing.sm),
                         actions,
                       ],
                     );
@@ -250,13 +251,13 @@ class _ServersSheetState extends State<_ServersSheet> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
                       Expanded(child: titleBlock),
-                      const SizedBox(width: AppSpacing.md),
+                      const SizedBox(width: AppSpacing.sm),
                       actions,
                     ],
                   );
                 },
               ),
-              const SizedBox(height: AppSpacing.lg),
+              SizedBox(height: compactShell ? AppSpacing.md : AppSpacing.lg),
               Expanded(
                 child: profiles.isEmpty
                     ? Center(
@@ -279,13 +280,13 @@ class _ServersSheetState extends State<_ServersSheet> {
                                 color: surfaces.muted,
                               ),
                             ),
-                            const SizedBox(height: AppSpacing.md),
+                            const SizedBox(height: AppSpacing.sm),
                             Text(
                               context.wp('No saved servers yet.'),
                               style: Theme.of(context).textTheme.titleMedium
                                   ?.copyWith(fontWeight: FontWeight.w700),
                             ),
-                            const SizedBox(height: AppSpacing.xs),
+                            const SizedBox(height: AppSpacing.xxs),
                             Text(
                               context.wp(
                                 'Add your first OpenCode server here and it will immediately be ready for project browsing.',
@@ -300,7 +301,7 @@ class _ServersSheetState extends State<_ServersSheet> {
                     : ListView.separated(
                         itemCount: profiles.length,
                         separatorBuilder: (_, _) =>
-                            const SizedBox(height: AppSpacing.sm),
+                            const SizedBox(height: AppSpacing.xs),
                         itemBuilder: (context, index) {
                           final profile = profiles[index];
                           final report = controller.reports[profile.storageKey];
@@ -379,6 +380,7 @@ class _ServerManagementCard extends StatelessWidget {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
     final meta = _serverMetaItems(context, profile, report);
+    final compactCard = MediaQuery.sizeOf(context).width < 620;
 
     return Material(
       color: Colors.transparent,
@@ -395,7 +397,9 @@ class _ServerManagementCard extends StatelessWidget {
             emphasized: selected,
           ),
           child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.md),
+            padding: EdgeInsets.all(
+              compactCard ? AppSpacing.sm : AppSpacing.md,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
@@ -683,16 +687,19 @@ class _ServerEditorSheetState extends State<_ServerEditorSheet> {
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final editingExisting = widget.initialProfile != null;
+    final compactSheet = MediaQuery.sizeOf(context).width < 560;
     return AppGlassPanel(
       radius: AppSpacing.cardRadius,
       blur: 12,
       backgroundOpacity: 0.9,
       borderOpacity: 0.06,
       padding: EdgeInsets.only(
-        left: AppSpacing.lg,
-        right: AppSpacing.lg,
-        top: AppSpacing.lg,
-        bottom: AppSpacing.lg + MediaQuery.of(context).viewInsets.bottom,
+        left: compactSheet ? AppSpacing.md : AppSpacing.lg,
+        right: compactSheet ? AppSpacing.md : AppSpacing.lg,
+        top: compactSheet ? AppSpacing.md : AppSpacing.lg,
+        bottom:
+            (compactSheet ? AppSpacing.md : AppSpacing.lg) +
+            MediaQuery.of(context).viewInsets.bottom,
       ),
       child: Form(
         key: _formKey,
@@ -708,7 +715,7 @@ class _ServerEditorSheetState extends State<_ServerEditorSheet> {
                 ),
               ),
             ),
-            const SizedBox(height: AppSpacing.md),
+            const SizedBox(height: AppSpacing.sm),
             Text(
               editingExisting
                   ? context.wp('Edit Server')
@@ -726,9 +733,11 @@ class _ServerEditorSheetState extends State<_ServerEditorSheet> {
                 context,
               ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
             ),
-            const SizedBox(height: AppSpacing.lg),
+            SizedBox(height: compactSheet ? AppSpacing.md : AppSpacing.lg),
             Container(
-              padding: const EdgeInsets.all(AppSpacing.md),
+              padding: EdgeInsets.all(
+                compactSheet ? AppSpacing.sm : AppSpacing.md,
+              ),
               decoration: appSoftCardDecoration(
                 context,
                 radius: AppSpacing.panelRadius,
@@ -759,9 +768,11 @@ class _ServerEditorSheetState extends State<_ServerEditorSheet> {
                 ],
               ),
             ),
-            const SizedBox(height: AppSpacing.md),
+            SizedBox(height: compactSheet ? AppSpacing.sm : AppSpacing.md),
             Container(
-              padding: const EdgeInsets.all(AppSpacing.md),
+              padding: EdgeInsets.all(
+                compactSheet ? AppSpacing.sm : AppSpacing.md,
+              ),
               decoration: appSoftCardDecoration(
                 context,
                 radius: AppSpacing.panelRadius,
@@ -777,7 +788,7 @@ class _ServerEditorSheetState extends State<_ServerEditorSheet> {
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  const SizedBox(height: AppSpacing.xs),
+                  const SizedBox(height: AppSpacing.xxs),
                   Text(
                     context.wp(
                       'Only add these when your server requires basic auth.',
@@ -786,7 +797,9 @@ class _ServerEditorSheetState extends State<_ServerEditorSheet> {
                       context,
                     ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
                   ),
-                  const SizedBox(height: AppSpacing.md),
+                  SizedBox(
+                    height: compactSheet ? AppSpacing.sm : AppSpacing.md,
+                  ),
                   TextFormField(
                     key: const ValueKey<String>(
                       'servers-editor-username-field',
@@ -797,7 +810,9 @@ class _ServerEditorSheetState extends State<_ServerEditorSheet> {
                       hintText: context.wp('Optional'),
                     ),
                   ),
-                  const SizedBox(height: AppSpacing.md),
+                  SizedBox(
+                    height: compactSheet ? AppSpacing.sm : AppSpacing.md,
+                  ),
                   TextFormField(
                     key: const ValueKey<String>(
                       'servers-editor-password-field',
@@ -824,7 +839,7 @@ class _ServerEditorSheetState extends State<_ServerEditorSheet> {
                 ],
               ),
             ),
-            const SizedBox(height: AppSpacing.lg),
+            SizedBox(height: compactSheet ? AppSpacing.md : AppSpacing.lg),
             LayoutBuilder(
               builder: (context, constraints) {
                 final compact = constraints.maxWidth < 420;
