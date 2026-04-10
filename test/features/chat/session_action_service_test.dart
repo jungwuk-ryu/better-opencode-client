@@ -281,6 +281,68 @@ void main() {
     },
   );
 
+  test('summarize can use prompt_async without a selected model', () async {
+    final service = SessionActionService();
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'mock',
+      baseUrl: baseUri.toString(),
+    );
+    const project = ProjectTarget(directory: '/workspace/demo', label: 'Demo');
+
+    expect(
+      await service.summarizeSession(
+        profile: profile,
+        project: project,
+        sessionId: 'ses_1',
+      ),
+      isTrue,
+    );
+    expect(promptAsyncCalls, 1);
+    expect(summarizeEndpointCalls, 0);
+    expect(summarizeRequestBody, <String, Object?>{
+      'parts': const <Map<String, Object?>>[
+        <String, Object?>{'type': 'text', 'text': '/compact'},
+      ],
+    });
+    service.dispose();
+  });
+
+  test(
+    'summarize requires a selected model only when the legacy endpoint is needed',
+    () async {
+      promptAsyncUnsupported = true;
+      final service = SessionActionService();
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'mock',
+        baseUrl: baseUri.toString(),
+      );
+      const project = ProjectTarget(
+        directory: '/workspace/demo',
+        label: 'Demo',
+      );
+
+      await expectLater(
+        () => service.summarizeSession(
+          profile: profile,
+          project: project,
+          sessionId: 'ses_1',
+        ),
+        throwsA(
+          isA<SessionActionException>().having(
+            (error) => error.message,
+            'message',
+            'Session compaction requires a selected model on this server.',
+          ),
+        ),
+      );
+      expect(promptAsyncCalls, 1);
+      expect(summarizeEndpointCalls, 0);
+      service.dispose();
+    },
+  );
+
   test('summarize preserves auto mode on the legacy endpoint', () async {
     final service = SessionActionService();
     final profile = ServerProfile(

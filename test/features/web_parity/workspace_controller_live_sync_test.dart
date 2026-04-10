@@ -1531,6 +1531,33 @@ void main() {
   });
 
   test(
+    'controller still requests session compaction when no model is selected',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final sessionActionService = _RecordingSessionActionService();
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        sessionActionService: sessionActionService,
+        configService: _FakeConfigService(),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+
+      expect(controller.selectedModel, isNull);
+      await controller.summarizeSelectedSession();
+
+      expect(sessionActionService.summarizeCalls, 1);
+      expect(sessionActionService.lastSummarizedSessionId, 'ses_1');
+      expect(sessionActionService.lastSummarizedProviderId, isNull);
+      expect(sessionActionService.lastSummarizedModelId, isNull);
+      expect(controller.actionNotice, 'Session compaction requested.');
+    },
+  );
+
+  test(
     'controller queues busy follow-ups and auto flushes them once idle',
     () async {
       final eventStreamService = _ControlledEventStreamService();
@@ -3794,6 +3821,10 @@ class _RecordingCacheStore extends StaleCacheStore {
 class _RecordingSessionActionService extends SessionActionService {
   int abortCalls = 0;
   String? lastAbortedSessionId;
+  int summarizeCalls = 0;
+  String? lastSummarizedSessionId;
+  String? lastSummarizedProviderId;
+  String? lastSummarizedModelId;
 
   @override
   Future<bool> abortSession({
@@ -3803,6 +3834,22 @@ class _RecordingSessionActionService extends SessionActionService {
   }) async {
     abortCalls += 1;
     lastAbortedSessionId = sessionId;
+    return true;
+  }
+
+  @override
+  Future<bool> summarizeSession({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String sessionId,
+    String? providerId,
+    String? modelId,
+    bool auto = false,
+  }) async {
+    summarizeCalls += 1;
+    lastSummarizedSessionId = sessionId;
+    lastSummarizedProviderId = providerId;
+    lastSummarizedModelId = modelId;
     return true;
   }
 }

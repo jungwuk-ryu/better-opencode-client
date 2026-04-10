@@ -122,6 +122,7 @@ class OpenCodeShellScreen extends StatefulWidget {
     this.integrationStatusService,
     this.eventStreamService,
     this.terminalService,
+    this.sessionActionService,
     this.pendingRequestNotificationService,
     this.pendingRequestSoundService,
     super.key,
@@ -144,6 +145,7 @@ class OpenCodeShellScreen extends StatefulWidget {
   final IntegrationStatusService? integrationStatusService;
   final EventStreamService? eventStreamService;
   final TerminalService? terminalService;
+  final SessionActionService? sessionActionService;
   final PendingRequestNotificationService? pendingRequestNotificationService;
   final PendingRequestSoundService? pendingRequestSoundService;
 
@@ -154,7 +156,8 @@ class OpenCodeShellScreen extends StatefulWidget {
 class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
   late ChatService _chatService;
   late bool _ownsChatService;
-  final SessionActionService _sessionActionService = SessionActionService();
+  late SessionActionService _sessionActionService;
+  late bool _ownsSessionActionService;
   late EventStreamService _eventStreamService;
   late bool _ownsEventStreamService;
   late FileBrowserService _fileBrowserService;
@@ -230,6 +233,9 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     _sseConnectionMonitor = _createSseConnectionMonitor();
     _ownsChatService = widget.chatService == null;
     _chatService = widget.chatService ?? ChatService();
+    _ownsSessionActionService = widget.sessionActionService == null;
+    _sessionActionService =
+        widget.sessionActionService ?? SessionActionService();
     _ownsEventStreamService = widget.eventStreamService == null;
     _eventStreamService = widget.eventStreamService ?? EventStreamService();
     _ownsTodoService = widget.todoService == null;
@@ -258,6 +264,8 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     super.didUpdateWidget(oldWidget);
     final chatServiceChanged = oldWidget.chatService != widget.chatService;
     final todoServiceChanged = oldWidget.todoService != widget.todoService;
+    final sessionActionServiceChanged =
+        oldWidget.sessionActionService != widget.sessionActionService;
     final eventStreamServiceChanged =
         oldWidget.eventStreamService != widget.eventStreamService;
     final projectStoreChanged = oldWidget.projectStore != widget.projectStore;
@@ -299,6 +307,14 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       }
       _ownsTodoService = widget.todoService == null;
       _todoService = widget.todoService ?? TodoService();
+    }
+    if (sessionActionServiceChanged) {
+      if (_ownsSessionActionService) {
+        _sessionActionService.dispose();
+      }
+      _ownsSessionActionService = widget.sessionActionService == null;
+      _sessionActionService =
+          widget.sessionActionService ?? SessionActionService();
     }
     if (eventStreamServiceChanged) {
       _retireEventStream(disconnect: true);
@@ -397,7 +413,9 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     if (_ownsChatService) {
       _chatService.dispose();
     }
-    _sessionActionService.dispose();
+    if (_ownsSessionActionService) {
+      _sessionActionService.dispose();
+    }
     if (_ownsEventStreamService) {
       _eventStreamService.dispose();
     }
@@ -1997,25 +2015,55 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
   }
 
   Future<void> _summarizeSession(String sessionId) async {
-    if (_messages.isEmpty) {
-      return;
-    }
-    final info = _messages.last.info;
-    final providerId = info.providerId;
-    final modelId = info.modelId;
-    if (providerId == null || modelId == null) {
-      return;
-    }
+    final options = _summarizeSessionOptions(sessionId);
     await _runGuardedAction(() async {
       await _sessionActionService.summarizeSession(
         profile: widget.profile,
         project: widget.project,
         sessionId: sessionId,
-        providerId: providerId,
-        modelId: modelId,
+        providerId: options.providerId,
+        modelId: options.modelId,
       );
       await _loadBundle();
     });
+  }
+
+  _ComposerSubmissionOptions _summarizeSessionOptions(String sessionId) {
+    final latestInfo = _messages.isEmpty ? null : _messages.last.info;
+    if (latestInfo != null && latestInfo.sessionId == sessionId) {
+      final providerId = latestInfo.providerId?.trim();
+      final modelId = latestInfo.modelId?.trim();
+      if (providerId != null &&
+          providerId.isNotEmpty &&
+          modelId != null &&
+          modelId.isNotEmpty) {
+        return _ComposerSubmissionOptions(
+          providerId: providerId,
+          modelId: modelId,
+        );
+      }
+    }
+    return _defaultSummarizeSessionOptions();
+  }
+
+  _ComposerSubmissionOptions _defaultSummarizeSessionOptions() {
+    final modelOptions = _composerModelOptions(_configSnapshot);
+    final defaultModelKey = _defaultComposerModelKey(
+      _configSnapshot,
+      modelOptions,
+    );
+    if (defaultModelKey == null || defaultModelKey.isEmpty) {
+      return const _ComposerSubmissionOptions();
+    }
+    for (final option in modelOptions) {
+      if (option.key == defaultModelKey) {
+        return _ComposerSubmissionOptions(
+          providerId: option.providerId,
+          modelId: option.modelId,
+        );
+      }
+    }
+    return const _ComposerSubmissionOptions();
   }
 
   Future<void> _connectEvents() async {
@@ -6926,7 +6974,7 @@ class _ConfigPreviewPanelState extends State<_ConfigPreviewPanel> {
               onChanged: (_) => setState(() {}),
               decoration: const InputDecoration(
                 isDense: true,
-                contentPadding: const EdgeInsets.symmetric(
+                contentPadding: EdgeInsets.symmetric(
                   horizontal: AppSpacing.md,
                   vertical: AppSpacing.sm,
                 ),

@@ -8,6 +8,15 @@ import '../../core/network/request_uri.dart';
 import '../projects/project_models.dart';
 import 'chat_models.dart';
 
+class SessionActionException implements Exception {
+  const SessionActionException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 class SessionActionService {
   SessionActionService({http.Client? client})
     : _client = client ?? http.Client();
@@ -178,17 +187,29 @@ class SessionActionService {
     required ServerProfile profile,
     required ProjectTarget project,
     required String sessionId,
-    required String providerId,
-    required String modelId,
+    String? providerId,
+    String? modelId,
     bool auto = false,
   }) async {
+    final resolvedProviderId = providerId?.trim();
+    final resolvedModelId = modelId?.trim();
+    final hasModelSelection =
+        resolvedProviderId != null &&
+        resolvedProviderId.isNotEmpty &&
+        resolvedModelId != null &&
+        resolvedModelId.isNotEmpty;
     if (auto) {
+      if (!hasModelSelection) {
+        throw const SessionActionException(
+          'Session compaction requires a selected model on this server.',
+        );
+      }
       return _summarizeSessionViaEndpoint(
         profile: profile,
         project: project,
         sessionId: sessionId,
-        providerId: providerId,
-        modelId: modelId,
+        providerId: resolvedProviderId,
+        modelId: resolvedModelId,
         auto: true,
       );
     }
@@ -203,23 +224,29 @@ class SessionActionService {
         'parts': const <Map<String, Object?>>[
           <String, Object?>{'type': 'text', 'text': '/compact'},
         ],
-        'model': <String, Object?>{
-          'providerID': providerId,
-          'modelID': modelId,
-        },
-        'providerID': providerId,
-        'modelID': modelId,
+        if (hasModelSelection)
+          'model': <String, Object?>{
+            'providerID': resolvedProviderId,
+            'modelID': resolvedModelId,
+          },
+        if (hasModelSelection) 'providerID': resolvedProviderId,
+        if (hasModelSelection) 'modelID': resolvedModelId,
       }),
     );
     if (response.statusCode == 404 ||
         response.statusCode == 405 ||
         response.statusCode == 501) {
+      if (!hasModelSelection) {
+        throw const SessionActionException(
+          'Session compaction requires a selected model on this server.',
+        );
+      }
       return _summarizeSessionViaEndpoint(
         profile: profile,
         project: project,
         sessionId: sessionId,
-        providerId: providerId,
-        modelId: modelId,
+        providerId: resolvedProviderId,
+        modelId: resolvedModelId,
       );
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {

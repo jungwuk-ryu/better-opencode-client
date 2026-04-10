@@ -3668,18 +3668,18 @@ class WorkspaceController extends ChangeNotifier {
   }
 
   Future<void> summarizeSelectedSession() async {
-    final project = _project;
-    final sessionId = _selectedSessionId;
+    final project = this.project;
+    final sessionId = selectedSessionId;
     final selectedModel = this.selectedModel;
-    if (project == null || sessionId == null || selectedModel == null) {
+    if (project == null || sessionId == null) {
       return;
     }
     await _sessionActionService.summarizeSession(
       profile: profile,
       project: project,
       sessionId: sessionId,
-      providerId: selectedModel.providerId,
-      modelId: selectedModel.modelId,
+      providerId: selectedModel?.providerId,
+      modelId: selectedModel?.modelId,
     );
     _actionNotice = 'Session compaction requested.';
     _notify();
