@@ -13,7 +13,8 @@ LaunchConnectionStatus mapLaunchConnectionStatus(ServerProbeReport? report) {
       LaunchConnectionStatus.signInRequired,
     ConnectionProbeClassification.connectivityFailure =>
       LaunchConnectionStatus.offline,
-    ConnectionProbeClassification.specFetchFailure ||
+    ConnectionProbeClassification.specFetchFailure =>
+      LaunchConnectionStatus.specFetchFailure,
     ConnectionProbeClassification.unsupportedCapabilities =>
       LaunchConnectionStatus.incompatible,
   };

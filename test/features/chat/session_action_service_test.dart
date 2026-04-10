@@ -9,8 +9,20 @@ import 'package:better_opencode_client/src/features/projects/project_models.dart
 void main() {
   late HttpServer server;
   late Uri baseUri;
+  bool promptAsyncUnsupported = false;
+  int promptAsyncCalls = 0;
+  int summarizeEndpointCalls = 0;
+  String? summarizeRoutePath;
+  Object? summarizeRequestBody;
+  Object? summarizeEndpointRequestBody;
 
   setUp(() async {
+    promptAsyncUnsupported = false;
+    promptAsyncCalls = 0;
+    summarizeEndpointCalls = 0;
+    summarizeRoutePath = null;
+    summarizeRequestBody = null;
+    summarizeEndpointRequestBody = null;
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     baseUri = Uri.parse(
       'http://${server.address.address}:${server.port}/api?token=abc',
@@ -23,6 +35,10 @@ void main() {
         return;
       }
       final routePath = _routePath(request.uri);
+      final requestBody = await utf8.decoder.bind(request).join();
+      final decodedRequestBody = requestBody.trim().isEmpty
+          ? null
+          : jsonDecode(requestBody);
       Object? body;
       if (request.method == 'POST' && routePath == '/session/ses_1/fork') {
         body = {
@@ -88,7 +104,23 @@ void main() {
       if (request.method == 'POST' && routePath == '/session/ses_1/init') {
         body = true;
       }
+      if (request.method == 'POST' &&
+          routePath == '/session/ses_1/prompt_async') {
+        promptAsyncCalls += 1;
+        if (promptAsyncUnsupported) {
+          request.response.statusCode = 404;
+          await request.response.close();
+          return;
+        }
+        summarizeRoutePath = routePath;
+        summarizeRequestBody = decodedRequestBody;
+        request.response.statusCode = 204;
+        await request.response.close();
+        return;
+      }
       if (request.method == 'POST' && routePath == '/session/ses_1/summarize') {
+        summarizeEndpointCalls += 1;
+        summarizeEndpointRequestBody = decodedRequestBody;
         body = true;
       }
       if (body == null) {
@@ -199,6 +231,83 @@ void main() {
       ),
       isTrue,
     );
+    expect(summarizeRoutePath, '/session/ses_1/prompt_async');
+    expect(summarizeRequestBody, <String, Object?>{
+      'parts': const <Map<String, Object?>>[
+        <String, Object?>{'type': 'text', 'text': '/compact'},
+      ],
+      'model': <String, Object?>{'providerID': 'openai', 'modelID': 'gpt-5'},
+      'providerID': 'openai',
+      'modelID': 'gpt-5',
+    });
+    expect(promptAsyncCalls, 1);
+    expect(summarizeEndpointCalls, 0);
+    service.dispose();
+  });
+
+  test(
+    'summarize falls back to the legacy endpoint when prompt_async is unsupported',
+    () async {
+      promptAsyncUnsupported = true;
+      final service = SessionActionService();
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'mock',
+        baseUrl: baseUri.toString(),
+      );
+      const project = ProjectTarget(
+        directory: '/workspace/demo',
+        label: 'Demo',
+      );
+
+      expect(
+        await service.summarizeSession(
+          profile: profile,
+          project: project,
+          sessionId: 'ses_1',
+          providerId: 'openai',
+          modelId: 'gpt-5',
+        ),
+        isTrue,
+      );
+      expect(promptAsyncCalls, 1);
+      expect(summarizeEndpointCalls, 1);
+      expect(summarizeEndpointRequestBody, <String, Object?>{
+        'providerID': 'openai',
+        'modelID': 'gpt-5',
+        'auto': false,
+      });
+      service.dispose();
+    },
+  );
+
+  test('summarize preserves auto mode on the legacy endpoint', () async {
+    final service = SessionActionService();
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'mock',
+      baseUrl: baseUri.toString(),
+    );
+    const project = ProjectTarget(directory: '/workspace/demo', label: 'Demo');
+
+    expect(
+      await service.summarizeSession(
+        profile: profile,
+        project: project,
+        sessionId: 'ses_1',
+        providerId: 'openai',
+        modelId: 'gpt-5',
+        auto: true,
+      ),
+      isTrue,
+    );
+    expect(promptAsyncCalls, 0);
+    expect(summarizeEndpointCalls, 1);
+    expect(summarizeEndpointRequestBody, <String, Object?>{
+      'providerID': 'openai',
+      'modelID': 'gpt-5',
+      'auto': true,
+    });
     service.dispose();
   });
 }

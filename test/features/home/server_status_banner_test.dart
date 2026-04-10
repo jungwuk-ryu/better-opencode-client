@@ -99,6 +99,43 @@ void main() {
     },
   );
 
+  testWidgets('spec fetch failures stay inside the simple connect pane', (
+    tester,
+  ) async {
+    final localeController = LocaleController();
+    addTearDown(localeController.dispose);
+
+    const profile = ServerProfile(
+      id: 'static-site',
+      label: 'Static Site',
+      baseUrl: 'https://example.com',
+    );
+
+    await tester.pumpWidget(
+      _TestApp(
+        child: WorkspaceHomeScreen(
+          flavor: AppFlavor.release,
+          localeController: localeController,
+          snapshot: WorkspaceHomeSnapshot(
+            savedProfiles: const <ServerProfile>[profile],
+            cachedReports: <String, ServerProbeReport>{
+              profile.storageKey: _report(
+                ConnectionProbeClassification.specFetchFailure,
+                summary: 'Spec fetch failure',
+              ),
+            },
+            selectedProfile: profile,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('server-status-banner')), findsNothing);
+    expect(find.text('Connect'), findsWidgets);
+    expect(find.text('Update required'), findsNothing);
+  });
+
   testWidgets(
     'incompatible state hides capability paths behind the simple project entry flow',
     (tester) async {

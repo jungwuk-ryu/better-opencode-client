@@ -170,6 +170,55 @@ void main() {
   );
 
   testWidgets(
+    'spec fetch failures do not show update copy on saved server cards',
+    (tester) async {
+      _setLargeSurface(tester);
+      final localeController = LocaleController();
+      addTearDown(localeController.dispose);
+
+      const profile = ServerProfile(
+        id: 'static-site',
+        label: 'Static Site',
+        baseUrl: 'https://example.com',
+      );
+
+      await tester.pumpWidget(
+        _TestApp(
+          child: WorkspaceHomeScreen(
+            flavor: AppFlavor.release,
+            localeController: localeController,
+            snapshot: WorkspaceHomeSnapshot(
+              savedProfiles: const <ServerProfile>[profile],
+              cachedReports: <String, ServerProbeReport>{
+                profile.storageKey: _report(
+                  classification:
+                      ConnectionProbeClassification.specFetchFailure,
+                  summary: 'Spec fetch failure',
+                ),
+              },
+              selectedProfile: profile,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(
+          'Update the server before continuing into projects and sessions.',
+        ),
+        findsNothing,
+      );
+      expect(
+        find.text(
+          'The server is reachable, but the OpenAPI spec could not be fetched or parsed cleanly.',
+        ),
+        findsWidgets,
+      );
+    },
+  );
+
+  testWidgets(
     'multiple saved servers stay visible alongside the workspace chooser',
     (tester) async {
       _setLargeSurface(tester);

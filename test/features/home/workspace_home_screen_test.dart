@@ -58,7 +58,11 @@ void main() {
         isNull,
         reason: 'home first-run layout failed on ${viewport.name}',
       );
-      expect(find.byType(WorkspaceHomeScreen), findsOneWidget, reason: viewport.name);
+      expect(
+        find.byType(WorkspaceHomeScreen),
+        findsOneWidget,
+        reason: viewport.name,
+      );
       expect(find.text('Workspace'), findsOneWidget, reason: viewport.name);
       expect(
         find.text('better-opencode-client (BOC)'),
@@ -115,7 +119,11 @@ void main() {
           isNull,
           reason: 'home ready-state layout failed on ${viewport.name}',
         );
-        expect(find.text('Back to servers'), findsOneWidget, reason: viewport.name);
+        expect(
+          find.text('Back to servers'),
+          findsOneWidget,
+          reason: viewport.name,
+        );
         expect(
           find.byKey(const Key('workspace-section-seam')),
           findsOneWidget,
@@ -463,6 +471,45 @@ void main() {
       );
     },
   );
+
+  testWidgets(
+    'spec fetch failures do not present a generic update-required warning',
+    (tester) async {
+      final localeController = LocaleController();
+      addTearDown(localeController.dispose);
+
+      const profile = ServerProfile(
+        id: 'alpha',
+        label: 'Studio',
+        baseUrl: 'https://studio.example.com',
+      );
+
+      await tester.pumpWidget(
+        _TestApp(
+          child: WorkspaceHomeScreen(
+            flavor: AppFlavor.debug,
+            localeController: localeController,
+            snapshot: WorkspaceHomeSnapshot(
+              savedProfiles: const <ServerProfile>[profile],
+              cachedReports: <String, ServerProbeReport>{
+                profile.storageKey: _specFetchFailureReport(),
+              },
+              selectedProfile: profile,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Update required'), findsNothing);
+      expect(
+        find.text(
+          'The server is reachable, but the OpenAPI spec could not be fetched or parsed cleanly.',
+        ),
+        findsWidgets,
+      );
+    },
+  );
 }
 
 class _TestApp extends StatelessWidget {
@@ -608,5 +655,19 @@ ServerProbeReport _readyReport() {
     missingCapabilities: const <String>[],
     discoveredExperimentalPaths: const <String>[],
     sseReady: true,
+  );
+}
+
+ServerProbeReport _specFetchFailureReport() {
+  final ready = _readyReport();
+  return ServerProbeReport(
+    snapshot: ready.snapshot,
+    capabilityRegistry: ready.capabilityRegistry,
+    classification: ConnectionProbeClassification.specFetchFailure,
+    summary: 'Spec fetch failure',
+    checkedAt: ready.checkedAt,
+    missingCapabilities: ready.missingCapabilities,
+    discoveredExperimentalPaths: ready.discoveredExperimentalPaths,
+    sseReady: false,
   );
 }

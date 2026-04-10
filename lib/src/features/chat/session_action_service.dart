@@ -182,6 +182,72 @@ class SessionActionService {
     required String modelId,
     bool auto = false,
   }) async {
+    if (auto) {
+      return _summarizeSessionViaEndpoint(
+        profile: profile,
+        project: project,
+        sessionId: sessionId,
+        providerId: providerId,
+        modelId: modelId,
+        auto: true,
+      );
+    }
+
+    // The dedicated summarize endpoint is not reliable on some servers; send
+    // the equivalent slash command through the normal prompt path instead.
+    final uri = _uri(profile, project, '/session/$sessionId/prompt_async');
+    final response = await _client.post(
+      uri,
+      headers: _headers(profile, jsonBody: true),
+      body: jsonEncode(<String, Object?>{
+        'parts': const <Map<String, Object?>>[
+          <String, Object?>{'type': 'text', 'text': '/compact'},
+        ],
+        'model': <String, Object?>{
+          'providerID': providerId,
+          'modelID': modelId,
+        },
+        'providerID': providerId,
+        'modelID': modelId,
+      }),
+    );
+    if (response.statusCode == 404 ||
+        response.statusCode == 405 ||
+        response.statusCode == 501) {
+      return _summarizeSessionViaEndpoint(
+        profile: profile,
+        project: project,
+        sessionId: sessionId,
+        providerId: providerId,
+        modelId: modelId,
+      );
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw StateError(
+        'Request failed for $uri with status ${response.statusCode}.',
+      );
+    }
+    if (response.body.trim().isEmpty) {
+      return true;
+    }
+    final body = jsonDecode(response.body);
+    if (body == true) {
+      return true;
+    }
+    if (body is Map) {
+      return true;
+    }
+    return false;
+  }
+
+  Future<bool> _summarizeSessionViaEndpoint({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String sessionId,
+    required String providerId,
+    required String modelId,
+    bool auto = false,
+  }) async {
     final body = await _postJson(
       profile: profile,
       project: project,

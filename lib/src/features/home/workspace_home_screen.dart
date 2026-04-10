@@ -467,7 +467,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
             ? l10n.homeConnectionNeedsCredentialsNotice
             : l10n.homeConnectionFailedNotice(serverLabel),
       ConnectionProbeClassification.specFetchFailure =>
-        l10n.homeConnectionFailedNotice(serverLabel),
+        l10n.connectionDetailSpecFailure,
       ConnectionProbeClassification.connectivityFailure =>
         l10n.homeConnectionFailedNotice(serverLabel),
     };
@@ -1712,7 +1712,11 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
     return _wrapWorkspaceSurface(
       _SectionCard(
         title: l10n.homeWorkspaceSectionTitle,
-        subtitle: _workspaceSubtitle(selectedStatus, l10n),
+        subtitle: _workspaceSubtitle(
+          selectedStatus,
+          l10n,
+          report: _selectedReport,
+        ),
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.md),
           child: Column(
@@ -1725,6 +1729,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
                     selectedProfile,
                     selectedStatus,
                     l10n,
+                    report: _selectedReport,
                     isConnecting: isConnecting,
                   ),
                   subtitle: _workspaceBody(
@@ -1754,7 +1759,12 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
                 )
               else
                 _EmptyStateBlock(
-                  title: _workspaceTitle(selectedProfile, selectedStatus, l10n),
+                  title: _workspaceTitle(
+                    selectedProfile,
+                    selectedStatus,
+                    l10n,
+                    report: _selectedReport,
+                  ),
                   subtitle: _workspaceBody(
                     selectedProfile,
                     selectedStatus,
@@ -1845,7 +1855,10 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        _WorkspaceNoticeBanner(message: notice),
+        _WorkspaceNoticeBanner(
+          key: const ValueKey<String>('workspace-notice-banner'),
+          message: notice,
+        ),
         const SizedBox(height: AppSpacing.md),
         child,
       ],
@@ -2027,6 +2040,8 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
       LaunchConnectionStatus.ready => l10n.homeStatusReadyForProjects,
       LaunchConnectionStatus.signInRequired => l10n.homeStatusSignInRequired,
       LaunchConnectionStatus.offline => l10n.homeStatusServerOffline,
+      LaunchConnectionStatus.specFetchFailure =>
+        l10n.connectionOutcomeSpecFailure,
       LaunchConnectionStatus.incompatible => l10n.homeStatusNeedsAttention,
       LaunchConnectionStatus.unknown => l10n.homeStatusAwaitingSetup,
     };
@@ -2050,12 +2065,18 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
 
   String _workspaceSubtitle(
     LaunchConnectionStatus status,
-    AppLocalizations l10n,
-  ) {
+    AppLocalizations l10n, {
+    ServerProbeReport? report,
+  }) {
+    if (_isSpecFetchFailure(report)) {
+      return l10n.connectionDetailSpecFailure;
+    }
     return switch (status) {
       LaunchConnectionStatus.ready => l10n.homeWorkspaceSubtitleReady,
       LaunchConnectionStatus.signInRequired => l10n.homeWorkspaceSubtitleSignIn,
       LaunchConnectionStatus.offline => l10n.homeWorkspaceSubtitleOffline,
+      LaunchConnectionStatus.specFetchFailure =>
+        l10n.connectionDetailSpecFailure,
       LaunchConnectionStatus.incompatible => l10n.homeWorkspaceSubtitleUpdate,
       LaunchConnectionStatus.unknown => l10n.homeWorkspaceSubtitleUnknown,
     };
@@ -2065,6 +2086,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
     ServerProfile? profile,
     LaunchConnectionStatus status,
     AppLocalizations l10n, {
+    ServerProbeReport? report,
     bool isConnecting = false,
   }) {
     if (profile == null) {
@@ -2073,11 +2095,16 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
     if (isConnecting) {
       return l10n.homeWorkspaceTitleChecking(profile.effectiveLabel);
     }
+    if (_isSpecFetchFailure(report)) {
+      return l10n.connectionOutcomeSpecFailure;
+    }
     return switch (status) {
       LaunchConnectionStatus.ready => l10n.homeWorkspaceTitleReady,
       LaunchConnectionStatus.signInRequired =>
         l10n.homeWorkspaceTitleSignInRequired,
       LaunchConnectionStatus.offline => l10n.homeWorkspaceTitleOffline,
+      LaunchConnectionStatus.specFetchFailure =>
+        l10n.connectionOutcomeSpecFailure,
       LaunchConnectionStatus.incompatible => l10n.homeWorkspaceTitleUpdate,
       LaunchConnectionStatus.unknown => l10n.homeWorkspaceTitleContinueFromHome,
     };
@@ -2098,11 +2125,16 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
         report?.requiresBasicAuth == true) {
       return l10n.homeWorkspaceBodyBasicAuthRequired(label);
     }
+    if (_isSpecFetchFailure(report)) {
+      return l10n.connectionDetailSpecFailure;
+    }
     return switch (status) {
       LaunchConnectionStatus.ready => l10n.homeWorkspaceBodyReady(label),
       LaunchConnectionStatus.signInRequired =>
         l10n.homeWorkspaceBodySignInRequired(label),
       LaunchConnectionStatus.offline => l10n.homeWorkspaceBodyOffline(label),
+      LaunchConnectionStatus.specFetchFailure =>
+        l10n.connectionDetailSpecFailure,
       LaunchConnectionStatus.incompatible =>
         l10n.homeWorkspaceBodyUpdateRequired(label),
       LaunchConnectionStatus.unknown => l10n.homeWorkspaceBodyUnknown,
@@ -2117,6 +2149,8 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
       LaunchConnectionStatus.ready => l10n.homeStatusReadyForProjects,
       LaunchConnectionStatus.signInRequired => l10n.homeStatusSignInRequired,
       LaunchConnectionStatus.offline => l10n.homeStatusServerOffline,
+      LaunchConnectionStatus.specFetchFailure =>
+        l10n.connectionOutcomeSpecFailure,
       LaunchConnectionStatus.incompatible => l10n.homeStatusNeedsAttention,
       LaunchConnectionStatus.unknown => l10n.homeStatusAwaitingSetup,
     };
@@ -2132,10 +2166,15 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
         report?.requiresBasicAuth == true) {
       return l10n.homeServerCardBodyBasicAuthRequired;
     }
+    if (_isSpecFetchFailure(report)) {
+      return l10n.connectionDetailSpecFailure;
+    }
     return switch (status) {
       LaunchConnectionStatus.ready => l10n.homeServerCardBodyReady,
       LaunchConnectionStatus.signInRequired => l10n.homeServerCardBodySignIn,
       LaunchConnectionStatus.offline => l10n.homeServerCardBodyOffline,
+      LaunchConnectionStatus.specFetchFailure =>
+        l10n.connectionDetailSpecFailure,
       LaunchConnectionStatus.incompatible => l10n.homeServerCardBodyUpdate,
       LaunchConnectionStatus.unknown =>
         profile.hasBasicAuth
@@ -2177,6 +2216,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
       LaunchConnectionStatus.ready => l10n.homeActionContinue,
       LaunchConnectionStatus.signInRequired => l10n.homeActionRetry,
       LaunchConnectionStatus.offline => l10n.homeActionRetry,
+      LaunchConnectionStatus.specFetchFailure => l10n.homeActionRetry,
       LaunchConnectionStatus.incompatible => l10n.homeActionRetry,
       LaunchConnectionStatus.unknown => l10n.homeActionContinue,
     };
@@ -2199,6 +2239,7 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
       LaunchConnectionStatus.ready => surfaces.success,
       LaunchConnectionStatus.signInRequired => surfaces.warning,
       LaunchConnectionStatus.offline => surfaces.danger,
+      LaunchConnectionStatus.specFetchFailure => surfaces.warning,
       LaunchConnectionStatus.incompatible => surfaces.warning,
       LaunchConnectionStatus.unknown => surfaces.accentSoft,
     };
@@ -2209,9 +2250,15 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
       LaunchConnectionStatus.ready => Icons.verified_rounded,
       LaunchConnectionStatus.signInRequired => Icons.lock_outline_rounded,
       LaunchConnectionStatus.offline => Icons.wifi_tethering_error_rounded,
+      LaunchConnectionStatus.specFetchFailure => Icons.description_outlined,
       LaunchConnectionStatus.incompatible => Icons.report_gmailerrorred_rounded,
       LaunchConnectionStatus.unknown => Icons.route_outlined,
     };
+  }
+
+  bool _isSpecFetchFailure(ServerProbeReport? report) {
+    return report?.classification ==
+        ConnectionProbeClassification.specFetchFailure;
   }
 }
 
@@ -2338,7 +2385,7 @@ class _ResumeWorkspacePanel extends StatelessWidget {
 }
 
 class _WorkspaceNoticeBanner extends StatelessWidget {
-  const _WorkspaceNoticeBanner({required this.message});
+  const _WorkspaceNoticeBanner({required this.message, super.key});
 
   final String message;
 
@@ -3259,7 +3306,8 @@ class _RecentActivityTile extends StatelessWidget {
         LaunchConnectionStatus.signInRequired,
       ConnectionProbeClassification.connectivityFailure =>
         LaunchConnectionStatus.offline,
-      ConnectionProbeClassification.specFetchFailure ||
+      ConnectionProbeClassification.specFetchFailure =>
+        LaunchConnectionStatus.specFetchFailure,
       ConnectionProbeClassification.unsupportedCapabilities =>
         LaunchConnectionStatus.incompatible,
     };
@@ -3271,6 +3319,7 @@ class _RecentActivityTile extends StatelessWidget {
       LaunchConnectionStatus.ready => surfaces.success,
       LaunchConnectionStatus.signInRequired => surfaces.warning,
       LaunchConnectionStatus.offline => surfaces.danger,
+      LaunchConnectionStatus.specFetchFailure => surfaces.warning,
       LaunchConnectionStatus.incompatible => surfaces.warning,
       LaunchConnectionStatus.unknown => surfaces.accentSoft,
     };
@@ -3281,6 +3330,7 @@ class _RecentActivityTile extends StatelessWidget {
       LaunchConnectionStatus.ready => Icons.verified_rounded,
       LaunchConnectionStatus.signInRequired => Icons.lock_outline_rounded,
       LaunchConnectionStatus.offline => Icons.wifi_off_rounded,
+      LaunchConnectionStatus.specFetchFailure => Icons.description_outlined,
       LaunchConnectionStatus.incompatible => Icons.report_gmailerrorred_rounded,
       LaunchConnectionStatus.unknown => Icons.schedule_rounded,
     };
@@ -3292,6 +3342,8 @@ class _RecentActivityTile extends StatelessWidget {
       LaunchConnectionStatus.signInRequired =>
         l10n.homeStatusShortSignInRequired,
       LaunchConnectionStatus.offline => l10n.homeStatusShortOffline,
+      LaunchConnectionStatus.specFetchFailure =>
+        l10n.connectionOutcomeSpecFailure,
       LaunchConnectionStatus.incompatible => l10n.homeStatusShortNeedsAttention,
       LaunchConnectionStatus.unknown => l10n.homeStatusShortNotCheckedYet,
     };

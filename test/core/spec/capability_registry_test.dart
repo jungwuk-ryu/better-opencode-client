@@ -48,4 +48,17 @@ void main() {
       expect(registry.hasExperimentalTools, isFalse);
     },
   );
+
+  test('prompt_async support enables session compaction actions', () {
+    final registry = CapabilityRegistry.fromSnapshot(
+      ProbeSnapshot(
+        name: 'prompt-async-only',
+        version: '1.0.0',
+        paths: const <String>{'/session/{sessionID}/prompt_async'},
+        endpoints: const <String, ProbeEndpointResult>{},
+      ),
+    );
+
+    expect(registry.canSummarizeSession, isTrue);
+  });
 }
