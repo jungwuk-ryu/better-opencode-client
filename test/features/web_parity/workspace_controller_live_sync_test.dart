@@ -2401,6 +2401,265 @@ void main() {
     },
   );
 
+  test(
+    'controller applies message.part.delta updates to thinking text',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final cacheStore = _RecordingCacheStore();
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        cacheStore: cacheStore,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'message.part.updated',
+          properties: <String, Object?>{
+            'part': <String, Object?>{
+              'id': 'part_reasoning_stream',
+              'messageID': 'msg_reasoning_stream',
+              'sessionID': 'ses_1',
+              'type': 'reasoning',
+              'text': '',
+            },
+          },
+        ),
+      );
+
+      void emitThinkingDelta(String delta) {
+        eventStreamService.emitToScope(
+          profile,
+          project,
+          EventEnvelope(
+            type: 'message.part.delta',
+            properties: <String, Object?>{
+              'sessionID': 'ses_1',
+              'messageID': 'msg_reasoning_stream',
+              'partID': 'part_reasoning_stream',
+              'field': 'text',
+              'delta': delta,
+            },
+          ),
+        );
+      }
+
+      emitThinkingDelta('Reviewing ');
+      emitThinkingDelta('the timeline');
+
+      await _waitFor(
+        () =>
+            controller.messages.length == 1 &&
+            controller.messages.single.parts.single.text ==
+                'Reviewing the timeline',
+      );
+
+      final cacheKey =
+          'workspace.messages::${profile.storageKey}::${project.directory}::ses_1';
+      await _waitFor(() {
+        final entry = cacheStore.entries[cacheKey];
+        if (entry == null) {
+          return false;
+        }
+        final savedMessages =
+            ((jsonDecode(entry.payloadJson) as List)
+                    .cast<Map<String, Object?>>())
+                .map(ChatMessage.fromJson)
+                .toList(growable: false);
+        return savedMessages.length == 1 &&
+            savedMessages.single.parts.single.text == 'Reviewing the timeline';
+      });
+    },
+  );
+
+  test(
+    'controller keeps per-session composer selections across revisit and reconnect',
+    () async {
+      final sessions = <SessionSummary>[
+        _session(
+          id: 'ses_1',
+          title: 'First session',
+          createdAt: 1710000001000,
+          updatedAt: 1710000005000,
+        ),
+        _session(
+          id: 'ses_2',
+          title: 'Second session',
+          createdAt: 1710000002000,
+          updatedAt: 1710000006000,
+        ),
+      ];
+      final configService = _FakeConfigService(
+        snapshot: _composerConfigSnapshot(),
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: _ControlledEventStreamService(),
+        configService: configService,
+        initialSessions: sessions,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+
+      controller.selectModel('openai/gpt-5.4');
+      controller.selectReasoning('high');
+
+      await controller.selectSession('ses_2');
+      controller.selectModel('openai/gpt-4.1');
+      controller.selectReasoning('medium');
+
+      await controller.selectSession('ses_1');
+      expect(controller.selectedModelKey, 'openai/gpt-5.4');
+      expect(controller.selectedReasoning, 'high');
+
+      await controller.selectSession('ses_2');
+      expect(controller.selectedModelKey, 'openai/gpt-4.1');
+      expect(controller.selectedReasoning, 'medium');
+
+      final restoredController = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: _ControlledEventStreamService(),
+        configService: configService,
+        initialSessions: sessions,
+      );
+      addTearDown(restoredController.dispose);
+
+      await restoredController.load();
+
+      expect(restoredController.selectedSessionId, 'ses_1');
+      expect(restoredController.selectedModelKey, 'openai/gpt-5.4');
+      expect(restoredController.selectedReasoning, 'high');
+
+      await restoredController.selectSession('ses_2');
+      expect(restoredController.selectedModelKey, 'openai/gpt-4.1');
+      expect(restoredController.selectedReasoning, 'medium');
+    },
+  );
+
+  test(
+    'controller prefers newer user message metadata over stale persisted composer selections',
+    () async {
+      final firstController = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: _ControlledEventStreamService(),
+        configService: _FakeConfigService(snapshot: _composerConfigSnapshot()),
+        initialSessions: <SessionSummary>[
+          _session(
+            id: 'ses_1',
+            title: 'Initial session',
+            createdAt: 1710000001000,
+            updatedAt: 1710000005000,
+          ),
+        ],
+        chatService: _FakeChatService(
+          bundle: ChatSessionBundle(
+            sessions: <SessionSummary>[
+              _session(
+                id: 'ses_1',
+                title: 'Initial session',
+                createdAt: 1710000001000,
+                updatedAt: 1710000005000,
+              ),
+            ],
+            statuses: const <String, SessionStatusSummary>{
+              'ses_1': SessionStatusSummary(type: 'idle'),
+            },
+            messages: const <ChatMessage>[],
+            selectedSessionId: 'ses_1',
+          ),
+          fetchMessagesHandler:
+              ({
+                required ServerProfile profile,
+                required ProjectTarget project,
+                required String sessionId,
+              }) async => <ChatMessage>[
+                _message(
+                  id: 'msg_old',
+                  sessionId: sessionId,
+                  text: 'old prompt',
+                  role: 'user',
+                  createdAt: 1710000004000,
+                  providerId: 'openai',
+                  modelId: 'gpt-4.1',
+                  variant: 'medium',
+                ),
+              ],
+        ),
+      );
+      addTearDown(firstController.dispose);
+
+      await firstController.load();
+
+      firstController.selectModel('openai/gpt-5.4');
+      firstController.selectReasoning('high');
+
+      final restoredController = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: _ControlledEventStreamService(),
+        configService: _FakeConfigService(snapshot: _composerConfigSnapshot()),
+        initialSessions: <SessionSummary>[
+          _session(
+            id: 'ses_1',
+            title: 'Initial session',
+            createdAt: 1710000001000,
+            updatedAt: 1710000010000,
+          ),
+        ],
+        chatService: _FakeChatService(
+          bundle: ChatSessionBundle(
+            sessions: <SessionSummary>[
+              _session(
+                id: 'ses_1',
+                title: 'Initial session',
+                createdAt: 1710000001000,
+                updatedAt: 1710000010000,
+              ),
+            ],
+            statuses: const <String, SessionStatusSummary>{
+              'ses_1': SessionStatusSummary(type: 'idle'),
+            },
+            messages: const <ChatMessage>[],
+            selectedSessionId: 'ses_1',
+          ),
+          fetchMessagesHandler:
+              ({
+                required ServerProfile profile,
+                required ProjectTarget project,
+                required String sessionId,
+              }) async => <ChatMessage>[
+                _message(
+                  id: 'msg_new',
+                  sessionId: sessionId,
+                  text: 'new prompt',
+                  role: 'user',
+                  createdAt: 1710000009000,
+                  providerId: 'openai',
+                  modelId: 'gpt-4.1',
+                  variant: 'medium',
+                ),
+              ],
+        ),
+      );
+      addTearDown(restoredController.dispose);
+
+      await restoredController.load();
+
+      expect(restoredController.selectedModelKey, 'openai/gpt-4.1');
+      expect(restoredController.selectedReasoning, 'medium');
+    },
+  );
+
   test('controller exposes cached previews for active child sessions', () async {
     final eventStreamService = _ControlledEventStreamService();
     final cacheStore = _RecordingCacheStore();
@@ -2779,12 +3038,20 @@ ChatMessage _message({
   required String text,
   required int createdAt,
   String role = 'assistant',
+  String? providerId,
+  String? modelId,
+  String? agent,
+  String? variant,
 }) {
   return ChatMessage(
     info: ChatMessageInfo(
       id: id,
       role: role,
       sessionId: sessionId,
+      providerId: providerId,
+      modelId: modelId,
+      agent: agent,
+      variant: variant,
       createdAt: DateTime.fromMillisecondsSinceEpoch(createdAt),
       completedAt: DateTime.fromMillisecondsSinceEpoch(createdAt),
     ),
@@ -2963,6 +3230,42 @@ class _RecordingSessionActionService extends SessionActionService {
 
 String _scopeKeyFor(ServerProfile profile, ProjectTarget project) {
   return '${profile.storageKey}::${project.directory}';
+}
+
+ConfigSnapshot _composerConfigSnapshot() {
+  return ConfigSnapshot(
+    config: RawJsonDocument(<String, Object?>{
+      'model': 'openai/gpt-4.1',
+      'reasoning': 'medium',
+    }),
+    providerConfig: RawJsonDocument(<String, Object?>{
+      'providers': <Object?>[
+        <String, Object?>{
+          'id': 'openai',
+          'name': 'OpenAI',
+          'models': <String, Object?>{
+            'gpt-4.1': <String, Object?>{
+              'id': 'gpt-4.1',
+              'name': 'GPT-4.1',
+              'variants': <String, Object?>{
+                'medium': <String, Object?>{},
+                'high': <String, Object?>{},
+              },
+            },
+            'gpt-5.4': <String, Object?>{
+              'id': 'gpt-5.4',
+              'name': 'GPT-5.4',
+              'variants': <String, Object?>{
+                'medium': <String, Object?>{},
+                'high': <String, Object?>{},
+              },
+            },
+          },
+        },
+      ],
+      'default': <String, Object?>{'openai': 'gpt-4.1'},
+    }),
+  );
 }
 
 class _FakeProjectCatalogService extends ProjectCatalogService {

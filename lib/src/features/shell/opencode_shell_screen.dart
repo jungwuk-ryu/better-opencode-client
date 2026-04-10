@@ -905,7 +905,8 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       return;
     }
     if (cached != null &&
-        cached.payloadJson.length <= ChatService.maxSessionMessageResponseBytes) {
+        cached.payloadJson.length <=
+            ChatService.maxSessionMessageResponseBytes) {
       setState(() {
         _clearScopeDependentState(clearSessions: clearStaleScopeState);
         _loading = true;
@@ -2060,6 +2061,12 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
             );
           case 'message.part.updated':
             nextMessages = applyMessagePartUpdatedEvent(
+              _messages,
+              event.properties,
+              selectedSessionId: _selectedSessionId,
+            );
+          case 'message.part.delta':
+            nextMessages = applyMessagePartDeltaEvent(
               _messages,
               event.properties,
               selectedSessionId: _selectedSessionId,

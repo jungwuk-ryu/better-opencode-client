@@ -388,6 +388,8 @@ List<ChatMessage> _chatMessagesFromDecodedJson(Object? decoded) {
 const String _permissionAutoAcceptStorageKeyPrefix =
     'workspace.permission_auto_accept';
 const String _permissionAutoAcceptProjectScopeKey = '__project__';
+const String _sessionComposerSelectionStorageKeyPrefix =
+    'workspace.session_composer_selection';
 const String _workspaceNotificationStorageKeyPrefix =
     'workspace.notification_index';
 const int _workspaceNotificationMaxEntries = 500;
@@ -402,8 +404,91 @@ String _permissionAutoAcceptStorageKey(
   return '$_permissionAutoAcceptStorageKeyPrefix::${profile.storageKey}::$encodedDirectory';
 }
 
+String _sessionComposerSelectionStorageKey(
+  ServerProfile profile,
+  ProjectTarget project,
+) {
+  final encodedDirectory = base64Url.encode(utf8.encode(project.directory));
+  return '$_sessionComposerSelectionStorageKeyPrefix::${profile.storageKey}::$encodedDirectory';
+}
+
 String _workspaceNotificationStorageKey(ServerProfile profile) {
   return '$_workspaceNotificationStorageKeyPrefix::${profile.storageKey}';
+}
+
+String? _normalizedStorageString(Object? value) {
+  final normalized = value?.toString().trim();
+  if (normalized == null || normalized.isEmpty) {
+    return null;
+  }
+  return normalized;
+}
+
+class _WorkspaceComposerSelectionState {
+  const _WorkspaceComposerSelectionState({
+    this.agentName,
+    this.modelKey,
+    this.reasoning,
+    this.lastUserMessageId,
+    required this.sessionUpdatedAtMs,
+  });
+
+  factory _WorkspaceComposerSelectionState.fromJson(Map<String, Object?> json) {
+    final updatedAtValue = json['sessionUpdatedAtMs'];
+    final sessionUpdatedAtMs = switch (updatedAtValue) {
+      final num value => value.toInt(),
+      final String value => int.tryParse(value.trim()) ?? 0,
+      _ => 0,
+    };
+    return _WorkspaceComposerSelectionState(
+      agentName: _normalizedStorageString(json['agentName']),
+      modelKey: _normalizedStorageString(json['modelKey']),
+      reasoning: _normalizedStorageString(json['reasoning']),
+      lastUserMessageId: _normalizedStorageString(json['lastUserMessageId']),
+      sessionUpdatedAtMs: sessionUpdatedAtMs,
+    );
+  }
+
+  final String? agentName;
+  final String? modelKey;
+  final String? reasoning;
+  final String? lastUserMessageId;
+  final int sessionUpdatedAtMs;
+
+  bool get hasSelection =>
+      agentName != null || modelKey != null || reasoning != null;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'agentName': agentName,
+    'modelKey': modelKey,
+    'reasoning': reasoning,
+    'lastUserMessageId': lastUserMessageId,
+    'sessionUpdatedAtMs': sessionUpdatedAtMs,
+  };
+}
+
+Map<String, _WorkspaceComposerSelectionState>
+_composerSelectionsFromDecodedJson(Object? decoded) {
+  if (decoded is! Map) {
+    return const <String, _WorkspaceComposerSelectionState>{};
+  }
+
+  final selections = <String, _WorkspaceComposerSelectionState>{};
+  for (final entry in decoded.entries) {
+    final sessionId = entry.key.toString().trim();
+    final value = entry.value;
+    if (sessionId.isEmpty || value is! Map) {
+      continue;
+    }
+    final selection = _WorkspaceComposerSelectionState.fromJson(
+      value.cast<String, Object?>(),
+    );
+    if (!selection.hasSelection) {
+      continue;
+    }
+    selections[sessionId] = selection;
+  }
+  return Map<String, _WorkspaceComposerSelectionState>.unmodifiable(selections);
 }
 
 List<WorkspaceNotificationEntry> _pruneWorkspaceNotifications(
@@ -678,6 +763,9 @@ class WorkspaceController extends ChangeNotifier {
   Map<String, String> _sendingQueuedPromptBySessionId =
       const <String, String>{};
   int _queuedPromptSequence = 0;
+  Map<String, _WorkspaceComposerSelectionState>
+  _persistedComposerSelectionBySessionId =
+      const <String, _WorkspaceComposerSelectionState>{};
   Map<String, bool> _permissionAutoAcceptByKey = const <String, bool>{};
   Set<String> _respondingPermissionRequestIds = const <String>{};
   bool _recoveringEventStream = false;
@@ -1229,6 +1317,7 @@ class WorkspaceController extends ChangeNotifier {
     } else if (!_isReasoningAllowed(_selectedReasoning, _selectedModelKey)) {
       _selectedReasoning = _fallbackReasoningForModel(_selectedModelKey);
     }
+    unawaited(_persistSelectedSessionComposerSelection());
     _notify();
   }
 
@@ -1244,6 +1333,7 @@ class WorkspaceController extends ChangeNotifier {
     if (!_isReasoningAllowed(_selectedReasoning, nextKey)) {
       _selectedReasoning = _fallbackReasoningForModel(nextKey);
     }
+    unawaited(_persistSelectedSessionComposerSelection());
     _notify();
   }
 
@@ -1259,6 +1349,7 @@ class WorkspaceController extends ChangeNotifier {
       return;
     }
     _selectedReasoning = nextValue;
+    unawaited(_persistSelectedSessionComposerSelection());
     _notify();
   }
 
@@ -1266,6 +1357,8 @@ class WorkspaceController extends ChangeNotifier {
     _loading = true;
     _error = null;
     _actionNotice = null;
+    _persistedComposerSelectionBySessionId =
+        const <String, _WorkspaceComposerSelectionState>{};
     _resetSessionHoverPreviewState();
     _notify();
 
@@ -1295,6 +1388,7 @@ class WorkspaceController extends ChangeNotifier {
           ? availableProjects
           : <ProjectTarget>[resolvedProject, ...availableProjects];
       await _restorePermissionAutoAccept(resolvedProject);
+      await _restoreComposerSelections(resolvedProject);
       await _restoreQueuedPrompts(resolvedProject);
 
       await _projectStore.recordRecentProject(resolvedProject);
@@ -1318,6 +1412,9 @@ class WorkspaceController extends ChangeNotifier {
         sessions: bundle.sessions,
       );
       _markSessionNotificationsViewed(_selectedSessionId, notify: false);
+      if (_selectedSessionId != null) {
+        _restoreComposerSelectionFromPersistedState(_selectedSessionId!);
+      }
       _loading = false;
       _notify();
 
@@ -1379,6 +1476,8 @@ class WorkspaceController extends ChangeNotifier {
     );
     _fileBundle = null;
     _actionNotice = null;
+    _persistedComposerSelectionBySessionId =
+        const <String, _WorkspaceComposerSelectionState>{};
     _resetSessionHoverPreviewState();
     _notify();
 
@@ -1389,6 +1488,7 @@ class WorkspaceController extends ChangeNotifier {
       target: project,
     );
     await _restorePermissionAutoAccept(project);
+    await _restoreComposerSelections(project);
     await _restoreQueuedPrompts(project);
 
     await _loadComposerState(project);
@@ -1406,6 +1506,9 @@ class WorkspaceController extends ChangeNotifier {
       sessions: bundle.sessions,
     );
     _markSessionNotificationsViewed(_selectedSessionId, notify: false);
+    if (_selectedSessionId != null) {
+      _restoreComposerSelectionFromPersistedState(_selectedSessionId!);
+    }
     if (_selectedSessionId != null) {
       await _loadSelectedSessionMessages(
         project: project,
@@ -1508,11 +1611,7 @@ class WorkspaceController extends ChangeNotifier {
       _selectedSessionHistoryLoading = false;
       _selectedSessionHistoryCursor = promotedWatchedHistoryCursor;
       _sessionLoadError = null;
-      if (_messages.isEmpty) {
-        _applyDefaultComposerSelection();
-      } else {
-        _restoreComposerSelectionFromMessages();
-      }
+      _restoreComposerSelectionForSession(nextSessionId!);
     } else {
       _messages = const <ChatMessage>[];
       _sessionLoading = false;
@@ -1521,6 +1620,9 @@ class WorkspaceController extends ChangeNotifier {
       _selectedSessionHistoryLoading = false;
       _selectedSessionHistoryCursor = null;
       _sessionLoadError = null;
+      if (nextSessionId != null) {
+        _restoreComposerSelectionFromPersistedState(nextSessionId);
+      }
     }
     _replaceSelectedSessionTodos(const <TodoItem>[]);
     _loadingReviewDiff = false;
@@ -1986,11 +2088,7 @@ class WorkspaceController extends ChangeNotifier {
         serverMessages: cachedMessages,
       );
       _showingCachedSessionMessages = cachedMessages.isNotEmpty;
-      if (_messages.isEmpty) {
-        _applyDefaultComposerSelection();
-      } else {
-        _restoreComposerSelectionFromMessages();
-      }
+      _restoreComposerSelectionForSession(sessionId);
     }
     if (notifyOnStart) {
       _notify();
@@ -2032,11 +2130,7 @@ class WorkspaceController extends ChangeNotifier {
             sessionId: sessionId,
           );
       _showingCachedSessionMessages = false;
-      if (_messages.isEmpty) {
-        _applyDefaultComposerSelection();
-      } else {
-        _restoreComposerSelectionFromMessages();
-      }
+      _restoreComposerSelectionForSession(sessionId);
       await _enforceSelectedSessionMemoryWindow(
         project: project,
         sessionId: sessionId,
@@ -2075,7 +2169,7 @@ class WorkspaceController extends ChangeNotifier {
       _sessionLoadError = _describeSessionLoadError(error);
       if (_messages.isEmpty) {
         _showingCachedSessionMessages = false;
-        _applyDefaultComposerSelection();
+        _restoreComposerSelectionForSession(sessionId);
       }
       _notify();
     }
@@ -2926,7 +3020,7 @@ class WorkspaceController extends ChangeNotifier {
         _sessionLoading = false;
         _showingCachedSessionMessages = false;
         _sessionLoadError = null;
-        _restoreComposerSelectionFromMessages();
+        _restoreComposerSelectionForSession(sessionId);
         await _enforceSelectedSessionMemoryWindow(
           project: project,
           sessionId: sessionId,
@@ -3654,6 +3748,10 @@ class WorkspaceController extends ChangeNotifier {
     for (final removedSessionId in removedSessionIds) {
       _clearQueuedPromptStateForSession(removedSessionId);
     }
+    await _removePersistedComposerSelections(
+      project,
+      removedSessionIds: removedSessionIds,
+    );
     _selectedSessionId = _sessions.isEmpty ? null : _sessions.first.id;
     _markSessionNotificationsViewed(_selectedSessionId, notify: false);
     if (_selectedSessionId == null) {
@@ -3958,6 +4056,51 @@ class WorkspaceController extends ChangeNotifier {
     _applyDefaultComposerSelection();
   }
 
+  void _restoreComposerSelectionForSession(String sessionId) {
+    if (_restoreComposerSelectionFromPersistedState(sessionId)) {
+      return;
+    }
+    _restoreComposerSelectionFromMessages();
+  }
+
+  bool _restoreComposerSelectionFromPersistedState(String sessionId) {
+    final selection = _persistedComposerSelectionBySessionId[sessionId];
+    if (selection == null) {
+      return false;
+    }
+
+    final session = _sessionById(sessionId);
+    if (session == null) {
+      return false;
+    }
+
+    final currentLastUserMessageId = _lastUserMessage(_messages)?.info.id;
+    final sessionUnchanged =
+        selection.sessionUpdatedAtMs ==
+        session.updatedAt.millisecondsSinceEpoch;
+    final lastUserMatches =
+        selection.lastUserMessageId != null &&
+        selection.lastUserMessageId == currentLastUserMessageId;
+    if (!sessionUnchanged && !lastUserMatches) {
+      return false;
+    }
+
+    final agent = _findAgent(selection.agentName) ?? _defaultComposerAgent;
+    _selectedAgentName = agent?.name;
+    _selectedModelKey =
+        _findModel(selection.modelKey)?.key ??
+        _findModel(agent?.modelKey)?.key ??
+        _findModel(_serverDefaultModelKey)?.key ??
+        (_composerModels.isEmpty ? null : _composerModels.first.key);
+
+    if (_isReasoningAllowed(selection.reasoning, _selectedModelKey)) {
+      _selectedReasoning = selection.reasoning;
+    } else {
+      _selectedReasoning = _fallbackReasoningForModel(_selectedModelKey);
+    }
+    return true;
+  }
+
   void _applyDefaultComposerSelection() {
     final agent = selectedAgent ?? _defaultComposerAgent;
     if (agent != null) {
@@ -4037,14 +4180,7 @@ class WorkspaceController extends ChangeNotifier {
   }
 
   void _restoreComposerSelectionFromMessages() {
-    ChatMessage? lastUser;
-    for (final message in _messages.reversed) {
-      if (message.info.role == 'user') {
-        lastUser = message;
-        break;
-      }
-    }
-
+    final lastUser = _lastUserMessage(_messages);
     if (lastUser == null) {
       _applyDefaultComposerSelection();
       return;
@@ -4071,6 +4207,15 @@ class WorkspaceController extends ChangeNotifier {
     } else {
       _selectedReasoning = _fallbackReasoningForModel(_selectedModelKey);
     }
+  }
+
+  ChatMessage? _lastUserMessage(List<ChatMessage> messages) {
+    for (final message in messages.reversed) {
+      if (message.info.role == 'user') {
+        return message;
+      }
+    }
+    return null;
   }
 
   List<WorkspaceComposerModelOption> _buildComposerModelOptions(
@@ -4497,6 +4642,92 @@ class WorkspaceController extends ChangeNotifier {
       _permissionAutoAcceptByKey = const <String, bool>{};
       await prefs.remove(_permissionAutoAcceptStorageKey(profile, project));
     }
+  }
+
+  Future<void> _restoreComposerSelections(ProjectTarget project) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(
+      _sessionComposerSelectionStorageKey(profile, project),
+    );
+    if (raw == null || raw.trim().isEmpty) {
+      _persistedComposerSelectionBySessionId =
+          const <String, _WorkspaceComposerSelectionState>{};
+      return;
+    }
+    try {
+      final decoded = await _decodeJsonPayload(raw);
+      _persistedComposerSelectionBySessionId =
+          _composerSelectionsFromDecodedJson(decoded);
+    } catch (_) {
+      _persistedComposerSelectionBySessionId =
+          const <String, _WorkspaceComposerSelectionState>{};
+      await prefs.remove(_sessionComposerSelectionStorageKey(profile, project));
+    }
+  }
+
+  Future<void> _persistComposerSelections(ProjectTarget project) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (_persistedComposerSelectionBySessionId.isEmpty) {
+      await prefs.remove(_sessionComposerSelectionStorageKey(profile, project));
+      return;
+    }
+    await prefs.setString(
+      _sessionComposerSelectionStorageKey(profile, project),
+      jsonEncode(
+        _persistedComposerSelectionBySessionId.map(
+          (sessionId, selection) => MapEntry(sessionId, selection.toJson()),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _persistSelectedSessionComposerSelection() async {
+    final project = _project;
+    final sessionId = _selectedSessionId;
+    if (project == null || sessionId == null || sessionId.isEmpty) {
+      return;
+    }
+
+    final session = _sessionById(sessionId);
+    if (session == null) {
+      return;
+    }
+
+    final next = Map<String, _WorkspaceComposerSelectionState>.from(
+      _persistedComposerSelectionBySessionId,
+    );
+    next[sessionId] = _WorkspaceComposerSelectionState(
+      agentName: _normalizedStorageString(_selectedAgentName),
+      modelKey: _normalizedStorageString(_selectedModelKey),
+      reasoning: _normalizedStorageString(_selectedReasoning),
+      lastUserMessageId: _lastUserMessage(_messages)?.info.id,
+      sessionUpdatedAtMs: session.updatedAt.millisecondsSinceEpoch,
+    );
+    _persistedComposerSelectionBySessionId =
+        Map<String, _WorkspaceComposerSelectionState>.unmodifiable(next);
+    await _persistComposerSelections(project);
+  }
+
+  Future<void> _removePersistedComposerSelections(
+    ProjectTarget project, {
+    required Set<String> removedSessionIds,
+  }) async {
+    if (removedSessionIds.isEmpty) {
+      return;
+    }
+    final next = Map<String, _WorkspaceComposerSelectionState>.from(
+      _persistedComposerSelectionBySessionId,
+    );
+    var changed = false;
+    for (final sessionId in removedSessionIds) {
+      changed = next.remove(sessionId) != null || changed;
+    }
+    if (!changed) {
+      return;
+    }
+    _persistedComposerSelectionBySessionId =
+        Map<String, _WorkspaceComposerSelectionState>.unmodifiable(next);
+    await _persistComposerSelections(project);
   }
 
   Future<void> _persistPermissionAutoAccept(ProjectTarget project) async {
@@ -4997,6 +5228,9 @@ class WorkspaceController extends ChangeNotifier {
       sessions: bundle.sessions,
     );
     _markSessionNotificationsViewed(_selectedSessionId, notify: false);
+    if (_selectedSessionId != null) {
+      _restoreComposerSelectionFromPersistedState(_selectedSessionId!);
+    }
 
     if (_selectedSessionId != null) {
       await _loadSelectedSessionMessages(
@@ -5184,6 +5418,65 @@ class WorkspaceController extends ChangeNotifier {
           _enforceSelectedSessionMemoryWindow(
             project: project,
             sessionId: sessionId,
+            notify: true,
+          ),
+        );
+      }
+    } else if (type == 'message.part.delta') {
+      final sessionId = event.properties['sessionID']?.toString();
+      _applyWatchedSessionTimelineEvent(
+        event.properties,
+        sessionId: sessionId,
+        applyEvent: (messages) => applyMessagePartDeltaEvent(
+          messages,
+          event.properties,
+          selectedSessionId: sessionId,
+        ),
+      );
+      _refreshActiveChildLivePreviewForSession(sessionId);
+      final project = _project;
+      final selectedSessionId = _selectedSessionId;
+      final baseMessages =
+          project != null &&
+              selectedSessionId != null &&
+              selectedSessionId.isNotEmpty
+          ? _stripOptimisticMessages(
+              project: project,
+              sessionId: selectedSessionId,
+              messages: _messages,
+            )
+          : _messages;
+      final nextServerMessages = applyMessagePartDeltaEvent(
+        baseMessages,
+        event.properties,
+        selectedSessionId: _selectedSessionId,
+      );
+      final nextMessages =
+          project != null &&
+              selectedSessionId != null &&
+              selectedSessionId.isNotEmpty
+          ? _mergeSessionMessages(
+              project: project,
+              sessionId: selectedSessionId,
+              serverMessages: nextServerMessages,
+            )
+          : nextServerMessages;
+      final changed = !identical(nextMessages, _messages);
+      if (changed) {
+        _sessionLoading = false;
+        _showingCachedSessionMessages = false;
+        _sessionLoadError = null;
+        unawaited(_persistSelectedSessionMessagesCache(nextServerMessages));
+      }
+      _messages = nextMessages;
+      if (changed &&
+          project != null &&
+          selectedSessionId != null &&
+          selectedSessionId.isNotEmpty) {
+        unawaited(
+          _enforceSelectedSessionMemoryWindow(
+            project: project,
+            sessionId: selectedSessionId,
             notify: true,
           ),
         );
@@ -5383,6 +5676,12 @@ class WorkspaceController extends ChangeNotifier {
     if (project == null) {
       return;
     }
+    unawaited(
+      _removePersistedComposerSelections(
+        project,
+        removedSessionIds: removedSessionIds,
+      ),
+    );
     unawaited(
       _applySessionDeletedSelectionFallback(
         project: project,
@@ -7137,6 +7436,21 @@ class WorkspaceController extends ChangeNotifier {
       return;
     }
     _setActiveChildLivePreview(sessionId, _partActivityPreviewText(part));
+  }
+
+  void _refreshActiveChildLivePreviewForSession(String? sessionId) {
+    final normalized = sessionId?.trim() ?? '';
+    if (!_shouldTrackActiveChildLivePreview(normalized)) {
+      return;
+    }
+    final watched = _watchedSessionTimelineById[normalized];
+    if (watched == null) {
+      return;
+    }
+    _setActiveChildLivePreview(
+      normalized,
+      _sessionActivityPreviewText(watched.messages),
+    );
   }
 
   void _clearActiveChildLivePreviewForMessageEvent(

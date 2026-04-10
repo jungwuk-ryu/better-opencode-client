@@ -118,6 +118,44 @@ void main() {
     expect(updated, isEmpty);
   });
 
+  test('message.part.delta appends to existing reasoning text', () {
+    final seeded = applyMessagePartUpdatedEvent(
+      const <ChatMessage>[],
+      <String, Object?>{
+        'part': <String, Object?>{
+          'id': 'prt_reasoning',
+          'messageID': 'msg_1',
+          'sessionID': 'ses_1',
+          'type': 'reasoning',
+          'text': '',
+        },
+      },
+      selectedSessionId: 'ses_1',
+    );
+
+    final updated = applyMessagePartDeltaEvent(
+      applyMessagePartDeltaEvent(seeded, const <String, Object?>{
+        'sessionID': 'ses_1',
+        'messageID': 'msg_1',
+        'partID': 'prt_reasoning',
+        'field': 'text',
+        'delta': 'Reviewing ',
+      }, selectedSessionId: 'ses_1'),
+      const <String, Object?>{
+        'sessionID': 'ses_1',
+        'messageID': 'msg_1',
+        'partID': 'prt_reasoning',
+        'field': 'text',
+        'delta': 'the timeline',
+      },
+      selectedSessionId: 'ses_1',
+    );
+
+    expect(updated, hasLength(1));
+    expect(updated.single.parts.single.text, 'Reviewing the timeline');
+    expect(updated.single.parts.single.metadata['_streaming'], isTrue);
+  });
+
   test(
     'message.removed ignores other sessions and removes selected message',
     () {
