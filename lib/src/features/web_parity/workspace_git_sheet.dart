@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/connection/connection_models.dart';
+import '../../design_system/app_modal.dart';
 import '../../design_system/app_spacing.dart';
 import '../../design_system/app_surface_decor.dart';
 import '../../design_system/app_theme.dart';
@@ -140,7 +141,7 @@ class _WorkspaceGitSheetState extends State<WorkspaceGitSheet> {
     final successMessage = context.wp(
       'Commit created and repository state refreshed.',
     );
-    final request = await showDialog<_CommitRequest>(
+    final request = await showAppDialog<_CommitRequest>(
       context: context,
       builder: (context) => const _CommitComposerDialog(),
     );
@@ -167,7 +168,7 @@ class _WorkspaceGitSheetState extends State<WorkspaceGitSheet> {
     if (sessionId == null) {
       return;
     }
-    final selection = await showModalBottomSheet<_BranchAction>(
+    final selection = await showAppModalBottomSheet<_BranchAction>(
       context: context,
       useSafeArea: true,
       isScrollControlled: true,
@@ -1059,18 +1060,32 @@ class _CommitComposerDialogState extends State<_CommitComposerDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(
-        context.wp('Create Commit'),
-        style: Theme.of(
-          context,
-        ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
-      ),
-      content: SizedBox(
-        width: 420,
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    return AppDialogFrame(
+      constraints: const BoxConstraints(maxWidth: 420),
+      child: AppGlassPanel(
+        radius: AppSpacing.dialogRadius,
+        blur: 24,
+        backgroundOpacity: theme.brightness == Brightness.dark ? 0.84 : 0.92,
+        borderOpacity: 0.1,
+        padding: const EdgeInsets.all(AppSpacing.lg),
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
+            Text(
+              context.wp('Create Commit'),
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              context.wp('Summarize the staged work before writing it to Git.'),
+              style: theme.textTheme.bodySmall?.copyWith(color: surfaces.muted),
+            ),
+            const SizedBox(height: AppSpacing.lg),
             TextField(
               controller: _titleController,
               decoration: InputDecoration(
@@ -1087,27 +1102,40 @@ class _CommitComposerDialogState extends State<_CommitComposerDialog> {
                 labelText: context.wp('Body'),
                 hintText: context.wp('Optional details for the commit body'),
               ),
+              onSubmitted: (_) {
+                Navigator.of(context).pop(
+                  _CommitRequest(
+                    title: _titleController.text,
+                    body: _bodyController.text,
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text(context.wp('Cancel')),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                FilledButton(
+                  onPressed: () {
+                    Navigator.of(context).pop(
+                      _CommitRequest(
+                        title: _titleController.text,
+                        body: _bodyController.text,
+                      ),
+                    );
+                  },
+                  child: Text(context.wp('Commit')),
+                ),
+              ],
             ),
           ],
         ),
       ),
-      actions: <Widget>[
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(context.wp('Cancel')),
-        ),
-        FilledButton(
-          onPressed: () {
-            Navigator.of(context).pop(
-              _CommitRequest(
-                title: _titleController.text,
-                body: _bodyController.text,
-              ),
-            );
-          },
-          child: Text(context.wp('Commit')),
-        ),
-      ],
     );
   }
 }

@@ -68,7 +68,7 @@ class _ServersSheetState extends State<_ServersSheet> {
   WebParityAppController get controller => widget.controller;
 
   Future<void> _openServerEditor({ServerProfile? profile}) async {
-    final draft = await showModalBottomSheet<ServerProfile>(
+    final draft = await showAppModalBottomSheet<ServerProfile>(
       context: context,
       useSafeArea: true,
       isScrollControlled: true,
@@ -96,34 +96,57 @@ class _ServersSheetState extends State<_ServersSheet> {
   }
 
   Future<void> _confirmDelete(ServerProfile profile) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (context) {
+        final theme = Theme.of(context);
         final surfaces = Theme.of(context).extension<AppSurfaces>()!;
-        return AlertDialog(
-          backgroundColor: surfaces.panelRaised,
-          surfaceTintColor: Colors.transparent,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
-            side: BorderSide(color: surfaces.lineSoft),
-          ),
-          title: Text(context.wp('Delete server?')),
-          content: Text(
-            context.wp(
-              'Remove "{label}" from saved servers? This keeps the rest of your home screen intact.',
-              args: <String, Object?>{'label': profile.effectiveLabel},
+        return AppDialogFrame(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Material(
+            color: surfaces.panelRaised,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppSpacing.dialogRadius),
+              side: BorderSide(color: surfaces.lineSoft),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    context.wp('Delete server?'),
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    context.wp(
+                      'Remove "{label}" from saved servers? This keeps the rest of your home screen intact.',
+                      args: <String, Object?>{'label': profile.effectiveLabel},
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: <Widget>[
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        child: Text(context.wp('Cancel')),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      FilledButton(
+                        onPressed: () => Navigator.of(context).pop(true),
+                        child: Text(context.wp('Delete')),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: Text(context.wp('Cancel')),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: Text(context.wp('Delete')),
-            ),
-          ],
         );
       },
     );

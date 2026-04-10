@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../design_system/app_modal.dart';
 import '../design_system/app_spacing.dart';
 import '../design_system/app_surface_decor.dart';
 import '../design_system/app_theme.dart';
@@ -25,112 +26,105 @@ class AppReleaseNotesDialog extends StatelessWidget {
     );
     final sectionGap = compact ? AppSpacing.md : AppSpacing.lg;
 
-    return Dialog(
+    return AppDialogFrame(
       key: const ValueKey<String>('release-notes-dialog'),
-      backgroundColor: Colors.transparent,
-      surfaceTintColor: Colors.transparent,
-      elevation: 0,
       insetPadding: dialogInset,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 560),
-        child: AppGlassPanel(
-          radius: AppSpacing.dialogRadius,
-          blur: 14,
-          backgroundOpacity: theme.brightness == Brightness.dark ? 0.88 : 0.94,
-          borderOpacity: 0.08,
-          padding: panelPadding,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Wrap(
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: compact ? AppSpacing.xs : AppSpacing.sm,
-                runSpacing: AppSpacing.xxs,
-                children: <Widget>[
-                  Text(
-                    "What's New",
-                    style: theme.textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
+      constraints: const BoxConstraints(maxWidth: 560),
+      child: AppGlassPanel(
+        radius: AppSpacing.dialogRadius,
+        blur: 14,
+        backgroundOpacity: theme.brightness == Brightness.dark ? 0.88 : 0.94,
+        borderOpacity: 0.08,
+        padding: panelPadding,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: compact ? AppSpacing.xs : AppSpacing.sm,
+              runSpacing: AppSpacing.xxs,
+              children: <Widget>[
+                Text(
+                  "What's New",
+                  style: theme.textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.22),
                     ),
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.sm,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(
-                        color: theme.colorScheme.primary.withValues(
-                          alpha: 0.22,
-                        ),
-                      ),
-                    ),
-                    child: Text(
-                      notes.versionLabel,
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        color: theme.colorScheme.primary,
-                        fontWeight: FontWeight.w700,
-                      ),
+                  child: Text(
+                    notes.versionLabel,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
-                ],
-              ),
-              SizedBox(height: sectionGap),
-              Text(
-                notes.headline,
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
                 ),
+              ],
+            ),
+            SizedBox(height: sectionGap),
+            Text(
+              notes.headline,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
               ),
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                notes.previousVersion == null
-                    ? notes.summary
-                    : 'Updated from v${notes.previousVersion} to ${notes.versionLabel}. ${notes.summary}',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: surfaces.muted,
-                ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              notes.previousVersion == null
+                  ? notes.summary
+                  : 'Updated from v${notes.previousVersion} to ${notes.versionLabel}. ${notes.summary}',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: surfaces.muted,
               ),
-              SizedBox(height: sectionGap),
-              ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: size.height * (compact ? 0.38 : 0.45),
-                ),
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: notes.highlights
-                        .map(
-                          (highlight) => Padding(
-                            padding: EdgeInsets.only(
-                              bottom: highlight == notes.highlights.last
-                                  ? 0
-                                  : (compact ? AppSpacing.sm : AppSpacing.md),
-                            ),
-                            child: _ReleaseHighlightCard(
-                              highlight: highlight,
-                              compact: compact,
-                            ),
+            ),
+            SizedBox(height: sectionGap),
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: size.height * (compact ? 0.38 : 0.45),
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: notes.highlights
+                      .map(
+                        (highlight) => Padding(
+                          padding: EdgeInsets.only(
+                            bottom: highlight == notes.highlights.last
+                                ? 0
+                                : (compact ? AppSpacing.sm : AppSpacing.md),
                           ),
-                        )
-                        .toList(growable: false),
-                  ),
+                          child: _ReleaseHighlightCard(
+                            highlight: highlight,
+                            compact: compact,
+                          ),
+                        ),
+                      )
+                      .toList(growable: false),
                 ),
               ),
-              SizedBox(height: sectionGap),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  key: const ValueKey<String>('release-notes-close-button'),
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Close'),
-                ),
+            ),
+            SizedBox(height: sectionGap),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                key: const ValueKey<String>('release-notes-close-button'),
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Close'),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

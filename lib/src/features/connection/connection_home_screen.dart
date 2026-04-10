@@ -16,6 +16,7 @@ import '../../core/persistence/stale_cache_store.dart';
 import '../../core/spec/capability_registry.dart';
 import '../../core/spec/probe_snapshot.dart';
 import '../../core/spec/raw_json_document.dart';
+import '../../design_system/app_modal.dart';
 import '../../design_system/app_spacing.dart';
 import '../../design_system/app_theme.dart';
 import '../../i18n/locale_controller.dart';
@@ -337,7 +338,7 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
   }
 
   Future<void> _openCacheSettings() async {
-    await showModalBottomSheet<void>(
+    await showAppModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       builder: (context) => CacheSettingsSheet(

@@ -10,6 +10,7 @@ import '../features/web_parity/web_home_screen.dart';
 import '../features/web_parity/workspace_screen.dart';
 import '../i18n/locale_controller.dart';
 import '../i18n/locale_scope.dart';
+import '../design_system/app_modal.dart';
 import 'app_controller.dart';
 import 'app_release_notes_dialog.dart';
 import 'app_routes.dart';
@@ -85,11 +86,10 @@ class _OpenCodeRemoteAppState extends State<OpenCodeRemoteApp> {
       if (!mounted || !navigator.mounted) {
         return;
       }
-      await navigator.push<void>(
-        DialogRoute<void>(
-          context: navigator.context,
-          builder: (dialogContext) => AppReleaseNotesDialog(notes: notes),
-        ),
+      await showAppDialog<void>(
+        context: navigator.context,
+        useRootNavigator: true,
+        builder: (dialogContext) => AppReleaseNotesDialog(notes: notes),
       );
     });
   }
@@ -130,8 +130,7 @@ class _OpenCodeRemoteAppState extends State<OpenCodeRemoteApp> {
   String? _routeLocationForUri(Uri uri) {
     final parsed = AppRouteData.parse(uri.toString());
     return switch (parsed) {
-      HomeRouteData(:final connectionImport)
-          when connectionImport != null =>
+      HomeRouteData(:final connectionImport) when connectionImport != null =>
         connectionImport.location ?? '/',
       HomeRouteData() => '/',
       WorkspaceRouteData(:final location) => location,
@@ -194,11 +193,12 @@ class _OpenCodeRemoteAppState extends State<OpenCodeRemoteApp> {
                   ),
                   builder: (context) {
                     return switch (route) {
-                      HomeRouteData(:final connectionImport) => WebParityHomeScreen(
-                        flavor: _flavor,
-                        localeController: _localeController,
-                        connectionImport: connectionImport,
-                      ),
+                      HomeRouteData(:final connectionImport) =>
+                        WebParityHomeScreen(
+                          flavor: _flavor,
+                          localeController: _localeController,
+                          connectionImport: connectionImport,
+                        ),
                       WorkspaceRouteData(:final directory, :final sessionId) =>
                         WebParityWorkspaceScreen(
                           key: ValueKey<String>('workspace-$directory'),

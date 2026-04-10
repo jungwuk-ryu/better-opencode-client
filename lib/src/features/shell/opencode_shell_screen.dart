@@ -12,6 +12,7 @@ import '../../core/network/sse_connection_monitor.dart';
 import '../../core/persistence/stale_cache_store.dart';
 import '../../core/spec/capability_registry.dart';
 import '../../core/spec/raw_json_document.dart';
+import '../../design_system/app_modal.dart';
 import '../../design_system/app_snack_bar.dart';
 import '../../design_system/app_spacing.dart';
 import '../../design_system/app_theme.dart';
@@ -888,7 +889,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
   }
 
   Future<void> _openCacheSettings() async {
-    await showModalBottomSheet<void>(
+    await showAppModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       builder: (context) => CacheSettingsSheet(
@@ -1924,29 +1925,64 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     final session = _sessions.where((item) => item.id == sessionId).firstOrNull;
     final initialTitle = session?.title ?? '';
     final controller = TextEditingController(text: initialTitle);
-    final nextTitle = await showDialog<String>(
+    final nextTitle = await showAppDialog<String>(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          title: Text(AppLocalizations.of(context)!.shellRenameSessionTitle),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            decoration: InputDecoration(
-              hintText: AppLocalizations.of(context)!.shellSessionTitleHint,
+        final theme = Theme.of(context);
+        final surfaces = theme.extension<AppSurfaces>()!;
+        return AppDialogFrame(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Material(
+            color: surfaces.panelRaised,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppSpacing.dialogRadius),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    AppLocalizations.of(context)!.shellRenameSessionTitle,
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  TextField(
+                    controller: controller,
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      hintText: AppLocalizations.of(
+                        context,
+                      )!.shellSessionTitleHint,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: <Widget>[
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: Text(
+                          AppLocalizations.of(context)!.shellCancelAction,
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      ElevatedButton(
+                        onPressed: () =>
+                            Navigator.of(context).pop(controller.text.trim()),
+                        child: Text(
+                          AppLocalizations.of(context)!.shellSaveAction,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: Text(AppLocalizations.of(context)!.shellCancelAction),
-            ),
-            ElevatedButton(
-              onPressed: () =>
-                  Navigator.of(context).pop(controller.text.trim()),
-              child: Text(AppLocalizations.of(context)!.shellSaveAction),
-            ),
-          ],
         );
       },
     );

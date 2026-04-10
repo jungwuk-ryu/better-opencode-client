@@ -891,22 +891,19 @@ class _ReviewPanelState extends State<_ReviewPanel> {
       text: '',
       selection: TextSelection.collapsed(offset: 0),
     );
-    final comment = await showDialog<String>(
+    final comment = await showAppDialog<String>(
       context: context,
       builder: (dialogContext) {
-        return Dialog(
-          backgroundColor: Colors.transparent,
+        return AppDialogFrame(
           insetPadding: const EdgeInsets.all(AppSpacing.lg),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 460),
-            child: _ReviewLineCommentEditor(
-              target: target,
-              controller: _lineCommentController,
-              onCancel: () => Navigator.of(dialogContext).pop(),
-              onSubmit: () => Navigator.of(
-                dialogContext,
-              ).pop(_lineCommentController.text.trim()),
-            ),
+          constraints: const BoxConstraints(maxWidth: 460),
+          child: _ReviewLineCommentEditor(
+            target: target,
+            controller: _lineCommentController,
+            onCancel: () => Navigator.of(dialogContext).pop(),
+            onSubmit: () => Navigator.of(
+              dialogContext,
+            ).pop(_lineCommentController.text.trim()),
           ),
         );
       },

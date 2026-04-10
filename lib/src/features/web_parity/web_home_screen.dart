@@ -9,6 +9,7 @@ import '../../app/app_scope.dart';
 import '../../app/flavor.dart';
 import '../../core/connection/connection_models.dart';
 import '../../core/network/opencode_server_probe.dart';
+import '../../design_system/app_modal.dart';
 import '../../design_system/app_snack_bar.dart';
 import '../../design_system/app_spacing.dart';
 import '../../design_system/app_surface_decor.dart';
@@ -99,7 +100,7 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
     ConnectionImportRouteData routeData,
   ) async {
     final existingProfile = _existingProfileForImport(controller, routeData);
-    final confirmed = await showModalBottomSheet<bool>(
+    final confirmed = await showAppModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
@@ -239,7 +240,7 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
       return;
     }
 
-    final target = await showModalBottomSheet<ProjectTarget>(
+    final target = await showAppModalBottomSheet<ProjectTarget>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
@@ -561,7 +562,7 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
     WebParityAppController controller, {
     ServerProfile? profile,
   }) async {
-    final draft = await showModalBottomSheet<ServerProfile>(
+    final draft = await showAppModalBottomSheet<ServerProfile>(
       context: context,
       useSafeArea: true,
       isScrollControlled: true,
@@ -592,34 +593,57 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
     WebParityAppController controller,
     ServerProfile profile,
   ) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (context) {
+        final theme = Theme.of(context);
         final surfaces = Theme.of(context).extension<AppSurfaces>()!;
-        return AlertDialog(
-          backgroundColor: surfaces.panelRaised,
-          surfaceTintColor: Colors.transparent,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
-            side: BorderSide(color: surfaces.lineSoft),
-          ),
-          title: Text(context.wp('Delete server?')),
-          content: Text(
-            context.wp(
-              'Remove "{label}" from saved servers? This keeps the rest of your home screen intact.',
-              args: <String, Object?>{'label': profile.effectiveLabel},
+        return AppDialogFrame(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Material(
+            color: surfaces.panelRaised,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppSpacing.dialogRadius),
+              side: BorderSide(color: surfaces.lineSoft),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    context.wp('Delete server?'),
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    context.wp(
+                      'Remove "{label}" from saved servers? This keeps the rest of your home screen intact.',
+                      args: <String, Object?>{'label': profile.effectiveLabel},
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: <Widget>[
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        child: Text(context.wp('Cancel')),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      FilledButton(
+                        onPressed: () => Navigator.of(context).pop(true),
+                        child: Text(context.wp('Delete')),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: Text(context.wp('Cancel')),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: Text(context.wp('Delete')),
-            ),
-          ],
         );
       },
     );
@@ -641,7 +665,7 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
   }
 
   Future<void> _openServers(WebParityAppController controller) async {
-    await showModalBottomSheet<void>(
+    await showAppModalBottomSheet<void>(
       context: context,
       useSafeArea: true,
       isScrollControlled: true,

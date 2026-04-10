@@ -27,6 +27,7 @@ import '../../app/app_release_notes_dialog.dart';
 import '../../app/app_scope.dart';
 import '../../core/connection/connection_models.dart';
 import '../../core/network/opencode_server_probe.dart';
+import '../../design_system/app_modal.dart';
 import '../../design_system/app_snack_bar.dart';
 import '../../design_system/app_spacing.dart';
 import '../../design_system/app_surface_decor.dart';
@@ -1968,7 +1969,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                 left.title.toLowerCase().compareTo(right.title.toLowerCase()),
           );
 
-    final selection = await showModalBottomSheet<String>(
+    final selection = await showAppModalBottomSheet<String>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
@@ -2014,7 +2015,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     if (agents.isEmpty) {
       return;
     }
-    final selection = await showModalBottomSheet<String>(
+    final selection = await showAppModalBottomSheet<String>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
@@ -2065,7 +2066,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     if (options.length <= 1) {
       return;
     }
-    final selection = await showModalBottomSheet<String?>(
+    final selection = await showAppModalBottomSheet<String?>(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (context) => _SearchableSelectionSheet<_ReasoningChoice>(
@@ -2134,7 +2135,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     if (profile == null) {
       return;
     }
-    final target = await showModalBottomSheet<ProjectTarget>(
+    final target = await showAppModalBottomSheet<ProjectTarget>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
@@ -2168,7 +2169,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       );
       return;
     }
-    await showModalBottomSheet<void>(
+    await showAppModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
@@ -2631,7 +2632,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   }
 
   Future<void> _openInboxSheet(WorkspaceController controller) async {
-    await showModalBottomSheet<void>(
+    await showAppModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
@@ -2669,7 +2670,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       );
       return;
     }
-    await showModalBottomSheet<void>(
+    await showAppModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
@@ -2774,7 +2775,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     if (!mounted) {
       return;
     }
-    await showModalBottomSheet<void>(
+    await showAppModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
@@ -3514,7 +3515,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
 
   Future<void> _openCommandPalette(WorkspaceController controller) async {
     final appController = AppScope.of(context);
-    final command = await showDialog<_WorkspaceCommandPaletteCommand>(
+    final command = await showAppDialog<_WorkspaceCommandPaletteCommand>(
       context: context,
       barrierDismissible: true,
       barrierColor: Colors.black.withValues(alpha: 0.42),
@@ -5443,7 +5444,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     if (selected == null) {
       return;
     }
-    final nextTitle = await showDialog<String>(
+    final nextTitle = await showAppDialog<String>(
       context: context,
       builder: (context) => _RenameSessionDialog(initialTitle: selected.title),
     );
@@ -5687,31 +5688,64 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     if (selected == null) {
       return;
     }
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(context.wp('Delete Session')),
-        content: Text(
-          context.wp(
-            'Delete "{title}"? This action cannot be undone.',
-            args: <String, Object?>{
-              'title': selected.title.trim().isEmpty
-                  ? context.wp('this session')
-                  : selected.title.trim(),
-            },
+      builder: (context) {
+        final theme = Theme.of(context);
+        final surfaces = theme.extension<AppSurfaces>()!;
+        return AppDialogFrame(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Material(
+            key: const ValueKey<String>('delete-session-dialog'),
+            color: surfaces.panelRaised,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppSpacing.dialogRadius),
+              side: BorderSide(color: surfaces.lineSoft),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    context.wp('Delete Session'),
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    context.wp(
+                      'Delete "{title}"? This action cannot be undone.',
+                      args: <String, Object?>{
+                        'title': selected.title.trim().isEmpty
+                            ? context.wp('this session')
+                            : selected.title.trim(),
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: <Widget>[
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        child: Text(context.wp('Cancel')),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      FilledButton(
+                        onPressed: () => Navigator.of(context).pop(true),
+                        child: Text(context.wp('Delete')),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
           ),
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text(context.wp('Cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: Text(context.wp('Delete')),
-          ),
-        ],
-      ),
+        );
+      },
     );
     if (confirmed != true) {
       return;
@@ -5749,7 +5783,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     WorkspaceController controller,
   ) async {
     final profile = appController.selectedProfile;
-    await showModalBottomSheet<void>(
+    await showAppModalBottomSheet<void>(
       context: context,
       useSafeArea: true,
       isScrollControlled: true,
@@ -5897,7 +5931,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     if (profile == null) {
       return;
     }
-    final draft = await showDialog<_ProjectEditDraft>(
+    final draft = await showAppDialog<_ProjectEditDraft>(
       context: context,
       barrierDismissible: true,
       builder: (context) => _EditProjectDialog(project: project),
@@ -8212,7 +8246,7 @@ class _SessionOverflowMenuButtonState
     if (anchorRect == null) {
       return;
     }
-    final selected = await showGeneralDialog<_SessionOverflowMenuAction?>(
+    final selected = await showAppGeneralDialog<_SessionOverflowMenuAction?>(
       context: context,
       barrierDismissible: true,
       barrierLabel: 'Dismiss session menu',
@@ -8479,7 +8513,7 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
     if (!mounted) {
       return;
     }
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
       useRootNavigator: true,
       builder: (dialogContext) => AppReleaseNotesDialog(notes: releaseNotes),
@@ -11098,136 +11132,128 @@ class _WorkspaceCommandPaletteSheetState
     final filtered = _filteredCommands;
     final highlightedIndex = _resolvedHighlightedIndex(filtered.length);
     final mediaQuery = MediaQuery.of(context);
-    return Dialog(
+    return AppDialogFrame(
       insetPadding: EdgeInsets.fromLTRB(
         AppSpacing.lg,
         AppSpacing.xl,
         AppSpacing.lg,
-        AppSpacing.lg + mediaQuery.viewInsets.bottom,
+        AppSpacing.lg,
       ),
-      backgroundColor: Colors.transparent,
-      elevation: 0,
+      constraints: BoxConstraints(
+        maxWidth: 760,
+        maxHeight: math.min(mediaQuery.size.height * 0.76, 640),
+      ),
       child: Focus(
         autofocus: true,
         onKeyEvent: _handleKeyEvent,
-        child: Center(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: 760,
-              maxHeight: math.min(mediaQuery.size.height * 0.76, 640),
-            ),
-            child: Material(
-              color: Colors.transparent,
-              child: AppGlassPanel(
-                key: const ValueKey<String>('workspace-command-palette-sheet'),
-                radius: AppSpacing.dialogRadius,
-                blur: 24,
-                backgroundOpacity: theme.brightness == Brightness.dark
-                    ? 0.82
-                    : 0.9,
-                padding: const EdgeInsets.all(AppSpacing.md),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      'Command Palette',
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.xxs),
-                    Text(
-                      'Search workspace actions, themes, models, agents, and custom commands.',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: surfaces.muted,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    TextField(
-                      key: const ValueKey<String>(
-                        'workspace-command-palette-field',
-                      ),
-                      controller: _queryController,
-                      focusNode: _queryFocusNode,
-                      autofocus: true,
-                      textInputAction: TextInputAction.search,
-                      onSubmitted: (_) => _submitHighlighted(),
-                      decoration: InputDecoration(
-                        hintText: context.wp('Type a command or search'),
-                        prefixIcon: const Icon(Icons.search_rounded),
-                        isDense: true,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    Text(
-                      context.wp(
-                        'Enter runs the highlighted command. Tab or arrow keys move the selection.',
-                      ),
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color: surfaces.muted,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    Expanded(
-                      child: filtered.isEmpty
-                          ? Center(
-                              child: Column(
-                                key: const ValueKey<String>(
-                                  'workspace-command-palette-empty-state',
-                                ),
-                                mainAxisSize: MainAxisSize.min,
-                                children: <Widget>[
-                                  Icon(
-                                    Icons.search_off_rounded,
-                                    color: surfaces.muted,
-                                  ),
-                                  const SizedBox(height: AppSpacing.sm),
-                                  Text(
-                                    context.wp('No matching commands'),
-                                    style: theme.textTheme.titleSmall,
-                                  ),
-                                  const SizedBox(height: AppSpacing.xxs),
-                                  Text(
-                                    context.wp(
-                                      'Try a project name, session title, theme, model, or slash command.',
-                                    ),
-                                    textAlign: TextAlign.center,
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: surfaces.muted,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            )
-                          : ListView.separated(
-                              itemCount: filtered.length,
-                              separatorBuilder: (_, _) =>
-                                  const SizedBox(height: AppSpacing.xs),
-                              itemBuilder: (context, index) {
-                                final command = filtered[index];
-                                final highlighted = index == highlightedIndex;
-                                return _WorkspaceCommandPaletteTile(
-                                  key: ValueKey<String>(
-                                    'workspace-command-palette-option-${command.id}',
-                                  ),
-                                  command: command,
-                                  highlighted: highlighted,
-                                  onTap: () => _selectCommand(command),
-                                  onHover: (hovering) {
-                                    if (!hovering) {
-                                      return;
-                                    }
-                                    setState(() {
-                                      _highlightedIndex = index;
-                                    });
-                                  },
-                                );
-                              },
-                            ),
-                    ),
-                  ],
+        child: Material(
+          color: Colors.transparent,
+          child: AppGlassPanel(
+            key: const ValueKey<String>('workspace-command-palette-sheet'),
+            radius: AppSpacing.dialogRadius,
+            blur: 24,
+            backgroundOpacity: theme.brightness == Brightness.dark ? 0.82 : 0.9,
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  'Command Palette',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              ),
+                const SizedBox(height: AppSpacing.xxs),
+                Text(
+                  'Search workspace actions, themes, models, agents, and custom commands.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: surfaces.muted,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                TextField(
+                  key: const ValueKey<String>(
+                    'workspace-command-palette-field',
+                  ),
+                  controller: _queryController,
+                  focusNode: _queryFocusNode,
+                  autofocus: true,
+                  textInputAction: TextInputAction.search,
+                  onSubmitted: (_) => _submitHighlighted(),
+                  decoration: InputDecoration(
+                    hintText: context.wp('Type a command or search'),
+                    prefixIcon: const Icon(Icons.search_rounded),
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  context.wp(
+                    'Enter runs the highlighted command. Tab or arrow keys move the selection.',
+                  ),
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: surfaces.muted,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                Expanded(
+                  child: filtered.isEmpty
+                      ? Center(
+                          child: Column(
+                            key: const ValueKey<String>(
+                              'workspace-command-palette-empty-state',
+                            ),
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              Icon(
+                                Icons.search_off_rounded,
+                                color: surfaces.muted,
+                              ),
+                              const SizedBox(height: AppSpacing.sm),
+                              Text(
+                                context.wp('No matching commands'),
+                                style: theme.textTheme.titleSmall,
+                              ),
+                              const SizedBox(height: AppSpacing.xxs),
+                              Text(
+                                context.wp(
+                                  'Try a project name, session title, theme, model, or slash command.',
+                                ),
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: surfaces.muted,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : ListView.separated(
+                          itemCount: filtered.length,
+                          separatorBuilder: (_, _) =>
+                              const SizedBox(height: AppSpacing.xs),
+                          itemBuilder: (context, index) {
+                            final command = filtered[index];
+                            final highlighted = index == highlightedIndex;
+                            return _WorkspaceCommandPaletteTile(
+                              key: ValueKey<String>(
+                                'workspace-command-palette-option-${command.id}',
+                              ),
+                              command: command,
+                              highlighted: highlighted,
+                              onTap: () => _selectCommand(command),
+                              onHover: (hovering) {
+                                if (!hovering) {
+                                  return;
+                                }
+                                setState(() {
+                                  _highlightedIndex = index;
+                                });
+                              },
+                            );
+                          },
+                        ),
+                ),
+              ],
             ),
           ),
         ),
@@ -13363,7 +13389,7 @@ Future<_ProjectMenuAction?> _showProjectContextMenu({
   required Offset position,
   required ProjectTarget project,
 }) {
-  return showGeneralDialog<_ProjectMenuAction>(
+  return showAppGeneralDialog<_ProjectMenuAction>(
     context: context,
     barrierDismissible: true,
     barrierLabel: context.wp('Dismiss project menu'),
@@ -14274,249 +14300,242 @@ class _EditProjectDialogState extends State<_EditProjectDialog> {
     final surfaces = theme.extension<AppSurfaces>()!;
     final hasCustomIcon = _iconDataUrl != null && _iconDataUrl!.isNotEmpty;
 
-    return Dialog(
-      backgroundColor: Colors.transparent,
+    return AppDialogFrame(
       insetPadding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.lg,
         vertical: AppSpacing.xl,
       ),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 520),
-        child: AppGlassPanel(
-          radius: AppSpacing.dialogRadius,
-          blur: 24,
-          backgroundOpacity: theme.brightness == Brightness.dark ? 0.84 : 0.92,
-          borderOpacity: 0.1,
-          padding: const EdgeInsets.all(AppSpacing.xl),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: Text(
-                        context.wp('Edit project'),
-                        style: theme.textTheme.titleLarge,
+      constraints: const BoxConstraints(maxWidth: 520),
+      child: AppGlassPanel(
+        radius: AppSpacing.dialogRadius,
+        blur: 24,
+        backgroundOpacity: theme.brightness == Brightness.dark ? 0.84 : 0.92,
+        borderOpacity: 0.1,
+        padding: const EdgeInsets.all(AppSpacing.xl),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Text(
+                      context.wp('Edit project'),
+                      style: theme.textTheme.titleLarge,
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                    tooltip: context.wp('Close'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              TextField(
+                controller: _nameController,
+                decoration: InputDecoration(labelText: context.wp('Name')),
+                autofocus: true,
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              Text(
+                context.wp('Icon'),
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: surfaces.muted,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Stack(
+                    children: <Widget>[
+                      InkWell(
+                        onTap: _pickIcon,
+                        borderRadius: BorderRadius.circular(14),
+                        child: Container(
+                          width: 92,
+                          height: 92,
+                          decoration: BoxDecoration(
+                            color: surfaces.panelRaised,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: surfaces.lineSoft),
+                          ),
+                          alignment: Alignment.center,
+                          child: _ProjectAvatar(
+                            project: widget.project.copyWith(
+                              name: _nameController.text.trim().isEmpty
+                                  ? widget.project.name
+                                  : _nameController.text.trim(),
+                              label: projectDisplayLabel(
+                                widget.project.directory,
+                                name: _nameController.text.trim().isEmpty
+                                    ? widget.project.name
+                                    : _nameController.text.trim(),
+                              ),
+                              icon: ProjectIconInfo(
+                                url: _iconDataUrl,
+                                override: _iconDataUrl,
+                                color: _selectedColor,
+                              ),
+                            ),
+                            size: 84,
+                            fontSize: 34,
+                            rounded: 10,
+                          ),
+                        ),
+                      ),
+                      if (hasCustomIcon)
+                        Positioned(
+                          right: 6,
+                          top: 6,
+                          child: Material(
+                            color: Colors.black.withValues(alpha: 0.56),
+                            shape: const CircleBorder(),
+                            child: InkWell(
+                              customBorder: const CircleBorder(),
+                              onTap: () {
+                                setState(() {
+                                  _iconDataUrl = null;
+                                });
+                              },
+                              child: const Padding(
+                                padding: EdgeInsets.all(6),
+                                child: Icon(Icons.close_rounded, size: 16),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: AppSpacing.xs),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            _pickingIcon
+                                ? context.wp('Loading image...')
+                                : context.wp('Click to choose an image'),
+                            style: theme.textTheme.bodyMedium,
+                          ),
+                          const SizedBox(height: AppSpacing.xxs),
+                          Text(
+                            context.wp('Recommended: 128x128px'),
+                            style: theme.textTheme.bodySmall,
+                          ),
+                        ],
                       ),
                     ),
-                    IconButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.close_rounded),
-                      tooltip: context.wp('Close'),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.lg),
-                TextField(
-                  controller: _nameController,
-                  decoration: InputDecoration(labelText: context.wp('Name')),
-                  autofocus: true,
-                ),
+                  ),
+                ],
+              ),
+              if (!hasCustomIcon) ...<Widget>[
                 const SizedBox(height: AppSpacing.lg),
                 Text(
-                  context.wp('Icon'),
+                  context.wp('Color'),
                   style: theme.textTheme.labelLarge?.copyWith(
                     color: surfaces.muted,
                   ),
                 ),
                 const SizedBox(height: AppSpacing.sm),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Stack(
-                      children: <Widget>[
-                        InkWell(
-                          onTap: _pickIcon,
-                          borderRadius: BorderRadius.circular(14),
-                          child: Container(
-                            width: 92,
-                            height: 92,
+                Wrap(
+                  spacing: AppSpacing.sm,
+                  runSpacing: AppSpacing.sm,
+                  children: _projectAvatarColorKeys
+                      .map((colorKey) {
+                        final palette = _projectAvatarPalette(colorKey);
+                        final selected = colorKey == _selectedColor;
+                        return InkWell(
+                          onTap: () {
+                            setState(() {
+                              _selectedColor = colorKey;
+                            });
+                          },
+                          borderRadius: BorderRadius.circular(12),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 160),
+                            width: 46,
+                            height: 46,
                             decoration: BoxDecoration(
-                              color: surfaces.panelRaised,
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: surfaces.lineSoft),
-                            ),
-                            alignment: Alignment.center,
-                            child: _ProjectAvatar(
-                              project: widget.project.copyWith(
-                                name: _nameController.text.trim().isEmpty
-                                    ? widget.project.name
-                                    : _nameController.text.trim(),
-                                label: projectDisplayLabel(
-                                  widget.project.directory,
-                                  name: _nameController.text.trim().isEmpty
-                                      ? widget.project.name
-                                      : _nameController.text.trim(),
-                                ),
-                                icon: ProjectIconInfo(
-                                  url: _iconDataUrl,
-                                  override: _iconDataUrl,
-                                  color: _selectedColor,
-                                ),
-                              ),
-                              size: 84,
-                              fontSize: 34,
-                              rounded: 10,
-                            ),
-                          ),
-                        ),
-                        if (hasCustomIcon)
-                          Positioned(
-                            right: 6,
-                            top: 6,
-                            child: Material(
-                              color: Colors.black.withValues(alpha: 0.56),
-                              shape: const CircleBorder(),
-                              child: InkWell(
-                                customBorder: const CircleBorder(),
-                                onTap: () {
-                                  setState(() {
-                                    _iconDataUrl = null;
-                                  });
-                                },
-                                child: const Padding(
-                                  padding: EdgeInsets.all(6),
-                                  child: Icon(Icons.close_rounded, size: 16),
-                                ),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(width: AppSpacing.md),
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.only(top: AppSpacing.xs),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: <Widget>[
-                            Text(
-                              _pickingIcon
-                                  ? context.wp('Loading image...')
-                                  : context.wp('Click to choose an image'),
-                              style: theme.textTheme.bodyMedium,
-                            ),
-                            const SizedBox(height: AppSpacing.xxs),
-                            Text(
-                              context.wp('Recommended: 128x128px'),
-                              style: theme.textTheme.bodySmall,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                if (!hasCustomIcon) ...<Widget>[
-                  const SizedBox(height: AppSpacing.lg),
-                  Text(
-                    context.wp('Color'),
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      color: surfaces.muted,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  Wrap(
-                    spacing: AppSpacing.sm,
-                    runSpacing: AppSpacing.sm,
-                    children: _projectAvatarColorKeys
-                        .map((colorKey) {
-                          final palette = _projectAvatarPalette(colorKey);
-                          final selected = colorKey == _selectedColor;
-                          return InkWell(
-                            onTap: () {
-                              setState(() {
-                                _selectedColor = colorKey;
-                              });
-                            },
-                            borderRadius: BorderRadius.circular(12),
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 160),
-                              width: 46,
-                              height: 46,
-                              decoration: BoxDecoration(
+                              color: selected
+                                  ? Colors.white.withValues(alpha: 0.08)
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
                                 color: selected
-                                    ? Colors.white.withValues(alpha: 0.08)
-                                    : Colors.transparent,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: selected
-                                      ? Colors.white.withValues(alpha: 0.9)
-                                      : Colors.white.withValues(alpha: 0.06),
-                                  width: selected ? 2 : 1,
-                                ),
+                                    ? Colors.white.withValues(alpha: 0.9)
+                                    : Colors.white.withValues(alpha: 0.06),
+                                width: selected ? 2 : 1,
                               ),
-                              padding: const EdgeInsets.all(4),
-                              child: DecoratedBox(
-                                decoration: BoxDecoration(
-                                  color: palette.background,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    _projectInitial(
-                                      widget.project.copyWith(
+                            ),
+                            padding: const EdgeInsets.all(4),
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: palette.background,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  _projectInitial(
+                                    widget.project.copyWith(
+                                      name: _nameController.text.trim().isEmpty
+                                          ? widget.project.name
+                                          : _nameController.text.trim(),
+                                      label: projectDisplayLabel(
+                                        widget.project.directory,
                                         name:
                                             _nameController.text.trim().isEmpty
                                             ? widget.project.name
                                             : _nameController.text.trim(),
-                                        label: projectDisplayLabel(
-                                          widget.project.directory,
-                                          name:
-                                              _nameController.text
-                                                  .trim()
-                                                  .isEmpty
-                                              ? widget.project.name
-                                              : _nameController.text.trim(),
-                                        ),
                                       ),
                                     ),
-                                    style: theme.textTheme.titleMedium
-                                        ?.copyWith(
-                                          color: palette.foreground,
-                                          fontWeight: FontWeight.w700,
-                                        ),
+                                  ),
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    color: palette.foreground,
+                                    fontWeight: FontWeight.w700,
                                   ),
                                 ),
                               ),
                             ),
-                          );
-                        })
-                        .toList(growable: false),
-                  ),
-                ],
-                const SizedBox(height: AppSpacing.lg),
-                TextField(
-                  controller: _startupController,
-                  maxLines: 3,
-                  minLines: 3,
-                  decoration: InputDecoration(
-                    labelText: context.wp('Workspace startup script'),
-                    hintText: context.wp('e.g. bun install'),
-                    helperText: context.wp(
-                      'Runs after creating a new workspace (worktree).',
-                    ),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xl),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: <Widget>[
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      child: Text(context.wp('Cancel')),
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    FilledButton(
-                      onPressed: _submit,
-                      child: Text(context.wp('Save')),
-                    ),
-                  ],
+                          ),
+                        );
+                      })
+                      .toList(growable: false),
                 ),
               ],
-            ),
+              const SizedBox(height: AppSpacing.lg),
+              TextField(
+                controller: _startupController,
+                maxLines: 3,
+                minLines: 3,
+                decoration: InputDecoration(
+                  labelText: context.wp('Workspace startup script'),
+                  hintText: context.wp('e.g. bun install'),
+                  helperText: context.wp(
+                    'Runs after creating a new workspace (worktree).',
+                  ),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.xl),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: <Widget>[
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: Text(context.wp('Cancel')),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  FilledButton(
+                    onPressed: _submit,
+                    child: Text(context.wp('Save')),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
       ),
@@ -14918,65 +14937,60 @@ class _RenameSessionDialogState extends State<_RenameSessionDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
-    return AlertDialog(
-      backgroundColor: Colors.transparent,
+    return AppDialogFrame(
       insetPadding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.lg,
         vertical: AppSpacing.xl,
       ),
-      contentPadding: EdgeInsets.zero,
-      content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 420),
-        child: AppGlassPanel(
-          radius: AppSpacing.dialogRadius,
-          blur: 24,
-          backgroundOpacity: theme.brightness == Brightness.dark ? 0.84 : 0.92,
-          borderOpacity: 0.1,
-          padding: const EdgeInsets.all(AppSpacing.lg),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(
-                context.wp('Rename Session'),
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
+      constraints: const BoxConstraints(maxWidth: 420),
+      child: AppGlassPanel(
+        key: const ValueKey<String>('rename-session-dialog'),
+        radius: AppSpacing.dialogRadius,
+        blur: 24,
+        backgroundOpacity: theme.brightness == Brightness.dark ? 0.84 : 0.92,
+        borderOpacity: 0.1,
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              context.wp('Rename Session'),
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xxs),
+            Text(
+              context.wp('Give this session a short, recognizable title.'),
+              style: theme.textTheme.bodySmall?.copyWith(color: surfaces.muted),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            TextField(
+              controller: _titleController,
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: context.wp('Session title'),
+              ),
+              onSubmitted: (value) => Navigator.of(context).pop(value.trim()),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text(context.wp('Cancel')),
                 ),
-              ),
-              const SizedBox(height: AppSpacing.xxs),
-              Text(
-                context.wp('Give this session a short, recognizable title.'),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: surfaces.muted,
+                const SizedBox(width: AppSpacing.sm),
+                FilledButton(
+                  onPressed: () =>
+                      Navigator.of(context).pop(_titleController.text.trim()),
+                  child: Text(context.wp('Save')),
                 ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              TextField(
-                controller: _titleController,
-                autofocus: true,
-                decoration: InputDecoration(
-                  labelText: context.wp('Session title'),
-                ),
-                onSubmitted: (value) => Navigator.of(context).pop(value.trim()),
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: <Widget>[
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: Text(context.wp('Cancel')),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  FilledButton(
-                    onPressed: () =>
-                        Navigator.of(context).pop(_titleController.text.trim()),
-                    child: Text(context.wp('Save')),
-                  ),
-                ],
-              ),
-            ],
-          ),
+              ],
+            ),
+          ],
         ),
       ),
     );
@@ -15460,7 +15474,7 @@ Future<void> _showCompactWorkspaceSheet(
   required Widget Function(BuildContext context, StateSetter setModalState)
   contentBuilder,
 }) {
-  return showModalBottomSheet<void>(
+  return showAppModalBottomSheet<void>(
     context: context,
     backgroundColor: Colors.transparent,
     isScrollControlled: true,
@@ -20067,7 +20081,7 @@ class _PromptComposerState extends State<_PromptComposer> {
   Future<WorkspacePromptDispatchMode?> _showSubmitModePicker(
     BuildContext context,
   ) {
-    return showModalBottomSheet<WorkspacePromptDispatchMode>(
+    return showAppModalBottomSheet<WorkspacePromptDispatchMode>(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (context) => _ComposerSubmitModeSheet(
@@ -20805,7 +20819,7 @@ class _PromptComposerState extends State<_PromptComposer> {
   }
 
   Future<String?> _showAgentPicker(BuildContext context) {
-    return showModalBottomSheet<String>(
+    return showAppModalBottomSheet<String>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
@@ -20865,7 +20879,7 @@ class _PromptComposerState extends State<_PromptComposer> {
                 left.title.toLowerCase().compareTo(right.title.toLowerCase()),
           );
 
-    return showModalBottomSheet<String>(
+    return showAppModalBottomSheet<String>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
@@ -20916,7 +20930,7 @@ class _PromptComposerState extends State<_PromptComposer> {
         ),
       ),
     ];
-    return showModalBottomSheet<String?>(
+    return showAppModalBottomSheet<String?>(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (context) => _SearchableSelectionSheet<_ReasoningChoice>(
@@ -23237,7 +23251,7 @@ class _UserTimelineMessageState extends State<_UserTimelineMessage> {
       widget.configSnapshot?.providerCatalog,
     );
     final stamp = _formatTimelineMessageStamp(context, widget.message);
-    await showModalBottomSheet<void>(
+    await showAppModalBottomSheet<void>(
       context: context,
       useSafeArea: true,
       showDragHandle: true,

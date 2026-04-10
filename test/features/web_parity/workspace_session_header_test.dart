@@ -537,14 +537,14 @@ void main() {
 
     await tester.enterText(
       find.descendant(
-        of: find.byType(AlertDialog),
+        of: find.byKey(const ValueKey<String>('rename-session-dialog')),
         matching: find.byType(TextField),
       ),
       'Renamed header session',
     );
     await tester.tap(
       find.descendant(
-        of: find.byType(AlertDialog),
+        of: find.byKey(const ValueKey<String>('rename-session-dialog')),
         matching: find.widgetWithText(FilledButton, 'Save'),
       ),
     );
@@ -608,7 +608,7 @@ void main() {
     expect(find.text('Delete Session'), findsAtLeastNWidgets(1));
     await tester.tap(
       find.descendant(
-        of: find.byType(AlertDialog),
+        of: find.byKey(const ValueKey<String>('delete-session-dialog')),
         matching: find.widgetWithText(FilledButton, 'Delete'),
       ),
     );
@@ -725,6 +725,136 @@ void main() {
       );
     },
   );
+
+  testWidgets('command palette dismisses when tapping the backdrop', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1480, 960);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _HeaderWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('workspace-command-palette-button')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    expect(
+      find.byKey(const ValueKey<String>('workspace-command-palette-sheet')),
+      findsOneWidget,
+    );
+
+    await tester.tapAt(const Offset(32, 32));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    expect(
+      find.byKey(const ValueKey<String>('workspace-command-palette-sheet')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('rename session dialog dismisses when tapping the backdrop', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1480, 960);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    late _ActionWorkspaceController controllerInstance;
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            controllerInstance = _ActionWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+            return controllerInstance;
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('session-header-overflow-menu-button')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    final renameItem = tester.widget<InkWell>(
+      find.byKey(
+        const ValueKey<String>('session-header-overflow-menu-item-rename'),
+      ),
+    );
+    renameItem.onTap?.call();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    expect(
+      find.byKey(const ValueKey<String>('rename-session-dialog')),
+      findsOneWidget,
+    );
+
+    await tester.tapAt(const Offset(32, 32));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    expect(
+      find.byKey(const ValueKey<String>('rename-session-dialog')),
+      findsNothing,
+    );
+    expect(controllerInstance.renameCount, 0);
+  });
 
   testWidgets(
     'session header chat search reveals older matches and navigates between them',
