@@ -674,6 +674,34 @@ class _WorkspaceSideBadge extends StatelessWidget {
   }
 }
 
+class _WorkspaceSideActionButton extends StatelessWidget {
+  const _WorkspaceSideActionButton({
+    required this.buttonKey,
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  final Key buttonKey;
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: IconButton(
+        key: buttonKey,
+        onPressed: onPressed,
+        visualDensity: VisualDensity.compact,
+        iconSize: 18,
+        icon: Icon(icon),
+      ),
+    );
+  }
+}
+
 class _WorkspaceSideEmptyState extends StatelessWidget {
   const _WorkspaceSideEmptyState({
     required this.icon,
@@ -890,6 +918,32 @@ class _ReviewPanelState extends State<_ReviewPanel> {
       _ReviewLineCommentSubmission(target: target, comment: comment),
     );
     _lineCommentController.clear();
+  }
+
+  void _openReviewPreviewFullScreen({
+    required FileDiffSummary diff,
+    required _ParsedReviewDiff parsedDiff,
+    required bool splitEnabled,
+    required bool compactMode,
+    required int lineCount,
+    required _ReviewDiffMode initialMode,
+    required String? diffModeHint,
+  }) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (context) => _WorkspaceReviewPreviewPage(
+          diff: diff,
+          parsedDiff: parsedDiff,
+          splitEnabled: splitEnabled,
+          compactMode: compactMode,
+          lineCount: lineCount,
+          initialMode: initialMode,
+          diffModeHint: diffModeHint,
+          onLineComment: _startLineComment,
+        ),
+      ),
+    );
   }
 
   @override
@@ -1297,59 +1351,129 @@ class _ReviewPanelState extends State<_ReviewPanel> {
                                     width: density.inset(AppSpacing.sm, min: 6),
                                   ),
                                   Flexible(
-                                    child: Align(
-                                      alignment: Alignment.topRight,
-                                      child: FittedBox(
-                                        fit: BoxFit.scaleDown,
-                                        alignment: Alignment.centerRight,
-                                        child: SegmentedButton<_ReviewDiffMode>(
-                                          key: const ValueKey<String>(
-                                            'review-diff-mode-toggle',
+                                    child: LayoutBuilder(
+                                      builder: (context, constraints) {
+                                        final stackControls =
+                                            constraints.maxWidth < 220;
+                                        final modeToggle = FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          alignment: Alignment.centerRight,
+                                          child: SegmentedButton<_ReviewDiffMode>(
+                                            key: const ValueKey<String>(
+                                              'review-diff-mode-toggle',
+                                            ),
+                                            showSelectedIcon: false,
+                                            segments:
+                                                <
+                                                  ButtonSegment<_ReviewDiffMode>
+                                                >[
+                                                  ButtonSegment<
+                                                    _ReviewDiffMode
+                                                  >(
+                                                    value:
+                                                        _ReviewDiffMode.unified,
+                                                    label: Text(
+                                                      context.wp('Unified'),
+                                                    ),
+                                                    icon: Icon(
+                                                      Icons.view_stream_rounded,
+                                                    ),
+                                                  ),
+                                                  ButtonSegment<
+                                                    _ReviewDiffMode
+                                                  >(
+                                                    value:
+                                                        _ReviewDiffMode.split,
+                                                    label: Text(
+                                                      context.wp('Split'),
+                                                    ),
+                                                    icon: Icon(
+                                                      Icons.view_week_rounded,
+                                                    ),
+                                                    enabled: splitEnabled,
+                                                  ),
+                                                ],
+                                            selected: <_ReviewDiffMode>{
+                                              effectiveDiffMode,
+                                            },
+                                            onSelectionChanged: (selection) {
+                                              final next = selection.isEmpty
+                                                  ? effectiveDiffMode
+                                                  : selection.first;
+                                              if (!splitEnabled &&
+                                                  next ==
+                                                      _ReviewDiffMode.split) {
+                                                return;
+                                              }
+                                              if (next == _diffMode) {
+                                                return;
+                                              }
+                                              setState(() {
+                                                _diffMode = next;
+                                              });
+                                            },
                                           ),
-                                          showSelectedIcon: false,
-                                          segments:
-                                              <ButtonSegment<_ReviewDiffMode>>[
-                                                ButtonSegment<_ReviewDiffMode>(
-                                                  value:
-                                                      _ReviewDiffMode.unified,
-                                                  label: Text(
-                                                    context.wp('Unified'),
-                                                  ),
-                                                  icon: Icon(
-                                                    Icons.view_stream_rounded,
-                                                  ),
+                                        );
+                                        final fullscreenButton =
+                                            currentDiff != null &&
+                                                parsedDiff != null
+                                            ? _WorkspaceSideActionButton(
+                                                buttonKey: const ValueKey<String>(
+                                                  'review-preview-fullscreen-button',
                                                 ),
-                                                ButtonSegment<_ReviewDiffMode>(
-                                                  value: _ReviewDiffMode.split,
-                                                  label: Text(
-                                                    context.wp('Split'),
-                                                  ),
-                                                  icon: Icon(
-                                                    Icons.view_week_rounded,
-                                                  ),
-                                                  enabled: splitEnabled,
+                                                icon:
+                                                    Icons.open_in_full_rounded,
+                                                tooltip: context.wp(
+                                                  'Open diff in full screen',
                                                 ),
-                                              ],
-                                          selected: <_ReviewDiffMode>{
-                                            effectiveDiffMode,
-                                          },
-                                          onSelectionChanged: (selection) {
-                                            final next = selection.isEmpty
-                                                ? effectiveDiffMode
-                                                : selection.first;
-                                            if (!splitEnabled &&
-                                                next == _ReviewDiffMode.split) {
-                                              return;
-                                            }
-                                            if (next == _diffMode) {
-                                              return;
-                                            }
-                                            setState(() {
-                                              _diffMode = next;
-                                            });
-                                          },
-                                        ),
-                                      ),
+                                                onPressed: () {
+                                                  _openReviewPreviewFullScreen(
+                                                    diff: currentDiff,
+                                                    parsedDiff: parsedDiff,
+                                                    splitEnabled: splitEnabled,
+                                                    compactMode: compactMode,
+                                                    lineCount: diffLineCount,
+                                                    initialMode:
+                                                        effectiveDiffMode,
+                                                    diffModeHint: diffModeHint,
+                                                  );
+                                                },
+                                              )
+                                            : null;
+                                        return Align(
+                                          alignment: Alignment.topRight,
+                                          child: stackControls
+                                              ? Column(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.end,
+                                                  children: <Widget>[
+                                                    if (fullscreenButton !=
+                                                        null)
+                                                      fullscreenButton,
+                                                    modeToggle,
+                                                  ],
+                                                )
+                                              : Row(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: <Widget>[
+                                                    if (fullscreenButton !=
+                                                        null) ...<Widget>[
+                                                      fullscreenButton,
+                                                      SizedBox(
+                                                        width: density.inset(
+                                                          AppSpacing.xs,
+                                                          min: 6,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                    modeToggle,
+                                                  ],
+                                                ),
+                                        );
+                                      },
                                     ),
                                   ),
                                 ],
@@ -2883,6 +3007,22 @@ class _FilesPanelState extends State<_FilesPanel> {
     });
   }
 
+  void _openFilePreviewFullScreen(FileBrowserBundle bundle) {
+    final preview = bundle.preview;
+    if (preview == null) {
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (context) => _WorkspaceFilePreviewPage(
+          path: bundle.selectedPath,
+          content: preview.content,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -3136,6 +3276,20 @@ class _FilesPanelState extends State<_FilesPanel> {
                                 title: context.wp('Preview'),
                                 caption: bundle.selectedPath!,
                                 dense: true,
+                                trailing: bundle.preview == null
+                                    ? null
+                                    : _WorkspaceSideActionButton(
+                                        buttonKey: const ValueKey<String>(
+                                          'files-preview-fullscreen-button',
+                                        ),
+                                        icon: Icons.open_in_full_rounded,
+                                        tooltip: context.wp(
+                                          'Open file preview in full screen',
+                                        ),
+                                        onPressed: () {
+                                          _openFilePreviewFullScreen(bundle);
+                                        },
+                                      ),
                               ),
                             Expanded(
                               child: widget.loadingPreview
@@ -3445,6 +3599,206 @@ class _WorkspaceSafeFilePreviewState extends State<_WorkspaceSafeFilePreview> {
 }
 
 enum _WorkspaceFilePreviewMode { source, rendered }
+
+class _WorkspacePreviewScaffold extends StatelessWidget {
+  const _WorkspacePreviewScaffold({
+    required this.pageKey,
+    required this.title,
+    this.subtitle,
+    required this.child,
+  });
+
+  final Key pageKey;
+  final String title;
+  final String? subtitle;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final density = _workspaceDensity(context);
+    return Scaffold(
+      key: pageKey,
+      appBar: AppBar(title: Text(title)),
+      body: SafeArea(
+        child: Padding(
+          padding: EdgeInsets.all(density.inset(AppSpacing.lg)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              if (subtitle != null) ...<Widget>[
+                Text(
+                  subtitle!,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: surfaces.muted,
+                  ),
+                ),
+                SizedBox(height: density.inset(AppSpacing.md)),
+              ],
+              Expanded(child: child),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WorkspaceFilePreviewPage extends StatelessWidget {
+  const _WorkspaceFilePreviewPage({required this.path, required this.content});
+
+  final String? path;
+  final String content;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final density = _workspaceDensity(context);
+    return _WorkspacePreviewScaffold(
+      pageKey: const ValueKey<String>('fullscreen-file-preview-page'),
+      title: context.wp('File Preview'),
+      subtitle: path,
+      child: Container(
+        width: double.infinity,
+        padding: EdgeInsets.all(density.inset(AppSpacing.md)),
+        decoration: _workspaceSidePanelDecoration(
+          surfaces: surfaces,
+          compact: density.compact,
+          elevated: true,
+          tint: theme.colorScheme.primary,
+        ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return _WorkspaceSafeFilePreview(
+              path: path,
+              content: content,
+              previewWidth: constraints.maxWidth,
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _WorkspaceReviewPreviewPage extends StatefulWidget {
+  const _WorkspaceReviewPreviewPage({
+    required this.diff,
+    required this.parsedDiff,
+    required this.splitEnabled,
+    required this.compactMode,
+    required this.lineCount,
+    required this.initialMode,
+    required this.diffModeHint,
+    required this.onLineComment,
+  });
+
+  final FileDiffSummary diff;
+  final _ParsedReviewDiff parsedDiff;
+  final bool splitEnabled;
+  final bool compactMode;
+  final int lineCount;
+  final _ReviewDiffMode initialMode;
+  final String? diffModeHint;
+  final ValueChanged<_ReviewCommentTarget> onLineComment;
+
+  @override
+  State<_WorkspaceReviewPreviewPage> createState() =>
+      _WorkspaceReviewPreviewPageState();
+}
+
+class _WorkspaceReviewPreviewPageState
+    extends State<_WorkspaceReviewPreviewPage> {
+  late _ReviewDiffMode _mode = widget.initialMode;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final density = _workspaceDensity(context);
+    final effectiveMode = widget.splitEnabled ? _mode : _ReviewDiffMode.unified;
+    return _WorkspacePreviewScaffold(
+      pageKey: const ValueKey<String>('fullscreen-review-preview-page'),
+      title: context.wp('Diff Preview'),
+      subtitle: widget.diff.path,
+      child: Container(
+        width: double.infinity,
+        padding: EdgeInsets.all(density.inset(AppSpacing.md)),
+        decoration: _workspaceSidePanelDecoration(
+          surfaces: surfaces,
+          compact: density.compact,
+          elevated: true,
+          tint: theme.colorScheme.primary,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Align(
+              alignment: Alignment.topRight,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerRight,
+                child: SegmentedButton<_ReviewDiffMode>(
+                  showSelectedIcon: false,
+                  segments: <ButtonSegment<_ReviewDiffMode>>[
+                    ButtonSegment<_ReviewDiffMode>(
+                      value: _ReviewDiffMode.unified,
+                      label: Text(context.wp('Unified')),
+                      icon: Icon(Icons.view_stream_rounded),
+                    ),
+                    ButtonSegment<_ReviewDiffMode>(
+                      value: _ReviewDiffMode.split,
+                      label: Text(context.wp('Split')),
+                      icon: Icon(Icons.view_week_rounded),
+                      enabled: widget.splitEnabled,
+                    ),
+                  ],
+                  selected: <_ReviewDiffMode>{effectiveMode},
+                  onSelectionChanged: (selection) {
+                    final next = selection.isEmpty
+                        ? effectiveMode
+                        : selection.first;
+                    if (!widget.splitEnabled && next == _ReviewDiffMode.split) {
+                      return;
+                    }
+                    if (next == _mode) {
+                      return;
+                    }
+                    setState(() {
+                      _mode = next;
+                    });
+                  },
+                ),
+              ),
+            ),
+            if (widget.diffModeHint != null) ...<Widget>[
+              SizedBox(height: density.inset(AppSpacing.sm)),
+              Text(
+                widget.diffModeHint!,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: surfaces.muted,
+                ),
+              ),
+            ],
+            SizedBox(height: density.inset(AppSpacing.sm)),
+            Expanded(
+              child: _ReviewDiffView(
+                diff: widget.diff,
+                parsedDiff: widget.parsedDiff,
+                mode: effectiveMode,
+                lineCount: widget.lineCount,
+                compactMode: widget.compactMode,
+                onLineComment: widget.onLineComment,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _RenderedMarkdownFilePreview extends StatelessWidget {
   const _RenderedMarkdownFilePreview({required this.content});
