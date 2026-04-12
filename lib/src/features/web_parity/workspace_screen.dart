@@ -19712,11 +19712,19 @@ class _PromptComposerState extends State<_PromptComposer> {
 
   final FocusNode _focusNode = FocusNode();
   final SpeechToText _speechToText = SpeechToText();
+  final LayerLink _slashCommandsLayerLink = LayerLink();
+  final GlobalKey _slashCommandsAnchorKey = GlobalKey(
+    debugLabel: 'composer-slash-anchor',
+  );
+  OverlayEntry? _slashCommandsOverlayEntry;
   Timer? _restoredDraftGuardTimer;
   String? _guardedRestoredDraft;
   bool _clearingRestoredDraft = false;
+  bool _slashCommandsOverlaySyncScheduled = false;
   int _historyIndex = -1;
+  int _slashCommandSelectionIndex = 0;
   String? _savedHistoryDraft;
+  String? _lastSlashQuery;
   bool _applyingPromptHistory = false;
   bool _draggingFiles = false;
   bool _voiceInitialized = false;
@@ -19877,10 +19885,85 @@ class _PromptComposerState extends State<_PromptComposer> {
     );
   }
 
+  bool _hasPlainSlashCommandNavigationModifiers(KeyEvent event) {
+    final keyboard = HardwareKeyboard.instance;
+    return !keyboard.isAltPressed &&
+        !keyboard.isControlPressed &&
+        !keyboard.isMetaPressed &&
+        !keyboard.isShiftPressed;
+  }
+
+  int _resolvedSlashCommandSelectionIndex(int length) {
+    if (length <= 0) {
+      return 0;
+    }
+    return _slashCommandSelectionIndex.clamp(0, length - 1);
+  }
+
+  void _syncSlashCommandSelectionState() {
+    final query = _slashQuery;
+    final commands = _filteredSlashCommands;
+    if (_lastSlashQuery != query) {
+      _lastSlashQuery = query;
+      _slashCommandSelectionIndex = 0;
+      return;
+    }
+    if (commands.isEmpty) {
+      _slashCommandSelectionIndex = 0;
+      return;
+    }
+    if (_slashCommandSelectionIndex >= commands.length) {
+      _slashCommandSelectionIndex = commands.length - 1;
+    }
+  }
+
+  KeyEventResult _handleSlashCommandKeyEvent(KeyEvent event) {
+    if (!_hasPlainSlashCommandNavigationModifiers(event)) {
+      return KeyEventResult.ignored;
+    }
+    final commands = _filteredSlashCommands;
+    if (commands.isEmpty) {
+      return KeyEventResult.ignored;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+      setState(() {
+        _slashCommandSelectionIndex =
+            (_resolvedSlashCommandSelectionIndex(commands.length) + 1) %
+            commands.length;
+      });
+      _slashCommandsOverlayEntry?.markNeedsBuild();
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+      setState(() {
+        _slashCommandSelectionIndex =
+            (_resolvedSlashCommandSelectionIndex(commands.length) -
+                1 +
+                commands.length) %
+            commands.length;
+      });
+      _slashCommandsOverlayEntry?.markNeedsBuild();
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.tab &&
+        !HardwareKeyboard.instance.isShiftPressed) {
+      final selected =
+          commands[_resolvedSlashCommandSelectionIndex(commands.length)];
+      unawaited(_selectSlashCommand(selected));
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
   KeyEventResult _handleComposerKeyEvent(FocusNode node, KeyEvent event) {
-    if (!_usesDesktopEnterToSubmit(Theme.of(context).platform) ||
-        event is! KeyDownEvent ||
-        _hasActiveTextComposition) {
+    if (event is! KeyDownEvent || _hasActiveTextComposition) {
+      return KeyEventResult.ignored;
+    }
+    final slashCommandResult = _handleSlashCommandKeyEvent(event);
+    if (slashCommandResult == KeyEventResult.handled) {
+      return KeyEventResult.handled;
+    }
+    if (!_usesDesktopEnterToSubmit(Theme.of(context).platform)) {
       return KeyEventResult.ignored;
     }
     if (_isPlainArrowHistoryKey(event)) {
@@ -19903,7 +19986,9 @@ class _PromptComposerState extends State<_PromptComposer> {
   @override
   void initState() {
     super.initState();
+    _focusNode.addListener(_handleComposerFocusChanged);
     widget.controller.addListener(_handleComposerChanged);
+    _scheduleSlashCommandsOverlaySync();
   }
 
   @override
@@ -19932,6 +20017,8 @@ class _PromptComposerState extends State<_PromptComposer> {
     if ((widget.submitting || widget.pickingAttachments) && _draggingFiles) {
       _draggingFiles = false;
     }
+    _syncSlashCommandSelectionState();
+    _scheduleSlashCommandsOverlaySync();
     if (oldWidget.focusRequestToken != widget.focusRequestToken) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) {
@@ -19945,10 +20032,20 @@ class _PromptComposerState extends State<_PromptComposer> {
   @override
   void dispose() {
     _restoredDraftGuardTimer?.cancel();
+    _removeSlashCommandsOverlay();
+    _focusNode.removeListener(_handleComposerFocusChanged);
     widget.controller.removeListener(_handleComposerChanged);
     unawaited(_speechToText.cancel());
     _focusNode.dispose();
     super.dispose();
+  }
+
+  void _handleComposerFocusChanged() {
+    if (!_focusNode.hasFocus) {
+      _removeSlashCommandsOverlay();
+      return;
+    }
+    _scheduleSlashCommandsOverlaySync();
   }
 
   void _handleComposerChanged() {
@@ -19982,9 +20079,48 @@ class _PromptComposerState extends State<_PromptComposer> {
       _historyIndex = -1;
       _savedHistoryDraft = null;
     }
+    _syncSlashCommandSelectionState();
     if (mounted) {
       setState(() {});
+      _scheduleSlashCommandsOverlaySync();
     }
+  }
+
+  void _scheduleSlashCommandsOverlaySync() {
+    if (_slashCommandsOverlaySyncScheduled) {
+      return;
+    }
+    _slashCommandsOverlaySyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _slashCommandsOverlaySyncScheduled = false;
+      if (!mounted) {
+        return;
+      }
+      _syncSlashCommandsOverlay();
+    });
+  }
+
+  void _syncSlashCommandsOverlay() {
+    final commands = _filteredSlashCommands;
+    if (!_focusNode.hasFocus || commands.isEmpty) {
+      _removeSlashCommandsOverlay();
+      return;
+    }
+    _syncSlashCommandSelectionState();
+    final existingEntry = _slashCommandsOverlayEntry;
+    if (existingEntry != null) {
+      existingEntry.markNeedsBuild();
+      return;
+    }
+    _slashCommandsOverlayEntry = OverlayEntry(
+      builder: _buildSlashCommandsOverlay,
+    );
+    Overlay.of(context, rootOverlay: true).insert(_slashCommandsOverlayEntry!);
+  }
+
+  void _removeSlashCommandsOverlay() {
+    _slashCommandsOverlayEntry?.remove();
+    _slashCommandsOverlayEntry = null;
   }
 
   void _armRestoredDraftGuard(String? draft) {
@@ -20013,6 +20149,7 @@ class _PromptComposerState extends State<_PromptComposer> {
       _focusNode.unfocus();
     }
     FocusManager.instance.primaryFocus?.unfocus();
+    _removeSlashCommandsOverlay();
   }
 
   Future<bool> _ensureVoiceInputReady() async {
@@ -20412,6 +20549,7 @@ class _PromptComposerState extends State<_PromptComposer> {
   }
 
   Future<void> _selectSlashCommand(_ComposerSlashCommand command) async {
+    _removeSlashCommandsOverlay();
     if (command.type == _ComposerSlashCommandType.custom) {
       _applyCustomSlashCommand(command.trigger);
       return;
@@ -20625,12 +20763,213 @@ class _PromptComposerState extends State<_PromptComposer> {
     );
   }
 
+  ({double width, double maxHeight}) _slashCommandsOverlayGeometry(
+    BuildContext overlayContext,
+    bool isCompact,
+  ) {
+    final renderObject = _slashCommandsAnchorKey.currentContext
+        ?.findRenderObject();
+    final mediaQuery = MediaQuery.of(overlayContext);
+    final density = _workspaceDensity(overlayContext);
+    final fallbackWidth = math.min(
+      mediaQuery.size.width - (AppSpacing.md * 2),
+      _workspaceDensity(context).maxContentWidth(920),
+    );
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      return (width: fallbackWidth, maxHeight: isCompact ? 240.0 : 320.0);
+    }
+
+    final topLeft = renderObject.localToGlobal(Offset.zero);
+    final safeTop = mediaQuery.padding.top + AppSpacing.sm;
+    final gap = density.inset(AppSpacing.sm, min: 8);
+    final padding = density.inset(isCompact ? AppSpacing.xs : AppSpacing.sm);
+    final placementGuard = density.inset(AppSpacing.sm, min: 8);
+    final availableAbove = topLeft.dy - safeTop - gap;
+    final preferredHeight = isCompact ? 240.0 : 320.0;
+    final maxListHeight = availableAbove - (padding * 2) - placementGuard;
+    return (
+      width: renderObject.size.width,
+      maxHeight: math.max(0.0, math.min(preferredHeight, maxListHeight)),
+    );
+  }
+
+  Widget _buildSlashCommandsOverlay(BuildContext overlayContext) {
+    final commands = _filteredSlashCommands;
+    if (commands.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final density = _workspaceDensity(overlayContext);
+    final isCompact = widget.compact || density.compact;
+    final geometry = _slashCommandsOverlayGeometry(overlayContext, isCompact);
+    final estimatedHeight = _slashCommandsEstimatedOverlayHeight(
+      overlayContext,
+      commandCount: commands.length,
+      isCompact: isCompact,
+      maxHeight: geometry.maxHeight,
+    );
+    return Positioned.fill(
+      child: CompositedTransformFollower(
+        link: _slashCommandsLayerLink,
+        showWhenUnlinked: false,
+        targetAnchor: Alignment.topLeft,
+        followerAnchor: Alignment.topLeft,
+        offset: Offset(
+          0,
+          -estimatedHeight - density.inset(AppSpacing.sm, min: 8),
+        ),
+        child: Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: geometry.width,
+            child: _buildSlashCommandPopover(
+              overlayContext,
+              commands,
+              isCompact: isCompact,
+              maxHeight: geometry.maxHeight,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  double _slashCommandsEstimatedOverlayHeight(
+    BuildContext context, {
+    required int commandCount,
+    required bool isCompact,
+    required double maxHeight,
+  }) {
+    final density = _workspaceDensity(context);
+    final padding = density.inset(isCompact ? AppSpacing.xs : AppSpacing.sm);
+    final rowHeight = density.inset(isCompact ? 48.0 : 56.0, min: 44);
+    final separatorHeight = math.max(0, commandCount - 1) * AppSpacing.xs;
+    final listContentHeight = (rowHeight * commandCount) + separatorHeight;
+    final placementGuard = density.inset(AppSpacing.sm, min: 8);
+    return (padding * 2) +
+        math.min(maxHeight, listContentHeight) +
+        placementGuard;
+  }
+
+  Widget _buildSlashCommandPopover(
+    BuildContext context,
+    List<_ComposerSlashCommand> slashCommands, {
+    required bool isCompact,
+    required double maxHeight,
+  }) {
+    final density = _workspaceDensity(context);
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final selectedIndex = _resolvedSlashCommandSelectionIndex(
+      slashCommands.length,
+    );
+    return AppGlassPanel(
+      key: const ValueKey<String>('composer-slash-popover'),
+      radius: isCompact ? 16 : 18,
+      blur: isCompact ? 18 : 24,
+      tone: AppSurfaceTone.accent,
+      backgroundOpacity: Theme.of(context).brightness == Brightness.dark
+          ? 0.76
+          : 0.84,
+      borderOpacity: Theme.of(context).brightness == Brightness.dark
+          ? 0.18
+          : 0.22,
+      padding: EdgeInsets.all(
+        density.inset(isCompact ? AppSpacing.xs : AppSpacing.sm),
+      ),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxHeight),
+        child: ListView.separated(
+          shrinkWrap: true,
+          padding: EdgeInsets.zero,
+          itemCount: slashCommands.length,
+          separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.xs),
+          itemBuilder: (context, index) {
+            final command = slashCommands[index];
+            final selected = index == selectedIndex;
+            return Material(
+              color: Colors.transparent,
+              child: InkWell(
+                key: ValueKey<String>('composer-slash-option-${command.id}'),
+                borderRadius: BorderRadius.circular(8),
+                onTap: () => _selectSlashCommand(command),
+                child: Ink(
+                  decoration: appSoftCardDecoration(
+                    context,
+                    radius: 8,
+                    tone: AppSurfaceTone.accent,
+                    muted: !selected,
+                    selected: selected,
+                  ),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: isCompact
+                        ? density.inset(AppSpacing.sm)
+                        : density.inset(AppSpacing.md),
+                    vertical: isCompact
+                        ? density.inset(AppSpacing.xs)
+                        : density.inset(AppSpacing.sm),
+                  ),
+                  child: Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: Row(
+                          children: <Widget>[
+                            Text(
+                              '/${command.trigger}',
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w600),
+                            ),
+                            if ((command.description ?? '')
+                                .trim()
+                                .isNotEmpty) ...<Widget>[
+                              const SizedBox(width: AppSpacing.sm),
+                              Expanded(
+                                child: Text(
+                                  command.description!,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.bodyMedium
+                                      ?.copyWith(color: surfaces.muted),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      if (command.type == _ComposerSlashCommandType.custom &&
+                          command.source != null &&
+                          command.source != 'command') ...<Widget>[
+                        const SizedBox(width: AppSpacing.sm),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.sm,
+                            vertical: 4,
+                          ),
+                          decoration: appSoftCardDecoration(
+                            context,
+                            radius: AppSpacing.pillRadius,
+                            muted: true,
+                          ),
+                          child: Text(
+                            command.source!,
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(color: surfaces.muted),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
     final reasoningLabel = _reasoningLabel(context, widget.selectedReasoning);
-    final slashCommands = _filteredSlashCommands;
     final isCompact = widget.compact || density.compact;
     final submitIcon = _showsInterruptAction
         ? Icons.stop_rounded
@@ -20651,318 +20990,206 @@ class _PromptComposerState extends State<_PromptComposer> {
         density.inset(isCompact ? AppSpacing.sm : AppSpacing.md),
       ),
       child: Center(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: density.maxContentWidth(920)),
-          child: Stack(
-            children: <Widget>[
-              widget.dropRegionBuilder(
-                enabled: dropEnabled,
-                onHoverChanged: _setDraggingFiles,
-                onFilesDropped: (files) async {
-                  _setDraggingFiles(false);
-                  await widget.onDropFiles(files);
-                },
-                child: AppGlassPanel(
-                  radius: isCompact
-                      ? AppSpacing.compactPanelRadius
-                      : AppSpacing.panelRadius,
-                  blur: isCompact ? 18 : 24,
-                  tone: AppSurfaceTone.accent,
-                  backgroundOpacity:
-                      Theme.of(context).brightness == Brightness.dark
-                      ? 0.78
-                      : 0.9,
-                  borderOpacity: _draggingFiles ? 0.24 : 0.12,
-                  padding: EdgeInsets.all(
-                    density.inset(isCompact ? AppSpacing.sm : AppSpacing.md),
-                  ),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(
-                        isCompact
-                            ? AppSpacing.compactPanelRadius
-                            : AppSpacing.panelRadius,
-                      ),
-                      border: Border.all(
-                        color: _draggingFiles
-                            ? Theme.of(
-                                context,
-                              ).colorScheme.primary.withValues(alpha: 0.55)
-                            : Colors.transparent,
-                        width: _draggingFiles ? 1.5 : 0,
-                      ),
+        child: CompositedTransformTarget(
+          key: _slashCommandsAnchorKey,
+          link: _slashCommandsLayerLink,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: density.maxContentWidth(920)),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: <Widget>[
+                widget.dropRegionBuilder(
+                  enabled: dropEnabled,
+                  onHoverChanged: _setDraggingFiles,
+                  onFilesDropped: (files) async {
+                    _setDraggingFiles(false);
+                    await widget.onDropFiles(files);
+                  },
+                  child: AppGlassPanel(
+                    key: const ValueKey<String>('composer-panel'),
+                    radius: isCompact
+                        ? AppSpacing.compactPanelRadius
+                        : AppSpacing.panelRadius,
+                    blur: isCompact ? 18 : 24,
+                    tone: AppSurfaceTone.accent,
+                    backgroundOpacity:
+                        Theme.of(context).brightness == Brightness.dark
+                        ? 0.78
+                        : 0.9,
+                    borderOpacity: _draggingFiles ? 0.24 : 0.12,
+                    padding: EdgeInsets.all(
+                      density.inset(isCompact ? AppSpacing.sm : AppSpacing.md),
                     ),
-                    child: Column(
-                      children: <Widget>[
-                        if (widget.queuedPrompts.isNotEmpty) ...<Widget>[
-                          if (isCompact)
-                            _CompactActivitySummaryButton(
-                              key: const ValueKey<String>(
-                                'composer-queued-summary-button',
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(
+                          isCompact
+                              ? AppSpacing.compactPanelRadius
+                              : AppSpacing.panelRadius,
+                        ),
+                        border: Border.all(
+                          color: _draggingFiles
+                              ? Theme.of(
+                                  context,
+                                ).colorScheme.primary.withValues(alpha: 0.55)
+                              : Colors.transparent,
+                          width: _draggingFiles ? 1.5 : 0,
+                        ),
+                      ),
+                      child: Column(
+                        children: <Widget>[
+                          if (widget.queuedPrompts.isNotEmpty) ...<Widget>[
+                            if (isCompact)
+                              _CompactActivitySummaryButton(
+                                key: const ValueKey<String>(
+                                  'composer-queued-summary-button',
+                                ),
+                                icon: Icons.schedule_send_rounded,
+                                label: context.wp(
+                                  widget.queuedPrompts.length == 1
+                                      ? '1 queued follow-up'
+                                      : '{count} queued follow-ups',
+                                  args: <String, Object?>{
+                                    'count': widget.queuedPrompts.length,
+                                  },
+                                ),
+                                accent: Theme.of(context).colorScheme.primary,
+                                onTap: () =>
+                                    unawaited(_openQueuedPromptsSheet()),
+                              )
+                            else
+                              _ComposerQueuedPromptDock(
+                                compact: isCompact,
+                                queuedPrompts: widget.queuedPrompts,
+                                failedQueuedPromptId:
+                                    widget.failedQueuedPromptId,
+                                sendingQueuedPromptId:
+                                    widget.sendingQueuedPromptId,
+                                busy: widget.interruptible,
+                                onEditQueuedPrompt: widget.onEditQueuedPrompt,
+                                onDeleteQueuedPrompt:
+                                    widget.onDeleteQueuedPrompt,
+                                onSendQueuedPromptNow:
+                                    widget.onSendQueuedPromptNow,
                               ),
-                              icon: Icons.schedule_send_rounded,
-                              label: context.wp(
-                                widget.queuedPrompts.length == 1
-                                    ? '1 queued follow-up'
-                                    : '{count} queued follow-ups',
-                                args: <String, Object?>{
-                                  'count': widget.queuedPrompts.length,
-                                },
+                            SizedBox(
+                              height: density.inset(
+                                isCompact ? AppSpacing.sm : AppSpacing.md,
                               ),
-                              accent: Theme.of(context).colorScheme.primary,
-                              onTap: () => unawaited(_openQueuedPromptsSheet()),
-                            )
-                          else
-                            _ComposerQueuedPromptDock(
-                              compact: isCompact,
-                              queuedPrompts: widget.queuedPrompts,
-                              failedQueuedPromptId: widget.failedQueuedPromptId,
-                              sendingQueuedPromptId:
-                                  widget.sendingQueuedPromptId,
-                              busy: widget.interruptible,
-                              onEditQueuedPrompt: widget.onEditQueuedPrompt,
-                              onDeleteQueuedPrompt: widget.onDeleteQueuedPrompt,
-                              onSendQueuedPromptNow:
-                                  widget.onSendQueuedPromptNow,
                             ),
-                          SizedBox(
-                            height: density.inset(
-                              isCompact ? AppSpacing.sm : AppSpacing.md,
+                          ],
+                          if (widget.attachments.isNotEmpty) ...<Widget>[
+                            _ComposerAttachmentStrip(
+                              attachments: widget.attachments,
+                              onRemove: widget.onRemoveAttachment,
+                            ),
+                            SizedBox(
+                              height: density.inset(
+                                isCompact ? AppSpacing.sm : AppSpacing.md,
+                              ),
+                            ),
+                          ],
+                          Actions(
+                            actions: <Type, Action<Intent>>{
+                              PasteTextIntent: _ComposerPasteTextAction(
+                                onPasteImage: widget.onPasteClipboardImage,
+                                onPasteText: _pasteClipboardText,
+                              ),
+                            },
+                            child: Focus(
+                              canRequestFocus: false,
+                              skipTraversal: true,
+                              onKeyEvent: _handleComposerKeyEvent,
+                              child: TextField(
+                                key: widget.textFieldKey,
+                                controller: widget.controller,
+                                focusNode: _focusNode,
+                                minLines: isCompact ? 2 : 3,
+                                maxLines: isCompact ? 6 : 8,
+                                contextMenuBuilder: kIsWeb
+                                    ? null
+                                    : (
+                                        BuildContext context,
+                                        EditableTextState editableTextState,
+                                      ) {
+                                        return AdaptiveTextSelectionToolbar.buttonItems(
+                                          anchors: editableTextState
+                                              .contextMenuAnchors,
+                                          buttonItems: _contextMenuButtonItems(
+                                            editableTextState,
+                                          ),
+                                        );
+                                      },
+                                contentInsertionConfiguration:
+                                    ContentInsertionConfiguration(
+                                      allowedMimeTypes: PromptAttachmentService
+                                          .supportedContentInsertionMimeTypes,
+                                      onContentInserted: (content) {
+                                        unawaited(
+                                          widget.onContentInserted(content),
+                                        );
+                                      },
+                                    ),
+                                decoration: InputDecoration(
+                                  border: InputBorder.none,
+                                  enabledBorder: InputBorder.none,
+                                  focusedBorder: InputBorder.none,
+                                  filled: false,
+                                  hintText: context.wp('Ask anything...'),
+                                  contentPadding: EdgeInsets.zero,
+                                ),
+                                style: Theme.of(
+                                  context,
+                                ).textTheme.bodyLarge?.copyWith(height: 1.55),
+                                onTap: widget.onActivateComposer,
+                                onSubmitted: (_) => _handleSubmit(),
+                              ),
                             ),
                           ),
-                        ],
-                        if (slashCommands.isNotEmpty) ...<Widget>[
-                          ConstrainedBox(
-                            constraints: BoxConstraints(
-                              maxHeight: density.inset(
-                                isCompact ? 240 : 320,
-                                min: 220,
-                              ),
+                          SizedBox(
+                            height: density.inset(
+                              isCompact ? AppSpacing.xs : AppSpacing.sm,
                             ),
-                            child: DecoratedBox(
-                              key: const ValueKey<String>(
-                                'composer-slash-popover',
+                          ),
+                          Row(
+                            children: <Widget>[
+                              _ComposerIconButton(
+                                key: const ValueKey<String>(
+                                  'composer-attach-button',
+                                ),
+                                compact: isCompact,
+                                icon: Icons.add_rounded,
+                                onTap:
+                                    widget.submitting ||
+                                        widget.pickingAttachments
+                                    ? null
+                                    : () {
+                                        unawaited(widget.onPickAttachments());
+                                      },
+                                busy: widget.pickingAttachments,
                               ),
-                              decoration: appSoftCardDecoration(
-                                context,
-                                radius: isCompact ? 18 : 22,
-                                muted: true,
-                                emphasized: true,
-                              ),
-                              child: ListView.separated(
-                                shrinkWrap: true,
-                                padding: EdgeInsets.all(
-                                  density.inset(
+                              if (_supportsVoiceInput) ...<Widget>[
+                                SizedBox(
+                                  width: density.inset(
                                     isCompact ? AppSpacing.xs : AppSpacing.sm,
                                   ),
                                 ),
-                                itemCount: slashCommands.length,
-                                separatorBuilder: (_, _) =>
-                                    const SizedBox(height: AppSpacing.xs),
-                                itemBuilder: (context, index) {
-                                  final command = slashCommands[index];
-                                  return Material(
-                                    color: Colors.transparent,
-                                    child: InkWell(
-                                      key: ValueKey<String>(
-                                        'composer-slash-option-${command.id}',
-                                      ),
-                                      borderRadius: BorderRadius.circular(12),
-                                      onTap: () => _selectSlashCommand(command),
-                                      child: Ink(
-                                        decoration: appSoftCardDecoration(
-                                          context,
-                                          radius: isCompact ? 14 : 16,
-                                          tone: AppSurfaceTone.accent,
-                                          muted: index != 0,
-                                          selected: index == 0,
-                                        ),
-                                        padding: EdgeInsets.symmetric(
-                                          horizontal: isCompact
-                                              ? density.inset(AppSpacing.sm)
-                                              : density.inset(AppSpacing.md),
-                                          vertical: isCompact
-                                              ? density.inset(AppSpacing.xs)
-                                              : density.inset(AppSpacing.sm),
-                                        ),
-                                        child: Row(
-                                          children: <Widget>[
-                                            Expanded(
-                                              child: Row(
-                                                children: <Widget>[
-                                                  Text(
-                                                    '/${command.trigger}',
-                                                    style: Theme.of(context)
-                                                        .textTheme
-                                                        .titleMedium
-                                                        ?.copyWith(
-                                                          fontWeight:
-                                                              FontWeight.w600,
-                                                        ),
-                                                  ),
-                                                  if ((command.description ??
-                                                          '')
-                                                      .trim()
-                                                      .isNotEmpty) ...<Widget>[
-                                                    const SizedBox(
-                                                      width: AppSpacing.sm,
-                                                    ),
-                                                    Expanded(
-                                                      child: Text(
-                                                        command.description!,
-                                                        overflow: TextOverflow
-                                                            .ellipsis,
-                                                        style: Theme.of(context)
-                                                            .textTheme
-                                                            .bodyMedium
-                                                            ?.copyWith(
-                                                              color: surfaces
-                                                                  .muted,
-                                                            ),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ],
-                                              ),
-                                            ),
-                                            if (command.type ==
-                                                    _ComposerSlashCommandType
-                                                        .custom &&
-                                                command.source != null &&
-                                                command.source !=
-                                                    'command') ...<Widget>[
-                                              const SizedBox(
-                                                width: AppSpacing.sm,
-                                              ),
-                                              Container(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: AppSpacing.sm,
-                                                      vertical: 4,
-                                                    ),
-                                                decoration:
-                                                    appSoftCardDecoration(
-                                                      context,
-                                                      radius:
-                                                          AppSpacing.pillRadius,
-                                                      muted: true,
-                                                    ),
-                                                child: Text(
-                                                  command.source!,
-                                                  style: Theme.of(context)
-                                                      .textTheme
-                                                      .labelSmall
-                                                      ?.copyWith(
-                                                        color: surfaces.muted,
-                                                      ),
-                                                ),
-                                              ),
-                                            ],
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
-                          ),
-                          SizedBox(
-                            height: density.inset(
-                              isCompact ? AppSpacing.sm : AppSpacing.md,
-                            ),
-                          ),
-                        ],
-                        if (widget.attachments.isNotEmpty) ...<Widget>[
-                          _ComposerAttachmentStrip(
-                            attachments: widget.attachments,
-                            onRemove: widget.onRemoveAttachment,
-                          ),
-                          SizedBox(
-                            height: density.inset(
-                              isCompact ? AppSpacing.sm : AppSpacing.md,
-                            ),
-                          ),
-                        ],
-                        Actions(
-                          actions: <Type, Action<Intent>>{
-                            PasteTextIntent: _ComposerPasteTextAction(
-                              onPasteImage: widget.onPasteClipboardImage,
-                              onPasteText: _pasteClipboardText,
-                            ),
-                          },
-                          child: Focus(
-                            canRequestFocus: false,
-                            skipTraversal: true,
-                            onKeyEvent: _handleComposerKeyEvent,
-                            child: TextField(
-                              key: widget.textFieldKey,
-                              controller: widget.controller,
-                              focusNode: _focusNode,
-                              minLines: isCompact ? 2 : 3,
-                              maxLines: isCompact ? 6 : 8,
-                              contextMenuBuilder: kIsWeb
-                                  ? null
-                                  : (
-                                      BuildContext context,
-                                      EditableTextState editableTextState,
-                                    ) {
-                                      return AdaptiveTextSelectionToolbar.buttonItems(
-                                        anchors: editableTextState
-                                            .contextMenuAnchors,
-                                        buttonItems: _contextMenuButtonItems(
-                                          editableTextState,
-                                        ),
-                                      );
-                                    },
-                              contentInsertionConfiguration:
-                                  ContentInsertionConfiguration(
-                                    allowedMimeTypes: PromptAttachmentService
-                                        .supportedContentInsertionMimeTypes,
-                                    onContentInserted: (content) {
-                                      unawaited(
-                                        widget.onContentInserted(content),
-                                      );
-                                    },
+                                _ComposerIconButton(
+                                  key: const ValueKey<String>(
+                                    'composer-voice-button',
                                   ),
-                              decoration: InputDecoration(
-                                border: InputBorder.none,
-                                enabledBorder: InputBorder.none,
-                                focusedBorder: InputBorder.none,
-                                filled: false,
-                                hintText: context.wp('Ask anything...'),
-                                contentPadding: EdgeInsets.zero,
-                              ),
-                              style: Theme.of(
-                                context,
-                              ).textTheme.bodyLarge?.copyWith(height: 1.55),
-                              onTap: widget.onActivateComposer,
-                              onSubmitted: (_) => _handleSubmit(),
-                            ),
-                          ),
-                        ),
-                        SizedBox(
-                          height: density.inset(
-                            isCompact ? AppSpacing.xs : AppSpacing.sm,
-                          ),
-                        ),
-                        Row(
-                          children: <Widget>[
-                            _ComposerIconButton(
-                              key: const ValueKey<String>(
-                                'composer-attach-button',
-                              ),
-                              compact: isCompact,
-                              icon: Icons.add_rounded,
-                              onTap:
-                                  widget.submitting || widget.pickingAttachments
-                                  ? null
-                                  : () {
-                                      unawaited(widget.onPickAttachments());
-                                    },
-                              busy: widget.pickingAttachments,
-                            ),
-                            if (_supportsVoiceInput) ...<Widget>[
+                                  compact: isCompact,
+                                  icon: _voiceListening
+                                      ? Icons.stop_circle_outlined
+                                      : Icons.mic_none_rounded,
+                                  onTap: widget.submitting
+                                      ? null
+                                      : () {
+                                          unawaited(_toggleVoiceInput());
+                                        },
+                                  filled: _voiceListening,
+                                ),
+                              ],
                               SizedBox(
                                 width: density.inset(
                                   isCompact ? AppSpacing.xs : AppSpacing.sm,
@@ -20970,205 +21197,189 @@ class _PromptComposerState extends State<_PromptComposer> {
                               ),
                               _ComposerIconButton(
                                 key: const ValueKey<String>(
-                                  'composer-voice-button',
+                                  'composer-permissions-button',
                                 ),
                                 compact: isCompact,
-                                icon: _voiceListening
-                                    ? Icons.stop_circle_outlined
-                                    : Icons.mic_none_rounded,
-                                onTap: widget.submitting
-                                    ? null
-                                    : () {
-                                        unawaited(_toggleVoiceInput());
-                                      },
-                                filled: _voiceListening,
+                                icon: widget.permissionAutoAccepting
+                                    ? Icons.verified_user_rounded
+                                    : Icons.policy_outlined,
+                                onTap: () {
+                                  unawaited(
+                                    widget.onTogglePermissionAutoAccept(),
+                                  );
+                                },
+                                filled: widget.permissionAutoAccepting,
                               ),
-                            ],
-                            SizedBox(
-                              width: density.inset(
-                                isCompact ? AppSpacing.xs : AppSpacing.sm,
-                              ),
-                            ),
-                            _ComposerIconButton(
-                              key: const ValueKey<String>(
-                                'composer-permissions-button',
-                              ),
-                              compact: isCompact,
-                              icon: widget.permissionAutoAccepting
-                                  ? Icons.verified_user_rounded
-                                  : Icons.policy_outlined,
-                              onTap: () {
-                                unawaited(
-                                  widget.onTogglePermissionAutoAccept(),
-                                );
-                              },
-                              filled: widget.permissionAutoAccepting,
-                            ),
-                            SizedBox(
-                              width: density.inset(
-                                isCompact ? AppSpacing.xs : AppSpacing.sm,
-                              ),
-                            ),
-                            Expanded(
-                              child: SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
-                                child: Row(
-                                  children: <Widget>[
-                                    _ComposerSelectionPill(
-                                      compact: isCompact,
-                                      label:
-                                          widget.selectedAgentName ??
-                                          context.wp('Agent'),
-                                      onTap: widget.agents.isEmpty
-                                          ? null
-                                          : () async {
-                                              final selection =
-                                                  await _showAgentPicker(
-                                                    context,
-                                                  );
-                                              if (selection != null) {
-                                                widget.onSelectAgent(selection);
-                                              }
-                                            },
-                                    ),
-                                    SizedBox(
-                                      width: density.inset(
-                                        isCompact
-                                            ? AppSpacing.xxs
-                                            : AppSpacing.xs,
-                                        min: 3,
-                                      ),
-                                    ),
-                                    _ComposerSelectionPill(
-                                      compact: isCompact,
-                                      label:
-                                          widget.selectedModel?.name ??
-                                          context.wp('Model'),
-                                      onTap: widget.models.isEmpty
-                                          ? null
-                                          : () async {
-                                              final selection =
-                                                  await _showModelPicker(
-                                                    context,
-                                                  );
-                                              if (selection != null) {
-                                                widget.onSelectModel(selection);
-                                              }
-                                            },
-                                    ),
-                                    SizedBox(
-                                      width: density.inset(
-                                        isCompact
-                                            ? AppSpacing.xxs
-                                            : AppSpacing.xs,
-                                        min: 3,
-                                      ),
-                                    ),
-                                    _ComposerSelectionPill(
-                                      compact: isCompact,
-                                      label: reasoningLabel,
-                                      onTap: widget.selectedModel == null
-                                          ? null
-                                          : () async {
-                                              final selection =
-                                                  await _showReasoningPicker(
-                                                    context,
-                                                  );
-                                              if (selection == null) {
-                                                return;
-                                              }
-                                              widget.onSelectReasoning(
-                                                selection ==
-                                                        _PromptComposer
-                                                            ._defaultReasoningSentinel
-                                                    ? null
-                                                    : selection,
-                                              );
-                                            },
-                                    ),
-                                  ],
+                              SizedBox(
+                                width: density.inset(
+                                  isCompact ? AppSpacing.xs : AppSpacing.sm,
                                 ),
                               ),
-                            ),
-                            SizedBox(
-                              width: density.inset(
-                                isCompact ? AppSpacing.xs : AppSpacing.sm,
+                              Expanded(
+                                child: SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: Row(
+                                    children: <Widget>[
+                                      _ComposerSelectionPill(
+                                        compact: isCompact,
+                                        label:
+                                            widget.selectedAgentName ??
+                                            context.wp('Agent'),
+                                        onTap: widget.agents.isEmpty
+                                            ? null
+                                            : () async {
+                                                final selection =
+                                                    await _showAgentPicker(
+                                                      context,
+                                                    );
+                                                if (selection != null) {
+                                                  widget.onSelectAgent(
+                                                    selection,
+                                                  );
+                                                }
+                                              },
+                                      ),
+                                      SizedBox(
+                                        width: density.inset(
+                                          isCompact
+                                              ? AppSpacing.xxs
+                                              : AppSpacing.xs,
+                                          min: 3,
+                                        ),
+                                      ),
+                                      _ComposerSelectionPill(
+                                        compact: isCompact,
+                                        label:
+                                            widget.selectedModel?.name ??
+                                            context.wp('Model'),
+                                        onTap: widget.models.isEmpty
+                                            ? null
+                                            : () async {
+                                                final selection =
+                                                    await _showModelPicker(
+                                                      context,
+                                                    );
+                                                if (selection != null) {
+                                                  widget.onSelectModel(
+                                                    selection,
+                                                  );
+                                                }
+                                              },
+                                      ),
+                                      SizedBox(
+                                        width: density.inset(
+                                          isCompact
+                                              ? AppSpacing.xxs
+                                              : AppSpacing.xs,
+                                          min: 3,
+                                        ),
+                                      ),
+                                      _ComposerSelectionPill(
+                                        compact: isCompact,
+                                        label: reasoningLabel,
+                                        onTap: widget.selectedModel == null
+                                            ? null
+                                            : () async {
+                                                final selection =
+                                                    await _showReasoningPicker(
+                                                      context,
+                                                    );
+                                                if (selection == null) {
+                                                  return;
+                                                }
+                                                widget.onSelectReasoning(
+                                                  selection ==
+                                                          _PromptComposer
+                                                              ._defaultReasoningSentinel
+                                                      ? null
+                                                      : selection,
+                                                );
+                                              },
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
-                            ),
-                            _ComposerIconButton(
-                              key: const ValueKey<String>(
-                                'composer-submit-button',
+                              SizedBox(
+                                width: density.inset(
+                                  isCompact ? AppSpacing.xs : AppSpacing.sm,
+                                ),
                               ),
-                              compact: isCompact,
-                              icon: submitIcon,
-                              onTap: submitEnabled
-                                  ? () => unawaited(_handleSubmit())
-                                  : null,
-                              onLongPress: submitEnabled
-                                  ? () => unawaited(_handleSubmitLongPress())
-                                  : null,
-                              filled: true,
-                              busy: _showsInterruptAction
-                                  ? widget.interrupting
-                                  : submitBusy,
-                            ),
-                          ],
-                        ),
-                      ],
+                              _ComposerIconButton(
+                                key: const ValueKey<String>(
+                                  'composer-submit-button',
+                                ),
+                                compact: isCompact,
+                                icon: submitIcon,
+                                onTap: submitEnabled
+                                    ? () => unawaited(_handleSubmit())
+                                    : null,
+                                onLongPress: submitEnabled
+                                    ? () => unawaited(_handleSubmitLongPress())
+                                    : null,
+                                filled: true,
+                                busy: _showsInterruptAction
+                                    ? widget.interrupting
+                                    : submitBusy,
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
-              if (_draggingFiles)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: DecoratedBox(
-                      key: const ValueKey<String>('composer-drop-overlay'),
-                      decoration: BoxDecoration(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.primary.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(
-                          isCompact ? 16 : 20,
+                if (_draggingFiles)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        key: const ValueKey<String>('composer-drop-overlay'),
+                        decoration: BoxDecoration(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.primary.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(
+                            isCompact ? 16 : 20,
+                          ),
                         ),
-                      ),
-                      child: Center(
-                        child: Container(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: density.inset(
-                              isCompact ? AppSpacing.md : AppSpacing.lg,
+                        child: Center(
+                          child: Container(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: density.inset(
+                                isCompact ? AppSpacing.md : AppSpacing.lg,
+                              ),
+                              vertical: density.inset(
+                                isCompact ? AppSpacing.sm : AppSpacing.md,
+                              ),
                             ),
-                            vertical: density.inset(
-                              isCompact ? AppSpacing.sm : AppSpacing.md,
+                            decoration: BoxDecoration(
+                              color: Color.alphaBlend(
+                                Theme.of(
+                                  context,
+                                ).colorScheme.primary.withValues(alpha: 0.08),
+                                surfaces.panelRaised.withValues(alpha: 0.96),
+                              ),
+                              borderRadius: BorderRadius.circular(
+                                isCompact ? 14 : 18,
+                              ),
+                              border: Border.all(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.primary.withValues(alpha: 0.35),
+                              ),
                             ),
-                          ),
-                          decoration: BoxDecoration(
-                            color: Color.alphaBlend(
-                              Theme.of(
-                                context,
-                              ).colorScheme.primary.withValues(alpha: 0.08),
-                              surfaces.panelRaised.withValues(alpha: 0.96),
+                            child: Text(
+                              context.wp('Drop files or images to attach'),
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w600),
                             ),
-                            borderRadius: BorderRadius.circular(
-                              isCompact ? 14 : 18,
-                            ),
-                            border: Border.all(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.primary.withValues(alpha: 0.35),
-                            ),
-                          ),
-                          child: Text(
-                            context.wp('Drop files or images to attach'),
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(fontWeight: FontWeight.w600),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

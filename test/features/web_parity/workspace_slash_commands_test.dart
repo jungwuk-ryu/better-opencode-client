@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -62,6 +63,7 @@ void main() {
       '/s',
     );
     await tester.pump();
+    await tester.pump();
 
     expect(
       find.byKey(const ValueKey<String>('composer-slash-popover')),
@@ -80,6 +82,127 @@ void main() {
     final field = tester.widget<TextField>(
       find.byKey(const ValueKey<String>('composer-text-field')),
     );
+    expect(field.controller?.text, '/search-docs ');
+  });
+
+  testWidgets('slash suggestions overlay does not resize the composer panel', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final workspaceController = _SlashWorkspaceController(
+      profile: profile,
+      directory: '/workspace/demo',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceController: workspaceController,
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    final panelFinder = find.byKey(const ValueKey<String>('composer-panel'));
+    expect(panelFinder, findsOneWidget);
+    final panelSizeBefore = tester.getSize(panelFinder);
+    final panelTopBefore = tester.getTopLeft(panelFinder).dy;
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('composer-text-field')),
+      '/s',
+    );
+    await tester.pump();
+    await tester.pump();
+
+    final popoverFinder = find.byKey(
+      const ValueKey<String>('composer-slash-popover'),
+    );
+    expect(popoverFinder, findsOneWidget);
+    expect(tester.getSize(panelFinder), panelSizeBefore);
+    expect(tester.getTopLeft(panelFinder).dy, closeTo(panelTopBefore, 0.1));
+    expect(
+      tester.getBottomLeft(popoverFinder).dy,
+      lessThan(tester.getTopLeft(panelFinder).dy),
+    );
+
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pump();
+    await tester.pump();
+
+    expect(popoverFinder, findsNothing);
+  });
+
+  testWidgets('arrow keys move slash selection and tab inserts the command', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final workspaceController = _SlashWorkspaceController(
+      profile: profile,
+      directory: '/workspace/demo',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceController: workspaceController,
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    final fieldFinder = find.byKey(
+      const ValueKey<String>('composer-text-field'),
+    );
+    await tester.tap(fieldFinder);
+    await tester.enterText(fieldFinder, '/s');
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('/share'), findsOneWidget);
+    expect(find.text('/search-docs'), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump();
+    await tester.pump();
+
+    final field = tester.widget<TextField>(fieldFinder);
     expect(field.controller?.text, '/search-docs ');
   });
 
