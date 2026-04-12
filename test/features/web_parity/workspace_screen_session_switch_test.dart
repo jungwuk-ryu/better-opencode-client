@@ -480,6 +480,87 @@ void main() {
     },
   );
 
+  testWidgets('desktop layout uses compact IDE pane chrome', (tester) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _RecordingWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    final navigatorKey = GlobalKey<NavigatorState>();
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        navigatorKey: navigatorKey,
+        initialRoute: '/',
+      ),
+    );
+    navigatorKey.currentState!.pushNamed(
+      buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+    );
+    await tester.pumpAndSettle();
+
+    final topBar = tester.widget<DecoratedBox>(
+      find.byKey(const ValueKey<String>('workspace-desktop-top-bar-shell')),
+    );
+    final topBarDecoration = topBar.decoration as BoxDecoration;
+    expect(topBarDecoration.borderRadius, isNull);
+    expect(topBarDecoration.boxShadow ?? const <BoxShadow>[], isEmpty);
+    expect((topBarDecoration.border as Border).bottom.width, greaterThan(0));
+
+    final body = tester.widget<DecoratedBox>(
+      find.byKey(const ValueKey<String>('workspace-desktop-body-shell')),
+    );
+    final bodyDecoration = body.decoration as BoxDecoration;
+    expect(bodyDecoration.borderRadius, isNull);
+    expect(bodyDecoration.boxShadow ?? const <BoxShadow>[], isEmpty);
+
+    final mainPane = tester.widget<DecoratedBox>(
+      find.byKey(const ValueKey<String>('workspace-desktop-main-pane')),
+    );
+    final mainPaneDecoration = mainPane.decoration as BoxDecoration;
+    expect(mainPaneDecoration.borderRadius, isNull);
+    expect(mainPaneDecoration.boxShadow ?? const <BoxShadow>[], isEmpty);
+    expect(mainPaneDecoration.border, isNull);
+
+    final sideSwitcher = tester.widget<Container>(
+      find.byKey(const ValueKey<String>('workspace-side-tab-switcher')),
+    );
+    final sideSwitcherDecoration = sideSwitcher.decoration as BoxDecoration;
+    expect(sideSwitcherDecoration.borderRadius, isNull);
+    expect(sideSwitcherDecoration.boxShadow ?? const <BoxShadow>[], isEmpty);
+    expect(
+      (sideSwitcherDecoration.border as Border).bottom.width,
+      greaterThan(0),
+    );
+
+    final sideCanvas = tester.widget<DecoratedBox>(
+      find.byKey(const ValueKey<String>('workspace-side-canvas-shell')),
+    );
+    final sideCanvasDecoration = sideCanvas.decoration as BoxDecoration;
+    expect(sideCanvasDecoration.borderRadius, isNull);
+    expect(sideCanvasDecoration.border, isNull);
+    expect(sideCanvasDecoration.boxShadow ?? const <BoxShadow>[], isEmpty);
+  });
+
   testWidgets(
     'desktop layout lets users resize side panels and restores widths across launches',
     (tester) async {

@@ -13,9 +13,15 @@ class _SidePanel extends StatelessWidget {
     final tab = controller.sideTab;
     final bundle = controller.fileBundle;
     final density = _workspaceDensity(context);
-    final panelPadding = density.inset(_workspaceCardGap, min: AppSpacing.xs);
-    final panelGap = density.inset(_workspaceCardGap, min: AppSpacing.xs);
     final compact = density.compact;
+    final panelPadding = density.inset(
+      compact ? _workspaceCardGap : 0,
+      min: compact ? AppSpacing.xs : 0,
+    );
+    final panelGap = density.inset(
+      compact ? _workspaceCardGap : 0,
+      min: compact ? AppSpacing.xs : 0,
+    );
     final selectedTitle = switch (tab) {
       WorkspaceSideTab.review => context.wp('Review canvas'),
       WorkspaceSideTab.files => context.wp('Files canvas'),
@@ -34,10 +40,7 @@ class _SidePanel extends StatelessWidget {
     final messageCount = controller.messages.length;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Color.alphaBlend(
-          Colors.black.withValues(alpha: compact ? 0.08 : 0.12),
-          surfaces.background.withValues(alpha: compact ? 0.98 : 0.985),
-        ),
+        color: compact ? surfaces.background : surfaces.panelMuted,
         border: Border(
           left: BorderSide(color: surfaces.lineSoft.withValues(alpha: 0.82)),
         ),
@@ -105,6 +108,7 @@ class _SidePanel extends StatelessWidget {
             SizedBox(height: panelGap),
             Expanded(
               child: DecoratedBox(
+                key: const ValueKey<String>('workspace-side-canvas-shell'),
                 decoration: _workspaceSideCanvasDecoration(
                   theme: Theme.of(context),
                   surfaces: surfaces,
@@ -112,7 +116,7 @@ class _SidePanel extends StatelessWidget {
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(
-                    compact ? _workspaceInnerRadius : _workspacePanelRadius,
+                    compact ? _workspaceInnerRadius : 0,
                   ),
                   child: Material(
                     color: Colors.transparent,
@@ -190,14 +194,24 @@ class _WorkspaceSidePanelToolbar extends StatelessWidget {
     final density = _workspaceDensity(context);
     final compact = density.compact;
     return Container(
+      key: const ValueKey<String>('workspace-side-panel-toolbar'),
       padding: EdgeInsets.all(
         density.inset(compact ? _workspaceRowGap : _workspaceCardGap, min: 8),
       ),
-      decoration: _workspaceSidePanelDecoration(
-        surfaces: surfaces,
-        compact: compact,
-        tint: theme.colorScheme.primary,
-      ),
+      decoration: compact
+          ? _workspaceSidePanelDecoration(
+              surfaces: surfaces,
+              compact: true,
+              tint: theme.colorScheme.primary,
+            )
+          : BoxDecoration(
+              color: surfaces.panelMuted,
+              border: Border(
+                bottom: BorderSide(
+                  color: surfaces.lineSoft.withValues(alpha: 0.82),
+                ),
+              ),
+            ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -291,16 +305,25 @@ class _WorkspaceSideTabSwitcher extends StatelessWidget {
     return Container(
       key: const ValueKey<String>('workspace-side-tab-switcher'),
       padding: EdgeInsets.all(switcherPadding),
-      decoration: _workspaceSidePanelDecoration(
-        surfaces: surfaces,
-        compact: compact,
-        elevated: false,
-        tint: theme.colorScheme.primary,
-      ),
+      decoration: compact
+          ? _workspaceSidePanelDecoration(
+              surfaces: surfaces,
+              compact: true,
+              elevated: false,
+              tint: theme.colorScheme.primary,
+            )
+          : BoxDecoration(
+              color: surfaces.panelMuted,
+              border: Border(
+                bottom: BorderSide(
+                  color: surfaces.lineSoft.withValues(alpha: 0.82),
+                ),
+              ),
+            ),
       child: Row(
         children: <Widget>[
           for (var index = 0; index < items.length; index += 1) ...<Widget>[
-            if (index > 0)
+            if (index > 0 && compact)
               SizedBox(width: density.inset(AppSpacing.xs, min: 4)),
             Expanded(
               child: _WorkspaceSideTabButton(
@@ -347,19 +370,19 @@ class _WorkspaceSideTabButton extends StatelessWidget {
         key: ValueKey<String>('workspace-side-tab-${item.tab.name}-button'),
         onTap: onTap,
         borderRadius: BorderRadius.circular(
-          compact ? _workspaceInnerRadius : _workspacePanelRadius,
+          compact ? _workspaceInnerRadius : 4,
         ),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           curve: Curves.easeOutCubic,
           constraints: BoxConstraints(
-            minHeight: density.inset(compact ? 54 : 68, min: compact ? 48 : 60),
+            minHeight: density.inset(compact ? 54 : 42, min: compact ? 48 : 38),
           ),
           padding: EdgeInsets.fromLTRB(
-            density.inset(compact ? 10 : AppSpacing.sm, min: 8),
-            density.inset(compact ? 10 : AppSpacing.sm, min: 8),
-            density.inset(compact ? 10 : AppSpacing.sm, min: 8),
-            density.inset(compact ? 10 : AppSpacing.sm, min: 8),
+            density.inset(compact ? 10 : AppSpacing.xs, min: 6),
+            density.inset(compact ? 10 : AppSpacing.xs, min: 6),
+            density.inset(compact ? 10 : AppSpacing.xs, min: 6),
+            density.inset(compact ? 10 : AppSpacing.xs, min: 6),
           ),
           decoration: BoxDecoration(
             color: selected
@@ -369,20 +392,22 @@ class _WorkspaceSideTabButton extends StatelessWidget {
                       alpha: compact ? 0.94 : 0.96,
                     ),
                   )
-                : Color.alphaBlend(
-                    Colors.black.withValues(alpha: compact ? 0.02 : 0.04),
-                    surfaces.panelMuted.withValues(
-                      alpha: compact ? 0.55 : 0.62,
-                    ),
-                  ),
+                : compact
+                ? Color.alphaBlend(
+                    Colors.black.withValues(alpha: 0.02),
+                    surfaces.panelMuted.withValues(alpha: 0.55),
+                  )
+                : Colors.transparent,
             borderRadius: BorderRadius.circular(
-              compact ? _workspaceInnerRadius : _workspacePanelRadius,
+              compact ? _workspaceInnerRadius : 4,
             ),
-            border: Border.all(
-              color: selected
-                  ? accent.withValues(alpha: compact ? 0.22 : 0.24)
-                  : surfaces.lineSoft.withValues(alpha: 0.72),
-            ),
+            border: compact
+                ? Border.all(
+                    color: selected
+                        ? accent.withValues(alpha: 0.22)
+                        : surfaces.lineSoft.withValues(alpha: 0.72),
+                  )
+                : null,
             boxShadow: const <BoxShadow>[],
           ),
           child: compact
@@ -519,9 +544,7 @@ BoxDecoration _workspaceSidePanelDecoration({
   );
   return BoxDecoration(
     color: fill,
-    borderRadius: BorderRadius.circular(
-      compact ? _workspaceInnerRadius : _workspacePanelRadius,
-    ),
+    borderRadius: BorderRadius.circular(compact ? _workspaceInnerRadius : 8),
     border: Border.all(
       color: surfaces.lineSoft.withValues(alpha: isDark ? 0.8 : 0.92),
     ),
@@ -552,9 +575,7 @@ BoxDecoration _workspaceSideSelectionDecoration({
       resolvedAccent.withValues(alpha: compact ? 0.08 : 0.07),
       surfaces.background.withValues(alpha: compact ? 0.94 : 0.96),
     ),
-    borderRadius: BorderRadius.circular(
-      compact ? _workspaceInnerRadius : _workspacePanelRadius,
-    ),
+    borderRadius: BorderRadius.circular(compact ? _workspaceInnerRadius : 8),
     border: Border.all(color: resolvedAccent.withValues(alpha: 0.18)),
     boxShadow: const <BoxShadow>[],
   );
@@ -566,6 +587,9 @@ BoxDecoration _workspaceSideCanvasDecoration({
   required bool compact,
 }) {
   final accent = theme.colorScheme.primary;
+  if (!compact) {
+    return BoxDecoration(color: surfaces.panel);
+  }
   return BoxDecoration(
     color: Color.alphaBlend(
       Colors.black.withValues(alpha: compact ? 0.02 : 0.025),
@@ -574,9 +598,7 @@ BoxDecoration _workspaceSideCanvasDecoration({
         surfaces.panelMuted.withValues(alpha: compact ? 0.9 : 0.94),
       ),
     ),
-    borderRadius: BorderRadius.circular(
-      compact ? _workspaceInnerRadius : _workspacePanelRadius,
-    ),
+    borderRadius: BorderRadius.circular(compact ? _workspaceInnerRadius : 8),
     border: Border.all(color: surfaces.lineSoft.withValues(alpha: 0.86)),
   );
 }

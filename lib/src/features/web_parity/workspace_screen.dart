@@ -7542,220 +7542,194 @@ class _WorkspaceTopBar extends StatelessWidget {
         ),
       );
     }
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        desktopVertical,
-        desktopVertical,
-        desktopVertical,
-        0,
-      ),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: surfaces.panelMuted.withValues(alpha: 0.98),
-          borderRadius: BorderRadius.circular(AppSpacing.sheetRadius),
-          border: Border.all(color: surfaces.lineSoft.withValues(alpha: 0.9)),
-          boxShadow: <BoxShadow>[
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.18),
-              blurRadius: 22,
-              offset: const Offset(0, 10),
-            ),
-          ],
+    return DecoratedBox(
+      key: const ValueKey<String>('workspace-desktop-top-bar-shell'),
+      decoration: BoxDecoration(
+        color: surfaces.panelMuted.withValues(alpha: 0.98),
+        border: Border(
+          bottom: BorderSide(color: surfaces.lineSoft.withValues(alpha: 0.9)),
         ),
-        child: Material(
-          color: Colors.transparent,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Padding(
-                padding: EdgeInsets.symmetric(
-                  horizontal: desktopHorizontal,
-                  vertical: desktopVertical,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: <Widget>[
-                        if (compact)
-                          IconButton(
-                            onPressed: onOpenDrawer,
-                            icon: const Icon(Icons.menu_rounded),
-                          ),
-                        DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: surfaces.panel.withValues(alpha: 0.88),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: surfaces.lineSoft),
-                          ),
-                          child: IconButton(
-                            onPressed: onBackHome,
-                            icon: const Icon(Icons.arrow_back_rounded),
-                            tooltip: context.wp('Back Home'),
-                          ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: desktopHorizontal,
+                vertical: desktopVertical,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: <Widget>[
+                      if (compact)
+                        IconButton(
+                          onPressed: onOpenDrawer,
+                          icon: const Icon(Icons.menu_rounded),
                         ),
-                        SizedBox(width: density.inset(AppSpacing.sm, min: 6)),
-                        Expanded(
-                          child: _SessionIdentity(
-                            title: title,
-                            titleKey: ValueKey<String>(
-                              'session-header-title-${session?.id ?? 'new'}',
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: surfaces.panel.withValues(alpha: 0.88),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: surfaces.lineSoft),
+                        ),
+                        child: IconButton(
+                          onPressed: onBackHome,
+                          icon: const Icon(Icons.arrow_back_rounded),
+                          tooltip: context.wp('Back Home'),
+                        ),
+                      ),
+                      SizedBox(width: density.inset(AppSpacing.sm, min: 6)),
+                      Expanded(
+                        child: _SessionIdentity(
+                          title: title,
+                          titleKey: ValueKey<String>(
+                            'session-header-title-${session?.id ?? 'new'}',
+                          ),
+                          titleStyle: titleStyle,
+                          busy: busy,
+                        ),
+                      ),
+                      if (session != null)
+                        Padding(
+                          padding: const EdgeInsets.only(left: AppSpacing.sm),
+                          child: _SessionContextUsageRing(
+                            key: ValueKey<String>(
+                              'session-header-context-ring-${session!.id}',
                             ),
-                            titleStyle: titleStyle,
-                            busy: busy,
+                            usagePercent: contextSnapshot?.usagePercent,
+                            totalTokens: contextSnapshot?.totalTokens,
+                            contextLimit: contextSnapshot?.contextLimit,
+                            onTap: onOpenContextPanel,
                           ),
                         ),
-                        if (session != null)
-                          Padding(
-                            padding: const EdgeInsets.only(left: AppSpacing.sm),
-                            child: _SessionContextUsageRing(
-                              key: ValueKey<String>(
-                                'session-header-context-ring-${session!.id}',
-                              ),
-                              usagePercent: contextSnapshot?.usagePercent,
-                              totalTokens: contextSnapshot?.totalTokens,
-                              contextLimit: contextSnapshot?.contextLimit,
-                              onTap: onOpenContextPanel,
-                            ),
-                          ),
-                        SizedBox(width: density.inset(AppSpacing.xs, min: 4)),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 4,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: surfaces.panel.withValues(alpha: 0.9),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: surfaces.lineSoft),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: <Widget>[
-                              IconButton(
-                                key: const ValueKey<String>(
-                                  'workspace-command-palette-button',
-                                ),
-                                onPressed: onOpenCommandPalette,
-                                icon: const Icon(Icons.apps_rounded),
-                                tooltip:
-                                    '${context.wp('Command palette')} (${_formatWorkspaceShortcutLabel('mod+k')})',
-                              ),
-                              IconButton(
-                                key: const ValueKey<String>(
-                                  'workspace-project-actions-icon-button',
-                                ),
-                                onPressed: onOpenProjectActions,
-                                icon: const Icon(Icons.flash_on_outlined),
-                                tooltip: context.wp('Project Actions'),
-                              ),
-                              IconButton(
-                                key: const ValueKey<String>(
-                                  'workspace-inbox-icon-button',
-                                ),
-                                onPressed: onOpenInbox,
-                                icon: Icon(
-                                  inboxCount == 0
-                                      ? Icons.inbox_outlined
-                                      : Icons.mark_email_unread_outlined,
-                                ),
-                                tooltip: inboxCount == 0
-                                    ? context.wp('Inbox')
-                                    : context.wp(
-                                        'Inbox ({count})',
-                                        args: <String, Object?>{
-                                          'count': inboxCount,
-                                        },
-                                      ),
-                              ),
-                              IconButton(
-                                key: const ValueKey<String>(
-                                  'workspace-mcp-picker-button',
-                                ),
-                                onPressed: onOpenMcpPicker,
-                                icon: const Icon(Icons.extension_rounded),
-                                tooltip:
-                                    '${context.wp('Toggle MCPs')} (${_formatWorkspaceShortcutLabel('mod+;')})',
-                              ),
-                              IconButton(
-                                key: const ValueKey<String>(
-                                  'workspace-chat-search-button',
-                                ),
-                                onPressed: onOpenChatSearch,
-                                icon: const Icon(Icons.search_rounded),
-                                tooltip: context.wp('Search chat'),
-                              ),
-                              IconButton(
-                                onPressed: onToggleTerminal,
-                                icon: Icon(
-                                  terminalOpen
-                                      ? Icons.terminal_rounded
-                                      : Icons.terminal_outlined,
-                                ),
-                                tooltip: terminalOpen
-                                    ? context.wp('Hide terminal')
-                                    : context.wp('Show terminal'),
-                              ),
-                              _SessionOverflowMenuButton(
-                                sections: menuSections,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (hasSessionMeta) ...<Widget>[
-                      SizedBox(height: density.inset(AppSpacing.sm, min: 6)),
+                      SizedBox(width: density.inset(AppSpacing.xs, min: 4)),
                       Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
                         children: <Widget>[
-                          Expanded(
-                            child: _WorkspaceSessionHeaderMetaBlock(
-                              profileLabel: profileLabel,
-                              projectDirectory: projectDirectory,
-                              canReturnToMain: canReturnToMain,
-                              rootSessionTitle: rootSession?.title ?? '',
-                              onBackToMainSession: onBackToMainSession,
+                          IconButton(
+                            key: const ValueKey<String>(
+                              'workspace-command-palette-button',
                             ),
+                            onPressed: onOpenCommandPalette,
+                            icon: const Icon(Icons.apps_rounded),
+                            tooltip:
+                                '${context.wp('Command palette')} (${_formatWorkspaceShortcutLabel('mod+k')})',
                           ),
-                          if (headerActionChips.isNotEmpty) ...<Widget>[
-                            SizedBox(
-                              width: density.inset(AppSpacing.md, min: 10),
+                          IconButton(
+                            key: const ValueKey<String>(
+                              'workspace-project-actions-icon-button',
                             ),
-                            Flexible(
-                              child: Align(
-                                alignment: Alignment.topRight,
-                                child: Wrap(
-                                  key: const ValueKey<String>(
-                                    'workspace-session-header-action-chips',
-                                  ),
-                                  alignment: WrapAlignment.end,
-                                  crossAxisAlignment: WrapCrossAlignment.center,
-                                  spacing: density.inset(AppSpacing.xs, min: 4),
-                                  runSpacing: density.inset(
-                                    AppSpacing.xs,
-                                    min: 4,
-                                  ),
-                                  children: headerActionChips,
-                                ),
-                              ),
+                            onPressed: onOpenProjectActions,
+                            icon: const Icon(Icons.flash_on_outlined),
+                            tooltip: context.wp('Project Actions'),
+                          ),
+                          IconButton(
+                            key: const ValueKey<String>(
+                              'workspace-inbox-icon-button',
                             ),
-                          ],
+                            onPressed: onOpenInbox,
+                            icon: Icon(
+                              inboxCount == 0
+                                  ? Icons.inbox_outlined
+                                  : Icons.mark_email_unread_outlined,
+                            ),
+                            tooltip: inboxCount == 0
+                                ? context.wp('Inbox')
+                                : context.wp(
+                                    'Inbox ({count})',
+                                    args: <String, Object?>{
+                                      'count': inboxCount,
+                                    },
+                                  ),
+                          ),
+                          IconButton(
+                            key: const ValueKey<String>(
+                              'workspace-mcp-picker-button',
+                            ),
+                            onPressed: onOpenMcpPicker,
+                            icon: const Icon(Icons.extension_rounded),
+                            tooltip:
+                                '${context.wp('Toggle MCPs')} (${_formatWorkspaceShortcutLabel('mod+;')})',
+                          ),
+                          IconButton(
+                            key: const ValueKey<String>(
+                              'workspace-chat-search-button',
+                            ),
+                            onPressed: onOpenChatSearch,
+                            icon: const Icon(Icons.search_rounded),
+                            tooltip: context.wp('Search chat'),
+                          ),
+                          IconButton(
+                            onPressed: onToggleTerminal,
+                            icon: Icon(
+                              terminalOpen
+                                  ? Icons.terminal_rounded
+                                  : Icons.terminal_outlined,
+                            ),
+                            tooltip: terminalOpen
+                                ? context.wp('Hide terminal')
+                                : context.wp('Show terminal'),
+                          ),
+                          _SessionOverflowMenuButton(sections: menuSections),
                         ],
                       ),
                     ],
+                  ),
+                  if (hasSessionMeta) ...<Widget>[
+                    SizedBox(height: density.inset(AppSpacing.sm, min: 6)),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Expanded(
+                          child: _WorkspaceSessionHeaderMetaBlock(
+                            profileLabel: profileLabel,
+                            projectDirectory: projectDirectory,
+                            canReturnToMain: canReturnToMain,
+                            rootSessionTitle: rootSession?.title ?? '',
+                            onBackToMainSession: onBackToMainSession,
+                          ),
+                        ),
+                        if (headerActionChips.isNotEmpty) ...<Widget>[
+                          SizedBox(
+                            width: density.inset(AppSpacing.md, min: 10),
+                          ),
+                          Flexible(
+                            child: Align(
+                              alignment: Alignment.topRight,
+                              child: Wrap(
+                                key: const ValueKey<String>(
+                                  'workspace-session-header-action-chips',
+                                ),
+                                alignment: WrapAlignment.end,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                spacing: density.inset(AppSpacing.xs, min: 4),
+                                runSpacing: density.inset(
+                                  AppSpacing.xs,
+                                  min: 4,
+                                ),
+                                children: headerActionChips,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ],
-                ),
+                ],
               ),
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 180),
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: Curves.easeInCubic,
-                child: searchBar,
-              ),
-            ],
-          ),
+            ),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 180),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              child: searchBar,
+            ),
+          ],
         ),
       ),
     );
@@ -8204,7 +8178,7 @@ class _WorkspacePanelToggleChip extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(8),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
             curve: Curves.easeOutCubic,
@@ -8214,11 +8188,12 @@ class _WorkspacePanelToggleChip extends StatelessWidget {
             ),
             decoration: appSoftCardDecoration(
               context,
-              radius: 14,
+              radius: 8,
               tone: AppSurfaceTone.accent,
               muted: !active,
               emphasized: false,
               selected: active,
+              showShadow: false,
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -8271,7 +8246,7 @@ class _WorkspaceActionChip extends StatelessWidget {
           color: Colors.transparent,
           child: InkWell(
             onTap: enabled ? onTap : null,
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(8),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 180),
               curve: Curves.easeOutCubic,
@@ -8281,8 +8256,9 @@ class _WorkspaceActionChip extends StatelessWidget {
               ),
               decoration: appSoftCardDecoration(
                 context,
-                radius: 14,
+                radius: 8,
                 muted: true,
+                showShadow: false,
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -15350,12 +15326,7 @@ class _WorkspaceBody extends StatelessWidget {
               if (!terminalFocusMode)
                 Expanded(
                   child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: surfaces.background,
-                      borderRadius: compact
-                          ? null
-                          : BorderRadius.circular(AppSpacing.cardRadius),
-                    ),
+                    decoration: BoxDecoration(color: surfaces.background),
                     child: _WorkspaceSessionPaneDeck(
                       compact: compact,
                       paneViewModels: paneViewModels,
@@ -15523,24 +15494,11 @@ class _WorkspaceBody extends StatelessWidget {
         ],
       );
     }
-    final desktopGutter = density.inset(
-      _workspacePageGutter,
-      min: AppSpacing.sm,
-    );
-    final desktopCardGap = density.inset(_workspaceCardGap, min: AppSpacing.xs);
-    final desktopHandleGap = density.inset(
-      _workspaceRowGap,
-      min: AppSpacing.xs,
-    );
     final desktopBody = buildWorkspaceStream(includeTerminalSlot: false);
 
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        desktopGutter,
-        0,
-        desktopGutter,
-        desktopGutter,
-      ),
+    return DecoratedBox(
+      key: const ValueKey<String>('workspace-desktop-body-shell'),
+      decoration: BoxDecoration(color: surfaces.background),
       child: Column(
         children: <Widget>[
           Expanded(
@@ -15549,12 +15507,8 @@ class _WorkspaceBody extends StatelessWidget {
               children: <Widget>[
                 Expanded(
                   child: DecoratedBox(
-                    decoration: appSoftCardDecoration(
-                      context,
-                      radius: _workspacePanelRadius,
-                      muted: true,
-                      emphasized: true,
-                    ),
+                    key: const ValueKey<String>('workspace-desktop-main-pane'),
+                    decoration: BoxDecoration(color: surfaces.background),
                     child: desktopBody,
                   ),
                 ),
@@ -15568,7 +15522,6 @@ class _WorkspaceBody extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
-                      SizedBox(width: desktopHandleGap),
                       _DesktopResizeHandle(
                         key: const ValueKey<String>(
                           'workspace-desktop-side-panel-resize-handle',
@@ -15576,21 +15529,12 @@ class _WorkspaceBody extends StatelessWidget {
                         onDragUpdate: onResizeSidePanel,
                         onDragEnd: onFinishResizeSidePanel,
                       ),
-                      SizedBox(width: desktopHandleGap),
                       SizedBox(
                         key: const ValueKey<String>(
                           'workspace-desktop-side-panel',
                         ),
                         width: density.sidePanelWidth(sidePanelWidth),
-                        child: DecoratedBox(
-                          decoration: appSoftCardDecoration(
-                            context,
-                            radius: _workspacePanelRadius,
-                            muted: true,
-                            emphasized: true,
-                          ),
-                          child: sidePanel,
-                        ),
+                        child: sidePanel,
                       ),
                     ],
                   ),
@@ -15599,13 +15543,15 @@ class _WorkspaceBody extends StatelessWidget {
             ),
           ),
           if (terminalPanel != null) ...<Widget>[
-            SizedBox(height: desktopCardGap),
             DecoratedBox(
-              decoration: appSoftCardDecoration(
-                context,
-                radius: _workspacePanelRadius,
-                muted: true,
-                emphasized: true,
+              key: const ValueKey<String>('workspace-desktop-terminal-pane'),
+              decoration: BoxDecoration(
+                color: surfaces.panelMuted,
+                border: Border(
+                  top: BorderSide(
+                    color: surfaces.lineSoft.withValues(alpha: 0.85),
+                  ),
+                ),
               ),
               child: _WorkspaceTerminalPanelSlot(
                 open: terminalPanelOpen,
