@@ -430,6 +430,7 @@ class _WorkspaceComposerSelectionState {
     this.modelKey,
     this.reasoning,
     this.lastUserMessageId,
+    this.manualModelSelection = false,
     required this.sessionUpdatedAtMs,
   });
 
@@ -445,6 +446,7 @@ class _WorkspaceComposerSelectionState {
       modelKey: _normalizedStorageString(json['modelKey']),
       reasoning: _normalizedStorageString(json['reasoning']),
       lastUserMessageId: _normalizedStorageString(json['lastUserMessageId']),
+      manualModelSelection: json['manualModelSelection'] as bool? ?? false,
       sessionUpdatedAtMs: sessionUpdatedAtMs,
     );
   }
@@ -453,16 +455,21 @@ class _WorkspaceComposerSelectionState {
   final String? modelKey;
   final String? reasoning;
   final String? lastUserMessageId;
+  final bool manualModelSelection;
   final int sessionUpdatedAtMs;
 
   bool get hasSelection =>
-      agentName != null || modelKey != null || reasoning != null;
+      agentName != null ||
+      modelKey != null ||
+      reasoning != null ||
+      manualModelSelection;
 
   Map<String, Object?> toJson() => <String, Object?>{
     'agentName': agentName,
     'modelKey': modelKey,
     'reasoning': reasoning,
     'lastUserMessageId': lastUserMessageId,
+    'manualModelSelection': manualModelSelection,
     'sessionUpdatedAtMs': sessionUpdatedAtMs,
   };
 }
@@ -693,6 +700,7 @@ class WorkspaceController extends ChangeNotifier {
   String? _selectedAgentName;
   String? _selectedModelKey;
   String? _selectedReasoning;
+  Set<String> _manualModelSelectionSessionIds = <String>{};
   String? _serverDefaultModelKey;
   String? _serverDefaultReasoning;
   String? _selectedSessionHistoryCursor;
@@ -1296,6 +1304,7 @@ class WorkspaceController extends ChangeNotifier {
   }
 
   void selectAgent(String? name) {
+    final sessionId = selectedSessionId;
     final agent = _findAgent(name) ?? _defaultComposerAgent;
     if (agent == null) {
       return;
@@ -1317,11 +1326,19 @@ class WorkspaceController extends ChangeNotifier {
     } else if (!_isReasoningAllowed(_selectedReasoning, _selectedModelKey)) {
       _selectedReasoning = _fallbackReasoningForModel(_selectedModelKey);
     }
-    unawaited(_persistSelectedSessionComposerSelection());
+    if (sessionId != null && sessionId.isNotEmpty) {
+      _manualModelSelectionSessionIds = Set<String>.unmodifiable(
+        Set<String>.from(_manualModelSelectionSessionIds)..remove(sessionId),
+      );
+    }
+    unawaited(
+      _persistSelectedSessionComposerSelection(manualModelSelection: false),
+    );
     _notify();
   }
 
   void selectModel(String? key) {
+    final sessionId = selectedSessionId;
     final normalized = key?.trim();
     final nextKey = normalized != null && normalized.isNotEmpty
         ? normalized
@@ -1333,7 +1350,24 @@ class WorkspaceController extends ChangeNotifier {
     if (!_isReasoningAllowed(_selectedReasoning, nextKey)) {
       _selectedReasoning = _fallbackReasoningForModel(nextKey);
     }
-    unawaited(_persistSelectedSessionComposerSelection());
+    if (sessionId != null && sessionId.isNotEmpty) {
+      final nextManualSelections = Set<String>.from(
+        _manualModelSelectionSessionIds,
+      );
+      if (nextKey == null) {
+        nextManualSelections.remove(sessionId);
+      } else {
+        nextManualSelections.add(sessionId);
+      }
+      _manualModelSelectionSessionIds = Set<String>.unmodifiable(
+        nextManualSelections,
+      );
+    }
+    unawaited(
+      _persistSelectedSessionComposerSelection(
+        manualModelSelection: nextKey != null,
+      ),
+    );
     _notify();
   }
 
@@ -1368,6 +1402,7 @@ class WorkspaceController extends ChangeNotifier {
     _loading = true;
     _error = null;
     _actionNotice = null;
+    _manualModelSelectionSessionIds = const <String>{};
     _persistedComposerSelectionBySessionId =
         const <String, _WorkspaceComposerSelectionState>{};
     _resetSessionHoverPreviewState();
@@ -1487,6 +1522,7 @@ class WorkspaceController extends ChangeNotifier {
     );
     _fileBundle = null;
     _actionNotice = null;
+    _manualModelSelectionSessionIds = const <String>{};
     _persistedComposerSelectionBySessionId =
         const <String, _WorkspaceComposerSelectionState>{};
     _resetSessionHoverPreviewState();
@@ -3152,6 +3188,9 @@ class WorkspaceController extends ChangeNotifier {
   }) async {
     final compactSlashPrompt =
         attachments.isEmpty && isCompactSlashCommandPrompt(prompt);
+    final compactionModelSelection = compactSlashPrompt
+        ? _resolveSessionCompactionModelSelection(sessionId)
+        : null;
     ChatMessage? optimisticMessage;
     if (!compactSlashPrompt && (prompt.isNotEmpty || attachments.isNotEmpty)) {
       optimisticMessage = _appendOptimisticUserMessage(
@@ -3169,8 +3208,8 @@ class WorkspaceController extends ChangeNotifier {
           profile: profile,
           project: project,
           sessionId: sessionId,
-          providerId: providerId,
-          modelId: modelId,
+          providerId: compactionModelSelection?.providerId,
+          modelId: compactionModelSelection?.modelId,
         );
         _actionNotice = 'Session compaction requested.';
       } else if (slashCommand != null &&
@@ -3699,16 +3738,18 @@ class WorkspaceController extends ChangeNotifier {
   Future<void> summarizeSelectedSession() async {
     final project = this.project;
     final sessionId = selectedSessionId;
-    final selectedModel = this.selectedModel;
     if (project == null || sessionId == null) {
       return;
     }
+    final compactionModelSelection = _resolveSessionCompactionModelSelection(
+      sessionId,
+    );
     await _sessionActionService.summarizeSession(
       profile: profile,
       project: project,
       sessionId: sessionId,
-      providerId: selectedModel?.providerId,
-      modelId: selectedModel?.modelId,
+      providerId: compactionModelSelection.providerId,
+      modelId: compactionModelSelection.modelId,
     );
     _actionNotice = 'Session compaction requested.';
     _notify();
@@ -4247,6 +4288,184 @@ class WorkspaceController extends ChangeNotifier {
     return null;
   }
 
+  _SessionCompactionModelSelection _resolveSessionCompactionModelSelection(
+    String sessionId,
+  ) {
+    final currentSelection = _currentManualCompactionModelSelection(sessionId);
+    if (currentSelection != null) {
+      return currentSelection;
+    }
+    final persisted = _persistedCompactionModelSelectionForSession(sessionId);
+    if (persisted != null) {
+      return persisted;
+    }
+    final sessionMessages = sessionId == selectedSessionId
+        ? _messages
+        : (_watchedSessionTimelineById[sessionId]?.messages ??
+              const <ChatMessage>[]);
+    final fromMessages = _sessionCompactionModelSelectionFromMessages(
+      sessionMessages,
+    );
+    if (fromMessages != null) {
+      return fromMessages;
+    }
+
+    final configuredModel = _configuredCompactionModelSelection;
+    if (configuredModel != null) {
+      return configuredModel;
+    }
+
+    final defaultModel = _defaultComposerModel;
+    if (defaultModel == null) {
+      throw const SessionActionException(
+        'Session compaction requires an available model on this server.',
+      );
+    }
+    return _SessionCompactionModelSelection(
+      providerId: defaultModel.providerId,
+      modelId: defaultModel.modelId,
+    );
+  }
+
+  _SessionCompactionModelSelection? _currentManualCompactionModelSelection(
+    String sessionId,
+  ) {
+    if (sessionId != selectedSessionId ||
+        !_manualModelSelectionSessionIds.contains(sessionId)) {
+      return null;
+    }
+    final selected = selectedModel;
+    if (selected == null) {
+      return null;
+    }
+    return _SessionCompactionModelSelection(
+      providerId: selected.providerId,
+      modelId: selected.modelId,
+    );
+  }
+
+  _SessionCompactionModelSelection?
+  _sessionCompactionModelSelectionFromMessages(List<ChatMessage> messages) {
+    _SessionCompactionModelSelection? fallback;
+    _SessionCompactionModelSelection? rawFallback;
+    for (final message in messages.reversed) {
+      final selection = _buildSessionCompactionModelSelection(
+        providerId: message.info.providerId,
+        modelId: message.info.modelId,
+      );
+      if (selection == null) {
+        continue;
+      }
+      final validated = _validatedCompactionModelSelection(
+        selection.providerId,
+        selection.modelId,
+      );
+      if (validated != null) {
+        if (message.info.role == 'user') {
+          return validated;
+        }
+        fallback ??= validated;
+      }
+      if (_composerModels.isEmpty && rawFallback == null) {
+        rawFallback = selection;
+      }
+    }
+    return fallback ?? rawFallback;
+  }
+
+  _SessionCompactionModelSelection? get _configuredCompactionModelSelection {
+    final rawValue = _configSnapshot?.config.toJson()['model']?.toString();
+    if (rawValue == null) {
+      return null;
+    }
+    final normalized = rawValue.trim();
+    if (normalized.isEmpty) {
+      return null;
+    }
+    final resolvedOption = _findModel(normalized);
+    if (resolvedOption != null) {
+      return _SessionCompactionModelSelection(
+        providerId: resolvedOption.providerId,
+        modelId: resolvedOption.modelId,
+      );
+    }
+    if (_composerModels.isNotEmpty) {
+      return null;
+    }
+    final separator = normalized.indexOf('/');
+    if (separator <= 0 || separator >= normalized.length - 1) {
+      return null;
+    }
+    return _buildSessionCompactionModelSelection(
+      providerId: normalized.substring(0, separator),
+      modelId: normalized.substring(separator + 1),
+    );
+  }
+
+  _SessionCompactionModelSelection?
+  _persistedCompactionModelSelectionForSession(String sessionId) {
+    final selection = _persistedComposerSelectionBySessionId[sessionId];
+    if (selection?.manualModelSelection != true) {
+      return null;
+    }
+    final modelKey = selection?.modelKey?.trim();
+    if (modelKey == null || modelKey.isEmpty) {
+      return null;
+    }
+
+    final resolvedOption = _findModel(modelKey);
+    if (resolvedOption != null) {
+      return _SessionCompactionModelSelection(
+        providerId: resolvedOption.providerId,
+        modelId: resolvedOption.modelId,
+      );
+    }
+    if (_composerModels.isNotEmpty) {
+      return null;
+    }
+
+    final separator = modelKey.indexOf('/');
+    if (separator <= 0 || separator >= modelKey.length - 1) {
+      return null;
+    }
+    return _buildSessionCompactionModelSelection(
+      providerId: modelKey.substring(0, separator),
+      modelId: modelKey.substring(separator + 1),
+    );
+  }
+
+  _SessionCompactionModelSelection? _validatedCompactionModelSelection(
+    String providerId,
+    String modelId,
+  ) {
+    final resolvedOption = _findModel('$providerId/$modelId');
+    if (resolvedOption == null) {
+      return null;
+    }
+    return _SessionCompactionModelSelection(
+      providerId: resolvedOption.providerId,
+      modelId: resolvedOption.modelId,
+    );
+  }
+
+  _SessionCompactionModelSelection? _buildSessionCompactionModelSelection({
+    String? providerId,
+    String? modelId,
+  }) {
+    final normalizedProviderId = providerId?.trim();
+    final normalizedModelId = modelId?.trim();
+    if (normalizedProviderId == null ||
+        normalizedProviderId.isEmpty ||
+        normalizedModelId == null ||
+        normalizedModelId.isEmpty) {
+      return null;
+    }
+    return _SessionCompactionModelSelection(
+      providerId: normalizedProviderId,
+      modelId: normalizedModelId,
+    );
+  }
+
   List<WorkspaceComposerModelOption> _buildComposerModelOptions(
     ConfigSnapshot? snapshot,
   ) {
@@ -4710,7 +4929,9 @@ class WorkspaceController extends ChangeNotifier {
     );
   }
 
-  Future<void> _persistSelectedSessionComposerSelection() async {
+  Future<void> _persistSelectedSessionComposerSelection({
+    bool? manualModelSelection,
+  }) async {
     final project = _project;
     final sessionId = _selectedSessionId;
     if (project == null || sessionId == null || sessionId.isEmpty) {
@@ -4725,11 +4946,16 @@ class WorkspaceController extends ChangeNotifier {
     final next = Map<String, _WorkspaceComposerSelectionState>.from(
       _persistedComposerSelectionBySessionId,
     );
+    final previousSelection = next[sessionId];
     next[sessionId] = _WorkspaceComposerSelectionState(
       agentName: _normalizedStorageString(_selectedAgentName),
       modelKey: _normalizedStorageString(_selectedModelKey),
       reasoning: _normalizedStorageString(_selectedReasoning),
       lastUserMessageId: _lastUserMessage(_messages)?.info.id,
+      manualModelSelection:
+          manualModelSelection ??
+          previousSelection?.manualModelSelection ??
+          false,
       sessionUpdatedAtMs: session.updatedAt.millisecondsSinceEpoch,
     );
     _persistedComposerSelectionBySessionId =
@@ -8287,4 +8513,14 @@ class _SlashCommandInvocation {
 
   final String name;
   final String arguments;
+}
+
+class _SessionCompactionModelSelection {
+  const _SessionCompactionModelSelection({
+    required this.providerId,
+    required this.modelId,
+  });
+
+  final String providerId;
+  final String modelId;
 }

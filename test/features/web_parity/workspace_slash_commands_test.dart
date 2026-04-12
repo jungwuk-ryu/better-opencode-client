@@ -136,6 +136,58 @@ void main() {
   });
 
   testWidgets(
+    'submitting an exact /compact slash command runs session compaction directly',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final workspaceController = _SlashWorkspaceController(
+        profile: profile,
+        directory: '/workspace/demo',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceController: workspaceController,
+      );
+      addTearDown(appController.dispose);
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          initialRoute: buildWorkspaceRoute(
+            '/workspace/demo',
+            sessionId: 'ses_1',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('composer-text-field')),
+        '/compact',
+      );
+      await tester.pump();
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('composer-submit-button')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      expect(workspaceController.summarizeSelectedSessionCalls, 1);
+      expect(workspaceController.submitPromptCalls, 0);
+    },
+  );
+
+  testWidgets(
     'builtin side-tab slash commands reopen the side panel on desktop layouts',
     (tester) async {
       tester.view.physicalSize = const Size(1600, 1000);
@@ -826,6 +878,7 @@ class _SlashWorkspaceController extends WorkspaceController {
   );
   int createEmptySessionCalls = 0;
   int submitPromptCalls = 0;
+  int summarizeSelectedSessionCalls = 0;
 
   @override
   bool get loading => _loading;
@@ -917,6 +970,11 @@ class _SlashWorkspaceController extends WorkspaceController {
     );
     notifyListeners();
     return _selectedSession;
+  }
+
+  @override
+  Future<void> summarizeSelectedSession() async {
+    summarizeSelectedSessionCalls += 1;
   }
 }
 

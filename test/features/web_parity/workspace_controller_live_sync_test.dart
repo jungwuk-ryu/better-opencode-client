@@ -1649,7 +1649,7 @@ void main() {
   });
 
   test(
-    'controller still requests session compaction when no model is selected',
+    'controller refuses session compaction when no available model can be resolved',
     () async {
       final eventStreamService = _ControlledEventStreamService();
       final sessionActionService = _RecordingSessionActionService();
@@ -1665,22 +1665,38 @@ void main() {
       await controller.load();
 
       expect(controller.selectedModel, isNull);
-      await controller.summarizeSelectedSession();
+      await expectLater(
+        controller.summarizeSelectedSession,
+        throwsA(
+          isA<SessionActionException>().having(
+            (error) => error.message,
+            'message',
+            'Session compaction requires an available model on this server.',
+          ),
+        ),
+      );
 
-      expect(sessionActionService.summarizeCalls, 1);
-      expect(sessionActionService.lastSummarizedSessionId, 'ses_1');
-      expect(sessionActionService.lastSummarizedProviderId, isNull);
-      expect(sessionActionService.lastSummarizedModelId, isNull);
-      expect(controller.actionNotice, 'Session compaction requested.');
+      expect(sessionActionService.summarizeCalls, 0);
+      expect(controller.actionNotice, isNull);
     },
   );
 
   test(
-    'controller routes exact /compact prompts through session compaction',
+    'controller falls back to the catalog default when the transcript model is unavailable',
     () async {
       final eventStreamService = _ControlledEventStreamService();
       final sessionActionService = _RecordingSessionActionService();
-      var sendMessageCalls = 0;
+      final sessionMessages = <ChatMessage>[
+        _message(
+          id: 'msg_user',
+          sessionId: 'ses_1',
+          text: 'Ship the fix',
+          createdAt: 1710000002000,
+          role: 'user',
+          providerId: 'anthropic',
+          modelId: 'claude-sonnet-4.5',
+        ),
+      ];
       final chatService = _FakeChatService(
         bundle: ChatSessionBundle(
           sessions: <SessionSummary>[
@@ -1694,9 +1710,280 @@ void main() {
           statuses: const <String, SessionStatusSummary>{
             'ses_1': SessionStatusSummary(type: 'idle'),
           },
-          messages: const <ChatMessage>[],
+          messages: sessionMessages,
           selectedSessionId: 'ses_1',
         ),
+        fetchMessagesHandler:
+            ({
+              required ServerProfile profile,
+              required ProjectTarget project,
+              required String sessionId,
+            }) async => sessionMessages,
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+        sessionActionService: sessionActionService,
+        configService: _FakeConfigService(snapshot: _composerConfigSnapshot()),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+
+      expect(controller.selectedModel?.key, 'openai/gpt-4.1');
+      await controller.summarizeSelectedSession();
+
+      expect(sessionActionService.summarizeCalls, 1);
+      expect(sessionActionService.lastSummarizedSessionId, 'ses_1');
+      expect(sessionActionService.lastSummarizedProviderId, 'openai');
+      expect(sessionActionService.lastSummarizedModelId, 'gpt-4.1');
+      expect(controller.actionNotice, 'Session compaction requested.');
+    },
+  );
+
+  test(
+    'controller ignores stale configured compaction models when catalog models disagree',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final sessionActionService = _RecordingSessionActionService();
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        sessionActionService: sessionActionService,
+        configService: _FakeConfigService(
+          snapshot: ConfigSnapshot(
+            config: RawJsonDocument(<String, Object?>{
+              'model': 'anthropic/claude-sonnet-4.5',
+            }),
+            providerConfig: RawJsonDocument(<String, Object?>{
+              'providers': <Object?>[
+                <String, Object?>{
+                  'id': 'openai',
+                  'name': 'OpenAI',
+                  'models': <String, Object?>{
+                    'gpt-4.1': <String, Object?>{
+                      'id': 'gpt-4.1',
+                      'name': 'GPT-4.1',
+                    },
+                  },
+                },
+              ],
+              'default': <String, Object?>{'openai': 'gpt-4.1'},
+            }),
+          ),
+        ),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+
+      await controller.summarizeSelectedSession();
+
+      expect(sessionActionService.summarizeCalls, 1);
+      expect(sessionActionService.lastSummarizedProviderId, 'openai');
+      expect(sessionActionService.lastSummarizedModelId, 'gpt-4.1');
+    },
+  );
+
+  test(
+    'controller prefers an explicitly selected model over transcript metadata',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final sessionActionService = _RecordingSessionActionService();
+      final configSnapshot = _multiProviderComposerConfigSnapshot();
+      final sessionMessages = <ChatMessage>[
+        _message(
+          id: 'msg_user',
+          sessionId: 'ses_1',
+          text: 'Keep the manual model',
+          createdAt: 1710000002100,
+          role: 'user',
+          providerId: 'anthropic',
+          modelId: 'claude-sonnet-4.5',
+        ),
+      ];
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_1',
+              title: 'Initial session',
+              createdAt: 1710000001000,
+              updatedAt: 1710000005000,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{
+            'ses_1': SessionStatusSummary(type: 'idle'),
+          },
+          messages: sessionMessages,
+          selectedSessionId: 'ses_1',
+        ),
+        fetchMessagesHandler:
+            ({
+              required ServerProfile profile,
+              required ProjectTarget project,
+              required String sessionId,
+            }) async => sessionMessages,
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+        sessionActionService: sessionActionService,
+        configService: _FakeConfigService(snapshot: configSnapshot),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+      expect(controller.selectedModel?.key, 'anthropic/claude-sonnet-4.5');
+      controller.selectModel('openai/gpt-4.1');
+      await Future<void>.delayed(Duration.zero);
+      expect(controller.selectedModel?.key, 'openai/gpt-4.1');
+      await controller.summarizeSelectedSession();
+
+      expect(sessionActionService.summarizeCalls, 1);
+      expect(sessionActionService.lastSummarizedSessionId, 'ses_1');
+      expect(sessionActionService.lastSummarizedProviderId, 'openai');
+      expect(sessionActionService.lastSummarizedModelId, 'gpt-4.1');
+    },
+  );
+
+  test(
+    'controller re-resolves compact models from the active session transcript after switching away and back',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final sessionActionService = _RecordingSessionActionService();
+      final sessions = <SessionSummary>[
+        _session(
+          id: 'ses_1',
+          title: 'First session',
+          createdAt: 1710000001000,
+          updatedAt: 1710000005000,
+        ),
+        _session(
+          id: 'ses_2',
+          title: 'Second session',
+          createdAt: 1710000002000,
+          updatedAt: 1710000006000,
+        ),
+      ];
+      final messagesBySessionId = <String, List<ChatMessage>>{
+        'ses_1': <ChatMessage>[
+          _message(
+            id: 'msg_user_1',
+            sessionId: 'ses_1',
+            text: 'Keep using OpenAI',
+            createdAt: 1710000002100,
+            role: 'user',
+            providerId: 'openai',
+            modelId: 'gpt-4.1',
+          ),
+        ],
+        'ses_2': <ChatMessage>[
+          _message(
+            id: 'msg_user_2',
+            sessionId: 'ses_2',
+            text: 'Switch to Anthropic here',
+            createdAt: 1710000002200,
+            role: 'user',
+            providerId: 'anthropic',
+            modelId: 'claude-sonnet-4.5',
+          ),
+        ],
+      };
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: sessions,
+          statuses: const <String, SessionStatusSummary>{
+            'ses_1': SessionStatusSummary(type: 'idle'),
+            'ses_2': SessionStatusSummary(type: 'idle'),
+          },
+          messages: messagesBySessionId['ses_1']!,
+          selectedSessionId: 'ses_1',
+        ),
+        fetchMessagesHandler:
+            ({
+              required ServerProfile profile,
+              required ProjectTarget project,
+              required String sessionId,
+            }) async => messagesBySessionId[sessionId] ?? const <ChatMessage>[],
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+        sessionActionService: sessionActionService,
+        configService: _FakeConfigService(
+          snapshot: _multiProviderComposerConfigSnapshot(),
+        ),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+
+      expect(controller.selectedSessionId, 'ses_1');
+      expect(controller.selectedModel?.key, 'openai/gpt-4.1');
+
+      await controller.selectSession('ses_2');
+      await controller.summarizeSelectedSession();
+
+      expect(sessionActionService.lastSummarizedSessionId, 'ses_2');
+      expect(sessionActionService.lastSummarizedProviderId, 'anthropic');
+      expect(sessionActionService.lastSummarizedModelId, 'claude-sonnet-4.5');
+
+      await controller.selectSession('ses_1');
+      await controller.summarizeSelectedSession();
+
+      expect(sessionActionService.lastSummarizedSessionId, 'ses_1');
+      expect(sessionActionService.lastSummarizedProviderId, 'openai');
+      expect(sessionActionService.lastSummarizedModelId, 'gpt-4.1');
+    },
+  );
+
+  test(
+    'controller routes exact /compact prompts through session compaction',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final sessionActionService = _RecordingSessionActionService();
+      var sendMessageCalls = 0;
+      final sessionMessages = <ChatMessage>[
+        _message(
+          id: 'msg_user',
+          sessionId: 'ses_1',
+          text: 'Compress the transcript',
+          createdAt: 1710000002000,
+          role: 'user',
+          providerId: 'anthropic',
+          modelId: 'claude-sonnet-4.5',
+        ),
+      ];
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_1',
+              title: 'Initial session',
+              createdAt: 1710000001000,
+              updatedAt: 1710000005000,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{
+            'ses_1': SessionStatusSummary(type: 'idle'),
+          },
+          messages: sessionMessages,
+          selectedSessionId: 'ses_1',
+        ),
+        fetchMessagesHandler:
+            ({
+              required ServerProfile profile,
+              required ProjectTarget project,
+              required String sessionId,
+            }) async => sessionMessages,
         sendMessageHandler:
             ({
               required ServerProfile profile,
@@ -1732,12 +2019,94 @@ void main() {
       addTearDown(controller.dispose);
 
       await controller.load();
+      expect(controller.selectedModel, isNull);
       await controller.submitPrompt('/compact');
 
       expect(sessionActionService.summarizeCalls, 1);
       expect(sessionActionService.lastSummarizedSessionId, 'ses_1');
+      expect(sessionActionService.lastSummarizedProviderId, 'anthropic');
+      expect(sessionActionService.lastSummarizedModelId, 'claude-sonnet-4.5');
       expect(sendMessageCalls, 0);
       expect(controller.actionNotice, 'Session compaction requested.');
+    },
+  );
+
+  test(
+    'controller falls back to the configured model when the transcript has no model metadata',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final sessionActionService = _RecordingSessionActionService();
+      final sessionMessages = <ChatMessage>[
+        _message(
+          id: 'msg_user',
+          sessionId: 'ses_1',
+          text: 'Ship the fix',
+          createdAt: 1710000002000,
+          role: 'user',
+        ),
+      ];
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: _FakeChatService(
+          bundle: ChatSessionBundle(
+            sessions: <SessionSummary>[
+              _session(
+                id: 'ses_1',
+                title: 'Initial session',
+                createdAt: 1710000001000,
+                updatedAt: 1710000005000,
+              ),
+            ],
+            statuses: const <String, SessionStatusSummary>{
+              'ses_1': SessionStatusSummary(type: 'idle'),
+            },
+            messages: sessionMessages,
+            selectedSessionId: 'ses_1',
+          ),
+          fetchMessagesHandler:
+              ({
+                required ServerProfile profile,
+                required ProjectTarget project,
+                required String sessionId,
+              }) async => sessionMessages,
+        ),
+        sessionActionService: sessionActionService,
+        configService: _FakeConfigService(snapshot: _composerConfigSnapshot()),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+      await controller.summarizeSelectedSession();
+
+      expect(sessionActionService.lastSummarizedProviderId, 'openai');
+      expect(sessionActionService.lastSummarizedModelId, 'gpt-4.1');
+    },
+  );
+
+  test(
+    'controller falls back to the provider default when the configured model is invalid',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final sessionActionService = _RecordingSessionActionService();
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        sessionActionService: sessionActionService,
+        configService: _FakeConfigService(
+          snapshot: _composerConfigSnapshot(configuredModel: 'missing/model'),
+        ),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+      await controller.summarizeSelectedSession();
+
+      expect(controller.selectedModel?.key, 'openai/gpt-4.1');
+      expect(sessionActionService.lastSummarizedProviderId, 'openai');
+      expect(sessionActionService.lastSummarizedModelId, 'gpt-4.1');
     },
   );
 
@@ -4109,10 +4478,12 @@ String _scopeKeyFor(ServerProfile profile, ProjectTarget project) {
   return '${profile.storageKey}::${project.directory}';
 }
 
-ConfigSnapshot _composerConfigSnapshot() {
+ConfigSnapshot _composerConfigSnapshot({
+  String configuredModel = 'openai/gpt-4.1',
+}) {
   return ConfigSnapshot(
     config: RawJsonDocument(<String, Object?>{
-      'model': 'openai/gpt-4.1',
+      'model': configuredModel,
       'reasoning': 'medium',
     }),
     providerConfig: RawJsonDocument(<String, Object?>{
@@ -4132,6 +4503,58 @@ ConfigSnapshot _composerConfigSnapshot() {
             'gpt-5.4': <String, Object?>{
               'id': 'gpt-5.4',
               'name': 'GPT-5.4',
+              'variants': <String, Object?>{
+                'medium': <String, Object?>{},
+                'high': <String, Object?>{},
+              },
+            },
+          },
+        },
+      ],
+      'default': <String, Object?>{'openai': 'gpt-4.1'},
+    }),
+  );
+}
+
+ConfigSnapshot _multiProviderComposerConfigSnapshot({
+  String configuredModel = 'openai/gpt-4.1',
+}) {
+  return ConfigSnapshot(
+    config: RawJsonDocument(<String, Object?>{
+      'model': configuredModel,
+      'reasoning': 'medium',
+    }),
+    providerConfig: RawJsonDocument(<String, Object?>{
+      'providers': <Object?>[
+        <String, Object?>{
+          'id': 'openai',
+          'name': 'OpenAI',
+          'models': <String, Object?>{
+            'gpt-4.1': <String, Object?>{
+              'id': 'gpt-4.1',
+              'name': 'GPT-4.1',
+              'variants': <String, Object?>{
+                'medium': <String, Object?>{},
+                'high': <String, Object?>{},
+              },
+            },
+            'gpt-5.4': <String, Object?>{
+              'id': 'gpt-5.4',
+              'name': 'GPT-5.4',
+              'variants': <String, Object?>{
+                'medium': <String, Object?>{},
+                'high': <String, Object?>{},
+              },
+            },
+          },
+        },
+        <String, Object?>{
+          'id': 'anthropic',
+          'name': 'Anthropic',
+          'models': <String, Object?>{
+            'claude-sonnet-4.5': <String, Object?>{
+              'id': 'claude-sonnet-4.5',
+              'name': 'Claude Sonnet 4.5',
               'variants': <String, Object?>{
                 'medium': <String, Object?>{},
                 'high': <String, Object?>{},

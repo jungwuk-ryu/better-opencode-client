@@ -301,6 +301,49 @@ void main() {
     },
   );
 
+  test(
+    'summarize falls back to prompt_async when the summarize endpoint is unsupported',
+    () async {
+      summarizeEndpointStatusCode = 404;
+      summarizeEndpointResponseBody = <String, Object?>{
+        'message': 'summarize not supported',
+      };
+      final service = SessionActionService();
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'mock',
+        baseUrl: baseUri.toString(),
+      );
+      const project = ProjectTarget(
+        directory: '/workspace/demo',
+        label: 'Demo',
+      );
+
+      expect(
+        await service.summarizeSession(
+          profile: profile,
+          project: project,
+          sessionId: 'ses_1',
+          providerId: 'openai',
+          modelId: 'gpt-5',
+        ),
+        isTrue,
+      );
+      expect(promptAsyncCalls, 1);
+      expect(summarizeEndpointCalls, 1);
+      expect(summarizeRoutePath, '/session/ses_1/prompt_async');
+      expect(summarizeRequestBody, <String, Object?>{
+        'parts': const <Map<String, Object?>>[
+          <String, Object?>{'type': 'text', 'text': '/compact'},
+        ],
+        'model': <String, Object?>{'providerID': 'openai', 'modelID': 'gpt-5'},
+        'providerID': 'openai',
+        'modelID': 'gpt-5',
+      });
+      service.dispose();
+    },
+  );
+
   test('summarize can use prompt_async without a selected model', () async {
     final service = SessionActionService();
     final profile = ServerProfile(
