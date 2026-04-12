@@ -12347,8 +12347,6 @@ class _SessionIdentity extends StatelessWidget {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     return Row(
       children: <Widget>[
-        _SessionGlyph(compact: compact),
-        SizedBox(width: compact ? AppSpacing.sm : AppSpacing.md),
         Expanded(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -12429,40 +12427,6 @@ class _SessionIdentity extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _SessionGlyph extends StatelessWidget {
-  const _SessionGlyph({required this.compact});
-
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
-    final size = compact ? 3.0 : 4.0;
-    final gap = compact ? 2.0 : 2.5;
-    final accent = Theme.of(context).colorScheme.primary;
-    return SizedBox(
-      width: compact ? 16 : 18,
-      height: compact ? 16 : 18,
-      child: Wrap(
-        spacing: gap,
-        runSpacing: gap,
-        children: List<Widget>.generate(9, (index) {
-          final highlight = <int>{1, 3, 4, 5, 7}.contains(index);
-          return DecoratedBox(
-            decoration: BoxDecoration(
-              color: (highlight ? accent : surfaces.lineSoft).withValues(
-                alpha: highlight ? 0.8 : 0.7,
-              ),
-              borderRadius: BorderRadius.circular(1.5),
-            ),
-            child: SizedBox(width: size, height: size),
-          );
-        }),
-      ),
     );
   }
 }
@@ -13995,7 +13959,6 @@ class _SidebarSessionTreeRowState extends State<_SidebarSessionTreeRow> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final surfaces = theme.extension<AppSurfaces>()!;
     final compactLayout =
         MediaQuery.sizeOf(context).width < AppSpacing.wideLayoutBreakpoint;
     final title = widget.entry.session.title.trim().isEmpty
@@ -14030,38 +13993,6 @@ class _SidebarSessionTreeRowState extends State<_SidebarSessionTreeRow> {
                 ),
                 child: Row(
                   children: <Widget>[
-                    SizedBox(
-                      width: compactLayout ? 18 : 22,
-                      child: Center(
-                        child: isRoot
-                            ? (widget.project != null
-                                  ? _ProjectAvatar(
-                                      project: widget.project!,
-                                      size: compactLayout ? 14 : 16,
-                                      fontSize: compactLayout ? 9 : 10,
-                                      rounded: 5,
-                                    )
-                                  : Container(
-                                      width: 6,
-                                      height: 6,
-                                      decoration: BoxDecoration(
-                                        color: theme.colorScheme.primary,
-                                        shape: BoxShape.circle,
-                                      ),
-                                    ))
-                            : Container(
-                                width: compactLayout ? 8 : 10,
-                                height: 2,
-                                decoration: BoxDecoration(
-                                  color: surfaces.muted,
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                              ),
-                      ),
-                    ),
-                    SizedBox(
-                      width: compactLayout ? AppSpacing.xs : AppSpacing.sm,
-                    ),
                     Expanded(
                       child: _ShimmeringRichText(
                         key: ValueKey<String>(
