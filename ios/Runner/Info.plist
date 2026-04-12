@@ -37,11 +37,6 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<key>NSAllowsArbitraryLoads</key>
-		<true/>
-	</dict>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Use the microphone to dictate prompts into OpenCode Remote.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
