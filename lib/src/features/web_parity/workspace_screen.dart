@@ -24313,7 +24313,9 @@ class _ShellTimelinePart extends StatefulWidget {
 
 class _ShellTimelinePartState extends State<_ShellTimelinePart> {
   static const int _compactCollapsedCommandMaxLines = 2;
-  static const double _expandedLogMaxHeight = 164;
+  static const int _expandedLogVisibleLines = 5;
+  static const double _expandedLogFontSize = 13;
+  static const double _expandedLogLineHeight = 1.5;
 
   Timer? _copiedTimer;
   late final ScrollController _logScrollController = ScrollController();
@@ -24338,6 +24340,14 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
       return '\$ $command';
     }
     return '\$ $command\n\n$output';
+  }
+
+  double get _expandedLogViewportHeight {
+    final padding = _timelineShellBodyPadding(widget.compact);
+    return (_expandedLogFontSize *
+            _expandedLogLineHeight *
+            _expandedLogVisibleLines) +
+        padding.vertical;
   }
 
   @override
@@ -24445,8 +24455,8 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
       color: surfaces.muted,
     );
     final monoStyle = GoogleFonts.ibmPlexMono(
-      fontSize: 13,
-      height: 1.5,
+      fontSize: _expandedLogFontSize,
+      height: _expandedLogLineHeight,
       color: theme.colorScheme.onSurface,
     );
     final previewSurface = surfaces.panelMuted;
@@ -24635,11 +24645,15 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
                       duration: const Duration(milliseconds: 180),
                       curve: Curves.easeOutCubic,
                       opacity: _expanded ? 1 : 0,
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(
-                          maxHeight: _expandedLogMaxHeight,
+                      child: SizedBox(
+                        key: ValueKey<String>(
+                          'timeline-shell-log-viewport-${widget.partId}',
                         ),
+                        height: _expandedLogViewportHeight,
                         child: SingleChildScrollView(
+                          key: ValueKey<String>(
+                            'timeline-shell-log-scroll-${widget.partId}',
+                          ),
                           controller: _logScrollController,
                           padding: _timelineShellBodyPadding(widget.compact),
                           child: SingleChildScrollView(

@@ -1220,6 +1220,104 @@ void main() {
     expect(find.textContaining('line 4'), findsNothing);
   });
 
+  testWidgets(
+    'shell output viewport shows five lines and follows latest output',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      late _MutableShellWorkspaceController controllerInstance;
+      final appController = _StaticAppController(
+        profile: profile,
+        initialShellToolDisplayMode: ShellToolDisplayMode.alwaysExpanded,
+        initialTimelineProgressDetailsVisible: false,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              controllerInstance = _MutableShellWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+                initialStatus: 'running',
+                initialOutput: List<String>.generate(
+                  3,
+                  (index) => 'line ${index + 1}',
+                ).join('\n'),
+              );
+              return controllerInstance;
+            },
+      );
+      addTearDown(appController.dispose);
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          initialRoute: buildWorkspaceRoute(
+            '/workspace/demo',
+            sessionId: 'ses_1',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      final viewportFinder = find.byKey(
+        const ValueKey<String>('timeline-shell-log-viewport-part_tool'),
+      );
+      expect(viewportFinder, findsOneWidget);
+      expect(tester.getSize(viewportFinder).height, inInclusiveRange(115, 130));
+
+      controllerInstance.updateShell(
+        status: 'running',
+        output: List<String>.generate(
+          12,
+          (index) => 'line ${index + 1}',
+        ).join('\n'),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      final firstScrollView = tester.widget<SingleChildScrollView>(
+        find.byKey(
+          const ValueKey<String>('timeline-shell-log-scroll-part_tool'),
+        ),
+      );
+      final firstController = firstScrollView.controller!;
+      expect(firstController.position.maxScrollExtent, greaterThan(0));
+      expect(
+        firstController.offset,
+        closeTo(firstController.position.maxScrollExtent, 0.1),
+      );
+
+      controllerInstance.updateShell(
+        status: 'running',
+        output: List<String>.generate(
+          16,
+          (index) => 'line ${index + 1}',
+        ).join('\n'),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      final secondScrollView = tester.widget<SingleChildScrollView>(
+        find.byKey(
+          const ValueKey<String>('timeline-shell-log-scroll-part_tool'),
+        ),
+      );
+      final secondController = secondScrollView.controller!;
+      expect(
+        secondController.offset,
+        closeTo(secondController.position.maxScrollExtent, 0.1),
+      );
+    },
+  );
+
   testWidgets('shell reads upstream live metadata output while running', (
     tester,
   ) async {
