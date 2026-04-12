@@ -25488,7 +25488,7 @@ LinearGradient _shimmerSurfaceGradient(
   Color highlightColor = Colors.white,
 }) {
   final width = bounds.width <= 0 ? 1.0 : bounds.width;
-  final bandWidth = (width * 0.58).clamp(96.0, 240.0);
+  final bandWidth = (width * 0.82).clamp(120.0, 360.0);
   final start = ui.lerpDouble(-bandWidth, width, progress) ?? -bandWidth;
   final end = start + bandWidth;
   final safeWidth = width <= 0 ? 1.0 : width;
@@ -25505,15 +25505,53 @@ LinearGradient _shimmerSurfaceGradient(
   );
 
   return LinearGradient(
-    begin: Alignment.centerLeft,
-    end: Alignment.centerRight,
+    begin: const Alignment(-1, -0.35),
+    end: const Alignment(1, 0.35),
     colors: <Color>[
       Colors.transparent,
-      highlightColor.withValues(alpha: 0.04),
-      highlightColor.withValues(alpha: 0.1),
-      highlightColor.withValues(alpha: 0.28),
-      highlightColor.withValues(alpha: 0.1),
-      highlightColor.withValues(alpha: 0.04),
+      highlightColor.withValues(alpha: 0.025),
+      highlightColor.withValues(alpha: 0.06),
+      highlightColor.withValues(alpha: 0.16),
+      highlightColor.withValues(alpha: 0.06),
+      highlightColor.withValues(alpha: 0.025),
+      Colors.transparent,
+    ],
+    stops: <double>[0, left, innerLeft, center, innerRight, right, 1],
+  );
+}
+
+LinearGradient _shimmerBoxLineGradient(
+  Rect bounds,
+  double progress, {
+  Color highlightColor = Colors.white,
+}) {
+  final width = bounds.width <= 0 ? 1.0 : bounds.width;
+  final bandWidth = (width * 0.62).clamp(64.0, 180.0);
+  final start = ui.lerpDouble(-bandWidth, width, progress) ?? -bandWidth;
+  final end = start + bandWidth;
+  final safeWidth = width <= 0 ? 1.0 : width;
+  final left = (start / safeWidth).clamp(0.0, 1.0);
+  final right = (end / safeWidth).clamp(0.0, 1.0);
+  final center = ((start + end) / 2 / safeWidth).clamp(0.0, 1.0);
+  final innerLeft = (ui.lerpDouble(left, center, 0.5) ?? center).clamp(
+    0.0,
+    1.0,
+  );
+  final innerRight = (ui.lerpDouble(center, right, 0.5) ?? center).clamp(
+    0.0,
+    1.0,
+  );
+
+  return LinearGradient(
+    begin: const Alignment(-1, -0.2),
+    end: const Alignment(1, 0.2),
+    colors: <Color>[
+      Colors.transparent,
+      highlightColor.withValues(alpha: 0.018),
+      highlightColor.withValues(alpha: 0.05),
+      highlightColor.withValues(alpha: 0.18),
+      highlightColor.withValues(alpha: 0.05),
+      highlightColor.withValues(alpha: 0.018),
       Colors.transparent,
     ],
     stops: <double>[0, left, innerLeft, center, innerRight, right, 1],
@@ -25543,8 +25581,8 @@ class _ShimmerBoxState extends State<_ShimmerBox>
     vsync: this,
     duration: Duration(
       milliseconds: switch (widget.style) {
-        _ShimmerBoxStyle.line => 3000,
-        _ShimmerBoxStyle.surface => 1800,
+        _ShimmerBoxStyle.line => 2600,
+        _ShimmerBoxStyle.surface => 2200,
       },
     ),
   )..repeat();
@@ -25558,6 +25596,26 @@ class _ShimmerBoxState extends State<_ShimmerBox>
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final baseColor = Color.alphaBlend(
+      surfaces.lineSoft.withValues(
+        alpha: switch (widget.style) {
+          _ShimmerBoxStyle.line => isDark ? 0.34 : 0.16,
+          _ShimmerBoxStyle.surface => isDark ? 0.22 : 0.14,
+        },
+      ),
+      switch (widget.style) {
+        _ShimmerBoxStyle.line => surfaces.panelMuted,
+        _ShimmerBoxStyle.surface => surfaces.panelEmphasis,
+      },
+    );
+    final border = switch (widget.style) {
+      _ShimmerBoxStyle.line => null,
+      _ShimmerBoxStyle.surface => Border.all(
+        color: surfaces.lineSoft.withValues(alpha: isDark ? 0.26 : 0.34),
+      ),
+    };
     return LayoutBuilder(
       builder: (context, constraints) {
         final maxWidth = constraints.maxWidth.isFinite
@@ -25567,50 +25625,54 @@ class _ShimmerBoxState extends State<_ShimmerBox>
         return SizedBox(
           width: width,
           height: widget.height,
-          child: Stack(
-            fit: StackFit.expand,
-            children: <Widget>[
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  color: surfaces.panelRaised,
-                  borderRadius: BorderRadius.circular(widget.borderRadius),
-                ),
-              ),
-              AnimatedBuilder(
-                animation: _controller,
-                child: DecoratedBox(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(widget.borderRadius),
+            child: Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                DecoratedBox(
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: baseColor,
                     borderRadius: BorderRadius.circular(widget.borderRadius),
+                    border: border,
                   ),
                 ),
-                builder: (context, shimmerChild) {
-                  return ShaderMask(
-                    blendMode: BlendMode.srcIn,
-                    shaderCallback: (bounds) {
-                      final shimmerBounds = Rect.fromLTWH(
-                        0,
-                        0,
-                        bounds.width <= 0 ? 1 : bounds.width,
-                        bounds.height <= 0 ? 1 : bounds.height,
-                      );
-                      final gradient = switch (widget.style) {
-                        _ShimmerBoxStyle.line => _shimmerHighlightGradient(
-                          shimmerBounds,
-                          _controller.value,
-                        ),
-                        _ShimmerBoxStyle.surface => _shimmerSurfaceGradient(
-                          shimmerBounds,
-                          _controller.value,
-                        ),
-                      };
-                      return gradient.createShader(shimmerBounds);
-                    },
-                    child: shimmerChild,
-                  );
-                },
-              ),
-            ],
+                AnimatedBuilder(
+                  animation: _controller,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(widget.borderRadius),
+                    ),
+                  ),
+                  builder: (context, shimmerChild) {
+                    return ShaderMask(
+                      blendMode: BlendMode.srcIn,
+                      shaderCallback: (bounds) {
+                        final shimmerBounds = Rect.fromLTWH(
+                          0,
+                          0,
+                          bounds.width <= 0 ? 1 : bounds.width,
+                          bounds.height <= 0 ? 1 : bounds.height,
+                        );
+                        final gradient = switch (widget.style) {
+                          _ShimmerBoxStyle.line => _shimmerBoxLineGradient(
+                            shimmerBounds,
+                            _controller.value,
+                          ),
+                          _ShimmerBoxStyle.surface => _shimmerSurfaceGradient(
+                            shimmerBounds,
+                            _controller.value,
+                          ),
+                        };
+                        return gradient.createShader(shimmerBounds);
+                      },
+                      child: shimmerChild,
+                    );
+                  },
+                ),
+              ],
+            ),
           ),
         );
       },
