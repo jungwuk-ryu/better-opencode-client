@@ -24,26 +24,21 @@ BoxDecoration appSoftCardDecoration(
   bool emphasized = false,
   bool muted = false,
   bool selected = false,
+  bool showShadow = true,
 }) {
   final theme = Theme.of(context);
   final surfaces = theme.extension<AppSurfaces>()!;
   final accent = _toneAccent(theme, surfaces, tone);
+  final isDark = theme.brightness == Brightness.dark;
   final background = selected
       ? Color.alphaBlend(
-          accent.withValues(
-            alpha: theme.brightness == Brightness.dark ? 0.045 : 0.06,
-          ),
-          surfaces.panelEmphasis.withValues(
-            alpha: theme.brightness == Brightness.dark ? 0.96 : 0.985,
-          ),
+          accent.withValues(alpha: isDark ? 0.045 : 0.04),
+          surfaces.panelEmphasis.withValues(alpha: isDark ? 0.96 : 0.99),
         )
       : muted
-      ? surfaces.panelMuted.withValues(
-          alpha: theme.brightness == Brightness.dark ? 0.94 : 0.975,
-        )
-      : surfaces.panelRaised.withValues(
-          alpha: theme.brightness == Brightness.dark ? 0.96 : 0.985,
-        );
+      ? surfaces.panelMuted.withValues(alpha: isDark ? 0.94 : 0.985)
+      : surfaces.panelRaised.withValues(alpha: isDark ? 0.96 : 0.99);
+  final elevated = showShadow && (emphasized || selected);
   return BoxDecoration(
     color: background,
     borderRadius: BorderRadius.circular(radius),
@@ -57,16 +52,16 @@ BoxDecoration appSoftCardDecoration(
             ),
       width: selected || emphasized ? 1.1 : 1,
     ),
-    boxShadow: <BoxShadow>[
-      BoxShadow(
-        color: Colors.black.withValues(
-          alpha: theme.brightness == Brightness.dark ? 0.22 : 0.05,
-        ),
-        blurRadius: emphasized || selected ? 16 : 10,
-        spreadRadius: emphasized ? -8 : -10,
-        offset: Offset(0, emphasized || selected ? 8 : 5),
-      ),
-    ],
+    boxShadow: elevated
+        ? <BoxShadow>[
+            BoxShadow(
+              color: Colors.black.withValues(alpha: isDark ? 0.18 : 0.035),
+              blurRadius: emphasized || selected ? 14 : 10,
+              spreadRadius: -12,
+              offset: Offset(0, emphasized || selected ? 7 : 5),
+            ),
+          ]
+        : const <BoxShadow>[],
   );
 }
 
@@ -127,12 +122,12 @@ class AppGlassPanel extends StatelessWidget {
                     BoxShadow(
                       color: Colors.black.withValues(
                         alpha: theme.brightness == Brightness.dark
-                            ? 0.20
-                            : 0.06,
+                            ? 0.16
+                            : 0.04,
                       ),
-                      blurRadius: 16,
-                      spreadRadius: -10,
-                      offset: const Offset(0, 8),
+                      blurRadius: 18,
+                      spreadRadius: -14,
+                      offset: const Offset(0, 7),
                     ),
                   ]
                 : const <BoxShadow>[],

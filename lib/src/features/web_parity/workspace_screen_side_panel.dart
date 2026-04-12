@@ -13,7 +13,8 @@ class _SidePanel extends StatelessWidget {
     final tab = controller.sideTab;
     final bundle = controller.fileBundle;
     final density = _workspaceDensity(context);
-    final panelPadding = density.inset(AppSpacing.md, min: AppSpacing.sm);
+    final panelPadding = density.inset(_workspaceCardGap, min: AppSpacing.xs);
+    final panelGap = density.inset(_workspaceCardGap, min: AppSpacing.xs);
     final compact = density.compact;
     final selectedTitle = switch (tab) {
       WorkspaceSideTab.review => context.wp('Review canvas'),
@@ -67,7 +68,7 @@ class _SidePanel extends StatelessWidget {
                 WorkspaceSideTab.context => context.wp('Context'),
               },
             ),
-            SizedBox(height: density.inset(AppSpacing.sm, min: 6)),
+            SizedBox(height: panelGap),
             _WorkspaceSideTabSwitcher(
               selectedTab: tab,
               items: <_WorkspaceSideTabItem>[
@@ -101,7 +102,7 @@ class _SidePanel extends StatelessWidget {
               ],
               onChanged: controller.setSideTab,
             ),
-            SizedBox(height: density.inset(AppSpacing.sm, min: 6)),
+            SizedBox(height: panelGap),
             Expanded(
               child: DecoratedBox(
                 decoration: _workspaceSideCanvasDecoration(
@@ -110,7 +111,9 @@ class _SidePanel extends StatelessWidget {
                   compact: compact,
                 ),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(compact ? 18 : 20),
+                  borderRadius: BorderRadius.circular(
+                    compact ? _workspaceInnerRadius : _workspacePanelRadius,
+                  ),
                   child: Material(
                     color: Colors.transparent,
                     child: switch (tab) {
@@ -187,14 +190,13 @@ class _WorkspaceSidePanelToolbar extends StatelessWidget {
     final density = _workspaceDensity(context);
     final compact = density.compact;
     return Container(
-      padding: EdgeInsets.all(density.inset(compact ? 10 : 12, min: 8)),
-      decoration: BoxDecoration(
-        color: Color.alphaBlend(
-          Colors.black.withValues(alpha: compact ? 0.04 : 0.06),
-          surfaces.panelMuted.withValues(alpha: compact ? 0.84 : 0.88),
-        ),
-        borderRadius: BorderRadius.circular(compact ? 16 : 18),
-        border: Border.all(color: surfaces.lineSoft.withValues(alpha: 0.82)),
+      padding: EdgeInsets.all(
+        density.inset(compact ? _workspaceRowGap : _workspaceCardGap, min: 8),
+      ),
+      decoration: _workspaceSidePanelDecoration(
+        surfaces: surfaces,
+        compact: compact,
+        tint: theme.colorScheme.primary,
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -344,12 +346,14 @@ class _WorkspaceSideTabButton extends StatelessWidget {
       child: InkWell(
         key: ValueKey<String>('workspace-side-tab-${item.tab.name}-button'),
         onTap: onTap,
-        borderRadius: BorderRadius.circular(compact ? 14 : 18),
+        borderRadius: BorderRadius.circular(
+          compact ? _workspaceInnerRadius : _workspacePanelRadius,
+        ),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           curve: Curves.easeOutCubic,
           constraints: BoxConstraints(
-            minHeight: density.inset(compact ? 56 : 78, min: compact ? 50 : 66),
+            minHeight: density.inset(compact ? 54 : 68, min: compact ? 48 : 60),
           ),
           padding: EdgeInsets.fromLTRB(
             density.inset(compact ? 10 : AppSpacing.sm, min: 8),
@@ -371,7 +375,9 @@ class _WorkspaceSideTabButton extends StatelessWidget {
                       alpha: compact ? 0.55 : 0.62,
                     ),
                   ),
-            borderRadius: BorderRadius.circular(compact ? 14 : 18),
+            borderRadius: BorderRadius.circular(
+              compact ? _workspaceInnerRadius : _workspacePanelRadius,
+            ),
             border: Border.all(
               color: selected
                   ? accent.withValues(alpha: compact ? 0.22 : 0.24)
@@ -501,24 +507,33 @@ BoxDecoration _workspaceSidePanelDecoration({
   Color? tint,
   bool elevated = false,
 }) {
+  final isDark = surfaces.background.computeLuminance() < 0.5;
   final fill = Color.alphaBlend(
-    Colors.black.withValues(alpha: compact ? 0.04 : 0.06),
+    (tint ?? surfaces.muted).withValues(alpha: compact ? 0.018 : 0.024),
     Color.alphaBlend(
-      (tint ?? Colors.white).withValues(alpha: compact ? 0.02 : 0.03),
-      surfaces.background.withValues(alpha: compact ? 0.94 : 0.96),
+      isDark
+          ? Colors.black.withValues(alpha: compact ? 0.04 : 0.06)
+          : Colors.white.withValues(alpha: compact ? 0.18 : 0.22),
+      surfaces.panelMuted.withValues(alpha: compact ? 0.94 : 0.98),
     ),
   );
   return BoxDecoration(
     color: fill,
-    borderRadius: BorderRadius.circular(compact ? 16 : 20),
-    border: Border.all(color: surfaces.lineSoft.withValues(alpha: 0.8)),
+    borderRadius: BorderRadius.circular(
+      compact ? _workspaceInnerRadius : _workspacePanelRadius,
+    ),
+    border: Border.all(
+      color: surfaces.lineSoft.withValues(alpha: isDark ? 0.8 : 0.92),
+    ),
     boxShadow: elevated
         ? <BoxShadow>[
             BoxShadow(
-              color: Colors.black.withValues(alpha: compact ? 0.04 : 0.06),
-              blurRadius: compact ? 12 : 18,
-              offset: Offset(0, compact ? 6 : 10),
-              spreadRadius: compact ? -8 : -10,
+              color: Colors.black.withValues(
+                alpha: isDark ? (compact ? 0.12 : 0.16) : 0.035,
+              ),
+              blurRadius: compact ? 12 : 16,
+              offset: Offset(0, compact ? 5 : 7),
+              spreadRadius: compact ? -10 : -12,
             ),
           ]
         : const <BoxShadow>[],
@@ -537,7 +552,9 @@ BoxDecoration _workspaceSideSelectionDecoration({
       resolvedAccent.withValues(alpha: compact ? 0.08 : 0.07),
       surfaces.background.withValues(alpha: compact ? 0.94 : 0.96),
     ),
-    borderRadius: BorderRadius.circular(compact ? 16 : 18),
+    borderRadius: BorderRadius.circular(
+      compact ? _workspaceInnerRadius : _workspacePanelRadius,
+    ),
     border: Border.all(color: resolvedAccent.withValues(alpha: 0.18)),
     boxShadow: const <BoxShadow>[],
   );
@@ -551,14 +568,16 @@ BoxDecoration _workspaceSideCanvasDecoration({
   final accent = theme.colorScheme.primary;
   return BoxDecoration(
     color: Color.alphaBlend(
-      Colors.black.withValues(alpha: compact ? 0.05 : 0.07),
+      Colors.black.withValues(alpha: compact ? 0.02 : 0.025),
       Color.alphaBlend(
-        accent.withValues(alpha: compact ? 0.025 : 0.03),
-        surfaces.panelMuted.withValues(alpha: compact ? 0.8 : 0.84),
+        accent.withValues(alpha: compact ? 0.018 : 0.022),
+        surfaces.panelMuted.withValues(alpha: compact ? 0.9 : 0.94),
       ),
     ),
-    borderRadius: BorderRadius.circular(compact ? 18 : 22),
-    border: Border.all(color: surfaces.lineSoft.withValues(alpha: 0.76)),
+    borderRadius: BorderRadius.circular(
+      compact ? _workspaceInnerRadius : _workspacePanelRadius,
+    ),
+    border: Border.all(color: surfaces.lineSoft.withValues(alpha: 0.86)),
   );
 }
 
@@ -1101,10 +1120,12 @@ class _ReviewPanelState extends State<_ReviewPanel> {
                   ),
                   Expanded(
                     child: ListView.separated(
-                      padding: EdgeInsets.all(density.inset(AppSpacing.sm)),
+                      padding: EdgeInsets.all(
+                        density.inset(_workspaceCardGap, min: AppSpacing.xs),
+                      ),
                       itemCount: widget.statuses.length,
                       separatorBuilder: (_, _) => SizedBox(
-                        height: density.inset(AppSpacing.xxs, min: 4),
+                        height: density.inset(_workspaceRowGap, min: 4),
                       ),
                       itemBuilder: (context, index) {
                         final item = widget.statuses[index];
@@ -1231,10 +1252,10 @@ class _ReviewPanelState extends State<_ReviewPanel> {
                 height: previewHeight,
                 width: double.infinity,
                 margin: EdgeInsets.fromLTRB(
-                  density.inset(AppSpacing.sm),
+                  density.inset(_workspaceCardGap, min: AppSpacing.xs),
                   0,
-                  density.inset(AppSpacing.sm),
-                  density.inset(AppSpacing.sm),
+                  density.inset(_workspaceCardGap, min: AppSpacing.xs),
+                  density.inset(_workspaceCardGap, min: AppSpacing.xs),
                 ),
                 decoration: _workspaceSidePanelDecoration(
                   surfaces: surfaces,
@@ -1280,10 +1301,10 @@ class _ReviewPanelState extends State<_ReviewPanel> {
                     Expanded(
                       child: Padding(
                         padding: EdgeInsets.fromLTRB(
-                          density.inset(AppSpacing.sm),
+                          density.inset(_workspaceCardGap, min: AppSpacing.xs),
                           0,
-                          density.inset(AppSpacing.sm),
-                          density.inset(AppSpacing.sm),
+                          density.inset(_workspaceCardGap, min: AppSpacing.xs),
+                          density.inset(_workspaceCardGap, min: AppSpacing.xs),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,

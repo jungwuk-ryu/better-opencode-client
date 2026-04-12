@@ -499,6 +499,30 @@ void main() {
       final initialSidebarWidth = tester.getSize(sidebarPane).width;
       final initialSidePanelWidth = tester.getSize(sidePanel).width;
       final initialSessionDeckWidth = tester.getSize(sessionDeck).width;
+      expect(
+        tester
+            .getSize(
+              find.byKey(
+                const ValueKey<String>(
+                  'workspace-desktop-sidebar-resize-handle',
+                ),
+              ),
+            )
+            .width,
+        greaterThanOrEqualTo(12),
+      );
+      expect(
+        tester
+            .getSize(
+              find.byKey(
+                const ValueKey<String>(
+                  'workspace-desktop-side-panel-resize-handle',
+                ),
+              ),
+            )
+            .width,
+        greaterThanOrEqualTo(12),
+      );
 
       await tester.drag(
         find.byKey(
@@ -1121,9 +1145,9 @@ void main() {
       );
       final shadowDecoration = shadowBox.decoration as BoxDecoration;
       final shadows = shadowDecoration.boxShadow;
-      expect(shadows, hasLength(2));
+      expect(shadows, hasLength(1));
       expect(shadows!.first.spreadRadius, lessThan(0));
-      expect(shadows.first.blurRadius, lessThanOrEqualTo(14));
+      expect(shadows.first.blurRadius, lessThanOrEqualTo(16));
 
       await tester.tap(
         find.byKey(const ValueKey<String>('timeline-jump-to-latest-button')),

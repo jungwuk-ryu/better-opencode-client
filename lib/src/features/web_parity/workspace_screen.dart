@@ -84,6 +84,12 @@ _WorkspaceDensity _workspaceDensity(BuildContext context) {
   return _WorkspaceDensity(AppScope.of(context).layoutDensity);
 }
 
+const double _workspacePageGutter = 16;
+const double _workspaceCardGap = 12;
+const double _workspaceRowGap = 8;
+const double _workspacePanelRadius = 16;
+const double _workspaceInnerRadius = 12;
+
 double _compactSidebarDrawerWidth(MediaQueryData mediaQuery) {
   return math.min(420, math.max(0, mediaQuery.size.width - 12)).toDouble();
 }
@@ -15433,11 +15439,24 @@ class _WorkspaceBody extends StatelessWidget {
         ],
       );
     }
-    final desktopGap = density.inset(AppSpacing.sm, min: AppSpacing.xs);
+    final desktopGutter = density.inset(
+      _workspacePageGutter,
+      min: AppSpacing.sm,
+    );
+    final desktopCardGap = density.inset(_workspaceCardGap, min: AppSpacing.xs);
+    final desktopHandleGap = density.inset(
+      _workspaceRowGap,
+      min: AppSpacing.xs,
+    );
     final desktopBody = buildWorkspaceStream(includeTerminalSlot: false);
 
     return Padding(
-      padding: EdgeInsets.fromLTRB(desktopGap, 0, desktopGap, desktopGap),
+      padding: EdgeInsets.fromLTRB(
+        desktopGutter,
+        0,
+        desktopGutter,
+        desktopGutter,
+      ),
       child: Column(
         children: <Widget>[
           Expanded(
@@ -15448,7 +15467,7 @@ class _WorkspaceBody extends StatelessWidget {
                   child: DecoratedBox(
                     decoration: appSoftCardDecoration(
                       context,
-                      radius: 24,
+                      radius: _workspacePanelRadius,
                       muted: true,
                       emphasized: true,
                     ),
@@ -15465,7 +15484,7 @@ class _WorkspaceBody extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
-                      SizedBox(width: desktopGap),
+                      SizedBox(width: desktopHandleGap),
                       _DesktopResizeHandle(
                         key: const ValueKey<String>(
                           'workspace-desktop-side-panel-resize-handle',
@@ -15473,7 +15492,7 @@ class _WorkspaceBody extends StatelessWidget {
                         onDragUpdate: onResizeSidePanel,
                         onDragEnd: onFinishResizeSidePanel,
                       ),
-                      SizedBox(width: desktopGap),
+                      SizedBox(width: desktopHandleGap),
                       SizedBox(
                         key: const ValueKey<String>(
                           'workspace-desktop-side-panel',
@@ -15482,7 +15501,7 @@ class _WorkspaceBody extends StatelessWidget {
                         child: DecoratedBox(
                           decoration: appSoftCardDecoration(
                             context,
-                            radius: 24,
+                            radius: _workspacePanelRadius,
                             muted: true,
                             emphasized: true,
                           ),
@@ -15496,11 +15515,11 @@ class _WorkspaceBody extends StatelessWidget {
             ),
           ),
           if (terminalPanel != null) ...<Widget>[
-            SizedBox(height: desktopGap),
+            SizedBox(height: desktopCardGap),
             DecoratedBox(
               decoration: appSoftCardDecoration(
                 context,
-                radius: 22,
+                radius: _workspacePanelRadius,
                 muted: true,
                 emphasized: true,
               ),
@@ -16375,7 +16394,7 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
       );
     }
 
-    final paneRadius = compact ? 16.0 : 18.0;
+    final paneRadius = compact ? _workspaceInnerRadius : _workspacePanelRadius;
     void focusPane() {
       if (!selected) {
         unawaited(handleFocus());
@@ -16412,15 +16431,17 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
                   width: visuallySelected ? 1.4 : 1,
                 ),
                 boxShadow: <BoxShadow>[
-                  BoxShadow(
-                    color:
-                        (visuallySelected
-                                ? theme.colorScheme.primary
-                                : Colors.black)
-                            .withValues(alpha: visuallySelected ? 0.12 : 0.06),
-                    blurRadius: visuallySelected ? 18 : 10,
-                    offset: const Offset(0, 6),
-                  ),
+                  if (visuallySelected)
+                    BoxShadow(
+                      color: theme.colorScheme.shadow.withValues(
+                        alpha: theme.brightness == Brightness.dark
+                            ? 0.16
+                            : 0.035,
+                      ),
+                      blurRadius: 14,
+                      spreadRadius: -12,
+                      offset: const Offset(0, 7),
+                    ),
                 ],
               ),
               child: Column(
@@ -17336,7 +17357,9 @@ class _ActiveSubSessionChip extends StatelessWidget {
       child: InkWell(
         key: ValueKey<String>('active-subsession-chip-${session.id}'),
         onTap: onTap,
-        borderRadius: BorderRadius.circular(compact ? 14 : 16),
+        borderRadius: BorderRadius.circular(
+          compact ? _workspaceInnerRadius : _workspacePanelRadius,
+        ),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           curve: Curves.easeOutCubic,
@@ -17349,32 +17372,12 @@ class _ActiveSubSessionChip extends StatelessWidget {
             density.inset(compact ? AppSpacing.sm : AppSpacing.md),
             density.inset(compact ? AppSpacing.sm : AppSpacing.md),
           ),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: <Color>[
-                selected
-                    ? selectedColor.withValues(alpha: 0.18)
-                    : surfaces.panelRaised.withValues(alpha: 0.98),
-                selected
-                    ? selectedColor.withValues(alpha: 0.08)
-                    : surfaces.panelEmphasis.withValues(alpha: 0.9),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(compact ? 14 : 16),
-            border: Border.all(
-              color: selected
-                  ? selectedColor.withValues(alpha: 0.52)
-                  : surfaces.lineSoft,
-            ),
-            boxShadow: <BoxShadow>[
-              BoxShadow(
-                color: Colors.black.withValues(alpha: selected ? 0.12 : 0.08),
-                blurRadius: selected ? 18 : 14,
-                offset: const Offset(0, 8),
-              ),
-            ],
+          decoration: appSoftCardDecoration(
+            context,
+            radius: compact ? _workspaceInnerRadius : _workspacePanelRadius,
+            tone: AppSurfaceTone.accent,
+            muted: !selected,
+            selected: selected,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -19024,16 +19027,24 @@ class _MessageTimelineState extends State<_MessageTimeline> {
                           ),
                           padding: EdgeInsets.fromLTRB(
                             density.inset(
-                              widget.compact ? AppSpacing.xs : AppSpacing.xl,
+                              widget.compact
+                                  ? AppSpacing.xs
+                                  : _workspacePageGutter,
                             ),
                             density.inset(
-                              widget.compact ? AppSpacing.xs : AppSpacing.xl,
+                              widget.compact
+                                  ? AppSpacing.xs
+                                  : _workspacePageGutter,
                             ),
                             density.inset(
-                              widget.compact ? AppSpacing.xs : AppSpacing.xl,
+                              widget.compact
+                                  ? AppSpacing.xs
+                                  : _workspacePageGutter,
                             ),
                             density.inset(
-                              widget.compact ? AppSpacing.xs : AppSpacing.lg,
+                              widget.compact
+                                  ? AppSpacing.xs
+                                  : _workspaceCardGap,
                             ),
                           ),
                           itemCount: itemCount,
@@ -19119,7 +19130,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
                                                       min: AppSpacing.xs,
                                                     )
                                                   : density.inset(
-                                                      AppSpacing.xl,
+                                                      _workspaceCardGap,
                                                     )),
                                       ),
                                       child: SizedBox(
@@ -19287,16 +19298,10 @@ List<BoxShadow> _timelineJumpToLatestShadows(ThemeData theme) {
   if (theme.brightness == Brightness.light) {
     return <BoxShadow>[
       BoxShadow(
-        color: theme.colorScheme.primary.withValues(alpha: 0.14),
-        blurRadius: 14,
-        spreadRadius: -10,
-        offset: const Offset(0, 7),
-      ),
-      BoxShadow(
-        color: Colors.black.withValues(alpha: 0.07),
-        blurRadius: 14,
+        color: theme.colorScheme.shadow.withValues(alpha: 0.045),
+        blurRadius: 16,
         spreadRadius: -12,
-        offset: const Offset(0, 6),
+        offset: const Offset(0, 8),
       ),
     ];
   }
@@ -24934,14 +24939,14 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
                     ),
                     width: double.infinity,
                     margin: EdgeInsets.only(
-                      left: AppSpacing.sm,
-                      right: AppSpacing.sm,
-                      top: showCollapsedBody ? AppSpacing.xs : 0,
-                      bottom: AppSpacing.xs,
+                      top: showCollapsedBody ? _workspaceRowGap : 0,
+                      bottom: _workspaceRowGap,
                     ),
                     decoration: BoxDecoration(
                       color: surfaces.panel,
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(
+                        _workspaceInnerRadius,
+                      ),
                       border: Border.all(color: surfaces.lineSoft),
                     ),
                     child: AnimatedOpacity(
@@ -25008,7 +25013,9 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
                                     height: _expandedLogFadeHeight,
                                     decoration: BoxDecoration(
                                       borderRadius: const BorderRadius.vertical(
-                                        top: Radius.circular(16),
+                                        top: Radius.circular(
+                                          _workspaceInnerRadius,
+                                        ),
                                       ),
                                       gradient: LinearGradient(
                                         begin: Alignment.topCenter,
@@ -25388,23 +25395,18 @@ const EdgeInsets _timelineExpandableHeaderPadding = EdgeInsets.symmetric(
 );
 
 const EdgeInsets _timelineExpandableBodyMargin = EdgeInsets.only(
-  top: AppSpacing.xxs,
+  top: _workspaceRowGap,
 );
 
 const EdgeInsets _timelineExpandableBodyPadding = EdgeInsets.fromLTRB(
-  AppSpacing.sm,
-  AppSpacing.md,
-  AppSpacing.sm,
-  AppSpacing.md,
+  _workspaceCardGap,
+  _workspaceCardGap,
+  _workspaceCardGap,
+  _workspaceCardGap,
 );
 
 EdgeInsets _timelineShellBodyPadding(bool compact) {
-  return EdgeInsets.fromLTRB(
-    AppSpacing.sm,
-    compact ? AppSpacing.sm : AppSpacing.md,
-    compact ? AppSpacing.sm : AppSpacing.lg,
-    compact ? AppSpacing.sm : AppSpacing.md,
-  );
+  return EdgeInsets.all(compact ? AppSpacing.sm : _workspaceCardGap);
 }
 
 const EdgeInsets _timelineExploredContextDetailPadding = EdgeInsets.only(
@@ -26768,9 +26770,10 @@ class _ComposerIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
     final enabled = onTap != null || busy;
-    final accent = Theme.of(context).colorScheme.primary;
+    final accent = theme.colorScheme.primary;
     final color = filled
         ? enabled
               ? accent
@@ -26778,10 +26781,10 @@ class _ComposerIconButton extends StatelessWidget {
         : surfaces.panelRaised;
     final foreground = filled
         ? enabled
-              ? Theme.of(context).colorScheme.onPrimary
+              ? theme.colorScheme.onPrimary
               : surfaces.muted
         : enabled
-        ? Theme.of(context).colorScheme.onSurface
+        ? theme.colorScheme.onSurface
         : surfaces.muted;
     return InkWell(
       onTap: onTap,
@@ -26797,10 +26800,12 @@ class _ComposerIconButton extends StatelessWidget {
                 border: Border.all(color: color),
                 boxShadow: <BoxShadow>[
                   BoxShadow(
-                    color: accent.withValues(alpha: 0.18),
-                    blurRadius: 18,
-                    spreadRadius: -10,
-                    offset: const Offset(0, 8),
+                    color: theme.colorScheme.shadow.withValues(
+                      alpha: theme.brightness == Brightness.dark ? 0.16 : 0.04,
+                    ),
+                    blurRadius: 16,
+                    spreadRadius: -12,
+                    offset: const Offset(0, 7),
                   ),
                 ],
               )
