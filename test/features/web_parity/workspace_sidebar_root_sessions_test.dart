@@ -731,6 +731,96 @@ void main() {
     expect(appController.themePreset, AppThemePreset.amoled);
   });
 
+  testWidgets('workspace settings light theme uses clean glass surfaces', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    tester.binding.platformDispatcher.localesTestValue = const <Locale>[
+      Locale('en', 'US'),
+    ];
+    addTearDown(tester.binding.platformDispatcher.clearLocalesTestValue);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      report: _readyReport,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _SidebarWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+        brightness: Brightness.light,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('workspace-sidebar-settings-button')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 240));
+
+    final cardSurface = tester.widget<Container>(
+      find.byKey(
+        const ValueKey<String>('workspace-settings-server-card-surface'),
+      ),
+    );
+    final cardDecoration = cardSurface.decoration! as BoxDecoration;
+    expect(cardDecoration.boxShadow ?? const <BoxShadow>[], isEmpty);
+    expect(cardDecoration.color!.a, greaterThan(0.5));
+    expect(cardDecoration.color!.a, lessThan(1));
+
+    final shellInsetDecorations = tester
+        .widgetList<Container>(
+          find.descendant(
+            of: find.byKey(
+              const ValueKey<String>('workspace-settings-shell-toggle'),
+            ),
+            matching: find.byType(Container),
+          ),
+        )
+        .map((container) => container.decoration)
+        .whereType<BoxDecoration>();
+    expect(
+      shellInsetDecorations.any((decoration) {
+        final radius = decoration.borderRadius?.resolve(TextDirection.ltr);
+        return radius?.topLeft.x == 18 &&
+            (decoration.boxShadow ?? const <BoxShadow>[]).isEmpty &&
+            decoration.color != null &&
+            decoration.color!.a > 0.5 &&
+            decoration.color!.a < 1;
+      }),
+      isTrue,
+    );
+
+    final sheetSurface = tester.widget<Container>(
+      find.byKey(const ValueKey<String>('workspace-settings-sheet')),
+    );
+    final sheetDecoration = sheetSurface.decoration! as BoxDecoration;
+    expect(sheetDecoration.color!.a, greaterThan(cardDecoration.color!.a));
+  });
+
   testWidgets('workspace settings sheet dismisses when tapping the backdrop', (
     tester,
   ) async {
@@ -1685,6 +1775,7 @@ class _WorkspaceRouteHarness extends StatelessWidget {
     this.projectCatalogService,
     this.platform = TargetPlatform.macOS,
     this.localeController,
+    this.brightness = Brightness.dark,
   });
 
   final WebParityAppController controller;
@@ -1692,6 +1783,7 @@ class _WorkspaceRouteHarness extends StatelessWidget {
   final ProjectCatalogService? projectCatalogService;
   final TargetPlatform platform;
   final LocaleController? localeController;
+  final Brightness brightness;
 
   @override
   Widget build(BuildContext context) {
@@ -1704,7 +1796,11 @@ class _WorkspaceRouteHarness extends StatelessWidget {
         animation: animation,
         builder: (context, child) {
           Widget app = MaterialApp(
-            theme: controller.themeData.copyWith(platform: platform),
+            theme:
+                (brightness == Brightness.light
+                        ? controller.lightThemeData
+                        : controller.darkThemeData)
+                    .copyWith(platform: platform),
             locale: localeController?.locale,
             supportedLocales: AppLocalizations.supportedLocales,
             localizationsDelegates: AppLocalizations.localizationsDelegates,

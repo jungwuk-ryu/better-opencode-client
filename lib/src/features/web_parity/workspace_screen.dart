@@ -8650,6 +8650,9 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
           (policy) => policy.hasCustomPatterns,
         );
 
+        final isLight = theme.brightness == Brightness.light;
+        final sheetRadius = BorderRadius.circular(28);
+
         return Padding(
           padding: EdgeInsets.fromLTRB(
             sheetOuterPadding,
@@ -8658,36 +8661,23 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
             sheetOuterPadding,
           ),
           child: DecoratedBox(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(28),
-              boxShadow: <BoxShadow>[
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.42),
-                  blurRadius: 40,
-                  spreadRadius: -10,
-                  offset: const Offset(0, 24),
-                ),
-                BoxShadow(
-                  color: theme.colorScheme.primary.withValues(alpha: 0.1),
-                  blurRadius: 36,
-                  spreadRadius: -18,
-                  offset: const Offset(0, 10),
-                ),
-              ],
+            decoration: _workspaceSettingsSheetShadowDecoration(
+              context,
+              radius: sheetRadius,
             ),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(28),
+              borderRadius: sheetRadius,
               child: BackdropFilter(
                 key: const ValueKey<String>('workspace-settings-sheet-blur'),
-                filter: ui.ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+                filter: ui.ImageFilter.blur(
+                  sigmaX: isLight ? 22 : 30,
+                  sigmaY: isLight ? 22 : 30,
+                ),
                 child: Container(
                   key: const ValueKey<String>('workspace-settings-sheet'),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(28),
-                    color: surfaces.panel.withValues(alpha: 0.72),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.12),
-                    ),
+                  decoration: _workspaceSettingsSheetDecoration(
+                    context,
+                    radius: sheetRadius,
                   ),
                   child: Stack(
                     children: <Widget>[
@@ -8698,20 +8688,17 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                         child: IgnorePointer(
                           child: Container(
                             height: 1,
-                            color: Colors.white.withValues(alpha: 0.12),
+                            color: isLight
+                                ? Colors.white.withValues(alpha: 0.54)
+                                : Colors.white.withValues(alpha: 0.12),
                           ),
                         ),
                       ),
                       Column(
                         children: <Widget>[
                           Container(
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.025),
-                              border: Border(
-                                bottom: BorderSide(
-                                  color: Colors.white.withValues(alpha: 0.08),
-                                ),
-                              ),
+                            decoration: _workspaceSettingsHeaderDecoration(
+                              context,
                             ),
                             child: Padding(
                               padding: EdgeInsets.fromLTRB(
@@ -8767,6 +8754,9 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                 _WorkspaceSettingsSection(
                                   title: context.wp('Server'),
                                   child: _WorkspaceSettingsCard(
+                                    surfaceKey: const ValueKey<String>(
+                                      'workspace-settings-server-card-surface',
+                                    ),
                                     child: Column(
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
@@ -9240,18 +9230,10 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                           padding: const EdgeInsets.all(
                                             AppSpacing.md,
                                           ),
-                                          decoration: BoxDecoration(
-                                            color: surfaces.panelMuted
-                                                .withValues(alpha: 0.52),
-                                            borderRadius: BorderRadius.circular(
-                                              18,
-                                            ),
-                                            border: Border.all(
-                                              color: Colors.white.withValues(
-                                                alpha: 0.075,
+                                          decoration:
+                                              _workspaceSettingsInsetDecoration(
+                                                context,
                                               ),
-                                            ),
-                                          ),
                                           child: Row(
                                             children: <Widget>[
                                               Expanded(
@@ -9385,6 +9367,138 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
   }
 }
 
+BoxDecoration _workspaceSettingsSheetShadowDecoration(
+  BuildContext context, {
+  required BorderRadiusGeometry radius,
+}) {
+  final theme = Theme.of(context);
+  final isLight = theme.brightness == Brightness.light;
+  return BoxDecoration(
+    borderRadius: radius,
+    boxShadow: isLight
+        ? <BoxShadow>[
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.10),
+              blurRadius: 30,
+              spreadRadius: -20,
+              offset: const Offset(0, 18),
+            ),
+            BoxShadow(
+              color: theme.colorScheme.primary.withValues(alpha: 0.035),
+              blurRadius: 28,
+              spreadRadius: -22,
+              offset: const Offset(0, 10),
+            ),
+          ]
+        : <BoxShadow>[
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.42),
+              blurRadius: 40,
+              spreadRadius: -10,
+              offset: const Offset(0, 24),
+            ),
+            BoxShadow(
+              color: theme.colorScheme.primary.withValues(alpha: 0.1),
+              blurRadius: 36,
+              spreadRadius: -18,
+              offset: const Offset(0, 10),
+            ),
+          ],
+  );
+}
+
+BoxDecoration _workspaceSettingsSheetDecoration(
+  BuildContext context, {
+  required BorderRadiusGeometry radius,
+}) {
+  final theme = Theme.of(context);
+  final surfaces = theme.extension<AppSurfaces>()!;
+  final isLight = theme.brightness == Brightness.light;
+  return BoxDecoration(
+    borderRadius: radius,
+    color: isLight
+        ? Color.alphaBlend(
+            Colors.white.withValues(alpha: 0.38),
+            surfaces.panel.withValues(alpha: 0.82),
+          )
+        : surfaces.panel.withValues(alpha: 0.72),
+    border: Border.all(
+      color: isLight
+          ? surfaces.lineSoft.withValues(alpha: 0.52)
+          : Colors.white.withValues(alpha: 0.12),
+    ),
+  );
+}
+
+BoxDecoration _workspaceSettingsHeaderDecoration(BuildContext context) {
+  final theme = Theme.of(context);
+  final surfaces = theme.extension<AppSurfaces>()!;
+  final isLight = theme.brightness == Brightness.light;
+  return BoxDecoration(
+    color: Colors.white.withValues(alpha: isLight ? 0.18 : 0.025),
+    border: Border(
+      bottom: BorderSide(
+        color: isLight
+            ? surfaces.lineSoft.withValues(alpha: 0.46)
+            : Colors.white.withValues(alpha: 0.08),
+      ),
+    ),
+  );
+}
+
+BoxDecoration _workspaceSettingsCardDecoration(BuildContext context) {
+  final theme = Theme.of(context);
+  final surfaces = theme.extension<AppSurfaces>()!;
+  final isLight = theme.brightness == Brightness.light;
+  return BoxDecoration(
+    borderRadius: BorderRadius.circular(20),
+    color: isLight
+        ? Color.alphaBlend(
+            Colors.white.withValues(alpha: 0.52),
+            surfaces.panelRaised.withValues(alpha: 0.34),
+          )
+        : surfaces.panelRaised.withValues(alpha: 0.42),
+    border: Border.all(
+      color: isLight
+          ? surfaces.lineSoft.withValues(alpha: 0.50)
+          : Colors.white.withValues(alpha: 0.08),
+    ),
+    boxShadow: isLight
+        ? const <BoxShadow>[]
+        : <BoxShadow>[
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.22),
+              blurRadius: 18,
+              spreadRadius: -10,
+              offset: const Offset(0, 12),
+            ),
+          ],
+  );
+}
+
+BoxDecoration _workspaceSettingsInsetDecoration(
+  BuildContext context, {
+  double radius = 18,
+}) {
+  final theme = Theme.of(context);
+  final surfaces = theme.extension<AppSurfaces>()!;
+  final isLight = theme.brightness == Brightness.light;
+  return BoxDecoration(
+    color: isLight
+        ? Color.alphaBlend(
+            Colors.white.withValues(alpha: 0.44),
+            surfaces.panelMuted.withValues(alpha: 0.26),
+          )
+        : surfaces.panelMuted.withValues(alpha: 0.52),
+    borderRadius: BorderRadius.circular(radius),
+    border: Border.all(
+      color: isLight
+          ? surfaces.lineSoft.withValues(alpha: 0.46)
+          : Colors.white.withValues(alpha: 0.075),
+    ),
+  );
+}
+
 class _WorkspaceSettingsSection extends StatelessWidget {
   const _WorkspaceSettingsSection({required this.title, required this.child});
 
@@ -9413,34 +9527,32 @@ class _WorkspaceSettingsSection extends StatelessWidget {
 }
 
 class _WorkspaceSettingsCard extends StatelessWidget {
-  const _WorkspaceSettingsCard({required this.child, super.key});
+  const _WorkspaceSettingsCard({
+    required this.child,
+    this.surfaceKey,
+    super.key,
+  });
 
   final Widget child;
+  final Key? surfaceKey;
 
   @override
   Widget build(BuildContext context) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final theme = Theme.of(context);
+    final isLight = theme.brightness == Brightness.light;
     final density = _workspaceDensity(context);
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
       child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+        filter: ui.ImageFilter.blur(
+          sigmaX: isLight ? 8 : 12,
+          sigmaY: isLight ? 8 : 12,
+        ),
         child: Container(
+          key: surfaceKey,
           width: double.infinity,
           padding: EdgeInsets.all(density.inset(AppSpacing.md)),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            color: surfaces.panelRaised.withValues(alpha: 0.42),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-            boxShadow: <BoxShadow>[
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.22),
-                blurRadius: 18,
-                spreadRadius: -10,
-                offset: const Offset(0, 12),
-              ),
-            ],
-          ),
+          decoration: _workspaceSettingsCardDecoration(context),
           child: child,
         ),
       ),
@@ -9471,11 +9583,7 @@ class _WorkspaceSettingsToggleRow extends StatelessWidget {
         horizontal: density.inset(AppSpacing.sm, min: AppSpacing.xs),
         vertical: density.inset(AppSpacing.xs, min: AppSpacing.xxs),
       ),
-      decoration: BoxDecoration(
-        color: surfaces.panelMuted.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
-      ),
+      decoration: _workspaceSettingsInsetDecoration(context),
       child: Row(
         children: <Widget>[
           Expanded(
@@ -9522,11 +9630,7 @@ class _WorkspaceSettingsShellDisplayModeRow extends StatelessWidget {
     final density = _workspaceDensity(context);
     return Container(
       padding: EdgeInsets.all(density.inset(AppSpacing.md)),
-      decoration: BoxDecoration(
-        color: surfaces.panelMuted.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
-      ),
+      decoration: _workspaceSettingsInsetDecoration(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -9599,11 +9703,7 @@ class _WorkspaceSettingsSessionHistoryPageSizeRow extends StatelessWidget {
     final density = _workspaceDensity(context);
     return Container(
       padding: EdgeInsets.all(density.inset(AppSpacing.md)),
-      decoration: BoxDecoration(
-        color: surfaces.panelMuted.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
-      ),
+      decoration: _workspaceSettingsInsetDecoration(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -9668,11 +9768,7 @@ class _WorkspaceSettingsOversizedSessionBehaviorRow extends StatelessWidget {
     final density = _workspaceDensity(context);
     return Container(
       padding: EdgeInsets.all(density.inset(AppSpacing.md)),
-      decoration: BoxDecoration(
-        color: surfaces.panelMuted.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
-      ),
+      decoration: _workspaceSettingsInsetDecoration(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -9748,11 +9844,7 @@ class _WorkspaceSettingsPermissionRow extends StatelessWidget {
     ];
     return Container(
       padding: EdgeInsets.all(density.inset(AppSpacing.md)),
-      decoration: BoxDecoration(
-        color: surfaces.panelMuted.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
-      ),
+      decoration: _workspaceSettingsInsetDecoration(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -9839,11 +9931,7 @@ class _WorkspaceSettingsFollowupModeRow extends StatelessWidget {
     final density = _workspaceDensity(context);
     return Container(
       padding: EdgeInsets.all(density.inset(AppSpacing.md)),
-      decoration: BoxDecoration(
-        color: surfaces.panelMuted.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
-      ),
+      decoration: _workspaceSettingsInsetDecoration(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -9916,11 +10004,7 @@ class _WorkspaceSettingsThemeRow extends StatelessWidget {
     final previewBrightness = theme.brightness;
     return Container(
       padding: EdgeInsets.all(density.inset(AppSpacing.md)),
-      decoration: BoxDecoration(
-        color: surfaces.panelMuted.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
-      ),
+      decoration: _workspaceSettingsInsetDecoration(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -10025,11 +10109,7 @@ class _WorkspaceSettingsColorSchemeRow extends StatelessWidget {
     };
     return Container(
       padding: EdgeInsets.all(density.inset(AppSpacing.md)),
-      decoration: BoxDecoration(
-        color: surfaces.panelMuted.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
-      ),
+      decoration: _workspaceSettingsInsetDecoration(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -10349,11 +10429,7 @@ class _WorkspaceSettingsLanguageRow extends StatelessWidget {
     };
     return Container(
       padding: EdgeInsets.all(density.inset(AppSpacing.md)),
-      decoration: BoxDecoration(
-        color: surfaces.panelMuted.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
-      ),
+      decoration: _workspaceSettingsInsetDecoration(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -10444,11 +10520,7 @@ class _WorkspaceSettingsLayoutDensityRow extends StatelessWidget {
     final density = _workspaceDensity(context);
     return Container(
       padding: EdgeInsets.all(density.inset(AppSpacing.md)),
-      decoration: BoxDecoration(
-        color: surfaces.panelMuted.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
-      ),
+      decoration: _workspaceSettingsInsetDecoration(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -10516,11 +10588,7 @@ class _WorkspaceSettingsMultiPaneComposerModeRow extends StatelessWidget {
     final density = _workspaceDensity(context);
     return Container(
       padding: EdgeInsets.all(density.inset(AppSpacing.md)),
-      decoration: BoxDecoration(
-        color: surfaces.panelMuted.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
-      ),
+      decoration: _workspaceSettingsInsetDecoration(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -10590,11 +10658,7 @@ class _WorkspaceSettingsTextScaleRow extends StatelessWidget {
     final percentLabel = '${(value * 100).round()}%';
     return Container(
       padding: EdgeInsets.all(density.inset(AppSpacing.md)),
-      decoration: BoxDecoration(
-        color: surfaces.panelMuted.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
-      ),
+      decoration: _workspaceSettingsInsetDecoration(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -10959,11 +11023,7 @@ class _WorkspaceShortcutRow extends StatelessWidget {
         horizontal: density.inset(AppSpacing.md),
         vertical: density.inset(AppSpacing.sm),
       ),
-      decoration: BoxDecoration(
-        color: surfaces.panelMuted.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
-      ),
+      decoration: _workspaceSettingsInsetDecoration(context),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
