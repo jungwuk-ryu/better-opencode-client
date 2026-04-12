@@ -2125,6 +2125,7 @@ class WorkspaceController extends ChangeNotifier {
       project: project,
       sessionId: sessionId,
     );
+    final cachedServerMessages = cachedMessages;
     if (_isStaleSessionLoad(revision, sessionId)) {
       return;
     }
@@ -2151,10 +2152,17 @@ class WorkspaceController extends ChangeNotifier {
           if (_isStaleSessionLoad(revision, sessionId)) {
             return;
           }
+          final mergedServerMessages =
+              cachedServerMessages != null && cachedServerMessages.isNotEmpty
+              ? _mergeLatestSessionMessages(
+                  currentMessages: cachedServerMessages,
+                  latestMessages: partialMessages,
+                )
+              : partialMessages;
           _messages = _mergeSessionMessages(
             project: project,
             sessionId: sessionId,
-            serverMessages: partialMessages,
+            serverMessages: mergedServerMessages,
           );
           _showingCachedSessionMessages = false;
           _notify();
@@ -2164,10 +2172,19 @@ class WorkspaceController extends ChangeNotifier {
         return;
       }
 
+      final refreshedServerMessages =
+          cachedServerMessages != null &&
+              cachedServerMessages.isNotEmpty &&
+              page.hasMore
+          ? _mergeLatestSessionMessages(
+              currentMessages: cachedServerMessages,
+              latestMessages: page.messages,
+            )
+          : page.messages;
       _messages = _mergeSessionMessages(
         project: project,
         sessionId: sessionId,
-        serverMessages: page.messages,
+        serverMessages: refreshedServerMessages,
       );
       _selectedSessionHistoryCursor = page.nextCursor;
       _selectedSessionHistoryMore =
@@ -2186,7 +2203,7 @@ class WorkspaceController extends ChangeNotifier {
         _persistSessionMessagesCache(
           project: project,
           sessionId: sessionId,
-          messages: page.messages,
+          messages: refreshedServerMessages,
           immediate: true,
         ),
       );

@@ -1473,6 +1473,127 @@ void main() {
   );
 
   test(
+    'controller keeps cached prompt targets while refreshing a selected session',
+    () async {
+      final cacheStore = _RecordingCacheStore();
+      cacheStore
+              .entries['workspace.messages::${profile.storageKey}::${project.directory}::ses_2'] =
+          StaleCacheEntry(
+            payloadJson: jsonEncode(<Object?>[
+              _message(
+                id: 'msg_cached_older',
+                sessionId: 'ses_2',
+                text: 'Cached older context',
+                createdAt: 1710000001000,
+              ).toJson(),
+              _message(
+                id: 'msg_cached_prompt',
+                sessionId: 'ses_2',
+                text: 'Cached prompt to jump to',
+                createdAt: 1710000002000,
+                role: 'user',
+              ).toJson(),
+            ]),
+            signature: 'ses-2-cached-history',
+            fetchedAt: DateTime.fromMillisecondsSinceEpoch(1710000002000),
+          );
+      final requests = <({String sessionId, String? before})>[];
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_2',
+              title: 'Cached target session',
+              createdAt: 1710000001000,
+              updatedAt: 1710000006000,
+            ),
+            _session(
+              id: 'ses_1',
+              title: 'Initial session',
+              createdAt: 1710000001000,
+              updatedAt: 1710000005000,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{
+            'ses_1': SessionStatusSummary(type: 'idle'),
+            'ses_2': SessionStatusSummary(type: 'idle'),
+          },
+          messages: const <ChatMessage>[],
+          selectedSessionId: 'ses_1',
+        ),
+        fetchMessagesPageHandler:
+            ({
+              required profile,
+              required project,
+              required sessionId,
+              required limit,
+              before,
+            }) async {
+              requests.add((sessionId: sessionId, before: before));
+              if (sessionId == 'ses_1') {
+                return ChatMessagePage(
+                  messages: <ChatMessage>[
+                    _message(
+                      id: 'msg_selected',
+                      sessionId: sessionId,
+                      text: 'selected',
+                      createdAt: 1710000005000,
+                    ),
+                  ],
+                );
+              }
+              return ChatMessagePage(
+                messages: <ChatMessage>[
+                  _message(
+                    id: 'msg_server_latest',
+                    sessionId: sessionId,
+                    text: 'server latest',
+                    createdAt: 1710000006000,
+                  ),
+                ],
+                nextCursor: 'cursor_older_than_latest_page',
+              );
+            },
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: _ControlledEventStreamService(),
+        chatService: chatService,
+        cacheStore: cacheStore,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+      await controller.prefetchSessionHoverPreview('ses_2');
+
+      expect(
+        controller
+            .sessionHoverPreviewForSession('ses_2')
+            .messages
+            .map((message) => message.messageId),
+        contains('msg_cached_prompt'),
+      );
+
+      await controller.selectSession('ses_2');
+
+      expect(controller.selectedSessionId, 'ses_2');
+      expect(controller.sessionLoading, isFalse);
+      expect(
+        controller.messages.map((message) => message.info.id),
+        containsAll(<String>['msg_cached_prompt', 'msg_server_latest']),
+      );
+      expect(controller.timelineStateForSession('ses_2').historyMore, isTrue);
+      expect(
+        requests.where((request) => request.sessionId == 'ses_2'),
+        <({String sessionId, String? before})>[
+          (sessionId: 'ses_2', before: null),
+        ],
+      );
+    },
+  );
+
+  test(
     'controller keeps watched session history compact until selected',
     () async {
       final chatService = _FakeChatService(

@@ -5861,10 +5861,6 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen>
         return;
       }
     }
-    await controller.selectSession(sessionId);
-    if (!mounted) {
-      return;
-    }
     final targetMessageId = focusMessageId?.trim();
     if (targetMessageId != null && targetMessageId.isNotEmpty) {
       _requestTimelineMessageFocus(
@@ -5873,6 +5869,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen>
         messageId: targetMessageId,
       );
     }
+    await controller.selectSession(sessionId);
   }
 
   bool _selectedSessionVisibleOutsideActivePane(
