@@ -262,6 +262,179 @@ void main() {
   );
 
   test(
+    'controller treats server connected as a bootstrap event without resyncing',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_1',
+              title: 'Initial session',
+              createdAt: 1710000001000,
+              updatedAt: 1710000005000,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{
+            'ses_1': SessionStatusSummary(type: 'idle'),
+          },
+          messages: const <ChatMessage>[],
+          selectedSessionId: 'ses_1',
+        ),
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+      expect(eventStreamService.connectCallCount, 1);
+      expect(chatService.fetchBundleCalls, 1);
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'server.connected',
+          properties: <String, Object?>{},
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(controller.recoveringEventStream, isFalse);
+      expect(controller.eventStreamRecoveryError, isNull);
+      expect(eventStreamService.connectCallCount, 1);
+      expect(chatService.fetchBundleCalls, 1);
+      expect(
+        eventStreamService.activeSubscriptionCountForScope(profile, project),
+        1,
+      );
+      expect(controller.selectedSessionId, 'ses_1');
+    },
+  );
+
+  test(
+    'controller reloads sessions, messages, and pending requests after a stream resync request',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final requestService = _FakeRequestService();
+      final rootSession = _session(
+        id: 'ses_root',
+        title: 'Root session',
+        createdAt: 1710000001000,
+        updatedAt: 1710000005000,
+      );
+      final childSession = _session(
+        id: 'ses_child',
+        title: 'Running child session',
+        createdAt: 1710000002000,
+        updatedAt: 1710000009000,
+        parentId: 'ses_root',
+      );
+      final messagesBySessionId = <String, List<ChatMessage>>{
+        'ses_root': const <ChatMessage>[],
+      };
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[rootSession],
+          statuses: const <String, SessionStatusSummary>{
+            'ses_root': SessionStatusSummary(type: 'idle'),
+          },
+          messages: const <ChatMessage>[],
+          selectedSessionId: 'ses_root',
+        ),
+        fetchMessagesPageHandler:
+            ({
+              required profile,
+              required project,
+              required sessionId,
+              required limit,
+              before,
+            }) async => ChatMessagePage(
+              messages: messagesBySessionId[sessionId] ?? const <ChatMessage>[],
+            ),
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+        requestService: requestService,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+
+      expect(controller.messages, isEmpty);
+      expect(controller.activeChildSessions, isEmpty);
+      expect(controller.pendingRequests.questions, isEmpty);
+
+      messagesBySessionId['ses_root'] = <ChatMessage>[
+        _message(
+          id: 'msg_resynced',
+          sessionId: 'ses_root',
+          text: 'Fresh content after resync',
+          createdAt: 1710000010000,
+        ),
+      ];
+      chatService.bundle = ChatSessionBundle(
+        sessions: <SessionSummary>[childSession, rootSession],
+        statuses: const <String, SessionStatusSummary>{
+          'ses_root': SessionStatusSummary(type: 'idle'),
+          'ses_child': SessionStatusSummary(type: 'busy'),
+        },
+        messages: const <ChatMessage>[],
+        selectedSessionId: 'ses_root',
+      );
+      requestService.pendingBundle = const PendingRequestBundle(
+        questions: <QuestionRequestSummary>[
+          QuestionRequestSummary(
+            id: 'q_child',
+            sessionId: 'ses_child',
+            questions: <QuestionPromptSummary>[
+              QuestionPromptSummary(
+                question: 'Can I proceed?',
+                header: 'Approval',
+                options: <QuestionOptionSummary>[],
+                multiple: false,
+              ),
+            ],
+          ),
+        ],
+        permissions: <PermissionRequestSummary>[],
+      );
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'stream.resync_required',
+          properties: <String, Object?>{},
+        ),
+      );
+      await _waitFor(
+        () =>
+            !controller.recoveringEventStream &&
+            eventStreamService.connectCallCount >= 2,
+      );
+
+      expect(controller.eventStreamRecoveryError, isNull);
+      expect(
+        controller.messages.single.parts.single.text,
+        'Fresh content after resync',
+      );
+      expect(
+        controller.activeChildSessions.map((session) => session.id),
+        <String>['ses_child'],
+      );
+      expect(controller.currentQuestionRequest?.id, 'q_child');
+    },
+  );
+
+  test(
     'controller tracks unseen sidebar notifications for background sessions',
     () async {
       final eventStreamService = _ControlledEventStreamService();
@@ -1300,6 +1473,127 @@ void main() {
   );
 
   test(
+    'controller keeps cached prompt targets while refreshing a selected session',
+    () async {
+      final cacheStore = _RecordingCacheStore();
+      cacheStore
+              .entries['workspace.messages::${profile.storageKey}::${project.directory}::ses_2'] =
+          StaleCacheEntry(
+            payloadJson: jsonEncode(<Object?>[
+              _message(
+                id: 'msg_cached_older',
+                sessionId: 'ses_2',
+                text: 'Cached older context',
+                createdAt: 1710000001000,
+              ).toJson(),
+              _message(
+                id: 'msg_cached_prompt',
+                sessionId: 'ses_2',
+                text: 'Cached prompt to jump to',
+                createdAt: 1710000002000,
+                role: 'user',
+              ).toJson(),
+            ]),
+            signature: 'ses-2-cached-history',
+            fetchedAt: DateTime.fromMillisecondsSinceEpoch(1710000002000),
+          );
+      final requests = <({String sessionId, String? before})>[];
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_2',
+              title: 'Cached target session',
+              createdAt: 1710000001000,
+              updatedAt: 1710000006000,
+            ),
+            _session(
+              id: 'ses_1',
+              title: 'Initial session',
+              createdAt: 1710000001000,
+              updatedAt: 1710000005000,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{
+            'ses_1': SessionStatusSummary(type: 'idle'),
+            'ses_2': SessionStatusSummary(type: 'idle'),
+          },
+          messages: const <ChatMessage>[],
+          selectedSessionId: 'ses_1',
+        ),
+        fetchMessagesPageHandler:
+            ({
+              required profile,
+              required project,
+              required sessionId,
+              required limit,
+              before,
+            }) async {
+              requests.add((sessionId: sessionId, before: before));
+              if (sessionId == 'ses_1') {
+                return ChatMessagePage(
+                  messages: <ChatMessage>[
+                    _message(
+                      id: 'msg_selected',
+                      sessionId: sessionId,
+                      text: 'selected',
+                      createdAt: 1710000005000,
+                    ),
+                  ],
+                );
+              }
+              return ChatMessagePage(
+                messages: <ChatMessage>[
+                  _message(
+                    id: 'msg_server_latest',
+                    sessionId: sessionId,
+                    text: 'server latest',
+                    createdAt: 1710000006000,
+                  ),
+                ],
+                nextCursor: 'cursor_older_than_latest_page',
+              );
+            },
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: _ControlledEventStreamService(),
+        chatService: chatService,
+        cacheStore: cacheStore,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+      await controller.prefetchSessionHoverPreview('ses_2');
+
+      expect(
+        controller
+            .sessionHoverPreviewForSession('ses_2')
+            .messages
+            .map((message) => message.messageId),
+        contains('msg_cached_prompt'),
+      );
+
+      await controller.selectSession('ses_2');
+
+      expect(controller.selectedSessionId, 'ses_2');
+      expect(controller.sessionLoading, isFalse);
+      expect(
+        controller.messages.map((message) => message.info.id),
+        containsAll(<String>['msg_cached_prompt', 'msg_server_latest']),
+      );
+      expect(controller.timelineStateForSession('ses_2').historyMore, isTrue);
+      expect(
+        requests.where((request) => request.sessionId == 'ses_2'),
+        <({String sessionId, String? before})>[
+          (sessionId: 'ses_2', before: null),
+        ],
+      );
+    },
+  );
+
+  test(
     'controller keeps watched session history compact until selected',
     () async {
       final chatService = _FakeChatService(
@@ -1531,6 +1825,656 @@ void main() {
   });
 
   test(
+    'controller refuses session compaction when no available model can be resolved',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final sessionActionService = _RecordingSessionActionService();
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        sessionActionService: sessionActionService,
+        configService: _FakeConfigService(),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+
+      expect(controller.selectedModel, isNull);
+      await expectLater(
+        controller.summarizeSelectedSession,
+        throwsA(
+          isA<SessionActionException>().having(
+            (error) => error.message,
+            'message',
+            'Session compaction requires an available model on this server.',
+          ),
+        ),
+      );
+
+      expect(sessionActionService.summarizeCalls, 0);
+      expect(controller.actionNotice, isNull);
+    },
+  );
+
+  test(
+    'controller falls back to the catalog default when the transcript model is unavailable',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final sessionActionService = _RecordingSessionActionService();
+      final sessionMessages = <ChatMessage>[
+        _message(
+          id: 'msg_user',
+          sessionId: 'ses_1',
+          text: 'Ship the fix',
+          createdAt: 1710000002000,
+          role: 'user',
+          providerId: 'anthropic',
+          modelId: 'claude-sonnet-4.5',
+        ),
+      ];
+      var fetchMessagesCalls = 0;
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_1',
+              title: 'Initial session',
+              createdAt: 1710000001000,
+              updatedAt: 1710000005000,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{
+            'ses_1': SessionStatusSummary(type: 'idle'),
+          },
+          messages: sessionMessages,
+          selectedSessionId: 'ses_1',
+        ),
+        fetchMessagesHandler:
+            ({
+              required ServerProfile profile,
+              required ProjectTarget project,
+              required String sessionId,
+            }) async {
+              fetchMessagesCalls += 1;
+              return sessionMessages;
+            },
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+        sessionActionService: sessionActionService,
+        configService: _FakeConfigService(snapshot: _composerConfigSnapshot()),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+
+      expect(controller.selectedModel?.key, 'openai/gpt-4.1');
+      fetchMessagesCalls = 0;
+      await controller.summarizeSelectedSession();
+
+      expect(sessionActionService.summarizeCalls, 1);
+      expect(sessionActionService.lastSummarizedSessionId, 'ses_1');
+      expect(sessionActionService.lastSummarizedProviderId, 'openai');
+      expect(sessionActionService.lastSummarizedModelId, 'gpt-4.1');
+      expect(controller.actionNotice, 'Session compaction requested.');
+      await _waitFor(() => fetchMessagesCalls > 0);
+    },
+  );
+
+  test(
+    'controller refreshes the selected timeline when upstream reports compaction completed',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      var fetchMessagesCalls = 0;
+      final compactedMessages = <ChatMessage>[
+        _message(
+          id: 'msg_compaction',
+          sessionId: 'ses_1',
+          text: 'Session compacted',
+          createdAt: 1710000006000,
+          role: 'user',
+          providerId: 'openai',
+          modelId: 'gpt-4.1',
+        ),
+      ];
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_1',
+              title: 'Initial session',
+              createdAt: 1710000001000,
+              updatedAt: 1710000005000,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{
+            'ses_1': SessionStatusSummary(type: 'idle'),
+          },
+          messages: const <ChatMessage>[],
+          selectedSessionId: 'ses_1',
+        ),
+        fetchMessagesHandler:
+            ({
+              required ServerProfile profile,
+              required ProjectTarget project,
+              required String sessionId,
+            }) async {
+              fetchMessagesCalls += 1;
+              return compactedMessages;
+            },
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+      fetchMessagesCalls = 0;
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'session.compacted',
+          properties: <String, Object?>{'sessionID': 'ses_1'},
+        ),
+      );
+
+      await _waitFor(() => fetchMessagesCalls > 0);
+      expect(controller.messages, hasLength(1));
+      expect(controller.messages.single.info.id, 'msg_compaction');
+    },
+  );
+
+  test(
+    'controller ignores stale configured compaction models when catalog models disagree',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final sessionActionService = _RecordingSessionActionService();
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        sessionActionService: sessionActionService,
+        configService: _FakeConfigService(
+          snapshot: ConfigSnapshot(
+            config: RawJsonDocument(<String, Object?>{
+              'model': 'anthropic/claude-sonnet-4.5',
+            }),
+            providerConfig: RawJsonDocument(<String, Object?>{
+              'providers': <Object?>[
+                <String, Object?>{
+                  'id': 'openai',
+                  'name': 'OpenAI',
+                  'models': <String, Object?>{
+                    'gpt-4.1': <String, Object?>{
+                      'id': 'gpt-4.1',
+                      'name': 'GPT-4.1',
+                    },
+                  },
+                },
+              ],
+              'default': <String, Object?>{'openai': 'gpt-4.1'},
+            }),
+          ),
+        ),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+
+      await controller.summarizeSelectedSession();
+
+      expect(sessionActionService.summarizeCalls, 1);
+      expect(sessionActionService.lastSummarizedProviderId, 'openai');
+      expect(sessionActionService.lastSummarizedModelId, 'gpt-4.1');
+    },
+  );
+
+  test(
+    'controller prefers an explicitly selected model over transcript metadata',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final sessionActionService = _RecordingSessionActionService();
+      final configSnapshot = _multiProviderComposerConfigSnapshot();
+      final sessionMessages = <ChatMessage>[
+        _message(
+          id: 'msg_user',
+          sessionId: 'ses_1',
+          text: 'Keep the manual model',
+          createdAt: 1710000002100,
+          role: 'user',
+          providerId: 'anthropic',
+          modelId: 'claude-sonnet-4.5',
+        ),
+      ];
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_1',
+              title: 'Initial session',
+              createdAt: 1710000001000,
+              updatedAt: 1710000005000,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{
+            'ses_1': SessionStatusSummary(type: 'idle'),
+          },
+          messages: sessionMessages,
+          selectedSessionId: 'ses_1',
+        ),
+        fetchMessagesHandler:
+            ({
+              required ServerProfile profile,
+              required ProjectTarget project,
+              required String sessionId,
+            }) async => sessionMessages,
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+        sessionActionService: sessionActionService,
+        configService: _FakeConfigService(snapshot: configSnapshot),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+      expect(controller.selectedModel?.key, 'anthropic/claude-sonnet-4.5');
+      controller.selectModel('openai/gpt-4.1');
+      await Future<void>.delayed(Duration.zero);
+      expect(controller.selectedModel?.key, 'openai/gpt-4.1');
+      await controller.summarizeSelectedSession();
+
+      expect(sessionActionService.summarizeCalls, 1);
+      expect(sessionActionService.lastSummarizedSessionId, 'ses_1');
+      expect(sessionActionService.lastSummarizedProviderId, 'openai');
+      expect(sessionActionService.lastSummarizedModelId, 'gpt-4.1');
+    },
+  );
+
+  test(
+    'controller re-resolves compact models from the active session transcript after switching away and back',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final sessionActionService = _RecordingSessionActionService();
+      final sessions = <SessionSummary>[
+        _session(
+          id: 'ses_1',
+          title: 'First session',
+          createdAt: 1710000001000,
+          updatedAt: 1710000005000,
+        ),
+        _session(
+          id: 'ses_2',
+          title: 'Second session',
+          createdAt: 1710000002000,
+          updatedAt: 1710000006000,
+        ),
+      ];
+      final messagesBySessionId = <String, List<ChatMessage>>{
+        'ses_1': <ChatMessage>[
+          _message(
+            id: 'msg_user_1',
+            sessionId: 'ses_1',
+            text: 'Keep using OpenAI',
+            createdAt: 1710000002100,
+            role: 'user',
+            providerId: 'openai',
+            modelId: 'gpt-4.1',
+          ),
+        ],
+        'ses_2': <ChatMessage>[
+          _message(
+            id: 'msg_user_2',
+            sessionId: 'ses_2',
+            text: 'Switch to Anthropic here',
+            createdAt: 1710000002200,
+            role: 'user',
+            providerId: 'anthropic',
+            modelId: 'claude-sonnet-4.5',
+          ),
+        ],
+      };
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: sessions,
+          statuses: const <String, SessionStatusSummary>{
+            'ses_1': SessionStatusSummary(type: 'idle'),
+            'ses_2': SessionStatusSummary(type: 'idle'),
+          },
+          messages: messagesBySessionId['ses_1']!,
+          selectedSessionId: 'ses_1',
+        ),
+        fetchMessagesHandler:
+            ({
+              required ServerProfile profile,
+              required ProjectTarget project,
+              required String sessionId,
+            }) async => messagesBySessionId[sessionId] ?? const <ChatMessage>[],
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+        sessionActionService: sessionActionService,
+        configService: _FakeConfigService(
+          snapshot: _multiProviderComposerConfigSnapshot(),
+        ),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+
+      expect(controller.selectedSessionId, 'ses_1');
+      expect(controller.selectedModel?.key, 'openai/gpt-4.1');
+
+      await controller.selectSession('ses_2');
+      await controller.summarizeSelectedSession();
+
+      expect(sessionActionService.lastSummarizedSessionId, 'ses_2');
+      expect(sessionActionService.lastSummarizedProviderId, 'anthropic');
+      expect(sessionActionService.lastSummarizedModelId, 'claude-sonnet-4.5');
+
+      await controller.selectSession('ses_1');
+      await controller.summarizeSelectedSession();
+
+      expect(sessionActionService.lastSummarizedSessionId, 'ses_1');
+      expect(sessionActionService.lastSummarizedProviderId, 'openai');
+      expect(sessionActionService.lastSummarizedModelId, 'gpt-4.1');
+    },
+  );
+
+  test(
+    'controller routes exact /compact prompts through session compaction',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final sessionActionService = _RecordingSessionActionService();
+      var sendMessageCalls = 0;
+      final sessionMessages = <ChatMessage>[
+        _message(
+          id: 'msg_user',
+          sessionId: 'ses_1',
+          text: 'Compress the transcript',
+          createdAt: 1710000002000,
+          role: 'user',
+          providerId: 'anthropic',
+          modelId: 'claude-sonnet-4.5',
+        ),
+      ];
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_1',
+              title: 'Initial session',
+              createdAt: 1710000001000,
+              updatedAt: 1710000005000,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{
+            'ses_1': SessionStatusSummary(type: 'idle'),
+          },
+          messages: sessionMessages,
+          selectedSessionId: 'ses_1',
+        ),
+        fetchMessagesHandler:
+            ({
+              required ServerProfile profile,
+              required ProjectTarget project,
+              required String sessionId,
+            }) async => sessionMessages,
+        sendMessageHandler:
+            ({
+              required ServerProfile profile,
+              required ProjectTarget project,
+              required String sessionId,
+              required String prompt,
+              List<PromptAttachment> attachments = const <PromptAttachment>[],
+              String? agent,
+              String? providerId,
+              String? modelId,
+              String? variant,
+              String? reasoning,
+            }) async {
+              sendMessageCalls += 1;
+              return ChatMessage(
+                info: ChatMessageInfo(
+                  id: 'msg_stub',
+                  role: 'assistant',
+                  sessionId: sessionId,
+                ),
+                parts: const <ChatPart>[],
+              );
+            },
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+        sessionActionService: sessionActionService,
+        configService: _FakeConfigService(),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+      expect(controller.selectedModel, isNull);
+      await controller.submitPrompt('/compact');
+
+      expect(sessionActionService.summarizeCalls, 1);
+      expect(sessionActionService.lastSummarizedSessionId, 'ses_1');
+      expect(sessionActionService.lastSummarizedProviderId, 'anthropic');
+      expect(sessionActionService.lastSummarizedModelId, 'claude-sonnet-4.5');
+      expect(sendMessageCalls, 0);
+      expect(controller.actionNotice, 'Session compaction requested.');
+    },
+  );
+
+  test(
+    'controller treats exact /compact with attachments as compaction',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final sessionActionService = _RecordingSessionActionService();
+      var sendMessageCalls = 0;
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_1',
+              title: 'Initial session',
+              createdAt: 1710000001000,
+              updatedAt: 1710000005000,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{
+            'ses_1': SessionStatusSummary(type: 'idle'),
+          },
+          messages: const <ChatMessage>[],
+          selectedSessionId: 'ses_1',
+        ),
+        sendMessageHandler:
+            ({
+              required ServerProfile profile,
+              required ProjectTarget project,
+              required String sessionId,
+              required String prompt,
+              List<PromptAttachment> attachments = const <PromptAttachment>[],
+              String? agent,
+              String? providerId,
+              String? modelId,
+              String? variant,
+              String? reasoning,
+            }) async {
+              sendMessageCalls += 1;
+              return ChatMessage(
+                info: ChatMessageInfo(
+                  id: 'msg_stub',
+                  role: 'assistant',
+                  sessionId: sessionId,
+                ),
+                parts: const <ChatPart>[],
+              );
+            },
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+        sessionActionService: sessionActionService,
+        configService: _FakeConfigService(snapshot: _composerConfigSnapshot()),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+      await controller.submitPrompt(
+        '/compact',
+        attachments: const <PromptAttachment>[
+          PromptAttachment(
+            id: 'att_1',
+            filename: 'notes.txt',
+            mime: 'text/plain',
+            url: 'data:text/plain;base64,bm90ZXM=',
+          ),
+        ],
+      );
+
+      expect(sessionActionService.summarizeCalls, 1);
+      expect(sessionActionService.lastSummarizedSessionId, 'ses_1');
+      expect(sendMessageCalls, 0);
+    },
+  );
+
+  test(
+    'controller falls back to the configured model when the transcript has no model metadata',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final sessionActionService = _RecordingSessionActionService();
+      final sessionMessages = <ChatMessage>[
+        _message(
+          id: 'msg_user',
+          sessionId: 'ses_1',
+          text: 'Ship the fix',
+          createdAt: 1710000002000,
+          role: 'user',
+        ),
+      ];
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: _FakeChatService(
+          bundle: ChatSessionBundle(
+            sessions: <SessionSummary>[
+              _session(
+                id: 'ses_1',
+                title: 'Initial session',
+                createdAt: 1710000001000,
+                updatedAt: 1710000005000,
+              ),
+            ],
+            statuses: const <String, SessionStatusSummary>{
+              'ses_1': SessionStatusSummary(type: 'idle'),
+            },
+            messages: sessionMessages,
+            selectedSessionId: 'ses_1',
+          ),
+          fetchMessagesHandler:
+              ({
+                required ServerProfile profile,
+                required ProjectTarget project,
+                required String sessionId,
+              }) async => sessionMessages,
+        ),
+        sessionActionService: sessionActionService,
+        configService: _FakeConfigService(snapshot: _composerConfigSnapshot()),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+      await controller.summarizeSelectedSession();
+
+      expect(sessionActionService.lastSummarizedProviderId, 'openai');
+      expect(sessionActionService.lastSummarizedModelId, 'gpt-4.1');
+    },
+  );
+
+  test(
+    'controller falls back to the provider default when the configured model is invalid',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final sessionActionService = _RecordingSessionActionService();
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        sessionActionService: sessionActionService,
+        configService: _FakeConfigService(
+          snapshot: _composerConfigSnapshot(configuredModel: 'missing/model'),
+        ),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+      await controller.summarizeSelectedSession();
+
+      expect(controller.selectedModel?.key, 'openai/gpt-4.1');
+      expect(sessionActionService.lastSummarizedProviderId, 'openai');
+      expect(sessionActionService.lastSummarizedModelId, 'gpt-4.1');
+    },
+  );
+
+  test(
+    'controller refuses exact /compact prompts without an existing session',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final sessionActionService = _RecordingSessionActionService();
+      final chatService = _FakeChatService(
+        bundle: const ChatSessionBundle(
+          sessions: <SessionSummary>[],
+          statuses: <String, SessionStatusSummary>{},
+          messages: <ChatMessage>[],
+          selectedSessionId: null,
+        ),
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+        sessionActionService: sessionActionService,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+
+      await expectLater(
+        () => controller.submitPrompt('/compact'),
+        throwsA(
+          isA<SessionActionException>().having(
+            (error) => error.message,
+            'message',
+            'Select a session before compacting.',
+          ),
+        ),
+      );
+      expect(chatService.createSessionCalls, 0);
+      expect(sessionActionService.summarizeCalls, 0);
+    },
+  );
+
+  test(
     'controller queues busy follow-ups and auto flushes them once idle',
     () async {
       final eventStreamService = _ControlledEventStreamService();
@@ -1615,14 +2559,13 @@ void main() {
       );
       await _waitFor(
         () =>
-            controller.selectedSessionId == 'ses_other' &&
-            controller.messages.any(
-              (message) => message.info.id == 'msg_other',
-            ),
+            asyncPrompts.length == 1 &&
+            controller.selectedSessionQueuedPrompts.isEmpty,
       );
 
       expect(asyncPrompts, <String>['Queue this follow-up']);
       expect(controller.selectedSessionQueuedPrompts, isEmpty);
+      expect(controller.selectedSessionId, 'ses_1');
     },
   );
 
@@ -2401,6 +3344,597 @@ void main() {
     },
   );
 
+  test(
+    'controller applies message.part.delta updates to thinking text',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final cacheStore = _RecordingCacheStore();
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        cacheStore: cacheStore,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'message.part.updated',
+          properties: <String, Object?>{
+            'part': <String, Object?>{
+              'id': 'part_reasoning_stream',
+              'messageID': 'msg_reasoning_stream',
+              'sessionID': 'ses_1',
+              'type': 'reasoning',
+              'text': '',
+            },
+          },
+        ),
+      );
+
+      void emitThinkingDelta(String delta) {
+        eventStreamService.emitToScope(
+          profile,
+          project,
+          EventEnvelope(
+            type: 'message.part.delta',
+            properties: <String, Object?>{
+              'sessionID': 'ses_1',
+              'messageID': 'msg_reasoning_stream',
+              'partID': 'part_reasoning_stream',
+              'field': 'text',
+              'delta': delta,
+            },
+          ),
+        );
+      }
+
+      emitThinkingDelta('Reviewing ');
+      emitThinkingDelta('the timeline');
+
+      await _waitFor(
+        () =>
+            controller.messages.length == 1 &&
+            controller.messages.single.parts.single.text ==
+                'Reviewing the timeline',
+      );
+
+      final cacheKey =
+          'workspace.messages::${profile.storageKey}::${project.directory}::ses_1';
+      await _waitFor(() {
+        final entry = cacheStore.entries[cacheKey];
+        if (entry == null) {
+          return false;
+        }
+        final savedMessages =
+            ((jsonDecode(entry.payloadJson) as List)
+                    .cast<Map<String, Object?>>())
+                .map(ChatMessage.fromJson)
+                .toList(growable: false);
+        return savedMessages.length == 1 &&
+            savedMessages.single.parts.single.text == 'Reviewing the timeline';
+      });
+    },
+  );
+
+  test(
+    'controller persists selected tool state title updates to session cache',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final cacheStore = _RecordingCacheStore();
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        cacheStore: cacheStore,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+
+      final cacheKey =
+          'workspace.messages::${profile.storageKey}::${project.directory}::ses_1';
+
+      List<ChatMessage> savedMessagesForCache() {
+        final entry = cacheStore.entries[cacheKey];
+        if (entry == null) {
+          return const <ChatMessage>[];
+        }
+        return ((jsonDecode(entry.payloadJson) as List)
+                .cast<Map<String, Object?>>())
+            .map(ChatMessage.fromJson)
+            .toList(growable: false);
+      }
+
+      void emitToolUpdate(String title) {
+        eventStreamService.emitToScope(
+          profile,
+          project,
+          EventEnvelope(
+            type: 'message.part.updated',
+            properties: <String, Object?>{
+              'part': <String, Object?>{
+                'id': 'part_selected_tool',
+                'messageID': 'msg_selected_tool',
+                'sessionID': 'ses_1',
+                'type': 'tool',
+                'tool': 'bash',
+                'state': <String, Object?>{'title': title},
+              },
+            },
+          ),
+        );
+      }
+
+      emitToolUpdate('Inspecting release notes');
+      await _waitFor(() {
+        final saved = savedMessagesForCache();
+        if (saved.length != 1) {
+          return false;
+        }
+        final state = (saved.single.parts.single.metadata['state'] as Map?)
+            ?.cast<String, Object?>();
+        return state?['title'] == 'Inspecting release notes';
+      });
+
+      final saveCallsAfterFirstWrite = cacheStore.saveCalls;
+      emitToolUpdate('Comparing release notes');
+      await _waitFor(() {
+        final saved = savedMessagesForCache();
+        if (saved.length != 1 ||
+            cacheStore.saveCalls <= saveCallsAfterFirstWrite) {
+          return false;
+        }
+        final state = (saved.single.parts.single.metadata['state'] as Map?)
+            ?.cast<String, Object?>();
+        return state?['title'] == 'Comparing release notes';
+      });
+
+      final saveCallsAfterTitleUpdate = cacheStore.saveCalls;
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'message.part.updated',
+          properties: <String, Object?>{
+            'part': <String, Object?>{
+              'id': 'part_selected_tool',
+              'messageID': 'msg_selected_tool',
+              'sessionID': 'ses_1',
+              'type': 'tool',
+              'tool': 'bash',
+              'state': <String, Object?>{
+                'title': 'Comparing release notes',
+                'input': <String, Object?>{'command': 'git status'},
+              },
+            },
+          },
+        ),
+      );
+      await _waitFor(() {
+        final saved = savedMessagesForCache();
+        if (saved.length != 1 ||
+            cacheStore.saveCalls <= saveCallsAfterTitleUpdate) {
+          return false;
+        }
+        final state = (saved.single.parts.single.metadata['state'] as Map?)
+            ?.cast<String, Object?>();
+        final input = (state?['input'] as Map?)?.cast<String, Object?>();
+        return state?['title'] == 'Comparing release notes' &&
+            input?['command'] == 'git status';
+      });
+    },
+  );
+
+  test(
+    'controller keeps selected messages stable while child delta updates active child preview',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      const childSessionId = 'ses_child_busy';
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_root',
+              title: 'Root session',
+              createdAt: 1710000001000,
+              updatedAt: 1710000005000,
+            ),
+            _session(
+              id: childSessionId,
+              title: 'Busy child',
+              createdAt: 1710000002000,
+              updatedAt: 1710000007000,
+              parentId: 'ses_root',
+            ),
+          ],
+          statuses: <String, SessionStatusSummary>{
+            'ses_root': const SessionStatusSummary(type: 'idle'),
+            childSessionId: const SessionStatusSummary(type: 'busy'),
+          },
+          messages: const <ChatMessage>[],
+          selectedSessionId: 'ses_root',
+        ),
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+      controller.updateWatchedSessionIds(<String>[childSessionId]);
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'message.part.updated',
+          properties: <String, Object?>{
+            'part': <String, Object?>{
+              'id': 'part_root',
+              'messageID': 'msg_root',
+              'sessionID': 'ses_root',
+              'type': 'text',
+              'text': 'Root timeline stays put',
+            },
+          },
+        ),
+      );
+      await _waitFor(
+        () =>
+            controller.messages.length == 1 &&
+            controller.messages.single.parts.single.text ==
+                'Root timeline stays put',
+      );
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'message.part.updated',
+          properties: <String, Object?>{
+            'part': <String, Object?>{
+              'id': 'part_child_reasoning',
+              'messageID': 'msg_child_reasoning',
+              'sessionID': childSessionId,
+              'type': 'reasoning',
+              'text': '',
+            },
+          },
+        ),
+      );
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'message.part.delta',
+          properties: <String, Object?>{
+            'sessionID': childSessionId,
+            'messageID': 'msg_child_reasoning',
+            'partID': 'part_child_reasoning',
+            'field': 'text',
+            'delta': 'Inspecting background child work',
+          },
+        ),
+      );
+
+      await _waitFor(
+        () =>
+            controller.activeChildSessionPreviewById[childSessionId] ==
+            'Inspecting background child work',
+      );
+      final watchedTimeline = controller.timelineStateForSession(
+        childSessionId,
+      );
+      expect(
+        controller.activeChildSessionPreviewById[childSessionId],
+        'Inspecting background child work',
+      );
+      expect(watchedTimeline.messages, hasLength(1));
+      expect(
+        watchedTimeline.messages.single.parts.single.text,
+        'Inspecting background child work',
+      );
+      expect(controller.messages, hasLength(1));
+      expect(
+        controller.messages.single.parts.single.text,
+        'Root timeline stays put',
+      );
+      expect(controller.selectedSessionId, 'ses_root');
+    },
+  );
+
+  test(
+    'controller keeps selected messages stable while child message updates watched timeline',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      const childSessionId = 'ses_child_busy';
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_root',
+              title: 'Root session',
+              createdAt: 1710000001000,
+              updatedAt: 1710000005000,
+            ),
+            _session(
+              id: childSessionId,
+              title: 'Busy child',
+              createdAt: 1710000002000,
+              updatedAt: 1710000007000,
+              parentId: 'ses_root',
+            ),
+          ],
+          statuses: <String, SessionStatusSummary>{
+            'ses_root': const SessionStatusSummary(type: 'idle'),
+            childSessionId: const SessionStatusSummary(type: 'busy'),
+          },
+          messages: const <ChatMessage>[],
+          selectedSessionId: 'ses_root',
+        ),
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+      controller.updateWatchedSessionIds(<String>[childSessionId]);
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'message.part.updated',
+          properties: <String, Object?>{
+            'part': <String, Object?>{
+              'id': 'part_root',
+              'messageID': 'msg_root',
+              'sessionID': 'ses_root',
+              'type': 'text',
+              'text': 'Root timeline stays put',
+            },
+          },
+        ),
+      );
+      await _waitFor(
+        () =>
+            controller.messages.length == 1 &&
+            controller.messages.single.parts.single.text ==
+                'Root timeline stays put',
+      );
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'message.updated',
+          properties: <String, Object?>{
+            'info': <String, Object?>{
+              'id': 'msg_child',
+              'role': 'assistant',
+              'sessionID': childSessionId,
+            },
+          },
+        ),
+      );
+
+      await _waitFor(
+        () =>
+            controller
+                .timelineStateForSession(childSessionId)
+                .messages
+                .length ==
+            1,
+      );
+      final watchedTimeline = controller.timelineStateForSession(
+        childSessionId,
+      );
+      expect(watchedTimeline.messages, hasLength(1));
+      expect(watchedTimeline.messages.single.info.id, 'msg_child');
+      expect(controller.messages, hasLength(1));
+      expect(
+        controller.messages.single.parts.single.text,
+        'Root timeline stays put',
+      );
+      expect(controller.selectedSessionId, 'ses_root');
+    },
+  );
+
+  test(
+    'controller keeps per-session composer selections across revisit and reconnect',
+    () async {
+      final sessions = <SessionSummary>[
+        _session(
+          id: 'ses_1',
+          title: 'First session',
+          createdAt: 1710000001000,
+          updatedAt: 1710000005000,
+        ),
+        _session(
+          id: 'ses_2',
+          title: 'Second session',
+          createdAt: 1710000002000,
+          updatedAt: 1710000006000,
+        ),
+      ];
+      final configService = _FakeConfigService(
+        snapshot: _composerConfigSnapshot(),
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: _ControlledEventStreamService(),
+        configService: configService,
+        initialSessions: sessions,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+
+      controller.selectModel('openai/gpt-5.4');
+      controller.selectReasoning('high');
+
+      await controller.selectSession('ses_2');
+      controller.selectModel('openai/gpt-4.1');
+      controller.selectReasoning('medium');
+
+      await controller.selectSession('ses_1');
+      expect(controller.selectedModelKey, 'openai/gpt-5.4');
+      expect(controller.selectedReasoning, 'high');
+
+      await controller.selectSession('ses_2');
+      expect(controller.selectedModelKey, 'openai/gpt-4.1');
+      expect(controller.selectedReasoning, 'medium');
+
+      final restoredController = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: _ControlledEventStreamService(),
+        configService: configService,
+        initialSessions: sessions,
+      );
+      addTearDown(restoredController.dispose);
+
+      await restoredController.load();
+
+      expect(restoredController.selectedSessionId, 'ses_1');
+      expect(restoredController.selectedModelKey, 'openai/gpt-5.4');
+      expect(restoredController.selectedReasoning, 'high');
+
+      await restoredController.selectSession('ses_2');
+      expect(restoredController.selectedModelKey, 'openai/gpt-4.1');
+      expect(restoredController.selectedReasoning, 'medium');
+    },
+  );
+
+  test(
+    'controller prefers newer user message metadata over stale persisted composer selections',
+    () async {
+      final firstController = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: _ControlledEventStreamService(),
+        configService: _FakeConfigService(snapshot: _composerConfigSnapshot()),
+        initialSessions: <SessionSummary>[
+          _session(
+            id: 'ses_1',
+            title: 'Initial session',
+            createdAt: 1710000001000,
+            updatedAt: 1710000005000,
+          ),
+        ],
+        chatService: _FakeChatService(
+          bundle: ChatSessionBundle(
+            sessions: <SessionSummary>[
+              _session(
+                id: 'ses_1',
+                title: 'Initial session',
+                createdAt: 1710000001000,
+                updatedAt: 1710000005000,
+              ),
+            ],
+            statuses: const <String, SessionStatusSummary>{
+              'ses_1': SessionStatusSummary(type: 'idle'),
+            },
+            messages: const <ChatMessage>[],
+            selectedSessionId: 'ses_1',
+          ),
+          fetchMessagesHandler:
+              ({
+                required ServerProfile profile,
+                required ProjectTarget project,
+                required String sessionId,
+              }) async => <ChatMessage>[
+                _message(
+                  id: 'msg_old',
+                  sessionId: sessionId,
+                  text: 'old prompt',
+                  role: 'user',
+                  createdAt: 1710000004000,
+                  providerId: 'openai',
+                  modelId: 'gpt-4.1',
+                  variant: 'medium',
+                ),
+              ],
+        ),
+      );
+      addTearDown(firstController.dispose);
+
+      await firstController.load();
+
+      firstController.selectModel('openai/gpt-5.4');
+      firstController.selectReasoning('high');
+
+      final restoredController = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: _ControlledEventStreamService(),
+        configService: _FakeConfigService(snapshot: _composerConfigSnapshot()),
+        initialSessions: <SessionSummary>[
+          _session(
+            id: 'ses_1',
+            title: 'Initial session',
+            createdAt: 1710000001000,
+            updatedAt: 1710000010000,
+          ),
+        ],
+        chatService: _FakeChatService(
+          bundle: ChatSessionBundle(
+            sessions: <SessionSummary>[
+              _session(
+                id: 'ses_1',
+                title: 'Initial session',
+                createdAt: 1710000001000,
+                updatedAt: 1710000010000,
+              ),
+            ],
+            statuses: const <String, SessionStatusSummary>{
+              'ses_1': SessionStatusSummary(type: 'idle'),
+            },
+            messages: const <ChatMessage>[],
+            selectedSessionId: 'ses_1',
+          ),
+          fetchMessagesHandler:
+              ({
+                required ServerProfile profile,
+                required ProjectTarget project,
+                required String sessionId,
+              }) async => <ChatMessage>[
+                _message(
+                  id: 'msg_new',
+                  sessionId: sessionId,
+                  text: 'new prompt',
+                  role: 'user',
+                  createdAt: 1710000009000,
+                  providerId: 'openai',
+                  modelId: 'gpt-4.1',
+                  variant: 'medium',
+                ),
+              ],
+        ),
+      );
+      addTearDown(restoredController.dispose);
+
+      await restoredController.load();
+
+      expect(restoredController.selectedModelKey, 'openai/gpt-4.1');
+      expect(restoredController.selectedReasoning, 'medium');
+    },
+  );
+
   test('controller exposes cached previews for active child sessions', () async {
     final eventStreamService = _ControlledEventStreamService();
     final cacheStore = _RecordingCacheStore();
@@ -2652,6 +4186,30 @@ void main() {
       addTearDown(controller.dispose);
 
       await controller.load();
+      controller.updateWatchedSessionIds(<String>[childSessionId]);
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'message.part.updated',
+          properties: <String, Object?>{
+            'part': <String, Object?>{
+              'id': 'part_root',
+              'messageID': 'msg_root',
+              'sessionID': 'ses_root',
+              'type': 'text',
+              'text': 'Root timeline stays put',
+            },
+          },
+        ),
+      );
+      await _waitFor(
+        () =>
+            controller.messages.length == 1 &&
+            controller.messages.single.parts.single.text ==
+                'Root timeline stays put',
+      );
 
       expect(
         controller.activeChildSessionPreviewById[childSessionId],
@@ -2688,6 +4246,257 @@ void main() {
       expect(
         controller.activeChildSessionPreviewById[childSessionId],
         'Shell: Comparing release notes',
+      );
+      final watchedTimeline = controller.timelineStateForSession(
+        childSessionId,
+      );
+      expect(watchedTimeline.messages, hasLength(1));
+      expect(
+        ((watchedTimeline.messages.single.parts.single.metadata['state']
+                as Map?)
+            ?.cast<String, Object?>())?['title'],
+        'Comparing release notes',
+      );
+      expect(controller.messages, hasLength(1));
+      expect(
+        controller.messages.single.parts.single.text,
+        'Root timeline stays put',
+      );
+    },
+  );
+
+  test(
+    'controller keeps active child preview on the newest watched message when older child parts update',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      const childSessionId = 'ses_child_busy';
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_root',
+              title: 'Root session',
+              createdAt: 1710000001000,
+              updatedAt: 1710000005000,
+            ),
+            _session(
+              id: childSessionId,
+              title: 'Busy child',
+              createdAt: 1710000002000,
+              updatedAt: 1710000007000,
+              parentId: 'ses_root',
+            ),
+          ],
+          statuses: <String, SessionStatusSummary>{
+            'ses_root': const SessionStatusSummary(type: 'idle'),
+            childSessionId: const SessionStatusSummary(type: 'busy'),
+          },
+          messages: const <ChatMessage>[],
+          selectedSessionId: 'ses_root',
+        ),
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+      controller.updateWatchedSessionIds(<String>[childSessionId]);
+
+      void emitChildPart({
+        required String messageId,
+        required String partId,
+        required String text,
+      }) {
+        eventStreamService.emitToScope(
+          profile,
+          project,
+          EventEnvelope(
+            type: 'message.part.updated',
+            properties: <String, Object?>{
+              'part': <String, Object?>{
+                'id': partId,
+                'messageID': messageId,
+                'sessionID': childSessionId,
+                'type': 'text',
+                'text': text,
+              },
+            },
+          ),
+        );
+      }
+
+      emitChildPart(
+        messageId: 'msg_child_old',
+        partId: 'part_child_old',
+        text: 'Older child activity',
+      );
+      emitChildPart(
+        messageId: 'msg_child_new',
+        partId: 'part_child_new',
+        text: 'Latest child activity',
+      );
+
+      await _waitFor(
+        () =>
+            controller
+                    .timelineStateForSession(childSessionId)
+                    .messages
+                    .length ==
+                2 &&
+            controller.activeChildSessionPreviewById[childSessionId] ==
+                'Latest child activity',
+      );
+
+      emitChildPart(
+        messageId: 'msg_child_old',
+        partId: 'part_child_old',
+        text: 'Older child retry details',
+      );
+
+      await _waitFor(
+        () =>
+            controller.activeChildSessionPreviewById[childSessionId] ==
+            'Latest child activity',
+      );
+      final watchedTimeline = controller.timelineStateForSession(
+        childSessionId,
+      );
+      expect(watchedTimeline.messages, hasLength(2));
+      expect(
+        watchedTimeline.messages
+            .firstWhere((message) => message.info.id == 'msg_child_old')
+            .parts
+            .single
+            .text,
+        'Older child retry details',
+      );
+      expect(
+        controller.activeChildSessionPreviewById[childSessionId],
+        'Latest child activity',
+      );
+    },
+  );
+
+  test(
+    'controller recomputes active child preview after removing an older watched child message',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      const childSessionId = 'ses_child_busy';
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_root',
+              title: 'Root session',
+              createdAt: 1710000001000,
+              updatedAt: 1710000005000,
+            ),
+            _session(
+              id: childSessionId,
+              title: 'Busy child',
+              createdAt: 1710000002000,
+              updatedAt: 1710000007000,
+              parentId: 'ses_root',
+            ),
+          ],
+          statuses: <String, SessionStatusSummary>{
+            'ses_root': const SessionStatusSummary(type: 'idle'),
+            childSessionId: const SessionStatusSummary(type: 'busy'),
+          },
+          messages: const <ChatMessage>[],
+          selectedSessionId: 'ses_root',
+        ),
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+      controller.updateWatchedSessionIds(<String>[childSessionId]);
+
+      void emitChildPart({
+        required String messageId,
+        required String partId,
+        required String text,
+      }) {
+        eventStreamService.emitToScope(
+          profile,
+          project,
+          EventEnvelope(
+            type: 'message.part.updated',
+            properties: <String, Object?>{
+              'part': <String, Object?>{
+                'id': partId,
+                'messageID': messageId,
+                'sessionID': childSessionId,
+                'type': 'text',
+                'text': text,
+              },
+            },
+          ),
+        );
+      }
+
+      emitChildPart(
+        messageId: 'msg_child_old',
+        partId: 'part_child_old',
+        text: 'Older child activity',
+      );
+      emitChildPart(
+        messageId: 'msg_child_new',
+        partId: 'part_child_new',
+        text: 'Latest child activity',
+      );
+
+      await _waitFor(
+        () =>
+            controller
+                    .timelineStateForSession(childSessionId)
+                    .messages
+                    .length ==
+                2 &&
+            controller.activeChildSessionPreviewById[childSessionId] ==
+                'Latest child activity',
+      );
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'message.removed',
+          properties: <String, Object?>{
+            'sessionID': childSessionId,
+            'messageID': 'msg_child_old',
+          },
+        ),
+      );
+
+      await _waitFor(
+        () =>
+            controller
+                    .timelineStateForSession(childSessionId)
+                    .messages
+                    .length ==
+                1 &&
+            controller.activeChildSessionPreviewById[childSessionId] ==
+                'Latest child activity',
+      );
+      final watchedTimeline = controller.timelineStateForSession(
+        childSessionId,
+      );
+      expect(watchedTimeline.messages, hasLength(1));
+      expect(watchedTimeline.messages.single.info.id, 'msg_child_new');
+      expect(
+        controller.activeChildSessionPreviewById[childSessionId],
+        'Latest child activity',
       );
     },
   );
@@ -2779,12 +4588,20 @@ ChatMessage _message({
   required String text,
   required int createdAt,
   String role = 'assistant',
+  String? providerId,
+  String? modelId,
+  String? agent,
+  String? variant,
 }) {
   return ChatMessage(
     info: ChatMessageInfo(
       id: id,
       role: role,
       sessionId: sessionId,
+      providerId: providerId,
+      modelId: modelId,
+      agent: agent,
+      variant: variant,
       createdAt: DateTime.fromMillisecondsSinceEpoch(createdAt),
       completedAt: DateTime.fromMillisecondsSinceEpoch(createdAt),
     ),
@@ -2800,13 +4617,14 @@ ChatMessage _message({
   );
 }
 
-Future<void> _waitFor(bool Function() condition, {int maxTicks = 80}) async {
+Future<void> _waitFor(bool Function() condition, {int maxTicks = 400}) async {
   for (var index = 0; index < maxTicks; index += 1) {
     if (condition()) {
       return;
     }
     await Future<void>.delayed(const Duration(milliseconds: 5));
   }
+  expect(condition(), isTrue, reason: 'Timed out waiting for condition.');
 }
 
 class _ControlledEventStreamService extends EventStreamService {
@@ -2948,6 +4766,10 @@ class _RecordingCacheStore extends StaleCacheStore {
 class _RecordingSessionActionService extends SessionActionService {
   int abortCalls = 0;
   String? lastAbortedSessionId;
+  int summarizeCalls = 0;
+  String? lastSummarizedSessionId;
+  String? lastSummarizedProviderId;
+  String? lastSummarizedModelId;
 
   @override
   Future<bool> abortSession({
@@ -2959,10 +4781,116 @@ class _RecordingSessionActionService extends SessionActionService {
     lastAbortedSessionId = sessionId;
     return true;
   }
+
+  @override
+  Future<bool> summarizeSession({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String sessionId,
+    String? providerId,
+    String? modelId,
+    bool auto = false,
+  }) async {
+    summarizeCalls += 1;
+    lastSummarizedSessionId = sessionId;
+    lastSummarizedProviderId = providerId;
+    lastSummarizedModelId = modelId;
+    return true;
+  }
 }
 
 String _scopeKeyFor(ServerProfile profile, ProjectTarget project) {
   return '${profile.storageKey}::${project.directory}';
+}
+
+ConfigSnapshot _composerConfigSnapshot({
+  String configuredModel = 'openai/gpt-4.1',
+}) {
+  return ConfigSnapshot(
+    config: RawJsonDocument(<String, Object?>{
+      'model': configuredModel,
+      'reasoning': 'medium',
+    }),
+    providerConfig: RawJsonDocument(<String, Object?>{
+      'providers': <Object?>[
+        <String, Object?>{
+          'id': 'openai',
+          'name': 'OpenAI',
+          'models': <String, Object?>{
+            'gpt-4.1': <String, Object?>{
+              'id': 'gpt-4.1',
+              'name': 'GPT-4.1',
+              'variants': <String, Object?>{
+                'medium': <String, Object?>{},
+                'high': <String, Object?>{},
+              },
+            },
+            'gpt-5.4': <String, Object?>{
+              'id': 'gpt-5.4',
+              'name': 'GPT-5.4',
+              'variants': <String, Object?>{
+                'medium': <String, Object?>{},
+                'high': <String, Object?>{},
+              },
+            },
+          },
+        },
+      ],
+      'default': <String, Object?>{'openai': 'gpt-4.1'},
+    }),
+  );
+}
+
+ConfigSnapshot _multiProviderComposerConfigSnapshot({
+  String configuredModel = 'openai/gpt-4.1',
+}) {
+  return ConfigSnapshot(
+    config: RawJsonDocument(<String, Object?>{
+      'model': configuredModel,
+      'reasoning': 'medium',
+    }),
+    providerConfig: RawJsonDocument(<String, Object?>{
+      'providers': <Object?>[
+        <String, Object?>{
+          'id': 'openai',
+          'name': 'OpenAI',
+          'models': <String, Object?>{
+            'gpt-4.1': <String, Object?>{
+              'id': 'gpt-4.1',
+              'name': 'GPT-4.1',
+              'variants': <String, Object?>{
+                'medium': <String, Object?>{},
+                'high': <String, Object?>{},
+              },
+            },
+            'gpt-5.4': <String, Object?>{
+              'id': 'gpt-5.4',
+              'name': 'GPT-5.4',
+              'variants': <String, Object?>{
+                'medium': <String, Object?>{},
+                'high': <String, Object?>{},
+              },
+            },
+          },
+        },
+        <String, Object?>{
+          'id': 'anthropic',
+          'name': 'Anthropic',
+          'models': <String, Object?>{
+            'claude-sonnet-4.5': <String, Object?>{
+              'id': 'claude-sonnet-4.5',
+              'name': 'Claude Sonnet 4.5',
+              'variants': <String, Object?>{
+                'medium': <String, Object?>{},
+                'high': <String, Object?>{},
+              },
+            },
+          },
+        },
+      ],
+      'default': <String, Object?>{'openai': 'gpt-4.1'},
+    }),
+  );
 }
 
 class _FakeProjectCatalogService extends ProjectCatalogService {
@@ -3053,7 +4981,9 @@ class _FakeChatService extends ChatService {
     this.sendMessageAsyncHandler,
   });
 
-  final ChatSessionBundle bundle;
+  ChatSessionBundle bundle;
+  int createSessionCalls = 0;
+  int fetchBundleCalls = 0;
   final Future<List<ChatMessage>> Function({
     required ServerProfile profile,
     required ProjectTarget project,
@@ -3102,7 +5032,25 @@ class _FakeChatService extends ChatService {
     required ProjectTarget project,
     bool includeSelectedSessionMessages = true,
   }) async {
+    fetchBundleCalls += 1;
     return bundle;
+  }
+
+  @override
+  Future<SessionSummary> createSession({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    String? title,
+  }) async {
+    createSessionCalls += 1;
+    return SessionSummary(
+      id: 'ses_created',
+      directory: project.directory,
+      title: title ?? 'Created session',
+      version: '1',
+      createdAt: DateTime.fromMillisecondsSinceEpoch(1710000010000),
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(1710000010000),
+    );
   }
 
   @override

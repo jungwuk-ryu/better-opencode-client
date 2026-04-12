@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -62,6 +63,7 @@ void main() {
       '/s',
     );
     await tester.pump();
+    await tester.pump();
 
     expect(
       find.byKey(const ValueKey<String>('composer-slash-popover')),
@@ -83,7 +85,7 @@ void main() {
     expect(field.controller?.text, '/search-docs ');
   });
 
-  testWidgets('submitting an exact builtin slash command runs the action', (
+  testWidgets('slash suggestions overlay does not resize the composer panel', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1600, 1000);
@@ -118,6 +120,131 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
+    final panelFinder = find.byKey(const ValueKey<String>('composer-panel'));
+    expect(panelFinder, findsOneWidget);
+    final panelSizeBefore = tester.getSize(panelFinder);
+    final panelTopBefore = tester.getTopLeft(panelFinder).dy;
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('composer-text-field')),
+      '/s',
+    );
+    await tester.pump();
+    await tester.pump();
+
+    final popoverFinder = find.byKey(
+      const ValueKey<String>('composer-slash-popover'),
+    );
+    expect(popoverFinder, findsOneWidget);
+    expect(tester.getSize(panelFinder), panelSizeBefore);
+    expect(tester.getTopLeft(panelFinder).dy, closeTo(panelTopBefore, 0.1));
+    expect(
+      tester.getBottomLeft(popoverFinder).dy,
+      lessThan(tester.getTopLeft(panelFinder).dy),
+    );
+
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pump();
+    await tester.pump();
+
+    expect(popoverFinder, findsNothing);
+  });
+
+  testWidgets('arrow keys move slash selection and tab inserts the command', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final workspaceController = _SlashWorkspaceController(
+      profile: profile,
+      directory: '/workspace/demo',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceController: workspaceController,
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    final fieldFinder = find.byKey(
+      const ValueKey<String>('composer-text-field'),
+    );
+    await tester.tap(fieldFinder);
+    await tester.enterText(fieldFinder, '/s');
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('/share'), findsOneWidget);
+    expect(find.text('/search-docs'), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump();
+    await tester.pump();
+
+    final field = tester.widget<TextField>(fieldFinder);
+    expect(field.controller?.text, '/search-docs ');
+  });
+
+  testWidgets('submitting an exact builtin slash command runs the action', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final workspaceController = _SlashWorkspaceController(
+      profile: profile,
+      directory: '/workspace/demo',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceController: workspaceController,
+    );
+    addTearDown(appController.dispose);
+    final navigatorKey = GlobalKey<NavigatorState>();
+    final observer = _RecordingNavigatorObserver();
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        navigatorKey: navigatorKey,
+        navigatorObservers: <NavigatorObserver>[observer],
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
     await tester.enterText(
       find.byKey(const ValueKey<String>('composer-text-field')),
       '/new',
@@ -130,10 +257,68 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
-    expect(workspaceController.createEmptySessionCalls, 1);
+    expect(workspaceController.createEmptySessionCalls, 0);
     expect(workspaceController.submitPromptCalls, 0);
-    expect(find.text('Fresh session'), findsAtLeastNWidgets(1));
+    expect(workspaceController.selectedSessionId, isNull);
+    expect(
+      observer.lastRouteName,
+      buildWorkspaceRoute('/workspace/demo', sessionId: null),
+    );
+    expect(find.text('Fresh session'), findsNothing);
   });
+
+  testWidgets(
+    'submitting an exact /compact slash command runs session compaction directly',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final workspaceController = _SlashWorkspaceController(
+        profile: profile,
+        directory: '/workspace/demo',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceController: workspaceController,
+      );
+      addTearDown(appController.dispose);
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          initialRoute: buildWorkspaceRoute(
+            '/workspace/demo',
+            sessionId: 'ses_1',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('composer-text-field')),
+        '/compact',
+      );
+      await tester.pump();
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('composer-submit-button')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      expect(workspaceController.submitPromptCalls, 1);
+      expect(workspaceController.lastSubmittedPrompt, '/compact');
+      expect(workspaceController.summarizeSelectedSessionCalls, 0);
+    },
+  );
 
   testWidgets(
     'builtin side-tab slash commands reopen the side panel on desktop layouts',
@@ -725,16 +910,22 @@ class _WorkspaceRouteHarness extends StatelessWidget {
   const _WorkspaceRouteHarness({
     required this.controller,
     required this.initialRoute,
+    this.navigatorKey,
+    this.navigatorObservers = const <NavigatorObserver>[],
   });
 
   final WebParityAppController controller;
   final String initialRoute;
+  final GlobalKey<NavigatorState>? navigatorKey;
+  final List<NavigatorObserver> navigatorObservers;
 
   @override
   Widget build(BuildContext context) {
     return AppScope(
       controller: controller,
       child: MaterialApp(
+        navigatorKey: navigatorKey,
+        navigatorObservers: navigatorObservers,
         theme: AppTheme.dark(),
         initialRoute: initialRoute,
         onGenerateRoute: (settings) {
@@ -757,6 +948,22 @@ class _WorkspaceRouteHarness extends StatelessWidget {
         },
       ),
     );
+  }
+}
+
+class _RecordingNavigatorObserver extends NavigatorObserver {
+  String? lastRouteName;
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    lastRouteName = route.settings.name;
+    super.didPush(route, previousRoute);
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    lastRouteName = newRoute?.settings.name;
+    super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
   }
 }
 
@@ -817,15 +1024,20 @@ class _SlashWorkspaceController extends WorkspaceController {
   );
 
   bool _loading = true;
-  SessionSummary _selectedSession = SessionSummary(
-    id: 'ses_1',
-    directory: '/workspace/demo',
-    title: 'Existing session',
-    version: '1',
-    updatedAt: DateTime.fromMillisecondsSinceEpoch(1710000001000),
-  );
+  final List<SessionSummary> _sessions = <SessionSummary>[
+    SessionSummary(
+      id: 'ses_1',
+      directory: '/workspace/demo',
+      title: 'Existing session',
+      version: '1',
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(1710000001000),
+    ),
+  ];
+  String? _selectedSessionId = 'ses_1';
   int createEmptySessionCalls = 0;
   int submitPromptCalls = 0;
+  int summarizeSelectedSessionCalls = 0;
+  String? lastSubmittedPrompt;
 
   @override
   bool get loading => _loading;
@@ -839,24 +1051,36 @@ class _SlashWorkspaceController extends WorkspaceController {
   ];
 
   @override
-  List<SessionSummary> get sessions => <SessionSummary>[_selectedSession];
+  List<SessionSummary> get sessions =>
+      List<SessionSummary>.unmodifiable(_sessions);
 
   @override
-  List<SessionSummary> get visibleSessions => <SessionSummary>[
-    _selectedSession,
-  ];
+  List<SessionSummary> get visibleSessions =>
+      List<SessionSummary>.unmodifiable(_sessions);
 
   @override
   Map<String, SessionStatusSummary> get statuses =>
       <String, SessionStatusSummary>{
-        _selectedSession.id: const SessionStatusSummary(type: 'idle'),
+        for (final session in _sessions)
+          session.id: const SessionStatusSummary(type: 'idle'),
       };
 
   @override
-  String? get selectedSessionId => _selectedSession.id;
+  String? get selectedSessionId => _selectedSessionId;
 
   @override
-  SessionSummary? get selectedSession => _selectedSession;
+  SessionSummary? get selectedSession {
+    final selectedSessionId = _selectedSessionId;
+    if (selectedSessionId == null) {
+      return null;
+    }
+    for (final session in _sessions) {
+      if (session.id == selectedSessionId) {
+        return session;
+      }
+    }
+    return null;
+  }
 
   @override
   List<ChatMessage> get messages => const <ChatMessage>[];
@@ -896,27 +1120,44 @@ class _SlashWorkspaceController extends WorkspaceController {
   }
 
   @override
+  Future<void> selectSession(String? sessionId) async {
+    final normalized = sessionId?.trim();
+    _selectedSessionId = normalized == null || normalized.isEmpty
+        ? null
+        : normalized;
+    notifyListeners();
+  }
+
+  @override
   Future<String?> submitPrompt(
     String prompt, {
     List<PromptAttachment> attachments = const <PromptAttachment>[],
     WorkspacePromptDispatchMode? mode,
   }) async {
     submitPromptCalls += 1;
+    lastSubmittedPrompt = prompt;
     return selectedSessionId;
   }
 
   @override
   Future<SessionSummary?> createEmptySession({String? title}) async {
     createEmptySessionCalls += 1;
-    _selectedSession = SessionSummary(
+    final created = SessionSummary(
       id: 'ses_new',
       directory: '/workspace/demo',
       title: 'Fresh session',
       version: '1',
       updatedAt: DateTime.fromMillisecondsSinceEpoch(1710000002000),
     );
+    _sessions.insert(0, created);
+    _selectedSessionId = created.id;
     notifyListeners();
-    return _selectedSession;
+    return created;
+  }
+
+  @override
+  Future<void> summarizeSelectedSession() async {
+    summarizeSelectedSessionCalls += 1;
   }
 }
 

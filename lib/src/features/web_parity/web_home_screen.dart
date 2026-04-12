@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../app/app_controller.dart';
 import '../../app/app_routes.dart';
@@ -8,11 +9,15 @@ import '../../app/app_scope.dart';
 import '../../app/flavor.dart';
 import '../../core/connection/connection_models.dart';
 import '../../core/network/opencode_server_probe.dart';
+import '../../design_system/app_modal.dart';
 import '../../design_system/app_snack_bar.dart';
 import '../../design_system/app_spacing.dart';
+import '../../design_system/app_surface_decor.dart';
 import '../../design_system/app_theme.dart';
 import '../../i18n/locale_controller.dart';
 import '../../i18n/web_parity_localizations.dart';
+import '../connection/connection_profile_import.dart';
+import '../connection/connection_profile_import_sheet.dart';
 import '../projects/project_catalog_service.dart';
 import '../projects/project_models.dart';
 import '../projects/project_store.dart';
@@ -26,6 +31,7 @@ class WebParityHomeScreen extends StatefulWidget {
   const WebParityHomeScreen({
     required this.flavor,
     required this.localeController,
+    this.connectionImport,
     this.projectStore,
     this.projectCatalogService,
     super.key,
@@ -33,6 +39,7 @@ class WebParityHomeScreen extends StatefulWidget {
 
   final AppFlavor flavor;
   final LocaleController localeController;
+  final ConnectionImportRouteData? connectionImport;
   final ProjectStore? projectStore;
   final ProjectCatalogService? projectCatalogService;
 
@@ -40,7 +47,10 @@ class WebParityHomeScreen extends StatefulWidget {
   State<WebParityHomeScreen> createState() => _WebParityHomeScreenState();
 }
 
-class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
+class _WebParityHomeScreenState extends State<WebParityHomeScreen>
+    with WidgetsBindingObserver {
+  static const Duration _serverStatusRefreshInterval = Duration(seconds: 30);
+
   late final ProjectStore _projectStore = widget.projectStore ?? ProjectStore();
   final Map<String, ProjectTarget> _lastWorkspaceByServerStorageKey =
       <String, ProjectTarget>{};
@@ -53,6 +63,222 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
   String _lastWorkspaceStateSignature = '';
   String _inFlightWorkspaceStateSignature = '';
   int _workspaceStateSyncRevision = 0;
+  final Set<String> _handledConnectionImportPayloads = <String>{};
+  Timer? _serverStatusRefreshTimer;
+  bool _serverStatusRefreshInFlight = false;
+  String _serverStatusRefreshRosterSignature = '';
+  int _homeTransientRouteDepth = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed || !mounted) {
+      return;
+    }
+    _scheduleServerStatusRefresh(AppScope.of(context));
+  }
+
+  void _ensureServerStatusPolling(WebParityAppController controller) {
+    if (controller.loading) {
+      return;
+    }
+    final rosterSignature = controller.profiles
+        .map((profile) => profile.storageKey)
+        .join('|');
+    if (_serverStatusRefreshRosterSignature != rosterSignature) {
+      _serverStatusRefreshRosterSignature = rosterSignature;
+      _scheduleServerStatusRefresh(controller);
+    }
+    _serverStatusRefreshTimer ??= Timer.periodic(_serverStatusRefreshInterval, (
+      _,
+    ) {
+      if (!mounted || !_allowsServerStatusRefresh) {
+        return;
+      }
+      unawaited(_refreshSavedServerStatuses(AppScope.of(context)));
+    });
+  }
+
+  void _scheduleServerStatusRefresh(WebParityAppController controller) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          controller != AppScope.of(context) ||
+          !_allowsServerStatusRefresh) {
+        return;
+      }
+      unawaited(_refreshSavedServerStatuses(controller));
+    });
+  }
+
+  bool get _allowsServerStatusRefresh {
+    final route = ModalRoute.of(context);
+    if (route == null || route.isCurrent) {
+      return true;
+    }
+    return route.isActive && _homeTransientRouteDepth > 0;
+  }
+
+  Future<T?> _trackHomeTransientRoute<T>(
+    Future<T?> Function() openRoute,
+  ) async {
+    _homeTransientRouteDepth += 1;
+    try {
+      return await openRoute();
+    } finally {
+      _homeTransientRouteDepth -= 1;
+    }
+  }
+
+  Future<bool> _refreshSavedServerStatuses(
+    WebParityAppController controller,
+  ) async {
+    if (controller.loading ||
+        _serverStatusRefreshInFlight ||
+        !_allowsServerStatusRefresh) {
+      return false;
+    }
+    final profiles = controller.profiles.toList(growable: false);
+    if (profiles.isEmpty) {
+      return false;
+    }
+    _serverStatusRefreshInFlight = true;
+    try {
+      await Future.wait(profiles.map(controller.refreshProbe));
+      return true;
+    } finally {
+      _serverStatusRefreshInFlight = false;
+    }
+  }
+
+  Future<void> _manualRefreshSavedServerStatuses(
+    WebParityAppController controller,
+  ) async {
+    final refreshed = await _refreshSavedServerStatuses(controller);
+    if (!mounted || !refreshed) {
+      return;
+    }
+    showAppSnackBar(
+      context,
+      message: context.wp('Refreshed saved server status.'),
+      tone: AppSnackBarTone.info,
+    );
+  }
+
+  void _scheduleConnectionImportPromptIfNeeded(
+    WebParityAppController controller,
+  ) {
+    final routeData = widget.connectionImport;
+    if (controller.loading || routeData == null) {
+      return;
+    }
+    final rawPayload = routeData.rawPayload.trim();
+    if (rawPayload.isEmpty ||
+        !_handledConnectionImportPayloads.add(rawPayload)) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      unawaited(_presentConnectionImport(controller, routeData));
+    });
+  }
+
+  ServerProfile? _existingProfileForImport(
+    WebParityAppController controller,
+    ConnectionImportRouteData routeData,
+  ) {
+    final imported = routeData.payload.toServerProfile();
+    for (final profile in controller.profiles) {
+      if (profile.storageKey == imported.storageKey) {
+        return profile;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _presentConnectionImport(
+    WebParityAppController controller,
+    ConnectionImportRouteData routeData,
+  ) async {
+    final existingProfile = _existingProfileForImport(controller, routeData);
+    final confirmed = await _trackHomeTransientRoute<bool>(
+      () => showAppModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) => FractionallySizedBox(
+          heightFactor: 0.74,
+          child: ConnectionProfileImportSheet(
+            routeData: routeData,
+            existingProfile: existingProfile,
+          ),
+        ),
+      ),
+    );
+    if (!mounted) {
+      return;
+    }
+    final currentRoute = ModalRoute.of(context)?.settings.name ?? '/';
+    if (confirmed == true && routeData.hasValidPayload) {
+      final savedProfile = await controller.saveProfile(
+        routeData.payload.toServerProfile(id: existingProfile?.id),
+      );
+      if (!mounted) {
+        return;
+      }
+      showAppSnackBar(
+        context,
+        message: existingProfile == null
+            ? context.wp(
+                'Imported "{label}" and refreshed its connection status.',
+                args: <String, Object?>{'label': savedProfile.effectiveLabel},
+              )
+            : context.wp(
+                'Updated "{label}" from the shared connection link.',
+                args: <String, Object?>{'label': savedProfile.effectiveLabel},
+              ),
+        tone: AppSnackBarTone.success,
+      );
+    }
+    if (!mounted || currentRoute == '/') {
+      return;
+    }
+    Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+  }
+
+  String _connectionImportLinkForProfile(ServerProfile profile) {
+    final payload = ConnectionProfileImportPayload.fromProfile(
+      profile,
+      issuedAt: DateTime.now(),
+      expiresIn: const Duration(days: 7),
+    );
+    return buildConnectionImportDeepLink(
+      rawPayload: payload.toToken(),
+    ).toString();
+  }
+
+  Future<void> _copyConnectionImportLink(ServerProfile profile) async {
+    final link = _connectionImportLinkForProfile(profile);
+    await Clipboard.setData(ClipboardData(text: link));
+    if (!mounted) {
+      return;
+    }
+    showAppSnackBar(
+      context,
+      message: context.wp(
+        'Copied a reusable connection link for "{label}".',
+        args: <String, Object?>{'label': profile.effectiveLabel},
+      ),
+      tone: AppSnackBarTone.info,
+    );
+  }
 
   Future<ProjectTarget> _resolveNavigationTarget(
     WebParityAppController controller,
@@ -123,16 +349,18 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
       return;
     }
 
-    final target = await showModalBottomSheet<ProjectTarget>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      builder: (context) => FractionallySizedBox(
-        heightFactor: 0.82,
-        child: ProjectPickerSheet(
-          profile: profile,
-          projectCatalogService: widget.projectCatalogService,
+    final target = await _trackHomeTransientRoute<ProjectTarget>(
+      () => showAppModalBottomSheet<ProjectTarget>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) => FractionallySizedBox(
+          heightFactor: 0.82,
+          child: ProjectPickerSheet(
+            profile: profile,
+            projectCatalogService: widget.projectCatalogService,
+          ),
         ),
       ),
     );
@@ -153,13 +381,59 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
     return controller.workspacePaneLayoutFor(profile);
   }
 
+  bool _isPaneStillValidForHome(
+    ServerProfile profile,
+    WorkspacePaneLayoutPane pane,
+  ) {
+    final sessionId = pane.sessionId?.trim();
+    if (sessionId == null || sessionId.isEmpty) {
+      return true;
+    }
+    final observedController = _observedWorkspaceController(
+      profile,
+      pane.directory,
+    );
+    if (observedController == null ||
+        observedController.loading ||
+        observedController.error != null ||
+        observedController.sessions.isEmpty) {
+      return true;
+    }
+    return observedController.sessions.any(
+      (session) => session.id == sessionId,
+    );
+  }
+
+  WorkspacePaneLayoutSnapshot? _normalizedLayoutForProfile(
+    WebParityAppController controller,
+    ServerProfile profile,
+  ) {
+    final layout = _layoutForProfile(controller, profile);
+    if (layout == null) {
+      return null;
+    }
+    final panes = layout.panes
+        .where((pane) => _isPaneStillValidForHome(profile, pane))
+        .toList(growable: false);
+    if (panes.isEmpty) {
+      return null;
+    }
+    final activePaneId = panes.any((pane) => pane.id == layout.activePaneId)
+        ? layout.activePaneId
+        : panes.first.id;
+    return WorkspacePaneLayoutSnapshot(
+      panes: List<WorkspacePaneLayoutPane>.unmodifiable(panes),
+      activePaneId: activePaneId,
+    );
+  }
+
   String _workspaceStateSignature(WebParityAppController controller) {
     final buffer = StringBuffer()..write('loading=${controller.loading};');
     for (final profile in controller.profiles) {
       buffer
         ..write(profile.storageKey)
         ..write('::');
-      final layout = controller.workspacePaneLayoutFor(profile);
+      final layout = _normalizedLayoutForProfile(controller, profile);
       if (layout != null) {
         buffer
           ..write(layout.activePaneId)
@@ -255,7 +529,7 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
     WebParityAppController controller,
     ServerProfile profile,
   ) {
-    final layout = _layoutForProfile(controller, profile);
+    final layout = _normalizedLayoutForProfile(controller, profile);
     final directories = <String>[];
     final seen = <String>{};
     if (layout != null) {
@@ -277,7 +551,7 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
     ServerProfile profile,
     String directory,
   ) {
-    final layout = _layoutForProfile(controller, profile);
+    final layout = _normalizedLayoutForProfile(controller, profile);
     if (layout != null) {
       final activePane = layout.activePane;
       if (activePane != null &&
@@ -363,7 +637,7 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
     WebParityAppController controller,
     ServerProfile profile,
   ) {
-    return _layoutForProfile(controller, profile)?.activePane;
+    return _normalizedLayoutForProfile(controller, profile)?.activePane;
   }
 
   Future<void> _resumeWorkspace(
@@ -399,14 +673,16 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
     WebParityAppController controller, {
     ServerProfile? profile,
   }) async {
-    final draft = await showModalBottomSheet<ServerProfile>(
-      context: context,
-      useSafeArea: true,
-      isScrollControlled: true,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      builder: (context) => FractionallySizedBox(
-        heightFactor: 0.72,
-        child: _ServerEditorSheet(initialProfile: profile),
+    final draft = await _trackHomeTransientRoute<ServerProfile>(
+      () => showAppModalBottomSheet<ServerProfile>(
+        context: context,
+        useSafeArea: true,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) => FractionallySizedBox(
+          heightFactor: 0.72,
+          child: _ServerEditorSheet(initialProfile: profile),
+        ),
       ),
     );
     if (draft == null) {
@@ -430,26 +706,62 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
     WebParityAppController controller,
     ServerProfile profile,
   ) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(context.wp('Delete server?')),
-        content: Text(
-          context.wp(
-            'Remove "{label}" from saved servers? This keeps the rest of your home screen intact.',
-            args: <String, Object?>{'label': profile.effectiveLabel},
-          ),
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text(context.wp('Cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: Text(context.wp('Delete')),
-          ),
-        ],
+    final confirmed = await _trackHomeTransientRoute<bool>(
+      () => showAppDialog<bool>(
+        context: context,
+        builder: (context) {
+          final theme = Theme.of(context);
+          final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+          return AppDialogFrame(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Material(
+              color: surfaces.panelRaised,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppSpacing.dialogRadius),
+                side: BorderSide(color: surfaces.lineSoft),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.lg),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      context.wp('Delete server?'),
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(
+                      context.wp(
+                        'Remove "{label}" from saved servers? This keeps the rest of your home screen intact.',
+                        args: <String, Object?>{
+                          'label': profile.effectiveLabel,
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: <Widget>[
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(false),
+                          child: Text(context.wp('Cancel')),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        FilledButton(
+                          onPressed: () => Navigator.of(context).pop(true),
+                          child: Text(context.wp('Delete')),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
     if (confirmed != true) {
@@ -470,14 +782,61 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
   }
 
   Future<void> _openServers(WebParityAppController controller) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      useSafeArea: true,
-      isScrollControlled: true,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      builder: (context) => FractionallySizedBox(
-        heightFactor: 0.84,
-        child: _ServersSheet(controller: controller),
+    await _trackHomeTransientRoute<void>(
+      () => showAppModalBottomSheet<void>(
+        context: context,
+        useSafeArea: true,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) => FractionallySizedBox(
+          heightFactor: 0.84,
+          child: _ServersSheet(controller: controller),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openServerDetails(
+    WebParityAppController controller,
+    ServerProfile profile,
+  ) async {
+    await _trackHomeTransientRoute<void>(
+      () => showAppModalBottomSheet<void>(
+        context: context,
+        useSafeArea: true,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (sheetContext) => FractionallySizedBox(
+          heightFactor: 0.84,
+          child: _HomeServerDetailPanel(
+            embeddedInPage: false,
+            profile: profile,
+            report: controller.reports[profile.storageKey],
+            summary: _serverSummaryForProfile(controller, profile),
+            activityLoading: _isServerActivityLoading(controller, profile),
+            runningSessions: _runningSessionsForProfile(controller, profile),
+            paneSnapshots: _paneSnapshotsForProfile(controller, profile),
+            projectTargets: _projectTargetsForProfile(controller, profile),
+            onResumeWorkspace: () {
+              Navigator.of(sheetContext).pop();
+              unawaited(_resumeWorkspace(controller, profile));
+            },
+            onEditServer: () {
+              Navigator.of(sheetContext).pop();
+              unawaited(_openServerEditor(controller, profile: profile));
+            },
+            onCopyConnectLink: () =>
+                unawaited(_copyConnectionImportLink(profile)),
+            onOpenProjectPicker: () {
+              Navigator.of(sheetContext).pop();
+              unawaited(_openProjectPicker(controller, profile));
+            },
+            onOpenProject: (target) {
+              Navigator.of(sheetContext).pop();
+              unawaited(_openRecentProject(controller, profile, target));
+            },
+          ),
+        ),
       ),
     );
   }
@@ -643,7 +1002,7 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
     ServerProfile profile,
   ) {
     final runningSessions = _runningSessionsForProfile(controller, profile);
-    final layout = _layoutForProfile(controller, profile);
+    final layout = _normalizedLayoutForProfile(controller, profile);
     final lastWorkspace = _lastWorkspaceForProfile(profile);
     final paneCount = layout?.panes.length ?? (lastWorkspace == null ? 0 : 1);
     var completedTodoCount = 0;
@@ -666,7 +1025,7 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
     WebParityAppController controller,
     ServerProfile profile,
   ) {
-    final layout = _layoutForProfile(controller, profile);
+    final layout = _normalizedLayoutForProfile(controller, profile);
     final lastWorkspace = _lastWorkspaceForProfile(profile);
     final activeDirectory =
         layout?.activePane?.directory ?? lastWorkspace?.directory;
@@ -722,7 +1081,7 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
     WebParityAppController controller,
     ServerProfile profile,
   ) {
-    final layout = _layoutForProfile(controller, profile);
+    final layout = _normalizedLayoutForProfile(controller, profile);
     final lastWorkspace = _lastWorkspaceForProfile(profile);
     if (layout == null) {
       if (lastWorkspace == null) {
@@ -776,6 +1135,8 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _serverStatusRefreshTimer?.cancel();
     for (final entry in _observedWorkspaceControllerListeners.entries) {
       entry.key.removeListener(entry.value);
     }
@@ -792,58 +1153,42 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
     return AnimatedBuilder(
       animation: controller,
       builder: (context, _) {
+        _scheduleConnectionImportPromptIfNeeded(controller);
         _scheduleWorkspaceStateSyncIfNeeded(controller);
+        _ensureServerStatusPolling(controller);
         final selectedProfile = controller.selectedProfile;
-        final selectedReport = controller.selectedReport;
-        final selectedSummary = selectedProfile == null
-            ? null
-            : _serverSummaryForProfile(controller, selectedProfile);
-        final selectedRunningSessions = selectedProfile == null
-            ? const <_HomeRunningSession>[]
-            : _runningSessionsForProfile(controller, selectedProfile);
-        final selectedPaneSnapshots = selectedProfile == null
-            ? const <_HomePaneSnapshot>[]
-            : _paneSnapshotsForProfile(controller, selectedProfile);
-        final selectedProjectTargets = selectedProfile == null
-            ? const <ProjectTarget>[]
-            : _projectTargetsForProfile(controller, selectedProfile);
         return Scaffold(
-          body: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: <Color>[
-                  surfaces.background,
-                  Color.alphaBlend(
-                    Theme.of(
-                      context,
-                    ).colorScheme.primary.withValues(alpha: 0.05),
-                    surfaces.panel,
-                  ),
-                ],
+          backgroundColor: surfaces.background,
+          body: SafeArea(
+            child: Padding(
+              padding: EdgeInsets.all(
+                MediaQuery.sizeOf(context).width < 600
+                    ? AppSpacing.sm
+                    : AppSpacing.md,
               ),
-            ),
-            child: SafeArea(
-              child: Padding(
-                padding: EdgeInsets.all(
-                  MediaQuery.sizeOf(context).width < 600
-                      ? AppSpacing.md
-                      : AppSpacing.lg,
-                ),
-                child: controller.loading
-                    ? const Center(child: CircularProgressIndicator())
-                    : Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 1440),
-                          child: LayoutBuilder(
-                            builder: (context, constraints) {
-                              final wide = constraints.maxWidth >= 1180;
-                              final compactHome =
-                                  constraints.maxWidth < 600 ||
-                                  constraints.maxHeight < 700;
-                              final compactHeader = constraints.maxWidth < 720;
-                              final serverListPanel = _HomeServerListPanel(
+              child: controller.loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 1120),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            _HomeHeroHeader(
+                              profiles: controller.profiles,
+                              reports: controller.reports,
+                              anyRefreshing: controller.profiles.any(
+                                (profile) =>
+                                    controller.isRefreshingProfile(profile),
+                              ),
+                              onOpenServers: () => _openServers(controller),
+                              onAddServer: () => _openServerEditor(controller),
+                              onRefreshAll: () =>
+                                  _manualRefreshSavedServerStatuses(controller),
+                            ),
+                            const SizedBox(height: AppSpacing.sm),
+                            Expanded(
+                              child: _HomeServerListPanel(
                                 profiles: controller.profiles,
                                 selectedProfile: selectedProfile,
                                 reports: controller.reports,
@@ -855,9 +1200,10 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
                                       profile,
                                     ),
                                 onSelectProfile: controller.selectProfile,
-                                onOpenServers: () => _openServers(controller),
-                                onAddServer: () =>
-                                    _openServerEditor(controller),
+                                onResumeProfile: (profile) =>
+                                    _resumeWorkspace(controller, profile),
+                                onShowProfileDetails: (profile) =>
+                                    _openServerDetails(controller, profile),
                                 onRefreshProfile: controller.refreshProbe,
                                 onEditProfile: (profile) => _openServerEditor(
                                   controller,
@@ -866,233 +1212,12 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
                                 onDeleteProfile: (profile) =>
                                     _confirmDeleteServer(controller, profile),
                                 onMoveProfile: controller.moveProfile,
-                              );
-                              final detailPanel = _HomeServerDetailPanel(
-                                profile: selectedProfile,
-                                report: selectedReport,
-                                summary: selectedSummary,
-                                activityLoading: selectedProfile == null
-                                    ? false
-                                    : _isServerActivityLoading(
-                                        controller,
-                                        selectedProfile,
-                                      ),
-                                runningSessions: selectedRunningSessions,
-                                paneSnapshots: selectedPaneSnapshots,
-                                projectTargets: selectedProjectTargets,
-                                onResumeWorkspace: selectedProfile == null
-                                    ? null
-                                    : () => _resumeWorkspace(
-                                        controller,
-                                        selectedProfile,
-                                      ),
-                                onEditServer: selectedProfile == null
-                                    ? null
-                                    : () => _openServerEditor(
-                                        controller,
-                                        profile: selectedProfile,
-                                      ),
-                                onOpenProjectPicker: selectedProfile == null
-                                    ? null
-                                    : () => _openProjectPicker(
-                                        controller,
-                                        selectedProfile,
-                                      ),
-                                onOpenProject: selectedProfile == null
-                                    ? null
-                                    : (target) => _openRecentProject(
-                                        controller,
-                                        selectedProfile,
-                                        target,
-                                      ),
-                              );
-                              final headerSection = compactHeader
-                                  ? Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: <Widget>[
-                                        Text(
-                                          context.wp('Servers'),
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .headlineSmall
-                                              ?.copyWith(
-                                                fontWeight: FontWeight.w800,
-                                              ),
-                                        ),
-                                        const SizedBox(
-                                          height: AppSpacing.xxs,
-                                        ),
-                                        Text(
-                                          context.wp(
-                                            'Choose a server, inspect its current status, and jump back into the exact workspace layout you were using last.',
-                                          ),
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .bodyLarge
-                                              ?.copyWith(
-                                                color: surfaces.muted,
-                                              ),
-                                        ),
-                                        const SizedBox(
-                                          height: AppSpacing.md,
-                                        ),
-                                        Wrap(
-                                          spacing: AppSpacing.sm,
-                                          runSpacing: AppSpacing.sm,
-                                          children: <Widget>[
-                                            _ServerPill(
-                                              profile: selectedProfile,
-                                              report: selectedReport,
-                                              onTap: () =>
-                                                  _openServers(controller),
-                                            ),
-                                            OutlinedButton.icon(
-                                              onPressed: () =>
-                                                  _openServers(controller),
-                                              icon: const Icon(
-                                                Icons.storage_rounded,
-                                              ),
-                                              label: Text(
-                                                context.wp('See Servers'),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    )
-                                  : Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: <Widget>[
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: <Widget>[
-                                              Text(
-                                                context.wp('Servers'),
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .headlineSmall
-                                                    ?.copyWith(
-                                                      fontWeight:
-                                                          FontWeight.w800,
-                                                    ),
-                                              ),
-                                              const SizedBox(
-                                                height: AppSpacing.xxs,
-                                              ),
-                                              Text(
-                                                context.wp(
-                                                  'Choose a server, inspect its current status, and jump back into the exact workspace layout you were using last.',
-                                                ),
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .bodyLarge
-                                                    ?.copyWith(
-                                                      color: surfaces.muted,
-                                                    ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        const SizedBox(width: AppSpacing.lg),
-                                        Wrap(
-                                          spacing: AppSpacing.sm,
-                                          runSpacing: AppSpacing.sm,
-                                          children: <Widget>[
-                                            _ServerPill(
-                                              profile: selectedProfile,
-                                              report: selectedReport,
-                                              onTap: () =>
-                                                  _openServers(controller),
-                                            ),
-                                            OutlinedButton.icon(
-                                              onPressed: () =>
-                                                  _openServers(controller),
-                                              icon: const Icon(
-                                                Icons.storage_rounded,
-                                              ),
-                                              label: Text(
-                                                context.wp('See Servers'),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    );
-                              final contentSection = wide
-                                  ? Row(
-                                      children: <Widget>[
-                                        Flexible(
-                                          flex: 4,
-                                          child: serverListPanel,
-                                        ),
-                                        const SizedBox(width: AppSpacing.lg),
-                                        Flexible(
-                                          flex: 6,
-                                          child: detailPanel,
-                                        ),
-                                      ],
-                                    )
-                                  : Column(
-                                      children: <Widget>[
-                                        Expanded(
-                                          flex: 4,
-                                          child: serverListPanel,
-                                        ),
-                                        const SizedBox(
-                                          height: AppSpacing.lg,
-                                        ),
-                                        Expanded(
-                                          flex: 6,
-                                          child: detailPanel,
-                                        ),
-                                      ],
-                                    );
-                              if (compactHome) {
-                                final listPanelHeight = (constraints.maxHeight *
-                                        0.7)
-                                    .clamp(320.0, 440.0)
-                                    .toDouble();
-                                final detailPanelHeight =
-                                    (constraints.maxHeight * 1.05)
-                                        .clamp(460.0, 760.0)
-                                        .toDouble();
-                                return SingleChildScrollView(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: <Widget>[
-                                      headerSection,
-                                      const SizedBox(height: AppSpacing.lg),
-                                      SizedBox(
-                                        height: listPanelHeight,
-                                        child: serverListPanel,
-                                      ),
-                                      const SizedBox(height: AppSpacing.lg),
-                                      SizedBox(
-                                        height: detailPanelHeight,
-                                        child: detailPanel,
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              }
-                              return Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: <Widget>[
-                                  headerSection,
-                                  const SizedBox(height: AppSpacing.lg),
-                                  Expanded(child: contentSection),
-                                ],
-                              );
-                            },
-                          ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-              ),
+                    ),
             ),
           ),
         );
@@ -1167,6 +1292,222 @@ class _HomePaneSnapshot {
   final bool active;
 }
 
+class _HomeHeroHeader extends StatelessWidget {
+  const _HomeHeroHeader({
+    required this.profiles,
+    required this.reports,
+    required this.anyRefreshing,
+    required this.onOpenServers,
+    required this.onAddServer,
+    required this.onRefreshAll,
+  });
+
+  final List<ServerProfile> profiles;
+  final Map<String, ServerProbeReport> reports;
+  final bool anyRefreshing;
+  final VoidCallback onOpenServers;
+  final Future<void> Function() onAddServer;
+  final Future<void> Function() onRefreshAll;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final onlineCount = profiles
+        .where(
+          (profile) =>
+              reports[profile.storageKey]?.classification ==
+              ConnectionProbeClassification.ready,
+        )
+        .length;
+    final checkedAt = _latestCheckedAt(profiles, reports);
+    final summary = profiles.isEmpty
+        ? context.wp('No saved servers')
+        : checkedAt == null
+        ? context.wp(
+            '{serverCount} servers · {onlineCount} online',
+            args: <String, Object?>{
+              'serverCount': profiles.length,
+              'onlineCount': onlineCount,
+            },
+          )
+        : context.wp(
+            '{serverCount} servers · {onlineCount} online · last checked {time}',
+            args: <String, Object?>{
+              'serverCount': profiles.length,
+              'onlineCount': onlineCount,
+              'time': MaterialLocalizations.of(
+                context,
+              ).formatTimeOfDay(TimeOfDay.fromDateTime(checkedAt)),
+            },
+          );
+    final brand = Row(
+      children: <Widget>[
+        Container(
+          width: 44,
+          height: 44,
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: surfaces.lineSoft),
+          ),
+          child: Image.asset(
+            'web/icons/Icon-192.png',
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) =>
+                Icon(Icons.terminal_rounded, color: theme.colorScheme.primary),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        Flexible(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                context.wp('BOC Remote'),
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.xxs),
+              Text(
+                summary,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: surfaces.muted,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+    Widget actions({required bool compact}) {
+      if (compact) {
+        return Wrap(
+          spacing: AppSpacing.xs,
+          runSpacing: AppSpacing.xs,
+          children: <Widget>[
+            IconButton(
+              tooltip: context.wp('Refresh'),
+              onPressed: profiles.isEmpty || anyRefreshing
+                  ? null
+                  : () => unawaited(onRefreshAll()),
+              icon: anyRefreshing
+                  ? const SizedBox.square(
+                      dimension: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh_rounded),
+            ),
+            IconButton(
+              tooltip: context.wp('Manage'),
+              onPressed: onOpenServers,
+              icon: const Icon(Icons.tune_rounded),
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            Semantics(
+              identifier: 'home-add-server-button',
+              label: 'Add Server',
+              button: true,
+              onTap: () => unawaited(onAddServer()),
+              child: FilledButton.icon(
+                key: const ValueKey<String>('home-add-server-button'),
+                onPressed: () => unawaited(onAddServer()),
+                icon: const Icon(Icons.add_rounded),
+                label: Text(context.wp('Add Server')),
+              ),
+            ),
+          ],
+        );
+      }
+      return Wrap(
+        spacing: AppSpacing.sm,
+        runSpacing: AppSpacing.sm,
+        alignment: WrapAlignment.end,
+        children: <Widget>[
+          OutlinedButton.icon(
+            onPressed: profiles.isEmpty || anyRefreshing
+                ? null
+                : () => unawaited(onRefreshAll()),
+            icon: anyRefreshing
+                ? const SizedBox.square(
+                    dimension: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh_rounded),
+            label: Text(context.wp('Refresh')),
+          ),
+          OutlinedButton.icon(
+            onPressed: onOpenServers,
+            icon: const Icon(Icons.tune_rounded),
+            label: Text(context.wp('Manage')),
+          ),
+          Semantics(
+            identifier: 'home-add-server-button',
+            label: 'Add Server',
+            button: true,
+            onTap: () => unawaited(onAddServer()),
+            child: FilledButton.icon(
+              key: const ValueKey<String>('home-add-server-button'),
+              onPressed: () => unawaited(onAddServer()),
+              icon: const Icon(Icons.add_rounded),
+              label: Text(context.wp('Add Server')),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.xs,
+        vertical: AppSpacing.sm,
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth < 900) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                brand,
+                const SizedBox(height: AppSpacing.sm),
+                actions(compact: true),
+              ],
+            );
+          }
+          return Row(
+            children: <Widget>[
+              Expanded(child: brand),
+              const SizedBox(width: AppSpacing.md),
+              Flexible(child: actions(compact: false)),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+DateTime? _latestCheckedAt(
+  List<ServerProfile> profiles,
+  Map<String, ServerProbeReport> reports,
+) {
+  DateTime? latest;
+  for (final profile in profiles) {
+    final checkedAt = reports[profile.storageKey]?.checkedAt;
+    if (checkedAt == null) {
+      continue;
+    }
+    if (latest == null || checkedAt.isAfter(latest)) {
+      latest = checkedAt;
+    }
+  }
+  return latest;
+}
+
 class _HomeServerListPanel extends StatelessWidget {
   const _HomeServerListPanel({
     required this.profiles,
@@ -1175,8 +1516,8 @@ class _HomeServerListPanel extends StatelessWidget {
     required this.isRefreshingProfile,
     required this.summaryForProfile,
     required this.onSelectProfile,
-    required this.onOpenServers,
-    required this.onAddServer,
+    required this.onResumeProfile,
+    required this.onShowProfileDetails,
     required this.onRefreshProfile,
     required this.onEditProfile,
     required this.onDeleteProfile,
@@ -1189,8 +1530,8 @@ class _HomeServerListPanel extends StatelessWidget {
   final bool Function(ServerProfile profile) isRefreshingProfile;
   final _HomeServerSummary Function(ServerProfile profile) summaryForProfile;
   final Future<void> Function(ServerProfile profile) onSelectProfile;
-  final VoidCallback onOpenServers;
-  final Future<void> Function() onAddServer;
+  final Future<void> Function(ServerProfile profile) onResumeProfile;
+  final Future<void> Function(ServerProfile profile) onShowProfileDetails;
   final Future<void> Function(ServerProfile profile) onRefreshProfile;
   final Future<void> Function(ServerProfile profile) onEditProfile;
   final Future<void> Function(ServerProfile profile) onDeleteProfile;
@@ -1199,123 +1540,378 @@ class _HomeServerListPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return LayoutBuilder(
+      builder: (context, panelConstraints) {
+        final compact = panelConstraints.maxWidth < 620;
+        final selected = selectedProfile == null
+            ? null
+            : profiles.cast<ServerProfile?>().firstWhere(
+                (profile) => profile?.id == selectedProfile!.id,
+                orElse: () => selectedProfile,
+              );
+        return _HomeSectionCard(
+          padding: EdgeInsets.all(compact ? AppSpacing.sm : AppSpacing.md),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                context.wp('Servers'),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: AppSpacing.xxs),
+              Text(
+                context.wp(
+                  'Pick a server first, then use the fixed actions below.',
+                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              if (profiles.isEmpty)
+                Expanded(
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Container(
+                          width: 64,
+                          height: 64,
+                          decoration: BoxDecoration(
+                            color: surfaces.panelMuted.withValues(alpha: 0.92),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(
+                            Icons.storage_rounded,
+                            color: surfaces.muted,
+                            size: 28,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        Text(
+                          context.wp('No saved servers yet.'),
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: AppSpacing.xs),
+                        Text(
+                          context.wp(
+                            'Add your first server and it will start checking status automatically.',
+                          ),
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(color: surfaces.muted),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              else
+                Expanded(
+                  child: ListView.separated(
+                    itemCount: profiles.length,
+                    separatorBuilder: (_, _) =>
+                        const SizedBox(height: AppSpacing.xs),
+                    itemBuilder: (context, index) {
+                      final profile = profiles[index];
+                      final profileSelected = selectedProfile?.id == profile.id;
+                      return _ServerManagementCard(
+                        key: ValueKey<String>('home-server-card-${profile.id}'),
+                        keyNamespace: 'home-server',
+                        profile: profile,
+                        report: reports[profile.storageKey],
+                        selected: profileSelected,
+                        isRefreshing: isRefreshingProfile(profile),
+                        canMoveUp: index > 0,
+                        canMoveDown: index < profiles.length - 1,
+                        showInlineActions: false,
+                        footer: profileSelected
+                            ? _HomeServerCardFooter(
+                                summary: summaryForProfile(profile),
+                              )
+                            : null,
+                        onSelect: () => unawaited(onSelectProfile(profile)),
+                        onOpen: () => unawaited(onResumeProfile(profile)),
+                        onRefresh: () => unawaited(onRefreshProfile(profile)),
+                        onEdit: () => unawaited(onEditProfile(profile)),
+                        onDelete: () => unawaited(onDeleteProfile(profile)),
+                        onMoveUp: index > 0
+                            ? () => unawaited(onMoveProfile(profile.id, -1))
+                            : null,
+                        onMoveDown: index < profiles.length - 1
+                            ? () => unawaited(onMoveProfile(profile.id, 1))
+                            : null,
+                      );
+                    },
+                  ),
+                ),
+              const SizedBox(height: AppSpacing.sm),
+              _HomeServerActionBar(
+                profile: selected,
+                report: selected == null ? null : reports[selected.storageKey],
+                isRefreshing: selected == null
+                    ? false
+                    : isRefreshingProfile(selected),
+                onConnect: selected == null
+                    ? null
+                    : () => unawaited(onResumeProfile(selected)),
+                onRefresh: selected == null
+                    ? null
+                    : () => unawaited(onRefreshProfile(selected)),
+                onDetails: selected == null
+                    ? null
+                    : () => unawaited(onShowProfileDetails(selected)),
+                onEdit: selected == null
+                    ? null
+                    : () => unawaited(onEditProfile(selected)),
+                onDelete: selected == null
+                    ? null
+                    : () => unawaited(onDeleteProfile(selected)),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _HomeServerActionBar extends StatelessWidget {
+  const _HomeServerActionBar({
+    required this.profile,
+    required this.report,
+    required this.isRefreshing,
+    required this.onConnect,
+    required this.onRefresh,
+    required this.onDetails,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  static const double _compactActionButtonHeight = 48;
+  static const double _twoRowActionBreakpoint = 320;
+
+  final ServerProfile? profile;
+  final ServerProbeReport? report;
+  final bool isRefreshing;
+  final VoidCallback? onConnect;
+  final VoidCallback? onRefresh;
+  final VoidCallback? onDetails;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final profile = this.profile;
     return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.sm),
       decoration: BoxDecoration(
-        color: surfaces.panelRaised.withValues(alpha: 0.9),
-        borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
+        color: surfaces.panelMuted.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(color: surfaces.lineSoft),
       ),
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final compactHeader = constraints.maxWidth < 420;
-              final titleBlock = Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    context.wp('Servers'),
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: AppSpacing.xxs),
-                  Text(
-                    context.wp(
-                      'Saved servers stay visible here, with status and workspace summaries attached.',
-                    ),
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
-                  ),
-                ],
-              );
-              final actions = Wrap(
-                spacing: AppSpacing.sm,
-                runSpacing: AppSpacing.sm,
-                children: <Widget>[
-                  OutlinedButton.icon(
-                    onPressed: onOpenServers,
-                    icon: const Icon(Icons.tune_rounded),
-                    label: Text(context.wp('Manage')),
-                  ),
-                  FilledButton.icon(
-                    key: const ValueKey<String>('home-add-server-button'),
-                    onPressed: () => unawaited(onAddServer()),
-                    icon: const Icon(Icons.add_rounded),
-                    label: Text(context.wp('Add Server')),
-                  ),
-                ],
-              );
-              if (compactHeader) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    titleBlock,
-                    const SizedBox(height: AppSpacing.md),
-                    actions,
-                  ],
-                );
-              }
-              return Row(
-                children: <Widget>[
-                  Expanded(child: titleBlock),
-                  const SizedBox(width: AppSpacing.md),
-                  actions,
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          if (profiles.isEmpty)
-            Expanded(
-              child: Center(
-                child: Text(
-                  context.wp(
-                    'No saved servers yet. Add your first server to start tracking its workspace.',
-                  ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 900;
+          final title = profile == null
+              ? Text(
+                  context.wp('Select a server to connect or manage it.'),
                   style: Theme.of(
                     context,
                   ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            )
-          else
-            Expanded(
-              child: ListView.separated(
-                itemCount: profiles.length,
-                separatorBuilder: (_, _) =>
-                    const SizedBox(height: AppSpacing.sm),
-                itemBuilder: (context, index) {
-                  final profile = profiles[index];
-                  final selected = selectedProfile?.id == profile.id;
-                  return _ServerManagementCard(
-                    key: ValueKey<String>('home-server-card-${profile.id}'),
-                    keyNamespace: 'home-server',
-                    profile: profile,
-                    report: reports[profile.storageKey],
-                    selected: selected,
-                    isRefreshing: isRefreshingProfile(profile),
-                    canMoveUp: index > 0,
-                    canMoveDown: index < profiles.length - 1,
-                    footer: _HomeServerCardFooter(
-                      summary: summaryForProfile(profile),
+                )
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    _StatusDot(report: report, busy: isRefreshing),
+                    const SizedBox(width: AppSpacing.sm),
+                    Flexible(
+                      child: Text(
+                        profile.effectiveLabel,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                    onSelect: () => unawaited(onSelectProfile(profile)),
-                    onRefresh: () => unawaited(onRefreshProfile(profile)),
-                    onEdit: () => unawaited(onEditProfile(profile)),
-                    onDelete: () => unawaited(onDeleteProfile(profile)),
-                    onMoveUp: index > 0
-                        ? () => unawaited(onMoveProfile(profile.id, -1))
-                        : null,
-                    onMoveDown: index < profiles.length - 1
-                        ? () => unawaited(onMoveProfile(profile.id, 1))
-                        : null,
-                  );
-                },
-              ),
+                  ],
+                );
+          final actionButtons = <Widget>[
+            FilledButton.icon(
+              key: profile == null
+                  ? null
+                  : ValueKey<String>('home-server-resume-button-${profile.id}'),
+              onPressed: onConnect,
+              icon: const Icon(Icons.play_arrow_rounded),
+              label: Text(context.wp('Connect')),
             ),
+            OutlinedButton.icon(
+              onPressed: isRefreshing ? null : onRefresh,
+              icon: isRefreshing
+                  ? const SizedBox.square(
+                      dimension: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh_rounded),
+              label: Text(context.wp('Refresh')),
+            ),
+            OutlinedButton.icon(
+              key: profile == null
+                  ? null
+                  : ValueKey<String>(
+                      'home-server-details-button-${profile.id}',
+                    ),
+              onPressed: onDetails,
+              icon: const Icon(Icons.info_outline_rounded),
+              label: Text(context.wp('Details')),
+            ),
+            OutlinedButton.icon(
+              onPressed: onEdit,
+              icon: const Icon(Icons.edit_outlined),
+              label: Text(context.wp('Edit')),
+            ),
+            OutlinedButton.icon(
+              onPressed: onDelete,
+              icon: const Icon(Icons.delete_outline_rounded),
+              label: Text(context.wp('Delete')),
+              style: OutlinedButton.styleFrom(foregroundColor: surfaces.danger),
+            ),
+          ];
+          final actions = Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
+            alignment: WrapAlignment.end,
+            children: actionButtons,
+          );
+          final moreAction = PopupMenuButton<String>(
+            enabled: profile != null,
+            tooltip: context.wp('More'),
+            onSelected: (value) {
+              switch (value) {
+                case 'refresh':
+                  if (!isRefreshing) {
+                    onRefresh?.call();
+                  }
+                  break;
+                case 'edit':
+                  onEdit?.call();
+                  break;
+                case 'delete':
+                  onDelete?.call();
+                  break;
+              }
+            },
+            itemBuilder: (context) => <PopupMenuEntry<String>>[
+              PopupMenuItem<String>(
+                value: 'refresh',
+                enabled: onRefresh != null && !isRefreshing,
+                child: Text(context.wp('Refresh')),
+              ),
+              PopupMenuItem<String>(
+                value: 'edit',
+                enabled: onEdit != null,
+                child: Text(context.wp('Edit')),
+              ),
+              PopupMenuItem<String>(
+                value: 'delete',
+                enabled: onDelete != null,
+                child: Text(context.wp('Delete')),
+              ),
+            ],
+            child: _HomeMoreActionButton(
+              key: profile == null
+                  ? null
+                  : ValueKey<String>('home-server-more-button-${profile.id}'),
+              enabled: profile != null,
+            ),
+          );
+          final compactActions = constraints.maxWidth < _twoRowActionBreakpoint
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    SizedBox(
+                      height: _compactActionButtonHeight,
+                      child: actionButtons[0],
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    SizedBox(
+                      height: _compactActionButtonHeight,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: <Widget>[
+                          Expanded(child: actionButtons[2]),
+                          const SizedBox(width: AppSpacing.sm),
+                          Expanded(child: moreAction),
+                        ],
+                      ),
+                    ),
+                  ],
+                )
+              : SizedBox(
+                  height: _compactActionButtonHeight,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Expanded(flex: 13, child: actionButtons[0]),
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(flex: 12, child: actionButtons[2]),
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(flex: 13, child: moreAction),
+                    ],
+                  ),
+                );
+          if (compact) {
+            return compactActions;
+          }
+          return Row(
+            children: <Widget>[
+              Expanded(child: title),
+              const SizedBox(width: AppSpacing.md),
+              actions,
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _HomeMoreActionButton extends StatelessWidget {
+  const _HomeMoreActionButton({super.key, required this.enabled});
+
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final foreground = enabled ? colorScheme.primary : surfaces.muted;
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: surfaces.lineSoft),
+        color: surfaces.panelMuted.withValues(alpha: enabled ? 0.44 : 0.24),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: <Widget>[
+          Icon(Icons.more_horiz_rounded, color: foreground, size: 20),
+          const SizedBox(width: AppSpacing.xxs),
+          Text(
+            context.wp('More'),
+            style: Theme.of(
+              context,
+            ).textTheme.labelLarge?.copyWith(color: foreground),
+          ),
         ],
       ),
     );
@@ -1383,6 +1979,7 @@ class _HomeServerCardFooter extends StatelessWidget {
 
 class _HomeServerDetailPanel extends StatelessWidget {
   const _HomeServerDetailPanel({
+    required this.embeddedInPage,
     required this.profile,
     required this.report,
     required this.summary,
@@ -1392,10 +1989,12 @@ class _HomeServerDetailPanel extends StatelessWidget {
     required this.projectTargets,
     required this.onResumeWorkspace,
     required this.onEditServer,
+    required this.onCopyConnectLink,
     required this.onOpenProjectPicker,
     required this.onOpenProject,
   });
 
+  final bool embeddedInPage;
   final ServerProfile? profile;
   final ServerProbeReport? report;
   final _HomeServerSummary? summary;
@@ -1405,6 +2004,7 @@ class _HomeServerDetailPanel extends StatelessWidget {
   final List<ProjectTarget> projectTargets;
   final VoidCallback? onResumeWorkspace;
   final VoidCallback? onEditServer;
+  final VoidCallback? onCopyConnectLink;
   final VoidCallback? onOpenProjectPicker;
   final ValueChanged<ProjectTarget>? onOpenProject;
 
@@ -1414,152 +2014,177 @@ class _HomeServerDetailPanel extends StatelessWidget {
     if (profile == null) {
       return _HomeSectionCard(
         child: Center(
-          child: Text(
-            context.wp(
-              'Select a server to inspect its status and restore its workspace.',
-            ),
-            style: Theme.of(
-              context,
-            ).textTheme.bodyLarge?.copyWith(color: surfaces.muted),
-            textAlign: TextAlign.center,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  color: surfaces.panelMuted.withValues(alpha: 0.92),
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: Icon(
+                  Icons.touch_app_rounded,
+                  size: 32,
+                  color: surfaces.muted,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              Text(
+                context.wp('Select a server'),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                context.wp(
+                  'Inspect its status and restore the workspace you were last using.',
+                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyLarge?.copyWith(color: surfaces.muted),
+                textAlign: TextAlign.center,
+              ),
+            ],
           ),
         ),
       );
     }
 
     final meta = _serverMetaItems(context, profile!, report);
+    final content = LayoutBuilder(
+      builder: (context, constraints) {
+        final compactHeader = constraints.maxWidth < 720;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            if (compactHeader)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  _HomeServerDetailIdentity(
+                    profile: profile!,
+                    report: report,
+                    meta: meta,
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  _HomeServerDetailActions(
+                    profileId: profile!.id,
+                    fullWidth: true,
+                    paneCount: summary?.paneCount ?? 0,
+                    onResumeWorkspace: onResumeWorkspace,
+                    onEditServer: onEditServer,
+                    onCopyConnectLink: onCopyConnectLink,
+                  ),
+                ],
+              )
+            else
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Expanded(
+                    child: _HomeServerDetailIdentity(
+                      profile: profile!,
+                      report: report,
+                      meta: meta,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  _HomeServerDetailActions(
+                    profileId: profile!.id,
+                    paneCount: summary?.paneCount ?? 0,
+                    onResumeWorkspace: onResumeWorkspace,
+                    onEditServer: onEditServer,
+                    onCopyConnectLink: onCopyConnectLink,
+                  ),
+                ],
+              ),
+            const SizedBox(height: AppSpacing.md),
+            _HomeDetailSection(
+              title: context.wp('Workspace'),
+              subtitle: context.wp(
+                'This is the last remembered pane layout for the selected server.',
+              ),
+              child: paneSnapshots.isEmpty
+                  ? _HomeEmptyStateText(
+                      message: context.wp(
+                        'No remembered workspace yet. Open a project and the layout will appear here.',
+                      ),
+                    )
+                  : Wrap(
+                      spacing: AppSpacing.xs,
+                      runSpacing: AppSpacing.xs,
+                      children: paneSnapshots
+                          .map((pane) => _HomePaneCard(pane: pane))
+                          .toList(growable: false),
+                    ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            _HomeDetailSection(
+              title: context.wp('Running Now'),
+              subtitle: context.wp(
+                'Best-effort activity from the projects in your remembered workspace.',
+              ),
+              child: activityLoading
+                  ? const Padding(
+                      padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  : runningSessions.isEmpty
+                  ? _HomeEmptyStateText(
+                      message: context.wp(
+                        'No active agent sessions were found in the remembered projects.',
+                      ),
+                    )
+                  : Column(
+                      children: runningSessions
+                          .map(
+                            (session) => Padding(
+                              padding: const EdgeInsets.only(
+                                bottom: AppSpacing.xs,
+                              ),
+                              child: _HomeRunningSessionCard(session: session),
+                            ),
+                          )
+                          .toList(growable: false),
+                    ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            _HomeDetailSection(
+              title: context.wp('Projects'),
+              subtitle: context.wp(
+                'Jump into a project directly, or add another one from the server like a quick action tile.',
+              ),
+              child: projectTargets.isEmpty
+                  ? _HomeAddProjectTile(
+                      onTap: onOpenProjectPicker,
+                      expanded: true,
+                    )
+                  : Wrap(
+                      spacing: AppSpacing.xs,
+                      runSpacing: AppSpacing.xs,
+                      children: <Widget>[
+                        _HomeAddProjectTile(onTap: onOpenProjectPicker),
+                        ...projectTargets.map(
+                          (target) => ActionChip(
+                            avatar: const Icon(Icons.folder_outlined, size: 18),
+                            label: Text(target.title),
+                            onPressed: onOpenProject == null
+                                ? null
+                                : () => onOpenProject!(target),
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+          ],
+        );
+      },
+    );
     return _HomeSectionCard(
-      child: SingleChildScrollView(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final compactHeader = constraints.maxWidth < 720;
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                if (compactHeader)
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      _HomeServerDetailIdentity(
-                        profile: profile!,
-                        report: report,
-                        meta: meta,
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      _HomeServerDetailActions(
-                        profileId: profile!.id,
-                        paneCount: summary?.paneCount ?? 0,
-                        onResumeWorkspace: onResumeWorkspace,
-                        onEditServer: onEditServer,
-                      ),
-                    ],
-                  )
-                else
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Expanded(
-                        child: _HomeServerDetailIdentity(
-                          profile: profile!,
-                          report: report,
-                          meta: meta,
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.lg),
-                      _HomeServerDetailActions(
-                        profileId: profile!.id,
-                        paneCount: summary?.paneCount ?? 0,
-                        onResumeWorkspace: onResumeWorkspace,
-                        onEditServer: onEditServer,
-                      ),
-                    ],
-                  ),
-                const SizedBox(height: AppSpacing.lg),
-                _HomeDetailSection(
-                  title: context.wp('Workspace'),
-                  subtitle: context.wp(
-                    'This is the last remembered pane layout for the selected server.',
-                  ),
-                  child: paneSnapshots.isEmpty
-                      ? Text(
-                          context.wp(
-                            'No remembered workspace yet. Open a project and the layout will appear here.',
-                          ),
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(color: surfaces.muted),
-                        )
-                      : Wrap(
-                          spacing: AppSpacing.sm,
-                          runSpacing: AppSpacing.sm,
-                          children: paneSnapshots
-                              .map((pane) => _HomePaneCard(pane: pane))
-                              .toList(growable: false),
-                        ),
-                ),
-                const SizedBox(height: AppSpacing.lg),
-                _HomeDetailSection(
-                  title: context.wp('Running Now'),
-                  subtitle: context.wp(
-                    'Best-effort activity from the projects in your remembered workspace.',
-                  ),
-                  child: activityLoading
-                      ? const Padding(
-                          padding: EdgeInsets.symmetric(
-                            vertical: AppSpacing.md,
-                          ),
-                          child: Center(child: CircularProgressIndicator()),
-                        )
-                      : runningSessions.isEmpty
-                      ? Text(
-                          context.wp(
-                            'No active agent sessions were found in the remembered projects.',
-                          ),
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(color: surfaces.muted),
-                        )
-                      : Column(
-                          children: runningSessions
-                              .map(
-                                (session) => Padding(
-                                  padding: const EdgeInsets.only(
-                                    bottom: AppSpacing.sm,
-                                  ),
-                                  child: _HomeRunningSessionCard(
-                                    session: session,
-                                  ),
-                                ),
-                              )
-                              .toList(growable: false),
-                        ),
-                ),
-                const SizedBox(height: AppSpacing.lg),
-                _HomeDetailSection(
-                  title: context.wp('Projects'),
-                  subtitle: context.wp(
-                    'Jump into a project directly, or add another one from the server like a quick action tile.',
-                  ),
-                  child: Wrap(
-                    spacing: AppSpacing.sm,
-                    runSpacing: AppSpacing.sm,
-                    children: <Widget>[
-                      _HomeAddProjectTile(onTap: onOpenProjectPicker),
-                      ...projectTargets.map(
-                        (target) => ActionChip(
-                          avatar: const Icon(Icons.folder_outlined, size: 18),
-                          label: Text(target.title),
-                          onPressed: onOpenProject == null
-                              ? null
-                              : () => onOpenProject!(target),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
-      ),
+      child: embeddedInPage ? content : SingleChildScrollView(child: content),
     );
   }
 }
@@ -1581,6 +2206,23 @@ class _HomeServerDetailIdentity extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
+        Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.sm,
+            vertical: AppSpacing.xxs,
+          ),
+          decoration: BoxDecoration(
+            color: surfaces.panelMuted.withValues(alpha: 0.92),
+            borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
+          ),
+          child: Text(
+            context.wp('Selected server'),
+            style: Theme.of(
+              context,
+            ).textTheme.labelLarge?.copyWith(color: surfaces.muted),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
@@ -1630,59 +2272,133 @@ class _HomeServerDetailActions extends StatelessWidget {
     required this.paneCount,
     required this.onResumeWorkspace,
     required this.onEditServer,
+    required this.onCopyConnectLink,
+    this.fullWidth = false,
   });
+
+  static const double _buttonHeight = 48;
+  static const double _stackSecondaryBreakpoint = 360;
 
   final String profileId;
   final int paneCount;
   final VoidCallback? onResumeWorkspace;
   final VoidCallback? onEditServer;
+  final VoidCallback? onCopyConnectLink;
+  final bool fullWidth;
 
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      spacing: AppSpacing.sm,
-      runSpacing: AppSpacing.sm,
-      alignment: WrapAlignment.end,
-      children: <Widget>[
-        FilledButton.icon(
-          key: ValueKey<String>('home-server-resume-button-$profileId'),
-          onPressed: onResumeWorkspace,
-          icon: const Icon(Icons.play_arrow_rounded),
-          label: Text(
-            paneCount > 1
-                ? context.wp(
-                    'Resume {count} Panes',
-                    args: <String, Object?>{'count': paneCount},
-                  )
-                : context.wp('Resume Workspace'),
-          ),
-        ),
-        OutlinedButton.icon(
-          onPressed: onEditServer,
-          icon: const Icon(Icons.edit_outlined),
-          label: Text(context.wp('Edit Server')),
-        ),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final resumeLabel = paneCount > 1
+            ? context.wp(
+                'Resume {count} Panes',
+                args: <String, Object?>{'count': paneCount},
+              )
+            : context.wp('Resume Workspace');
+
+        if (fullWidth) {
+          final stackSecondary =
+              constraints.maxWidth < _stackSecondaryBreakpoint;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              SizedBox(
+                height: _buttonHeight,
+                child: _resumeButton(context, resumeLabel),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              if (stackSecondary) ...<Widget>[
+                SizedBox(height: _buttonHeight, child: _editButton(context)),
+                const SizedBox(height: AppSpacing.sm),
+                SizedBox(height: _buttonHeight, child: _copyButton(context)),
+              ] else
+                SizedBox(
+                  height: _buttonHeight,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Expanded(child: _editButton(context)),
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(child: _copyButton(context)),
+                    ],
+                  ),
+                ),
+            ],
+          );
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: <Widget>[
+            _resumeButton(context, resumeLabel),
+            const SizedBox(height: AppSpacing.sm),
+            Wrap(
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
+              alignment: WrapAlignment.end,
+              children: <Widget>[_editButton(context), _copyButton(context)],
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _resumeButton(BuildContext context, String label) {
+    return FilledButton.icon(
+      key: ValueKey<String>('home-server-detail-resume-button-$profileId'),
+      onPressed: onResumeWorkspace,
+      icon: const Icon(Icons.play_arrow_rounded),
+      label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+    );
+  }
+
+  Widget _editButton(BuildContext context) {
+    return OutlinedButton.icon(
+      key: ValueKey<String>('home-server-detail-edit-button-$profileId'),
+      onPressed: onEditServer,
+      icon: const Icon(Icons.edit_outlined),
+      label: Text(
+        context.wp('Edit Server'),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+
+  Widget _copyButton(BuildContext context) {
+    return OutlinedButton.icon(
+      key: ValueKey<String>('home-server-detail-copy-link-button-$profileId'),
+      onPressed: onCopyConnectLink,
+      icon: const Icon(Icons.link_rounded),
+      label: Text(
+        context.wp('Copy Link'),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
     );
   }
 }
 
 class _HomeSectionCard extends StatelessWidget {
-  const _HomeSectionCard({required this.child});
+  const _HomeSectionCard({
+    required this.child,
+    this.padding = const EdgeInsets.all(AppSpacing.md),
+  });
 
   final Widget child;
+  final EdgeInsets padding;
 
   @override
   Widget build(BuildContext context) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: surfaces.panelRaised.withValues(alpha: 0.9),
-        borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
-        border: Border.all(color: surfaces.lineSoft),
-      ),
-      padding: const EdgeInsets.all(AppSpacing.lg),
+    return AppGlassPanel(
+      radius: AppSpacing.cardRadius,
+      blur: 10,
+      backgroundOpacity: 0.88,
+      borderOpacity: 0.06,
+      showShadow: false,
+      padding: padding,
       child: child,
     );
   }
@@ -1702,20 +2418,35 @@ class _HomeDetailSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Text(title, style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: AppSpacing.xxs),
-        Text(
-          subtitle,
-          style: Theme.of(
-            context,
-          ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        child,
-      ],
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      decoration: appSoftCardDecoration(
+        context,
+        radius: AppSpacing.panelRadius,
+        muted: true,
+        emphasized: false,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            title,
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            subtitle,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          child,
+        ],
+      ),
     );
   }
 }
@@ -1727,79 +2458,92 @@ class _HomePaneCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
     return Container(
       key: ValueKey<String>('home-pane-card-${pane.paneId}'),
-      width: 240,
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: pane.active
-            ? Color.alphaBlend(
-                Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
-                surfaces.panel,
-              )
-            : surfaces.panel,
-        borderRadius: BorderRadius.circular(AppSpacing.lg),
-        border: Border.all(
-          color: pane.active
-              ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.42)
-              : surfaces.lineSoft,
-        ),
+      constraints: const BoxConstraints(minWidth: 220, maxWidth: 280),
+      decoration: appSoftCardDecoration(
+        context,
+        radius: AppSpacing.panelRadius,
+        tone: AppSurfaceTone.accent,
+        muted: !pane.active,
+        selected: pane.active,
+        emphasized: pane.active,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: Text(
-                  pane.label,
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: surfaces.muted,
-                    fontWeight: FontWeight.w700,
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.sm),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: surfaces.panelMuted.withValues(alpha: 0.76),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: surfaces.lineSoft),
+                  ),
+                  child: Icon(
+                    Icons.dashboard_customize_outlined,
+                    size: 18,
+                    color: pane.active
+                        ? theme.colorScheme.primary
+                        : surfaces.muted,
                   ),
                 ),
-              ),
-              if (pane.active)
-                _ServerMetaBadge(
-                  icon: Icons.radio_button_checked_rounded,
-                  label: context.wp('Active'),
-                  tint: Theme.of(context).colorScheme.primary,
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    pane.label,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: surfaces.muted,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            pane.projectLabel,
-            style: Theme.of(
-              context,
-            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: AppSpacing.xxs),
-          Text(
-            pane.directory,
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            pane.sessionTitle,
-            style: Theme.of(context).textTheme.bodyMedium,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-          if ((pane.status ?? '').trim().isNotEmpty) ...<Widget>[
-            const SizedBox(height: AppSpacing.sm),
-            _ServerMetaBadge(
-              icon: Icons.timelapse_rounded,
-              label: _statusTextForSession(context, pane.status),
-              tint: _sessionStatusTint(context, pane.status),
+                if (pane.active)
+                  _ServerMetaBadge(
+                    icon: Icons.radio_button_checked_rounded,
+                    label: context.wp('Active'),
+                    tint: theme.colorScheme.primary,
+                  ),
+              ],
             ),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              pane.projectLabel,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xxs),
+            Text(
+              pane.directory,
+              style: theme.textTheme.bodySmall?.copyWith(color: surfaces.muted),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              pane.sessionTitle,
+              style: theme.textTheme.bodyMedium?.copyWith(height: 1.45),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            if ((pane.status ?? '').trim().isNotEmpty) ...<Widget>[
+              const SizedBox(height: AppSpacing.sm),
+              _ServerMetaBadge(
+                icon: Icons.timelapse_rounded,
+                label: _statusTextForSession(context, pane.status),
+                tint: _sessionStatusTint(context, pane.status),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -1812,15 +2556,17 @@ class _HomeRunningSessionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
     return Container(
       key: ValueKey<String>('home-running-session-${session.sessionId}'),
       width: double.infinity,
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: surfaces.panel,
-        borderRadius: BorderRadius.circular(AppSpacing.lg),
-        border: Border.all(color: surfaces.lineSoft),
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      decoration: appSoftCardDecoration(
+        context,
+        radius: AppSpacing.lg,
+        muted: true,
+        emphasized: true,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1828,22 +2574,37 @@ class _HomeRunningSessionCard extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: surfaces.panelMuted.withValues(alpha: 0.76),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: surfaces.lineSoft),
+                ),
+                child: Icon(
+                  Icons.bolt_rounded,
+                  size: 18,
+                  color: _sessionStatusTint(context, session.status),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Text(
                       session.sessionTitle,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
                     ),
                     const SizedBox(height: AppSpacing.xxs),
                     Text(
                       '${session.projectLabel}  •  ${session.directory}',
-                      style: Theme.of(
-                        context,
-                      ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: surfaces.muted,
+                      ),
                     ),
                   ],
                 ),
@@ -1883,9 +2644,10 @@ class _HomeRunningSessionCard extends StatelessWidget {
 }
 
 class _HomeAddProjectTile extends StatelessWidget {
-  const _HomeAddProjectTile({required this.onTap});
+  const _HomeAddProjectTile({required this.onTap, this.expanded = false});
 
   final VoidCallback? onTap;
+  final bool expanded;
 
   @override
   Widget build(BuildContext context) {
@@ -1898,27 +2660,63 @@ class _HomeAddProjectTile extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(AppSpacing.lg),
         child: Ink(
-          width: 56,
+          width: expanded ? double.infinity : 156,
           height: 56,
-          decoration: BoxDecoration(
-            color: enabled
-                ? surfaces.panel
-                : surfaces.panel.withValues(alpha: 0.6),
-            borderRadius: BorderRadius.circular(AppSpacing.lg),
-            border: Border.all(
-              color: enabled
-                  ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.4)
-                  : surfaces.lineSoft,
-            ),
+          decoration: appSoftCardDecoration(
+            context,
+            radius: AppSpacing.lg,
+            tone: AppSurfaceTone.accent,
+            muted: !enabled,
+            selected: enabled,
+            emphasized: true,
           ),
-          child: Icon(
-            Icons.add_rounded,
-            color: enabled
-                ? Theme.of(context).colorScheme.primary
-                : surfaces.muted,
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Icon(
+                      Icons.add_rounded,
+                      color: enabled
+                          ? Theme.of(context).colorScheme.primary
+                          : surfaces.muted,
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    Text(
+                      context.wp('Add Project'),
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: enabled
+                            ? Theme.of(context).colorScheme.primary
+                            : surfaces.muted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
       ),
+    );
+  }
+}
+
+class _HomeEmptyStateText extends StatelessWidget {
+  const _HomeEmptyStateText({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return Text(
+      message,
+      style: Theme.of(
+        context,
+      ).textTheme.bodyMedium?.copyWith(color: surfaces.muted, height: 1.45),
     );
   }
 }

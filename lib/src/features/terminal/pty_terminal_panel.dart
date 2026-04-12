@@ -20,11 +20,11 @@ bool _showsTerminalSpecialKeyPalette(TargetPlatform platform) {
 }
 
 void _triggerTerminalSpecialKeyHapticFeedback() {
-  unawaited(
-    HapticFeedback.selectionClick().catchError((Object _, StackTrace __) {
-      return;
-    }),
-  );
+  unawaited(HapticFeedback.selectionClick().catchError((_) {}));
+}
+
+bool _isCompactTerminalWidth(BuildContext context) {
+  return MediaQuery.sizeOf(context).width < 560;
 }
 
 class PtyTerminalPanel extends StatelessWidget {
@@ -69,15 +69,16 @@ class PtyTerminalPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final activeSession = _resolveActiveSession(sessions, activeSessionId);
-    const panelPadding = EdgeInsets.fromLTRB(
-      AppSpacing.md,
-      0,
-      AppSpacing.md,
-      AppSpacing.md,
-    );
 
     return LayoutBuilder(
       builder: (context, constraints) {
+        final compact = constraints.maxWidth < 560;
+        final panelPadding = EdgeInsets.fromLTRB(
+          compact ? AppSpacing.sm : AppSpacing.md,
+          0,
+          compact ? AppSpacing.sm : AppSpacing.md,
+          compact ? AppSpacing.sm : AppSpacing.md,
+        );
         final availableHeight = constraints.maxHeight.isFinite
             ? math.max(0, constraints.maxHeight - panelPadding.vertical)
             : 320.0;
@@ -208,10 +209,13 @@ class _PtyPanelHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final compact = _isCompactTerminalWidth(context);
 
     return Container(
       height: 48,
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? AppSpacing.xs : AppSpacing.sm,
+      ),
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: surfaces.lineSoft)),
       ),
@@ -234,9 +238,11 @@ class _PtyPanelHeader extends StatelessWidget {
               },
             ),
           ),
-          const SizedBox(width: AppSpacing.sm),
+          SizedBox(width: compact ? AppSpacing.xs : AppSpacing.sm),
           IconButton(
             onPressed: creating ? null : onCreateSession,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 44, height: 44),
             icon: creating
                 ? const SizedBox.square(
                     dimension: 16,
@@ -268,6 +274,7 @@ class _PtySessionTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final colorScheme = Theme.of(context).colorScheme;
+    final compact = _isCompactTerminalWidth(context);
 
     return Material(
       color: Colors.transparent,
@@ -275,9 +282,12 @@ class _PtySessionTab extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Container(
-          constraints: const BoxConstraints(minWidth: 108, maxWidth: 240),
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.sm,
+          constraints: BoxConstraints(
+            minWidth: compact ? 96 : 108,
+            maxWidth: 240,
+          ),
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? AppSpacing.xs : AppSpacing.sm,
             vertical: AppSpacing.xs,
           ),
           decoration: BoxDecoration(
@@ -312,16 +322,17 @@ class _PtySessionTab extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: AppSpacing.xs),
-              InkWell(
-                onTap: onClose,
-                borderRadius: BorderRadius.circular(999),
-                child: Padding(
-                  padding: const EdgeInsets.all(2),
-                  child: Icon(
-                    Icons.close_rounded,
-                    size: 14,
-                    color: selected ? null : surfaces.muted,
-                  ),
+              IconButton(
+                onPressed: onClose,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(
+                  width: 40,
+                  height: 40,
+                ),
+                icon: Icon(
+                  Icons.close_rounded,
+                  size: 14,
+                  color: selected ? null : surfaces.muted,
                 ),
               ),
             ],
@@ -350,12 +361,16 @@ class _TerminalPlaceholder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final compact = _isCompactTerminalWidth(context);
 
     return ColoredBox(
       color: surfaces.panel,
       child: Center(
         child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.xl),
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? AppSpacing.md : AppSpacing.xl,
+            vertical: compact ? AppSpacing.md : AppSpacing.xl,
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
@@ -1100,6 +1115,7 @@ class _PtyTerminalViewState extends State<_PtyTerminalView> {
                           scrollController: _scrollController,
                           autoResize: true,
                           autofocus: true,
+                          deleteDetection: _showsSpecialKeyPalette,
                           focusNode: _terminalFocusNode,
                           backgroundOpacity: 1,
                           theme: _buildTheme(context),
@@ -1131,7 +1147,7 @@ class _PtyTerminalViewState extends State<_PtyTerminalView> {
                           opacity: animation,
                           child: SizeTransition(
                             sizeFactor: animation,
-                            axisAlignment: 1,
+                            axisAlignment: 1.0,
                             child: child,
                           ),
                         );
@@ -1207,7 +1223,10 @@ class _TerminalStatusChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.xs,
+        vertical: AppSpacing.xxs,
+      ),
       decoration: BoxDecoration(
         color: tone.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(999),
@@ -1287,6 +1306,7 @@ class _InlineTerminalSpecialKeyPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
+    final compact = _isCompactTerminalWidth(context);
 
     return Container(
       height: height,
@@ -1297,11 +1317,11 @@ class _InlineTerminalSpecialKeyPanel extends StatelessWidget {
       ),
       child: SingleChildScrollView(
         key: const ValueKey<String>('pty-terminal-special-keys-scroll'),
-        padding: const EdgeInsets.fromLTRB(
-          AppSpacing.md,
-          AppSpacing.sm,
-          AppSpacing.md,
-          AppSpacing.lg,
+        padding: EdgeInsets.fromLTRB(
+          compact ? AppSpacing.sm : AppSpacing.md,
+          compact ? AppSpacing.xs : AppSpacing.sm,
+          compact ? AppSpacing.sm : AppSpacing.md,
+          compact ? AppSpacing.md : AppSpacing.lg,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1323,25 +1343,30 @@ class _InlineTerminalSpecialKeyPanel extends StatelessWidget {
                     ],
                   ),
                 ),
-                const SizedBox(width: AppSpacing.sm),
+                SizedBox(width: compact ? AppSpacing.xs : AppSpacing.sm),
                 IconButton(
                   key: const ValueKey<String>(
                     'pty-terminal-special-keys-close',
                   ),
                   onPressed: onClose,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 44,
+                    height: 44,
+                  ),
                   icon: const Icon(Icons.keyboard_hide_rounded),
                   tooltip: 'Return to keyboard',
                 ),
               ],
             ),
-            const SizedBox(height: AppSpacing.md),
+            SizedBox(height: compact ? AppSpacing.sm : AppSpacing.md),
             _TerminalSpecialKeySection(title: 'Common', actions: commonActions),
-            const SizedBox(height: AppSpacing.md),
+            SizedBox(height: compact ? AppSpacing.sm : AppSpacing.md),
             _TerminalSpecialKeySection(
               title: 'Navigation',
               actions: navigationActions,
             ),
-            const SizedBox(height: AppSpacing.md),
+            SizedBox(height: compact ? AppSpacing.sm : AppSpacing.md),
             _TerminalSpecialKeySection(
               title: 'Function keys',
               actions: functionActions,

@@ -178,7 +178,9 @@ List<ChatMessage> applyMessagePartUpdatedEvent(
     return messages;
   }
 
-  final messageIndex = messages.indexWhere((message) => message.info.id == messageId);
+  final messageIndex = messages.indexWhere(
+    (message) => message.info.id == messageId,
+  );
   final currentMessage = messageIndex >= 0 ? messages[messageIndex] : null;
   var partIndex = -1;
   ChatPart? currentPart;
@@ -223,6 +225,65 @@ List<ChatMessage> applyMessagePartUpdatedEvent(
   } else {
     parts[partIndex] = mergedPart;
   }
+  final next = List<ChatMessage>.from(messages);
+  next[messageIndex] = currentMessage.copyWith(
+    parts: parts.toList(growable: false),
+  );
+  return next;
+}
+
+List<ChatMessage> applyMessagePartDeltaEvent(
+  List<ChatMessage> messages,
+  Map<String, Object?> properties, {
+  required String? selectedSessionId,
+}) {
+  final sessionId = properties['sessionID']?.toString();
+  if (!_matchesSelectedSession(
+    selectedSessionId,
+    sessionId,
+    allowMissing: false,
+  )) {
+    return messages;
+  }
+
+  final messageId = properties['messageID']?.toString();
+  final partId = properties['partID']?.toString();
+  final field = properties['field']?.toString().trim();
+  final delta = properties['delta']?.toString();
+  if (messageId == null ||
+      messageId.isEmpty ||
+      partId == null ||
+      partId.isEmpty ||
+      field == null ||
+      field.isEmpty ||
+      delta == null ||
+      delta.isEmpty) {
+    return messages;
+  }
+
+  final messageIndex = messages.indexWhere(
+    (message) => message.info.id == messageId,
+  );
+  if (messageIndex < 0) {
+    return messages;
+  }
+
+  final currentMessage = messages[messageIndex];
+  final partIndex = currentMessage.parts.indexWhere(
+    (part) => part.id == partId,
+  );
+  if (partIndex < 0) {
+    return messages;
+  }
+
+  final currentPart = currentMessage.parts[partIndex];
+  final mergedPart = _appendPartDelta(currentPart, field: field, delta: delta);
+  if (_chatPartEquals(currentPart, mergedPart)) {
+    return messages;
+  }
+
+  final parts = List<ChatPart>.from(currentMessage.parts);
+  parts[partIndex] = mergedPart;
   final next = List<ChatMessage>.from(messages);
   next[messageIndex] = currentMessage.copyWith(
     parts: parts.toList(growable: false),
@@ -351,6 +412,55 @@ ChatPart _mergePart(
       if (hasStreamingText) '_streaming': true,
     },
   );
+}
+
+ChatPart _appendPartDelta(
+  ChatPart current, {
+  required String field,
+  required String delta,
+}) {
+  final nextMetadata = <String, Object?>{
+    ...current.metadata,
+    '_streaming': true,
+  };
+
+  switch (field) {
+    case 'text':
+    case 'content':
+      final existingText =
+          current.text ??
+          current.metadata[field]?.toString() ??
+          (field == 'text'
+              ? current.metadata['content']?.toString()
+              : current.metadata['text']?.toString()) ??
+          '';
+      final nextText = '$existingText$delta';
+      nextMetadata[field] = nextText;
+      return current.copyWith(
+        text: nextText,
+        metadata: Map<String, Object?>.unmodifiable(nextMetadata),
+      );
+    case 'tool':
+      final nextTool = '${current.tool ?? ''}$delta';
+      nextMetadata[field] = nextTool;
+      return current.copyWith(
+        tool: nextTool,
+        metadata: Map<String, Object?>.unmodifiable(nextMetadata),
+      );
+    case 'filename':
+      final nextFilename = '${current.filename ?? ''}$delta';
+      nextMetadata[field] = nextFilename;
+      return current.copyWith(
+        filename: nextFilename,
+        metadata: Map<String, Object?>.unmodifiable(nextMetadata),
+      );
+    default:
+      final existingValue = nextMetadata[field]?.toString() ?? '';
+      nextMetadata[field] = '$existingValue$delta';
+      return current.copyWith(
+        metadata: Map<String, Object?>.unmodifiable(nextMetadata),
+      );
+  }
 }
 
 bool _chatPartEquals(ChatPart left, ChatPart right) {

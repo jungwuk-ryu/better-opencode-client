@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -25,6 +26,7 @@ import 'package:better_opencode_client/src/features/terminal/pty_models.dart';
 import 'package:better_opencode_client/src/features/terminal/pty_service.dart';
 import 'package:better_opencode_client/src/features/tools/todo_models.dart';
 import 'package:better_opencode_client/src/features/web_parity/workspace_controller.dart';
+import 'package:better_opencode_client/src/features/web_parity/workspace_layout_store.dart';
 import 'package:better_opencode_client/src/features/web_parity/workspace_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -166,6 +168,59 @@ void main() {
     expect(tester.testTextInput.hasAnyClients, isFalse);
   });
 
+  testWidgets('resuming the app asks the workspace controller to resync', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(430, 932);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final createdControllers = <_RecordingWorkspaceController>[];
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            final controller = _RecordingWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+            createdControllers.add(controller);
+            return controller;
+          },
+    );
+    addTearDown(appController.dispose);
+    final navigatorKey = GlobalKey<NavigatorState>();
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        navigatorKey: navigatorKey,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final controller = createdControllers.single;
+    expect(controller.resyncLiveStateCalls, 0);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pump();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+
+    expect(controller.resyncLiveStateCalls, greaterThanOrEqualTo(1));
+  });
+
   testWidgets(
     'desktop layout does not show selected pane chrome when only one pane exists',
     (tester) async {
@@ -236,14 +291,14 @@ void main() {
   );
 
   testWidgets(
-    'new session button creates a fresh session without replacing the page',
+    'new session button opens a draft and first prompt creates the session',
     (tester) async {
       tester.view.physicalSize = const Size(1600, 1000);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
-      final createdControllers = <_RecordingWorkspaceController>[];
+      final createdControllers = <_DraftSubmittingWorkspaceController>[];
       final profile = ServerProfile(
         id: 'server',
         label: 'Mock',
@@ -253,7 +308,7 @@ void main() {
         profile: profile,
         workspaceControllerFactory:
             ({required profile, required directory, initialSessionId}) {
-              final controller = _RecordingWorkspaceController(
+              final controller = _DraftSubmittingWorkspaceController(
                 profile: profile,
                 directory: directory,
                 initialSessionId: initialSessionId,
@@ -289,9 +344,43 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(createdControllers.single.createEmptySessionCalls, 1);
+      expect(createdControllers.single.createEmptySessionCalls, 0);
+      expect(createdControllers.single.selectSessionCalls, <String?>[null]);
+      expect(createdControllers.single.selectedSessionId, isNull);
+      expect(
+        observer.lastRouteName,
+        buildWorkspaceRoute('/workspace/demo', sessionId: null),
+      );
+      expect(observer.lastRouteName, isNot(initialRouteName));
+      expect(find.text('Fresh session'), findsNothing);
+      expect(find.text('hello from one'), findsNothing);
+      expect(
+        tester
+            .widget<EditableText>(find.byType(EditableText))
+            .focusNode
+            .hasFocus,
+        isTrue,
+      );
+
+      final composerFinder = find.byKey(
+        const ValueKey<String>('composer-text-field'),
+      );
+      await tester.enterText(composerFinder, 'Start this session');
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('composer-submit-button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(createdControllers.single.submittedPrompts, <String>[
+        'Start this session',
+      ]);
+      expect(createdControllers.single.createEmptySessionCalls, 0);
       expect(createdControllers.single.selectedSessionId, 'ses_new');
-      expect(observer.lastRouteName, initialRouteName);
+      expect(
+        observer.lastRouteName,
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_new'),
+      );
       expect(find.text('Fresh session'), findsAtLeastNWidgets(1));
     },
   );
@@ -391,6 +480,87 @@ void main() {
     },
   );
 
+  testWidgets('desktop layout uses compact IDE pane chrome', (tester) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _RecordingWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    final navigatorKey = GlobalKey<NavigatorState>();
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        navigatorKey: navigatorKey,
+        initialRoute: '/',
+      ),
+    );
+    navigatorKey.currentState!.pushNamed(
+      buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+    );
+    await tester.pumpAndSettle();
+
+    final topBar = tester.widget<DecoratedBox>(
+      find.byKey(const ValueKey<String>('workspace-desktop-top-bar-shell')),
+    );
+    final topBarDecoration = topBar.decoration as BoxDecoration;
+    expect(topBarDecoration.borderRadius, isNull);
+    expect(topBarDecoration.boxShadow ?? const <BoxShadow>[], isEmpty);
+    expect((topBarDecoration.border as Border).bottom.width, greaterThan(0));
+
+    final body = tester.widget<DecoratedBox>(
+      find.byKey(const ValueKey<String>('workspace-desktop-body-shell')),
+    );
+    final bodyDecoration = body.decoration as BoxDecoration;
+    expect(bodyDecoration.borderRadius, isNull);
+    expect(bodyDecoration.boxShadow ?? const <BoxShadow>[], isEmpty);
+
+    final mainPane = tester.widget<DecoratedBox>(
+      find.byKey(const ValueKey<String>('workspace-desktop-main-pane')),
+    );
+    final mainPaneDecoration = mainPane.decoration as BoxDecoration;
+    expect(mainPaneDecoration.borderRadius, isNull);
+    expect(mainPaneDecoration.boxShadow ?? const <BoxShadow>[], isEmpty);
+    expect(mainPaneDecoration.border, isNull);
+
+    final sideSwitcher = tester.widget<Container>(
+      find.byKey(const ValueKey<String>('workspace-side-tab-switcher')),
+    );
+    final sideSwitcherDecoration = sideSwitcher.decoration as BoxDecoration;
+    expect(sideSwitcherDecoration.borderRadius, isNull);
+    expect(sideSwitcherDecoration.boxShadow ?? const <BoxShadow>[], isEmpty);
+    expect(
+      (sideSwitcherDecoration.border as Border).bottom.width,
+      greaterThan(0),
+    );
+
+    final sideCanvas = tester.widget<DecoratedBox>(
+      find.byKey(const ValueKey<String>('workspace-side-canvas-shell')),
+    );
+    final sideCanvasDecoration = sideCanvas.decoration as BoxDecoration;
+    expect(sideCanvasDecoration.borderRadius, isNull);
+    expect(sideCanvasDecoration.border, isNull);
+    expect(sideCanvasDecoration.boxShadow ?? const <BoxShadow>[], isEmpty);
+  });
+
   testWidgets(
     'desktop layout lets users resize side panels and restores widths across launches',
     (tester) async {
@@ -444,6 +614,30 @@ void main() {
       final initialSidebarWidth = tester.getSize(sidebarPane).width;
       final initialSidePanelWidth = tester.getSize(sidePanel).width;
       final initialSessionDeckWidth = tester.getSize(sessionDeck).width;
+      expect(
+        tester
+            .getSize(
+              find.byKey(
+                const ValueKey<String>(
+                  'workspace-desktop-sidebar-resize-handle',
+                ),
+              ),
+            )
+            .width,
+        greaterThanOrEqualTo(12),
+      );
+      expect(
+        tester
+            .getSize(
+              find.byKey(
+                const ValueKey<String>(
+                  'workspace-desktop-side-panel-resize-handle',
+                ),
+              ),
+            )
+            .width,
+        greaterThanOrEqualTo(12),
+      );
 
       await tester.drag(
         find.byKey(
@@ -560,7 +754,7 @@ void main() {
       );
 
       await _sendShortcut(tester, <LogicalKeyboardKey>[
-        LogicalKeyboardKey.controlLeft,
+        _platformModKey(),
         LogicalKeyboardKey.keyB,
       ]);
       await tester.pump();
@@ -568,7 +762,7 @@ void main() {
       expect(tester.getSize(sidebarReveal).width, closeTo(0, 0.1));
 
       await _sendShortcut(tester, <LogicalKeyboardKey>[
-        LogicalKeyboardKey.controlLeft,
+        _platformModKey(),
         LogicalKeyboardKey.shiftLeft,
         LogicalKeyboardKey.keyR,
       ]);
@@ -577,7 +771,7 @@ void main() {
       expect(tester.getSize(sidePanelReveal).width, closeTo(0, 0.1));
 
       await _sendShortcut(tester, <LogicalKeyboardKey>[
-        LogicalKeyboardKey.controlLeft,
+        _platformModKey(),
         LogicalKeyboardKey.backslash,
       ]);
       await tester.pump();
@@ -594,6 +788,150 @@ void main() {
       expect(editable.focusNode.hasFocus, isTrue);
     },
   );
+
+  testWidgets('mac command shortcuts work while the composer is focused', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    try {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              return _RecordingWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+            },
+      );
+      addTearDown(appController.dispose);
+
+      final navigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          navigatorKey: navigatorKey,
+          initialRoute: '/',
+          platform: TargetPlatform.macOS,
+        ),
+      );
+      navigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+      );
+      await tester.pumpAndSettle();
+
+      final composerFinder = find.byKey(
+        const ValueKey<String>('composer-text-field'),
+      );
+      await tester.tap(composerFinder);
+      await tester.pump();
+      expect(
+        tester
+            .widget<EditableText>(find.byType(EditableText))
+            .focusNode
+            .hasFocus,
+        isTrue,
+      );
+
+      await _sendShortcut(tester, <LogicalKeyboardKey>[
+        LogicalKeyboardKey.metaLeft,
+        LogicalKeyboardKey.keyK,
+      ]);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 220));
+
+      expect(
+        find.byKey(const ValueKey<String>('workspace-command-palette-sheet')),
+        findsOneWidget,
+      );
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('windows ctrl shortcuts keep working from composer focus', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    try {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              return _RecordingWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+            },
+      );
+      addTearDown(appController.dispose);
+
+      final navigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          navigatorKey: navigatorKey,
+          initialRoute: '/',
+          platform: TargetPlatform.windows,
+        ),
+      );
+      navigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+      );
+      await tester.pumpAndSettle();
+
+      final composerFinder = find.byKey(
+        const ValueKey<String>('composer-text-field'),
+      );
+      await tester.tap(composerFinder);
+      await tester.pump();
+      expect(
+        tester
+            .widget<EditableText>(find.byType(EditableText))
+            .focusNode
+            .hasFocus,
+        isTrue,
+      );
+
+      await _sendShortcut(tester, <LogicalKeyboardKey>[
+        LogicalKeyboardKey.controlLeft,
+        LogicalKeyboardKey.keyK,
+      ]);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 220));
+
+      expect(
+        find.byKey(const ValueKey<String>('workspace-command-palette-sheet')),
+        findsOneWidget,
+      );
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
 
   testWidgets(
     'desktop composer submits on enter and keeps shift enter for new lines',
@@ -879,6 +1217,7 @@ void main() {
           controller: appController,
           navigatorKey: navigatorKey,
           initialRoute: '/',
+          theme: AppTheme.light(),
         ),
       );
       navigatorKey.currentState!.pushNamed(
@@ -916,6 +1255,14 @@ void main() {
         find.byKey(const ValueKey<String>('timeline-jump-to-latest-button')),
         findsOneWidget,
       );
+      final shadowBox = tester.widget<DecoratedBox>(
+        find.byKey(const ValueKey<String>('timeline-jump-to-latest-shadow')),
+      );
+      final shadowDecoration = shadowBox.decoration as BoxDecoration;
+      final shadows = shadowDecoration.boxShadow;
+      expect(shadows, hasLength(1));
+      expect(shadows!.first.spreadRadius, lessThan(0));
+      expect(shadows.first.blurRadius, lessThanOrEqualTo(16));
 
       await tester.tap(
         find.byKey(const ValueKey<String>('timeline-jump-to-latest-button')),
@@ -1117,7 +1464,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await _sendShortcut(tester, <LogicalKeyboardKey>[
-      LogicalKeyboardKey.controlLeft,
+      _platformModKey(),
       LogicalKeyboardKey.comma,
     ]);
     await tester.pump();
@@ -1142,6 +1489,82 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('OpenCode-style desktop shortcuts'), findsOneWidget);
+  });
+
+  testWidgets('workspace settings sections follow the workflow order', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _RecordingWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    final navigatorKey = GlobalKey<NavigatorState>();
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        navigatorKey: navigatorKey,
+        initialRoute: '/',
+      ),
+    );
+    navigatorKey.currentState!.pushNamed(
+      buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+    );
+    await tester.pumpAndSettle();
+
+    await _sendShortcut(tester, <LogicalKeyboardKey>[
+      _platformModKey(),
+      LogicalKeyboardKey.comma,
+    ]);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 260));
+
+    final settingsListView = find.descendant(
+      of: find.byKey(const ValueKey<String>('workspace-settings-sheet')),
+      matching: find.byType(ListView),
+    );
+    final expectedSectionKeys = <String>[
+      'workspace-settings-section-server',
+      'workspace-settings-section-session-loading',
+      'workspace-settings-section-timeline',
+      'workspace-settings-section-shell',
+      'workspace-settings-section-composer',
+      'workspace-settings-section-permissions',
+      'workspace-settings-section-sidebar',
+      'workspace-settings-section-appearance',
+      'workspace-settings-section-keyboard',
+      'workspace-settings-section-whats-new',
+    ];
+    for (final sectionKey in expectedSectionKeys) {
+      final sectionFinder = find.byKey(ValueKey<String>(sectionKey));
+      await tester.dragUntilVisible(
+        sectionFinder,
+        settingsListView,
+        const Offset(0, -260),
+        maxIteration: 40,
+      );
+      await tester.pumpAndSettle();
+      expect(sectionFinder, findsOneWidget);
+    }
   });
 
   testWidgets(
@@ -1185,7 +1608,7 @@ void main() {
       await tester.pumpAndSettle();
 
       await _sendShortcut(tester, <LogicalKeyboardKey>[
-        LogicalKeyboardKey.controlLeft,
+        _platformModKey(),
         LogicalKeyboardKey.keyK,
       ]);
       await tester.pump();
@@ -1359,7 +1782,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await _sendShortcut(tester, <LogicalKeyboardKey>[
-      LogicalKeyboardKey.controlLeft,
+      _platformModKey(),
       LogicalKeyboardKey.comma,
     ]);
     await tester.pump();
@@ -1520,7 +1943,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await _sendShortcut(tester, <LogicalKeyboardKey>[
-      LogicalKeyboardKey.controlLeft,
+      _platformModKey(),
       LogicalKeyboardKey.keyO,
     ]);
     await tester.pump();
@@ -1633,7 +2056,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await _sendShortcut(tester, <LogicalKeyboardKey>[
-      LogicalKeyboardKey.controlLeft,
+      _platformModKey(),
       LogicalKeyboardKey.keyU,
     ]);
     await tester.pumpAndSettle();
@@ -1685,7 +2108,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await _sendShortcut(tester, <LogicalKeyboardKey>[
-      LogicalKeyboardKey.controlLeft,
+      _platformModKey(),
       LogicalKeyboardKey.semicolon,
     ]);
     await tester.pump();
@@ -1773,6 +2196,7 @@ void main() {
       find.byKey(const ValueKey<String>('composer-text-field')),
       '/mcp',
     );
+    await tester.pump();
     await tester.pump();
 
     expect(
@@ -2085,6 +2509,93 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(paneCards, findsNWidgets(8));
+  });
+
+  testWidgets('desktop layout ignores stale hidden panes when splitting', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspacePaneLayouts: <String, WorkspacePaneLayoutSnapshot>{
+        profile.storageKey: WorkspacePaneLayoutSnapshot(
+          activePaneId: 'pane_main',
+          panes: <WorkspacePaneLayoutPane>[
+            const WorkspacePaneLayoutPane(
+              id: 'pane_main',
+              directory: '/workspace/demo',
+              sessionId: 'ses_1',
+            ),
+            for (var index = 0; index < 7; index += 1)
+              WorkspacePaneLayoutPane(
+                id: 'pane_hidden_$index',
+                directory: '/workspace/demo',
+                sessionId: 'ses_missing_$index',
+              ),
+          ],
+        ),
+      },
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _RecordingWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    final navigatorKey = GlobalKey<NavigatorState>();
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        navigatorKey: navigatorKey,
+        initialRoute: '/',
+      ),
+    );
+    navigatorKey.currentState!.pushNamed(
+      buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('workspace-split-session-pane-button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('You can open up to 8 session panes.'), findsNothing);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is InkWell &&
+            widget.key is ValueKey<String> &&
+            (widget.key! as ValueKey<String>).value.startsWith(
+              'workspace-session-pane-',
+            ),
+      ),
+      findsNWidgets(2),
+    );
+
+    final persistedLayout = appController.workspacePaneLayoutFor(profile);
+    expect(persistedLayout, isNotNull);
+    expect(persistedLayout!.panes, hasLength(2));
+    expect(
+      persistedLayout.panes.where(
+        (pane) => (pane.sessionId ?? '').startsWith('ses_missing_'),
+      ),
+      isEmpty,
+    );
   });
 
   testWidgets('composer draft follows the active pane session and project', (
@@ -2612,9 +3123,11 @@ void main() {
       label: 'Mock',
       baseUrl: 'http://localhost:3000',
     );
+    final persistedPaneLayouts = <String, WorkspacePaneLayoutSnapshot>{};
 
     final firstAppController = _StaticAppController(
       profile: profile,
+      workspacePaneLayouts: persistedPaneLayouts,
       workspaceControllerFactory:
           ({required profile, required directory, initialSessionId}) {
             return _RecordingWorkspaceController(
@@ -2661,6 +3174,7 @@ void main() {
 
     final restoredAppController = _StaticAppController(
       profile: profile,
+      workspacePaneLayouts: persistedPaneLayouts,
       workspaceControllerFactory:
           ({required profile, required directory, initialSessionId}) {
             return _RecordingWorkspaceController(
@@ -2693,7 +3207,7 @@ void main() {
   });
 
   testWidgets(
-    'completed todo dock stays hidden after unchanged workspace updates',
+    'completed todo dock never appears when loading an idle session',
     (tester) async {
       tester.view.physicalSize = const Size(1600, 1000);
       tester.view.devicePixelRatio = 1;
@@ -2735,7 +3249,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
-      expect(find.text('completed todo alpha'), findsOneWidget);
+      expect(find.text('completed todo alpha'), findsNothing);
 
       await tester.pump(const Duration(milliseconds: 500));
       expect(find.text('completed todo alpha'), findsNothing);
@@ -2919,6 +3433,133 @@ void main() {
       );
     },
   );
+
+  testWidgets('sidebar hides the active workspace from the workspace list', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _RecordingWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    final navigatorKey = GlobalKey<NavigatorState>();
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        navigatorKey: navigatorKey,
+        initialRoute: '/',
+      ),
+    );
+    navigatorKey.currentState!.pushNamed(
+      buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(
+        const ValueKey<String>('workspace-sidebar-project-menu-button'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('workspace-project-/workspace/demo')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('workspace-project-/workspace/lab')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('sidebar reorder preserves the hidden active workspace slot', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _RecordingProjectReorderAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _ThreeProjectWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    final navigatorKey = GlobalKey<NavigatorState>();
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        navigatorKey: navigatorKey,
+        initialRoute: '/',
+      ),
+    );
+    navigatorKey.currentState!.pushNamed(
+      buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('workspace-project-/workspace/demo')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('workspace-project-/workspace/lab')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('workspace-project-/workspace/api')),
+      findsOneWidget,
+    );
+
+    await tester.drag(
+      find.byKey(
+        const ValueKey<String>(
+          'workspace-project-reorder-handle-/workspace/lab',
+        ),
+      ),
+      const Offset(0, 140),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 420));
+
+    expect(appController.lastOrderedProjectDirectories, <String>[
+      '/workspace/demo',
+      '/workspace/api',
+      '/workspace/lab',
+    ]);
+  });
 
   testWidgets(
     'desktop layout keeps existing pane state when switching the active pane to another project',
@@ -3152,6 +3793,176 @@ void main() {
         closeTo(updatedPosition.maxScrollExtent, 96),
       );
     },
+  );
+
+  testWidgets(
+    'timeline does not interrupt an active drag when streamed content updates',
+    (tester) async {
+      tester.view.physicalSize = const Size(430, 932);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final createdControllers = <_StreamingWorkspaceController>[];
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              final controller = _StreamingWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+              createdControllers.add(controller);
+              return controller;
+            },
+      );
+      addTearDown(appController.dispose);
+
+      final navigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          navigatorKey: navigatorKey,
+          initialRoute: '/',
+        ),
+      );
+      navigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+      );
+      await tester.pumpAndSettle();
+
+      final controller = createdControllers.single;
+      final listFinder = _messageTimelineListFinder();
+      final scrollController = tester.widget<ListView>(listFinder).controller!;
+      scrollController.jumpTo(
+        (scrollController.position.maxScrollExtent - 100).clamp(
+          0.0,
+          scrollController.position.maxScrollExtent,
+        ),
+      );
+      await tester.pump();
+      final listRect = tester.getRect(listFinder);
+      final gesture = await tester.startGesture(
+        listRect.centerRight - const Offset(24, 0),
+      );
+      await gesture.moveBy(const Offset(0, 20));
+      await tester.pump();
+
+      final scrolledPosition = scrollController.position;
+      final scrolledPixels = scrolledPosition.pixels;
+      final previousMaxScrollExtent = scrolledPosition.maxScrollExtent;
+      expect(scrolledPosition.maxScrollExtent - scrolledPixels, greaterThan(0));
+
+      controller.extendLastAssistantMessage(
+        '\n${List<String>.filled(120, 'streamed output line').join('\n')}',
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+      await tester.pumpAndSettle();
+
+      final updatedPosition = scrollController.position;
+      expect(
+        updatedPosition.maxScrollExtent,
+        greaterThan(previousMaxScrollExtent),
+      );
+      expect(updatedPosition.pixels, closeTo(scrolledPixels, 24));
+      expect(
+        updatedPosition.maxScrollExtent - updatedPosition.pixels,
+        greaterThan(72),
+      );
+
+      await gesture.up();
+    },
+  );
+
+  testWidgets(
+    'ios bottom bounce settles after streamed updates near the latest message',
+    (tester) async {
+      tester.view.physicalSize = const Size(430, 932);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final createdControllers = <_StreamingWorkspaceController>[];
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              final controller = _StreamingWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+              createdControllers.add(controller);
+              return controller;
+            },
+      );
+      addTearDown(appController.dispose);
+
+      final navigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          navigatorKey: navigatorKey,
+          initialRoute: '/',
+          platform: TargetPlatform.iOS,
+        ),
+      );
+      navigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+      );
+      await tester.pumpAndSettle();
+
+      final controller = createdControllers.single;
+      final listFinder = _messageTimelineListFinder();
+      final scrollController = tester.widget<ListView>(listFinder).controller!;
+      expect(
+        scrollController.position.pixels,
+        closeTo(scrollController.position.maxScrollExtent, 96),
+      );
+
+      final listRect = tester.getRect(listFinder);
+      final gesture = await tester.startGesture(
+        listRect.bottomCenter - const Offset(0, 12),
+      );
+      await gesture.moveBy(const Offset(0, -220));
+      await tester.pump();
+
+      controller.extendLastAssistantMessage(
+        '\n${List<String>.filled(120, 'streamed output line').join('\n')}',
+      );
+      await tester.pump();
+      await gesture.up();
+      await tester.pump();
+      for (
+        var frame = 0;
+        frame < 160 && tester.binding.hasScheduledFrame;
+        frame++
+      ) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+
+      expect(tester.binding.hasScheduledFrame, isFalse);
+      expect(scrollController.position.outOfRange, isFalse);
+      expect(
+        scrollController.position.pixels,
+        closeTo(scrollController.position.maxScrollExtent, 96),
+      );
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
   );
 
   testWidgets(
@@ -3451,6 +4262,15 @@ Future<void> _sendShortcut(
   }
 }
 
+LogicalKeyboardKey _platformModKey() {
+  final isApplePlatform =
+      defaultTargetPlatform == TargetPlatform.macOS ||
+      defaultTargetPlatform == TargetPlatform.iOS;
+  return isApplePlatform
+      ? LogicalKeyboardKey.metaLeft
+      : LogicalKeyboardKey.controlLeft;
+}
+
 Finder _messageTimelineListFinder() {
   return find.byWidgetPredicate(
     (widget) =>
@@ -3494,6 +4314,7 @@ class _WorkspaceRouteHarness extends StatelessWidget {
     this.pendingRequestNotificationService,
     this.pendingRequestSoundService,
     this.platform,
+    this.theme,
   });
 
   final WebParityAppController controller;
@@ -3506,6 +4327,7 @@ class _WorkspaceRouteHarness extends StatelessWidget {
   final PendingRequestNotificationService? pendingRequestNotificationService;
   final PendingRequestSoundService? pendingRequestSoundService;
   final TargetPlatform? platform;
+  final ThemeData? theme;
 
   @override
   Widget build(BuildContext context) {
@@ -3517,7 +4339,7 @@ class _WorkspaceRouteHarness extends StatelessWidget {
           return MaterialApp(
             navigatorKey: navigatorKey,
             navigatorObservers: navigatorObservers,
-            theme: controller.themeData.copyWith(platform: platform),
+            theme: (theme ?? controller.themeData).copyWith(platform: platform),
             supportedLocales: AppLocalizations.supportedLocales,
             localizationsDelegates: AppLocalizations.localizationsDelegates,
             initialRoute: initialRoute,
@@ -3685,6 +4507,7 @@ class _FakeIntegrationStatusService extends IntegrationStatusService {
     required ServerProfile profile,
     required ProjectTarget project,
     required String name,
+    String? redirectUri,
   }) async {
     authCalls.add(name);
     _mcpDetails[name] = const McpIntegrationStatus(status: 'disabled');
@@ -3696,12 +4519,71 @@ class _StaticAppController extends WebParityAppController {
   _StaticAppController({
     required this.profile,
     required WorkspaceControllerFactory workspaceControllerFactory,
-  }) : super(workspaceControllerFactory: workspaceControllerFactory);
+    Map<String, WorkspacePaneLayoutSnapshot> workspacePaneLayouts =
+        const <String, WorkspacePaneLayoutSnapshot>{},
+  }) : _workspacePaneLayouts = Map<String, WorkspacePaneLayoutSnapshot>.from(
+         workspacePaneLayouts,
+       ),
+       super(workspaceControllerFactory: workspaceControllerFactory);
 
   final ServerProfile profile;
+  final Map<String, WorkspacePaneLayoutSnapshot> _workspacePaneLayouts;
+  final WorkspacePaneLayoutStore _workspacePaneLayoutStore =
+      WorkspacePaneLayoutStore();
 
   @override
   ServerProfile? get selectedProfile => profile;
+
+  @override
+  WorkspacePaneLayoutSnapshot? workspacePaneLayoutFor(ServerProfile? profile) {
+    if (profile == null) {
+      return null;
+    }
+    return _workspacePaneLayouts[profile.storageKey];
+  }
+
+  @override
+  Future<WorkspacePaneLayoutSnapshot?> ensureWorkspacePaneLayout(
+    ServerProfile profile,
+  ) async {
+    final existing = workspacePaneLayoutFor(profile);
+    if (existing != null) {
+      return existing;
+    }
+    final restored = await _workspacePaneLayoutStore.load(profile.storageKey);
+    if (restored != null) {
+      _workspacePaneLayouts[profile.storageKey] = restored;
+    }
+    return restored;
+  }
+
+  @override
+  Future<void> persistWorkspacePaneLayout({
+    required ServerProfile profile,
+    required WorkspacePaneLayoutSnapshot snapshot,
+  }) async {
+    _workspacePaneLayouts[profile.storageKey] = snapshot;
+    await _workspacePaneLayoutStore.save(profile.storageKey, snapshot);
+  }
+}
+
+class _RecordingProjectReorderAppController extends _StaticAppController {
+  _RecordingProjectReorderAppController({
+    required super.profile,
+    required super.workspaceControllerFactory,
+  });
+
+  List<String> lastOrderedProjectDirectories = const <String>[];
+
+  @override
+  Future<void> reorderProjects({
+    required ServerProfile profile,
+    required List<ProjectTarget> orderedProjects,
+  }) async {
+    lastOrderedProjectDirectories = List<String>.unmodifiable(
+      orderedProjects.map((project) => project.directory),
+    );
+  }
 }
 
 class _RecordingWorkspaceController extends WorkspaceController {
@@ -3739,6 +4621,7 @@ class _RecordingWorkspaceController extends WorkspaceController {
 
   int loadCount = 0;
   int createEmptySessionCalls = 0;
+  int resyncLiveStateCalls = 0;
   final List<String?> selectSessionCalls = <String?>[];
   final List<String> permissionActionUpdates = <String>[];
 
@@ -3855,6 +4738,12 @@ class _RecordingWorkspaceController extends WorkspaceController {
   }
 
   @override
+  Future<void> resyncLiveState() async {
+    resyncLiveStateCalls += 1;
+    notifyListeners();
+  }
+
+  @override
   Future<SessionSummary?> createEmptySession({String? title}) async {
     createEmptySessionCalls += 1;
     final created = SessionSummary(
@@ -3941,6 +4830,41 @@ class _RecordingWorkspaceController extends WorkspaceController {
         ),
       ],
     };
+  }
+}
+
+class _DraftSubmittingWorkspaceController
+    extends _RecordingWorkspaceController {
+  _DraftSubmittingWorkspaceController({
+    required super.profile,
+    required super.directory,
+    super.initialSessionId,
+  });
+
+  final List<String> submittedPrompts = <String>[];
+
+  @override
+  Future<String?> submitPrompt(
+    String prompt, {
+    List<PromptAttachment> attachments = const <PromptAttachment>[],
+    WorkspacePromptDispatchMode? mode,
+  }) async {
+    submittedPrompts.add(prompt.trim());
+    if (_selectedSessionId == null) {
+      final created = SessionSummary(
+        id: directory == '/workspace/lab' ? 'ses_lab_new' : 'ses_new',
+        directory: directory,
+        title: 'Fresh session',
+        version: '1',
+        updatedAt: DateTime.fromMillisecondsSinceEpoch(1710000003000),
+      );
+      _sessions = <SessionSummary>[created, ..._sessions];
+      _selectedSessionId = created.id;
+      _messages = const <ChatMessage>[];
+      notifyListeners();
+      return created.id;
+    }
+    return _selectedSessionId;
   }
 }
 
@@ -4359,6 +5283,38 @@ class _CompletedTodoWorkspaceController extends _RecordingWorkspaceController {
   void emitUnchangedUpdate() {
     notifyListeners();
   }
+}
+
+class _ThreeProjectWorkspaceController extends _RecordingWorkspaceController {
+  _ThreeProjectWorkspaceController({
+    required super.profile,
+    required super.directory,
+    super.initialSessionId,
+  });
+
+  static const ProjectTarget _apiProject = ProjectTarget(
+    directory: '/workspace/api',
+    label: 'API',
+    source: 'server',
+    vcs: 'git',
+    branch: 'main',
+  );
+
+  static const List<ProjectTarget> _availableProjects = <ProjectTarget>[
+    _RecordingWorkspaceController._demoProject,
+    _RecordingWorkspaceController._labProject,
+    _apiProject,
+  ];
+
+  @override
+  ProjectTarget? get project => switch (directory) {
+    '/workspace/lab' => _RecordingWorkspaceController._labProject,
+    '/workspace/api' => _apiProject,
+    _ => _RecordingWorkspaceController._demoProject,
+  };
+
+  @override
+  List<ProjectTarget> get availableProjects => _availableProjects;
 }
 
 class _DelayedRecordingWorkspaceController

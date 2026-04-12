@@ -63,6 +63,14 @@ class LiveEventReducer {
             ..[partId] = content;
           _state = _state.copyWith(messageParts: next);
         }
+      case 'message.part.delta':
+        final partId = payload['partID'] as String?;
+        final delta = payload['delta'] as String?;
+        if (partId != null && delta != null) {
+          final next = Map<String, String>.from(_state.messageParts)
+            ..[partId] = '${_state.messageParts[partId] ?? ''}$delta';
+          _state = _state.copyWith(messageParts: next);
+        }
       case 'todo.updated':
         final todoId = payload['todoID'] as String?;
         final status = payload['status'] as String?;

@@ -99,4 +99,38 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('compaction parts render as a divider instead of an empty card', (
+    tester,
+  ) async {
+    const message = ChatMessageInfo(
+      id: 'assistant-compaction-message',
+      role: 'assistant',
+      sessionId: 'session-1',
+    );
+
+    await pumpPart(
+      tester,
+      message: message,
+      part: const ChatPart(id: 'compaction-part', type: 'compaction'),
+    );
+
+    expect(
+      find.byKey(
+        const ValueKey<String>('chat-part-compaction-compaction-part'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Session compacted'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('chat-part-activity-compaction-part')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(
+        const ValueKey<String>('chat-part-bubble-assistant-compaction-message'),
+      ),
+      findsNothing,
+    );
+  });
 }

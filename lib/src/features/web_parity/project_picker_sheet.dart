@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../core/connection/connection_models.dart';
 import '../../design_system/app_snack_bar.dart';
 import '../../design_system/app_spacing.dart';
+import '../../design_system/app_surface_decor.dart';
 import '../../design_system/app_theme.dart';
 import '../projects/project_catalog_service.dart';
 import '../projects/project_models.dart';
@@ -165,102 +166,307 @@ class _ProjectPickerSheetState extends State<ProjectPickerSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final compactShell = MediaQuery.sizeOf(context).width < 560;
 
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text('Open Project', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              'Choose a worktree from your server or inspect a manual path.',
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Expanded(
-                  child: ServerDirectoryAutocompleteField(
-                    fieldKey: const ValueKey<String>(
-                      'project-picker-manual-path-field',
-                    ),
-                    profile: widget.profile,
-                    catalogService: _catalogService,
-                    controller: _manualPathController,
-                    labelText: 'Directory path',
-                    hintText: '/workspace/my-project',
-                    loadingText: 'Searching server folders...',
-                    emptyText: 'No matching folders found on the server.',
-                    enabled: !_inspecting,
-                    onSubmitted: (_) => _inspectManualPath(),
-                    onSuggestionSelected: (_) {
-                      unawaited(_inspectManualPath());
-                    },
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                FilledButton(
-                  onPressed: _inspecting ? null : _inspectManualPath,
-                  child: Text(_inspecting ? 'Inspecting...' : 'Inspect'),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            if (_error != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                child: Text(
-                  'Project catalog unavailable. Showing recent items only.',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodySmall?.copyWith(color: surfaces.warning),
-                ),
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.xs,
+          AppSpacing.xs,
+          AppSpacing.xs,
+          AppSpacing.xs,
+        ),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: AppGlassPanel(
+              radius: AppSpacing.dialogRadius,
+              blur: 14,
+              backgroundOpacity: theme.brightness == Brightness.dark
+                  ? 0.9
+                  : 0.95,
+              borderOpacity: 0.08,
+              padding: EdgeInsets.all(
+                compactShell ? AppSpacing.sm : AppSpacing.md,
               ),
-            Flexible(
-              child: _loading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _targets.isEmpty
-                  ? Padding(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: AppSpacing.xl,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Text(
+                              'Open Project',
+                              style: theme.textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.xs),
+                            Text(
+                              'Choose a worktree from ${widget.profile.effectiveLabel} or inspect a manual path.',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: surfaces.muted,
+                                height: 1.45,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      child: Text(
-                        'No projects are available yet.',
-                        style: Theme.of(
-                          context,
-                        ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
+                      IconButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.close_rounded),
                       ),
-                    )
-                  : ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: _targets.length,
-                      separatorBuilder: (_, _) =>
-                          const SizedBox(height: AppSpacing.xs),
-                      itemBuilder: (context, index) {
-                        final target = _targets[index];
-                        return ListTile(
-                          title: Text(target.label),
-                          subtitle: Text(target.directory),
-                          trailing: target.branch == null
-                              ? null
-                              : Text(
-                                  target.branch!,
-                                  style: Theme.of(context).textTheme.bodySmall,
-                                ),
-                          onTap: () => Navigator.of(context).pop(target),
+                    ],
+                  ),
+                  SizedBox(
+                    height: compactShell ? AppSpacing.sm : AppSpacing.md,
+                  ),
+                  Container(
+                    padding: const EdgeInsets.all(AppSpacing.md),
+                    decoration: appSoftCardDecoration(
+                      context,
+                      radius: 22,
+                      muted: true,
+                    ),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final compact = constraints.maxWidth < 480;
+                        final field = ServerDirectoryAutocompleteField(
+                          fieldKey: const ValueKey<String>(
+                            'project-picker-manual-path-field',
+                          ),
+                          profile: widget.profile,
+                          catalogService: _catalogService,
+                          controller: _manualPathController,
+                          labelText: 'Directory path',
+                          hintText: '/workspace/my-project',
+                          loadingText: 'Searching server folders...',
+                          emptyText: 'No matching folders found on the server.',
+                          enabled: !_inspecting,
+                          onSubmitted: (_) => _inspectManualPath(),
+                          onSuggestionSelected: (_) {
+                            unawaited(_inspectManualPath());
+                          },
+                        );
+                        final button = FilledButton(
+                          onPressed: _inspecting ? null : _inspectManualPath,
+                          child: Text(
+                            _inspecting ? 'Inspecting...' : 'Inspect',
+                          ),
+                        );
+                        if (compact) {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: <Widget>[
+                              field,
+                              const SizedBox(height: AppSpacing.sm),
+                              button,
+                            ],
+                          );
+                        }
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Expanded(child: field),
+                            const SizedBox(width: AppSpacing.sm),
+                            button,
+                          ],
                         );
                       },
                     ),
+                  ),
+                  SizedBox(
+                    height: compactShell ? AppSpacing.sm : AppSpacing.md,
+                  ),
+                  if (_error != null)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(AppSpacing.xs),
+                      decoration: BoxDecoration(
+                        color: surfaces.warning.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: surfaces.warning.withValues(alpha: 0.2),
+                        ),
+                      ),
+                      child: Text(
+                        'Project catalog unavailable. Showing recent items only.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: surfaces.warning,
+                        ),
+                      ),
+                    ),
+                  Flexible(
+                    child: _loading
+                        ? const Center(child: CircularProgressIndicator())
+                        : _targets.isEmpty
+                        ? Center(
+                            child: Text(
+                              'No projects are available yet.',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: surfaces.muted,
+                              ),
+                            ),
+                          )
+                        : ListView.separated(
+                            shrinkWrap: true,
+                            itemCount: _targets.length,
+                            separatorBuilder: (_, _) =>
+                                const SizedBox(height: AppSpacing.xxs),
+                            itemBuilder: (context, index) {
+                              final target = _targets[index];
+                              return _ProjectTargetTile(
+                                target: target,
+                                onTap: () => Navigator.of(context).pop(target),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
             ),
-          ],
+          ),
         ),
+      ),
+    );
+  }
+}
+
+class _ProjectTargetTile extends StatelessWidget {
+  const _ProjectTargetTile({required this.target, required this.onTap});
+
+  final ProjectTarget target;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Ink(
+          decoration: BoxDecoration(
+            color: surfaces.panelMuted.withValues(alpha: 0.88),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: surfaces.lineSoft),
+          ),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.sm,
+            vertical: AppSpacing.sm,
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: surfaces.panelMuted.withValues(alpha: 0.92),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  Icons.folder_open_rounded,
+                  size: 20,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      target.label,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xxs),
+                    Text(
+                      target.directory,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: surfaces.muted,
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    Wrap(
+                      spacing: AppSpacing.xs,
+                      runSpacing: AppSpacing.xs,
+                      children: <Widget>[
+                        if ((target.branch ?? '').isNotEmpty)
+                          _ProjectTargetBadge(
+                            icon: Icons.account_tree_rounded,
+                            label: target.branch!,
+                            tint: theme.colorScheme.primary,
+                          ),
+                        if ((target.source ?? '').isNotEmpty)
+                          _ProjectTargetBadge(
+                            icon: Icons.history_toggle_off_rounded,
+                            label: target.source!,
+                            tint: surfaces.muted,
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Icon(Icons.chevron_right_rounded, color: surfaces.muted),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ProjectTargetBadge extends StatelessWidget {
+  const _ProjectTargetBadge({
+    required this.icon,
+    required this.label,
+    required this.tint,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color tint;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.xxs,
+      ),
+      decoration: BoxDecoration(
+        color: tint.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
+        border: Border.all(color: tint.withValues(alpha: 0.18)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(icon, size: 14, color: tint),
+          const SizedBox(width: AppSpacing.xxs),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: tint,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ),
     );
   }

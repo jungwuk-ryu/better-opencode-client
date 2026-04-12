@@ -74,7 +74,9 @@ class CapabilityRegistry {
           endpointReady('/session/{sessionID}/fork'),
       canSummarizeSession:
           hasPath('/session/{sessionID}/summarize') ||
-          endpointReady('/session/{sessionID}/summarize'),
+          endpointReady('/session/{sessionID}/summarize') ||
+          hasPath('/session/{sessionID}/prompt_async') ||
+          endpointReady('/session/{sessionID}/prompt_async'),
       canRevertSession:
           hasPath('/session/{sessionID}/revert') ||
           endpointReady('/session/{sessionID}/revert'),

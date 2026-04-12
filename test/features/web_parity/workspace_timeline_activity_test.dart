@@ -8,6 +8,7 @@ import 'package:better_opencode_client/src/app/app_routes.dart';
 import 'package:better_opencode_client/src/app/app_scope.dart';
 import 'package:better_opencode_client/src/core/connection/connection_models.dart';
 import 'package:better_opencode_client/src/core/spec/raw_json_document.dart';
+import 'package:better_opencode_client/src/design_system/app_spacing.dart';
 import 'package:better_opencode_client/src/design_system/app_theme.dart';
 import 'package:better_opencode_client/src/features/chat/chat_models.dart';
 import 'package:better_opencode_client/src/features/projects/project_models.dart';
@@ -115,6 +116,94 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets(
+    'reasoning fallback does not expose transport ids while streaming starts',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        initialTimelineProgressDetailsVisible: false,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              return _OptimisticTimelineWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+                messages: <ChatMessage>[
+                  ChatMessage(
+                    info: ChatMessageInfo(
+                      id: 'msg_reasoning_stream',
+                      role: 'assistant',
+                      sessionId: 'ses_1',
+                      createdAt: DateTime.fromMillisecondsSinceEpoch(
+                        1711421101000,
+                      ),
+                    ),
+                    parts: const <ChatPart>[
+                      ChatPart(
+                        id: 'prtd_streaming_reasoning',
+                        type: 'reasoning',
+                        text: '',
+                        messageId: 'msg_reasoning_stream',
+                        sessionId: 'ses_1',
+                        metadata: <String, Object?>{
+                          'id': 'prtd_streaming_reasoning',
+                          'messageID': 'msg_reasoning_stream',
+                          'sessionID': 'ses_1',
+                          'type': 'reasoning',
+                          '_streaming': true,
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              );
+            },
+      );
+      addTearDown(appController.dispose);
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          initialRoute: buildWorkspaceRoute(
+            '/workspace/demo',
+            sessionId: 'ses_1',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      expect(
+        find.byKey(
+          const ValueKey<String>('timeline-activity-prtd_streaming_reasoning'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Thinking', findRichText: true),
+        findsOneWidget,
+      );
+      expect(find.textContaining('id: prtd', findRichText: true), findsNothing);
+      expect(
+        find.textContaining(
+          'messageID: msg_reasoning_stream',
+          findRichText: true,
+        ),
+        findsNothing,
+      );
+    },
+  );
 
   testWidgets(
     'shell output and activity detail share the same leading margin',
@@ -642,6 +731,55 @@ void main() {
     },
   );
 
+  testWidgets('assistant text replies are selectable', (tester) async {
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      initialShellToolPartsExpanded: true,
+      initialTimelineProgressDetailsVisible: false,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _OptimisticTimelineWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+              messages: _ordinaryAssistantReplyMessages,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(
+      find.byKey(
+        const ValueKey<String>('timeline-selectable-text-part_assistant_plain'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.ancestor(
+        of: find.text('I can check the branch list next.'),
+        matching: find.byType(SelectionArea),
+      ),
+      findsWidgets,
+    );
+  });
+
   testWidgets(
     'desktop user message actions survive rapid hover toggles without duplicate keys',
     (tester) async {
@@ -1009,6 +1147,338 @@ void main() {
     expect(find.textContaining('line 1'), findsOneWidget);
   });
 
+  testWidgets('shell auto mode keeps in-progress output expanded live', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    late _MutableShellWorkspaceController controllerInstance;
+    final appController = _StaticAppController(
+      profile: profile,
+      initialShellToolDisplayMode: ShellToolDisplayMode.autoCollapse,
+      initialTimelineProgressDetailsVisible: false,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            controllerInstance = _MutableShellWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+              initialStatus: 'in_progress',
+              initialOutput: 'line 1',
+            );
+            return controllerInstance;
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(
+      find.byKey(const ValueKey<String>('timeline-shell-expanded-part_tool')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('line 1'), findsOneWidget);
+
+    controllerInstance.updateShell(
+      status: 'in_progress',
+      output: 'line 1\nline 2\nline 3',
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(
+      find.byKey(const ValueKey<String>('timeline-shell-expanded-part_tool')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('line 3'), findsOneWidget);
+
+    controllerInstance.completeShell(output: 'line 1\nline 2\nline 3\nline 4');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(
+      find.byKey(const ValueKey<String>('timeline-shell-expanded-part_tool')),
+      findsNothing,
+    );
+    expect(find.textContaining('line 4'), findsNothing);
+  });
+
+  testWidgets(
+    'shell output viewport shows five lines and follows latest output',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      late _MutableShellWorkspaceController controllerInstance;
+      final appController = _StaticAppController(
+        profile: profile,
+        initialShellToolDisplayMode: ShellToolDisplayMode.alwaysExpanded,
+        initialTimelineProgressDetailsVisible: false,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              controllerInstance = _MutableShellWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+                initialStatus: 'running',
+                initialOutput: List<String>.generate(
+                  3,
+                  (index) => 'line ${index + 1}',
+                ).join('\n'),
+              );
+              return controllerInstance;
+            },
+      );
+      addTearDown(appController.dispose);
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          initialRoute: buildWorkspaceRoute(
+            '/workspace/demo',
+            sessionId: 'ses_1',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      final viewportFinder = find.byKey(
+        const ValueKey<String>('timeline-shell-log-viewport-part_tool'),
+      );
+      expect(viewportFinder, findsOneWidget);
+      expect(tester.getSize(viewportFinder).height, inInclusiveRange(115, 130));
+      expect(
+        find.byKey(
+          const ValueKey<String>('timeline-shell-output-selection-part_tool'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>('timeline-shell-log-top-fade-part_tool'),
+        ),
+        findsOneWidget,
+      );
+
+      final outputContainer = tester.widget<Container>(
+        find.byKey(const ValueKey<String>('timeline-shell-expanded-part_tool')),
+      );
+      expect(outputContainer.margin, isA<EdgeInsets>());
+      expect((outputContainer.margin! as EdgeInsets).top, AppSpacing.xs);
+
+      AnimatedOpacity fadeOpacity() {
+        return tester.widget<AnimatedOpacity>(
+          find
+              .ancestor(
+                of: find.byKey(
+                  const ValueKey<String>(
+                    'timeline-shell-log-top-fade-part_tool',
+                  ),
+                ),
+                matching: find.byType(AnimatedOpacity),
+              )
+              .first,
+        );
+      }
+
+      expect(fadeOpacity().opacity, 0);
+
+      controllerInstance.updateShell(
+        status: 'running',
+        output: List<String>.generate(
+          12,
+          (index) => 'line ${index + 1}',
+        ).join('\n'),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      final firstScrollView = tester.widget<SingleChildScrollView>(
+        find.byKey(
+          const ValueKey<String>('timeline-shell-log-scroll-part_tool'),
+        ),
+      );
+      final firstController = firstScrollView.controller!;
+      expect(firstController.position.maxScrollExtent, greaterThan(0));
+      expect(
+        firstController.offset,
+        closeTo(firstController.position.maxScrollExtent, 0.1),
+      );
+      expect(fadeOpacity().opacity, 1);
+
+      controllerInstance.updateShell(
+        status: 'running',
+        output: List<String>.generate(
+          16,
+          (index) => 'line ${index + 1}',
+        ).join('\n'),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      final secondScrollView = tester.widget<SingleChildScrollView>(
+        find.byKey(
+          const ValueKey<String>('timeline-shell-log-scroll-part_tool'),
+        ),
+      );
+      final secondController = secondScrollView.controller!;
+      expect(
+        secondController.offset,
+        closeTo(secondController.position.maxScrollExtent, 0.1),
+      );
+    },
+  );
+
+  testWidgets('shell reads upstream live metadata output while running', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    late _MutableShellWorkspaceController controllerInstance;
+    final appController = _StaticAppController(
+      profile: profile,
+      initialShellToolDisplayMode: ShellToolDisplayMode.autoCollapse,
+      initialTimelineProgressDetailsVisible: false,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            controllerInstance = _MutableShellWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+              initialStatus: 'running',
+              initialOutput: '',
+            );
+            return controllerInstance;
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.text('Waiting for shell output…'), findsOneWidget);
+    expect(find.textContaining('live line 1'), findsNothing);
+
+    controllerInstance.updateShell(
+      status: 'running',
+      output: '',
+      metadataOutput: 'live line 1\nlive line 2',
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.text('Waiting for shell output…'), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('timeline-shell-expanded-part_tool')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('live line 2'), findsOneWidget);
+  });
+
+  testWidgets('shell supports stdout fallback and completed output priority', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    late _MutableShellWorkspaceController controllerInstance;
+    final appController = _StaticAppController(
+      profile: profile,
+      initialShellToolDisplayMode: ShellToolDisplayMode.alwaysExpanded,
+      initialTimelineProgressDetailsVisible: false,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            controllerInstance = _MutableShellWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+              initialStatus: 'running',
+              initialOutput: '',
+              initialMetadataStdout: 'stdout live 1',
+            );
+            return controllerInstance;
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.textContaining('stdout live 1'), findsOneWidget);
+
+    controllerInstance.updateShell(
+      status: 'completed',
+      output: 'final output line',
+      metadataOutput: 'stale preview line',
+      metadataStdout: 'stale stdout line',
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.textContaining('final output line'), findsOneWidget);
+    expect(find.textContaining('stale preview line'), findsNothing);
+    expect(find.textContaining('stale stdout line'), findsNothing);
+  });
+
   testWidgets('collapsed mobile shell summary limits commands to two lines', (
     tester,
   ) async {
@@ -1299,11 +1769,20 @@ class _MutableShellWorkspaceController extends WorkspaceController {
     required super.profile,
     required super.directory,
     super.initialSessionId,
+    String initialStatus = 'running',
     String initialCommand = 'git diff --staged && git diff',
     String initialOutput = 'line 1\nline 2',
+    String? initialMetadataOutput,
+    String? initialMetadataStdout,
   }) : _command = initialCommand,
        _messages = <ChatMessage>[
-         _buildShellMessage(command: initialCommand, output: initialOutput),
+         _buildShellMessage(
+           status: initialStatus,
+           command: initialCommand,
+           output: initialOutput,
+           metadataOutput: initialMetadataOutput,
+           metadataStdout: initialMetadataStdout,
+         ),
        ];
 
   static const ProjectTarget _projectTarget = ProjectTarget(
@@ -1332,7 +1811,29 @@ class _MutableShellWorkspaceController extends WorkspaceController {
     String status = 'running',
     String command = 'git diff --staged && git diff',
     String output = 'line 1\nline 2',
+    String? metadataOutput,
+    String? metadataStdout,
   }) {
+    final metadata = <String, Object?>{};
+    if (metadataOutput != null) {
+      metadata['output'] = metadataOutput;
+    }
+    if (metadataStdout != null) {
+      metadata['stdout'] = metadataStdout;
+    }
+    if (metadata.isNotEmpty) {
+      metadata['description'] = 'Run repository checks';
+    }
+    final state = <String, Object?>{
+      'status': status,
+      'title': 'Shell output',
+      'input': <String, Object?>{
+        'description': 'Run repository checks',
+        'command': command,
+      },
+      if (output.isNotEmpty) 'output': output,
+      if (metadata.isNotEmpty) 'metadata': metadata,
+    };
     return ChatMessage(
       info: ChatMessageInfo(
         id: 'msg_shell',
@@ -1345,17 +1846,7 @@ class _MutableShellWorkspaceController extends WorkspaceController {
           id: 'part_tool',
           type: 'tool',
           tool: 'bash',
-          metadata: <String, Object?>{
-            'state': <String, Object?>{
-              'status': status,
-              'title': 'Shell output',
-              'input': <String, Object?>{
-                'description': 'Run repository checks',
-                'command': command,
-              },
-              'output': output,
-            },
-          },
+          metadata: <String, Object?>{'state': state},
         ),
       ],
     );
@@ -1391,11 +1882,22 @@ class _MutableShellWorkspaceController extends WorkspaceController {
   }
 
   void completeShell({required String output}) {
+    updateShell(status: 'completed', output: output);
+  }
+
+  void updateShell({
+    required String status,
+    required String output,
+    String? metadataOutput,
+    String? metadataStdout,
+  }) {
     _messages = <ChatMessage>[
       _buildShellMessage(
-        status: 'completed',
+        status: status,
         command: _command,
         output: output,
+        metadataOutput: metadataOutput,
+        metadataStdout: metadataStdout,
       ),
     ];
     notifyListeners();

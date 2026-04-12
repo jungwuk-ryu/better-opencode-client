@@ -230,7 +230,7 @@ class ChatMessageInfo {
           json['providerID'] as String? ??
           model?['providerID']?.toString().trim(),
       agent: json['agent'] as String?,
-      variant: json['variant'] as String?,
+      variant: json['variant'] as String? ?? model?['variant']?.toString().trim(),
       systemPrompt: json['system'] as String?,
       createdAt: created is num
           ? DateTime.fromMillisecondsSinceEpoch(created.toInt())

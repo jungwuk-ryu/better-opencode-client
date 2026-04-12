@@ -14,6 +14,18 @@ void main() {
     expect(reducer.state.messageParts['p-2'], 'draft');
   });
 
+  test('reducer appends message part deltas by part id', () {
+    final reducer = LiveEventReducer();
+
+    reducer.apply('message.part.updated', '{"partID":"p-2","content":"draft"}');
+    reducer.apply(
+      'message.part.delta',
+      '{"partID":"p-2","field":"text","delta":" more"}',
+    );
+
+    expect(reducer.state.messageParts['p-2'], 'draft more');
+  });
+
   test('reducer marks resync requirement when requested', () {
     final reducer = LiveEventReducer();
 

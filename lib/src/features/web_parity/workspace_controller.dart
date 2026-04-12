@@ -388,6 +388,8 @@ List<ChatMessage> _chatMessagesFromDecodedJson(Object? decoded) {
 const String _permissionAutoAcceptStorageKeyPrefix =
     'workspace.permission_auto_accept';
 const String _permissionAutoAcceptProjectScopeKey = '__project__';
+const String _sessionComposerSelectionStorageKeyPrefix =
+    'workspace.session_composer_selection';
 const String _workspaceNotificationStorageKeyPrefix =
     'workspace.notification_index';
 const int _workspaceNotificationMaxEntries = 500;
@@ -402,8 +404,98 @@ String _permissionAutoAcceptStorageKey(
   return '$_permissionAutoAcceptStorageKeyPrefix::${profile.storageKey}::$encodedDirectory';
 }
 
+String _sessionComposerSelectionStorageKey(
+  ServerProfile profile,
+  ProjectTarget project,
+) {
+  final encodedDirectory = base64Url.encode(utf8.encode(project.directory));
+  return '$_sessionComposerSelectionStorageKeyPrefix::${profile.storageKey}::$encodedDirectory';
+}
+
 String _workspaceNotificationStorageKey(ServerProfile profile) {
   return '$_workspaceNotificationStorageKeyPrefix::${profile.storageKey}';
+}
+
+String? _normalizedStorageString(Object? value) {
+  final normalized = value?.toString().trim();
+  if (normalized == null || normalized.isEmpty) {
+    return null;
+  }
+  return normalized;
+}
+
+class _WorkspaceComposerSelectionState {
+  const _WorkspaceComposerSelectionState({
+    this.agentName,
+    this.modelKey,
+    this.reasoning,
+    this.lastUserMessageId,
+    this.manualModelSelection = false,
+    required this.sessionUpdatedAtMs,
+  });
+
+  factory _WorkspaceComposerSelectionState.fromJson(Map<String, Object?> json) {
+    final updatedAtValue = json['sessionUpdatedAtMs'];
+    final sessionUpdatedAtMs = switch (updatedAtValue) {
+      final num value => value.toInt(),
+      final String value => int.tryParse(value.trim()) ?? 0,
+      _ => 0,
+    };
+    return _WorkspaceComposerSelectionState(
+      agentName: _normalizedStorageString(json['agentName']),
+      modelKey: _normalizedStorageString(json['modelKey']),
+      reasoning: _normalizedStorageString(json['reasoning']),
+      lastUserMessageId: _normalizedStorageString(json['lastUserMessageId']),
+      manualModelSelection: json['manualModelSelection'] as bool? ?? false,
+      sessionUpdatedAtMs: sessionUpdatedAtMs,
+    );
+  }
+
+  final String? agentName;
+  final String? modelKey;
+  final String? reasoning;
+  final String? lastUserMessageId;
+  final bool manualModelSelection;
+  final int sessionUpdatedAtMs;
+
+  bool get hasSelection =>
+      agentName != null ||
+      modelKey != null ||
+      reasoning != null ||
+      manualModelSelection;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'agentName': agentName,
+    'modelKey': modelKey,
+    'reasoning': reasoning,
+    'lastUserMessageId': lastUserMessageId,
+    'manualModelSelection': manualModelSelection,
+    'sessionUpdatedAtMs': sessionUpdatedAtMs,
+  };
+}
+
+Map<String, _WorkspaceComposerSelectionState>
+_composerSelectionsFromDecodedJson(Object? decoded) {
+  if (decoded is! Map) {
+    return const <String, _WorkspaceComposerSelectionState>{};
+  }
+
+  final selections = <String, _WorkspaceComposerSelectionState>{};
+  for (final entry in decoded.entries) {
+    final sessionId = entry.key.toString().trim();
+    final value = entry.value;
+    if (sessionId.isEmpty || value is! Map) {
+      continue;
+    }
+    final selection = _WorkspaceComposerSelectionState.fromJson(
+      value.cast<String, Object?>(),
+    );
+    if (!selection.hasSelection) {
+      continue;
+    }
+    selections[sessionId] = selection;
+  }
+  return Map<String, _WorkspaceComposerSelectionState>.unmodifiable(selections);
 }
 
 List<WorkspaceNotificationEntry> _pruneWorkspaceNotifications(
@@ -608,6 +700,7 @@ class WorkspaceController extends ChangeNotifier {
   String? _selectedAgentName;
   String? _selectedModelKey;
   String? _selectedReasoning;
+  Set<String> _manualModelSelectionSessionIds = <String>{};
   String? _serverDefaultModelKey;
   String? _serverDefaultReasoning;
   String? _selectedSessionHistoryCursor;
@@ -678,6 +771,9 @@ class WorkspaceController extends ChangeNotifier {
   Map<String, String> _sendingQueuedPromptBySessionId =
       const <String, String>{};
   int _queuedPromptSequence = 0;
+  Map<String, _WorkspaceComposerSelectionState>
+  _persistedComposerSelectionBySessionId =
+      const <String, _WorkspaceComposerSelectionState>{};
   Map<String, bool> _permissionAutoAcceptByKey = const <String, bool>{};
   Set<String> _respondingPermissionRequestIds = const <String>{};
   bool _recoveringEventStream = false;
@@ -833,6 +929,7 @@ class WorkspaceController extends ChangeNotifier {
   }
 
   PendingRequestBundle get pendingRequests => _pendingRequests;
+  List<WorkspaceNotificationEntry> get notifications => _notifications;
   QuestionRequestSummary? get currentQuestionRequest =>
       currentQuestionRequestForSession(selectedSessionId);
   QuestionRequestSummary? currentQuestionRequestForSession(String? sessionId) =>
@@ -1207,6 +1304,7 @@ class WorkspaceController extends ChangeNotifier {
   }
 
   void selectAgent(String? name) {
+    final sessionId = selectedSessionId;
     final agent = _findAgent(name) ?? _defaultComposerAgent;
     if (agent == null) {
       return;
@@ -1228,10 +1326,19 @@ class WorkspaceController extends ChangeNotifier {
     } else if (!_isReasoningAllowed(_selectedReasoning, _selectedModelKey)) {
       _selectedReasoning = _fallbackReasoningForModel(_selectedModelKey);
     }
+    if (sessionId != null && sessionId.isNotEmpty) {
+      _manualModelSelectionSessionIds = Set<String>.unmodifiable(
+        Set<String>.from(_manualModelSelectionSessionIds)..remove(sessionId),
+      );
+    }
+    unawaited(
+      _persistSelectedSessionComposerSelection(manualModelSelection: false),
+    );
     _notify();
   }
 
   void selectModel(String? key) {
+    final sessionId = selectedSessionId;
     final normalized = key?.trim();
     final nextKey = normalized != null && normalized.isNotEmpty
         ? normalized
@@ -1243,6 +1350,24 @@ class WorkspaceController extends ChangeNotifier {
     if (!_isReasoningAllowed(_selectedReasoning, nextKey)) {
       _selectedReasoning = _fallbackReasoningForModel(nextKey);
     }
+    if (sessionId != null && sessionId.isNotEmpty) {
+      final nextManualSelections = Set<String>.from(
+        _manualModelSelectionSessionIds,
+      );
+      if (nextKey == null) {
+        nextManualSelections.remove(sessionId);
+      } else {
+        nextManualSelections.add(sessionId);
+      }
+      _manualModelSelectionSessionIds = Set<String>.unmodifiable(
+        nextManualSelections,
+      );
+    }
+    unawaited(
+      _persistSelectedSessionComposerSelection(
+        manualModelSelection: nextKey != null,
+      ),
+    );
     _notify();
   }
 
@@ -1258,13 +1383,28 @@ class WorkspaceController extends ChangeNotifier {
       return;
     }
     _selectedReasoning = nextValue;
+    unawaited(_persistSelectedSessionComposerSelection());
     _notify();
+  }
+
+  Future<void> resyncLiveState() async {
+    if (_disposed || _recoveringEventStream) {
+      return;
+    }
+    final project = _project;
+    if (project == null) {
+      return;
+    }
+    await _startEventStreamRecovery(_eventStreamScopeKey(project));
   }
 
   Future<void> load() async {
     _loading = true;
     _error = null;
     _actionNotice = null;
+    _manualModelSelectionSessionIds = const <String>{};
+    _persistedComposerSelectionBySessionId =
+        const <String, _WorkspaceComposerSelectionState>{};
     _resetSessionHoverPreviewState();
     _notify();
 
@@ -1294,6 +1434,7 @@ class WorkspaceController extends ChangeNotifier {
           ? availableProjects
           : <ProjectTarget>[resolvedProject, ...availableProjects];
       await _restorePermissionAutoAccept(resolvedProject);
+      await _restoreComposerSelections(resolvedProject);
       await _restoreQueuedPrompts(resolvedProject);
 
       await _projectStore.recordRecentProject(resolvedProject);
@@ -1317,6 +1458,9 @@ class WorkspaceController extends ChangeNotifier {
         sessions: bundle.sessions,
       );
       _markSessionNotificationsViewed(_selectedSessionId, notify: false);
+      if (_selectedSessionId != null) {
+        _restoreComposerSelectionFromPersistedState(_selectedSessionId!);
+      }
       _loading = false;
       _notify();
 
@@ -1378,6 +1522,9 @@ class WorkspaceController extends ChangeNotifier {
     );
     _fileBundle = null;
     _actionNotice = null;
+    _manualModelSelectionSessionIds = const <String>{};
+    _persistedComposerSelectionBySessionId =
+        const <String, _WorkspaceComposerSelectionState>{};
     _resetSessionHoverPreviewState();
     _notify();
 
@@ -1388,6 +1535,7 @@ class WorkspaceController extends ChangeNotifier {
       target: project,
     );
     await _restorePermissionAutoAccept(project);
+    await _restoreComposerSelections(project);
     await _restoreQueuedPrompts(project);
 
     await _loadComposerState(project);
@@ -1405,6 +1553,9 @@ class WorkspaceController extends ChangeNotifier {
       sessions: bundle.sessions,
     );
     _markSessionNotificationsViewed(_selectedSessionId, notify: false);
+    if (_selectedSessionId != null) {
+      _restoreComposerSelectionFromPersistedState(_selectedSessionId!);
+    }
     if (_selectedSessionId != null) {
       await _loadSelectedSessionMessages(
         project: project,
@@ -1507,11 +1658,7 @@ class WorkspaceController extends ChangeNotifier {
       _selectedSessionHistoryLoading = false;
       _selectedSessionHistoryCursor = promotedWatchedHistoryCursor;
       _sessionLoadError = null;
-      if (_messages.isEmpty) {
-        _applyDefaultComposerSelection();
-      } else {
-        _restoreComposerSelectionFromMessages();
-      }
+      _restoreComposerSelectionForSession(nextSessionId!);
     } else {
       _messages = const <ChatMessage>[];
       _sessionLoading = false;
@@ -1520,6 +1667,9 @@ class WorkspaceController extends ChangeNotifier {
       _selectedSessionHistoryLoading = false;
       _selectedSessionHistoryCursor = null;
       _sessionLoadError = null;
+      if (nextSessionId != null) {
+        _restoreComposerSelectionFromPersistedState(nextSessionId);
+      }
     }
     _replaceSelectedSessionTodos(const <TodoItem>[]);
     _loadingReviewDiff = false;
@@ -1975,6 +2125,7 @@ class WorkspaceController extends ChangeNotifier {
       project: project,
       sessionId: sessionId,
     );
+    final cachedServerMessages = cachedMessages;
     if (_isStaleSessionLoad(revision, sessionId)) {
       return;
     }
@@ -1985,11 +2136,7 @@ class WorkspaceController extends ChangeNotifier {
         serverMessages: cachedMessages,
       );
       _showingCachedSessionMessages = cachedMessages.isNotEmpty;
-      if (_messages.isEmpty) {
-        _applyDefaultComposerSelection();
-      } else {
-        _restoreComposerSelectionFromMessages();
-      }
+      _restoreComposerSelectionForSession(sessionId);
     }
     if (notifyOnStart) {
       _notify();
@@ -2005,10 +2152,17 @@ class WorkspaceController extends ChangeNotifier {
           if (_isStaleSessionLoad(revision, sessionId)) {
             return;
           }
+          final mergedServerMessages =
+              cachedServerMessages != null && cachedServerMessages.isNotEmpty
+              ? _mergeLatestSessionMessages(
+                  currentMessages: cachedServerMessages,
+                  latestMessages: partialMessages,
+                )
+              : partialMessages;
           _messages = _mergeSessionMessages(
             project: project,
             sessionId: sessionId,
-            serverMessages: partialMessages,
+            serverMessages: mergedServerMessages,
           );
           _showingCachedSessionMessages = false;
           _notify();
@@ -2018,10 +2172,19 @@ class WorkspaceController extends ChangeNotifier {
         return;
       }
 
+      final refreshedServerMessages =
+          cachedServerMessages != null &&
+              cachedServerMessages.isNotEmpty &&
+              page.hasMore
+          ? _mergeLatestSessionMessages(
+              currentMessages: cachedServerMessages,
+              latestMessages: page.messages,
+            )
+          : page.messages;
       _messages = _mergeSessionMessages(
         project: project,
         sessionId: sessionId,
-        serverMessages: page.messages,
+        serverMessages: refreshedServerMessages,
       );
       _selectedSessionHistoryCursor = page.nextCursor;
       _selectedSessionHistoryMore =
@@ -2031,11 +2194,7 @@ class WorkspaceController extends ChangeNotifier {
             sessionId: sessionId,
           );
       _showingCachedSessionMessages = false;
-      if (_messages.isEmpty) {
-        _applyDefaultComposerSelection();
-      } else {
-        _restoreComposerSelectionFromMessages();
-      }
+      _restoreComposerSelectionForSession(sessionId);
       await _enforceSelectedSessionMemoryWindow(
         project: project,
         sessionId: sessionId,
@@ -2044,7 +2203,7 @@ class WorkspaceController extends ChangeNotifier {
         _persistSessionMessagesCache(
           project: project,
           sessionId: sessionId,
-          messages: page.messages,
+          messages: refreshedServerMessages,
           immediate: true,
         ),
       );
@@ -2074,7 +2233,7 @@ class WorkspaceController extends ChangeNotifier {
       _sessionLoadError = _describeSessionLoadError(error);
       if (_messages.isEmpty) {
         _showingCachedSessionMessages = false;
-        _applyDefaultComposerSelection();
+        _restoreComposerSelectionForSession(sessionId);
       }
       _notify();
     }
@@ -2732,6 +2891,7 @@ class WorkspaceController extends ChangeNotifier {
     WorkspacePromptDispatchMode? mode,
   }) async {
     final trimmed = prompt.trim();
+    final compactSlashPrompt = isCompactSlashCommandPrompt(trimmed);
     final project = _project;
     final selectedAgent = this.selectedAgent;
     final selectedModel = this.selectedModel;
@@ -2741,6 +2901,11 @@ class WorkspaceController extends ChangeNotifier {
 
     var sessionId = _selectedSessionId;
     if (sessionId == null || sessionId.isEmpty) {
+      if (compactSlashPrompt) {
+        throw const SessionActionException(
+          'Select a session before compacting.',
+        );
+      }
       final created = await _chatService.createSession(
         profile: profile,
         project: project,
@@ -2925,7 +3090,7 @@ class WorkspaceController extends ChangeNotifier {
         _sessionLoading = false;
         _showingCachedSessionMessages = false;
         _sessionLoadError = null;
-        _restoreComposerSelectionFromMessages();
+        _restoreComposerSelectionForSession(sessionId);
         await _enforceSelectedSessionMemoryWindow(
           project: project,
           sessionId: sessionId,
@@ -3037,8 +3202,12 @@ class WorkspaceController extends ChangeNotifier {
     required String? reasoning,
     bool preferAsync = false,
   }) async {
+    final compactSlashPrompt = isCompactSlashCommandPrompt(prompt);
+    final compactionModelSelection = compactSlashPrompt
+        ? _resolveSessionCompactionModelSelection(sessionId)
+        : null;
     ChatMessage? optimisticMessage;
-    if (prompt.isNotEmpty || attachments.isNotEmpty) {
+    if (!compactSlashPrompt && (prompt.isNotEmpty || attachments.isNotEmpty)) {
       optimisticMessage = _appendOptimisticUserMessage(
         project: project,
         sessionId: sessionId,
@@ -3049,7 +3218,16 @@ class WorkspaceController extends ChangeNotifier {
 
     final slashCommand = _parseSlashCommand(prompt);
     try {
-      if (slashCommand != null &&
+      if (compactSlashPrompt) {
+        await _sessionActionService.summarizeSession(
+          profile: profile,
+          project: project,
+          sessionId: sessionId,
+          providerId: compactionModelSelection?.providerId,
+          modelId: compactionModelSelection?.modelId,
+        );
+        _actionNotice = 'Session compaction requested.';
+      } else if (slashCommand != null &&
           _findComposerCommand(slashCommand.name) != null) {
         await _chatService.sendCommand(
           profile: profile,
@@ -3573,20 +3751,29 @@ class WorkspaceController extends ChangeNotifier {
   }
 
   Future<void> summarizeSelectedSession() async {
-    final project = _project;
-    final sessionId = _selectedSessionId;
-    final selectedModel = this.selectedModel;
-    if (project == null || sessionId == null || selectedModel == null) {
+    final project = this.project;
+    final sessionId = selectedSessionId;
+    if (project == null || sessionId == null) {
       return;
     }
-    await _sessionActionService.summarizeSession(
-      profile: profile,
-      project: project,
-      sessionId: sessionId,
-      providerId: selectedModel.providerId,
-      modelId: selectedModel.modelId,
+    final compactionModelSelection = _resolveSessionCompactionModelSelection(
+      sessionId,
     );
+    _markSessionBusy(sessionId);
+    try {
+      await _sessionActionService.summarizeSession(
+        profile: profile,
+        project: project,
+        sessionId: sessionId,
+        providerId: compactionModelSelection.providerId,
+        modelId: compactionModelSelection.modelId,
+      );
+    } catch (_) {
+      _schedulePromptRefresh(project: project, sessionId: sessionId);
+      rethrow;
+    }
     _actionNotice = 'Session compaction requested.';
+    _schedulePromptRefresh(project: project, sessionId: sessionId);
     _notify();
   }
 
@@ -3653,6 +3840,10 @@ class WorkspaceController extends ChangeNotifier {
     for (final removedSessionId in removedSessionIds) {
       _clearQueuedPromptStateForSession(removedSessionId);
     }
+    await _removePersistedComposerSelections(
+      project,
+      removedSessionIds: removedSessionIds,
+    );
     _selectedSessionId = _sessions.isEmpty ? null : _sessions.first.id;
     _markSessionNotificationsViewed(_selectedSessionId, notify: false);
     if (_selectedSessionId == null) {
@@ -3957,6 +4148,51 @@ class WorkspaceController extends ChangeNotifier {
     _applyDefaultComposerSelection();
   }
 
+  void _restoreComposerSelectionForSession(String sessionId) {
+    if (_restoreComposerSelectionFromPersistedState(sessionId)) {
+      return;
+    }
+    _restoreComposerSelectionFromMessages();
+  }
+
+  bool _restoreComposerSelectionFromPersistedState(String sessionId) {
+    final selection = _persistedComposerSelectionBySessionId[sessionId];
+    if (selection == null) {
+      return false;
+    }
+
+    final session = _sessionById(sessionId);
+    if (session == null) {
+      return false;
+    }
+
+    final currentLastUserMessageId = _lastUserMessage(_messages)?.info.id;
+    final sessionUnchanged =
+        selection.sessionUpdatedAtMs ==
+        session.updatedAt.millisecondsSinceEpoch;
+    final lastUserMatches =
+        selection.lastUserMessageId != null &&
+        selection.lastUserMessageId == currentLastUserMessageId;
+    if (!sessionUnchanged && !lastUserMatches) {
+      return false;
+    }
+
+    final agent = _findAgent(selection.agentName) ?? _defaultComposerAgent;
+    _selectedAgentName = agent?.name;
+    _selectedModelKey =
+        _findModel(selection.modelKey)?.key ??
+        _findModel(agent?.modelKey)?.key ??
+        _findModel(_serverDefaultModelKey)?.key ??
+        (_composerModels.isEmpty ? null : _composerModels.first.key);
+
+    if (_isReasoningAllowed(selection.reasoning, _selectedModelKey)) {
+      _selectedReasoning = selection.reasoning;
+    } else {
+      _selectedReasoning = _fallbackReasoningForModel(_selectedModelKey);
+    }
+    return true;
+  }
+
   void _applyDefaultComposerSelection() {
     final agent = selectedAgent ?? _defaultComposerAgent;
     if (agent != null) {
@@ -4036,14 +4272,7 @@ class WorkspaceController extends ChangeNotifier {
   }
 
   void _restoreComposerSelectionFromMessages() {
-    ChatMessage? lastUser;
-    for (final message in _messages.reversed) {
-      if (message.info.role == 'user') {
-        lastUser = message;
-        break;
-      }
-    }
-
+    final lastUser = _lastUserMessage(_messages);
     if (lastUser == null) {
       _applyDefaultComposerSelection();
       return;
@@ -4070,6 +4299,193 @@ class WorkspaceController extends ChangeNotifier {
     } else {
       _selectedReasoning = _fallbackReasoningForModel(_selectedModelKey);
     }
+  }
+
+  ChatMessage? _lastUserMessage(List<ChatMessage> messages) {
+    for (final message in messages.reversed) {
+      if (message.info.role == 'user') {
+        return message;
+      }
+    }
+    return null;
+  }
+
+  _SessionCompactionModelSelection _resolveSessionCompactionModelSelection(
+    String sessionId,
+  ) {
+    final currentSelection = _currentManualCompactionModelSelection(sessionId);
+    if (currentSelection != null) {
+      return currentSelection;
+    }
+    final persisted = _persistedCompactionModelSelectionForSession(sessionId);
+    if (persisted != null) {
+      return persisted;
+    }
+    final sessionMessages = sessionId == selectedSessionId
+        ? _messages
+        : (_watchedSessionTimelineById[sessionId]?.messages ??
+              const <ChatMessage>[]);
+    final fromMessages = _sessionCompactionModelSelectionFromMessages(
+      sessionMessages,
+    );
+    if (fromMessages != null) {
+      return fromMessages;
+    }
+
+    final configuredModel = _configuredCompactionModelSelection;
+    if (configuredModel != null) {
+      return configuredModel;
+    }
+
+    final defaultModel = _defaultComposerModel;
+    if (defaultModel == null) {
+      throw const SessionActionException(
+        'Session compaction requires an available model on this server.',
+      );
+    }
+    return _SessionCompactionModelSelection(
+      providerId: defaultModel.providerId,
+      modelId: defaultModel.modelId,
+    );
+  }
+
+  _SessionCompactionModelSelection? _currentManualCompactionModelSelection(
+    String sessionId,
+  ) {
+    if (sessionId != selectedSessionId ||
+        !_manualModelSelectionSessionIds.contains(sessionId)) {
+      return null;
+    }
+    final selected = selectedModel;
+    if (selected == null) {
+      return null;
+    }
+    return _SessionCompactionModelSelection(
+      providerId: selected.providerId,
+      modelId: selected.modelId,
+    );
+  }
+
+  _SessionCompactionModelSelection?
+  _sessionCompactionModelSelectionFromMessages(List<ChatMessage> messages) {
+    _SessionCompactionModelSelection? fallback;
+    _SessionCompactionModelSelection? rawFallback;
+    for (final message in messages.reversed) {
+      final selection = _buildSessionCompactionModelSelection(
+        providerId: message.info.providerId,
+        modelId: message.info.modelId,
+      );
+      if (selection == null) {
+        continue;
+      }
+      final validated = _validatedCompactionModelSelection(
+        selection.providerId,
+        selection.modelId,
+      );
+      if (validated != null) {
+        if (message.info.role == 'user') {
+          return validated;
+        }
+        fallback ??= validated;
+      }
+      if (_composerModels.isEmpty && rawFallback == null) {
+        rawFallback = selection;
+      }
+    }
+    return fallback ?? rawFallback;
+  }
+
+  _SessionCompactionModelSelection? get _configuredCompactionModelSelection {
+    final rawValue = _configSnapshot?.config.toJson()['model']?.toString();
+    if (rawValue == null) {
+      return null;
+    }
+    final normalized = rawValue.trim();
+    if (normalized.isEmpty) {
+      return null;
+    }
+    final resolvedOption = _findModel(normalized);
+    if (resolvedOption != null) {
+      return _SessionCompactionModelSelection(
+        providerId: resolvedOption.providerId,
+        modelId: resolvedOption.modelId,
+      );
+    }
+    if (_composerModels.isNotEmpty) {
+      return null;
+    }
+    final separator = normalized.indexOf('/');
+    if (separator <= 0 || separator >= normalized.length - 1) {
+      return null;
+    }
+    return _buildSessionCompactionModelSelection(
+      providerId: normalized.substring(0, separator),
+      modelId: normalized.substring(separator + 1),
+    );
+  }
+
+  _SessionCompactionModelSelection?
+  _persistedCompactionModelSelectionForSession(String sessionId) {
+    final selection = _persistedComposerSelectionBySessionId[sessionId];
+    if (selection?.manualModelSelection != true) {
+      return null;
+    }
+    final modelKey = selection?.modelKey?.trim();
+    if (modelKey == null || modelKey.isEmpty) {
+      return null;
+    }
+
+    final resolvedOption = _findModel(modelKey);
+    if (resolvedOption != null) {
+      return _SessionCompactionModelSelection(
+        providerId: resolvedOption.providerId,
+        modelId: resolvedOption.modelId,
+      );
+    }
+    if (_composerModels.isNotEmpty) {
+      return null;
+    }
+
+    final separator = modelKey.indexOf('/');
+    if (separator <= 0 || separator >= modelKey.length - 1) {
+      return null;
+    }
+    return _buildSessionCompactionModelSelection(
+      providerId: modelKey.substring(0, separator),
+      modelId: modelKey.substring(separator + 1),
+    );
+  }
+
+  _SessionCompactionModelSelection? _validatedCompactionModelSelection(
+    String providerId,
+    String modelId,
+  ) {
+    final resolvedOption = _findModel('$providerId/$modelId');
+    if (resolvedOption == null) {
+      return null;
+    }
+    return _SessionCompactionModelSelection(
+      providerId: resolvedOption.providerId,
+      modelId: resolvedOption.modelId,
+    );
+  }
+
+  _SessionCompactionModelSelection? _buildSessionCompactionModelSelection({
+    String? providerId,
+    String? modelId,
+  }) {
+    final normalizedProviderId = providerId?.trim();
+    final normalizedModelId = modelId?.trim();
+    if (normalizedProviderId == null ||
+        normalizedProviderId.isEmpty ||
+        normalizedModelId == null ||
+        normalizedModelId.isEmpty) {
+      return null;
+    }
+    return _SessionCompactionModelSelection(
+      providerId: normalizedProviderId,
+      modelId: normalizedModelId,
+    );
   }
 
   List<WorkspaceComposerModelOption> _buildComposerModelOptions(
@@ -4498,6 +4914,99 @@ class WorkspaceController extends ChangeNotifier {
     }
   }
 
+  Future<void> _restoreComposerSelections(ProjectTarget project) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(
+      _sessionComposerSelectionStorageKey(profile, project),
+    );
+    if (raw == null || raw.trim().isEmpty) {
+      _persistedComposerSelectionBySessionId =
+          const <String, _WorkspaceComposerSelectionState>{};
+      return;
+    }
+    try {
+      final decoded = await _decodeJsonPayload(raw);
+      _persistedComposerSelectionBySessionId =
+          _composerSelectionsFromDecodedJson(decoded);
+    } catch (_) {
+      _persistedComposerSelectionBySessionId =
+          const <String, _WorkspaceComposerSelectionState>{};
+      await prefs.remove(_sessionComposerSelectionStorageKey(profile, project));
+    }
+  }
+
+  Future<void> _persistComposerSelections(ProjectTarget project) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (_persistedComposerSelectionBySessionId.isEmpty) {
+      await prefs.remove(_sessionComposerSelectionStorageKey(profile, project));
+      return;
+    }
+    await prefs.setString(
+      _sessionComposerSelectionStorageKey(profile, project),
+      jsonEncode(
+        _persistedComposerSelectionBySessionId.map(
+          (sessionId, selection) => MapEntry(sessionId, selection.toJson()),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _persistSelectedSessionComposerSelection({
+    bool? manualModelSelection,
+  }) async {
+    final project = _project;
+    final sessionId = _selectedSessionId;
+    if (project == null || sessionId == null || sessionId.isEmpty) {
+      return;
+    }
+
+    final session = _sessionById(sessionId);
+    if (session == null) {
+      return;
+    }
+
+    final next = Map<String, _WorkspaceComposerSelectionState>.from(
+      _persistedComposerSelectionBySessionId,
+    );
+    final previousSelection = next[sessionId];
+    next[sessionId] = _WorkspaceComposerSelectionState(
+      agentName: _normalizedStorageString(_selectedAgentName),
+      modelKey: _normalizedStorageString(_selectedModelKey),
+      reasoning: _normalizedStorageString(_selectedReasoning),
+      lastUserMessageId: _lastUserMessage(_messages)?.info.id,
+      manualModelSelection:
+          manualModelSelection ??
+          previousSelection?.manualModelSelection ??
+          false,
+      sessionUpdatedAtMs: session.updatedAt.millisecondsSinceEpoch,
+    );
+    _persistedComposerSelectionBySessionId =
+        Map<String, _WorkspaceComposerSelectionState>.unmodifiable(next);
+    await _persistComposerSelections(project);
+  }
+
+  Future<void> _removePersistedComposerSelections(
+    ProjectTarget project, {
+    required Set<String> removedSessionIds,
+  }) async {
+    if (removedSessionIds.isEmpty) {
+      return;
+    }
+    final next = Map<String, _WorkspaceComposerSelectionState>.from(
+      _persistedComposerSelectionBySessionId,
+    );
+    var changed = false;
+    for (final sessionId in removedSessionIds) {
+      changed = next.remove(sessionId) != null || changed;
+    }
+    if (!changed) {
+      return;
+    }
+    _persistedComposerSelectionBySessionId =
+        Map<String, _WorkspaceComposerSelectionState>.unmodifiable(next);
+    await _persistComposerSelections(project);
+  }
+
   Future<void> _persistPermissionAutoAccept(ProjectTarget project) async {
     final prefs = await SharedPreferences.getInstance();
     if (_permissionAutoAcceptByKey.isEmpty) {
@@ -4922,13 +5431,22 @@ class WorkspaceController extends ChangeNotifier {
         _recoveringEventStream) {
       return;
     }
+    unawaited(_startEventStreamRecovery(scopeKey));
+  }
+
+  Future<void> _startEventStreamRecovery(String scopeKey) async {
+    if (_disposed || _recoveringEventStream) {
+      return;
+    }
+    final project = _project;
+    if (project == null || _eventStreamScopeKey(project) != scopeKey) {
+      return;
+    }
     final recoveryToken = ++_eventStreamRecoveryToken;
     _recoveringEventStream = true;
     _eventStreamRecoveryError = null;
     _notify();
-    unawaited(
-      _recoverEventStream(recoveryToken: recoveryToken, scopeKey: scopeKey),
-    );
+    await _recoverEventStream(recoveryToken: recoveryToken, scopeKey: scopeKey);
   }
 
   Future<void> _recoverEventStream({
@@ -4996,6 +5514,9 @@ class WorkspaceController extends ChangeNotifier {
       sessions: bundle.sessions,
     );
     _markSessionNotificationsViewed(_selectedSessionId, notify: false);
+    if (_selectedSessionId != null) {
+      _restoreComposerSelectionFromPersistedState(_selectedSessionId!);
+    }
 
     if (_selectedSessionId != null) {
       await _loadSelectedSessionMessages(
@@ -5034,6 +5555,10 @@ class WorkspaceController extends ChangeNotifier {
       return;
     }
     final type = event.type;
+    if (type == 'stream.resync_required') {
+      unawaited(resyncLiveState());
+      return;
+    }
     if (type == 'session.created' || type == 'session.updated') {
       _sessions = applySessionUpsertEvent(_sessions, event.properties);
     } else if (type == 'session.deleted') {
@@ -5054,6 +5579,13 @@ class WorkspaceController extends ChangeNotifier {
       _maybeFlushQueuedPrompts(
         sessionId: event.properties['sessionID']?.toString(),
       );
+    } else if (type == 'session.compacted') {
+      final sessionId = event.properties['sessionID']?.toString().trim();
+      final project = _project;
+      if (project == null || sessionId == null || sessionId.isEmpty) {
+        return;
+      }
+      _schedulePromptRefresh(project: project, sessionId: sessionId);
     } else if (type == 'session.error') {
       final session = _sessionById(event.properties['sessionID']?.toString());
       if (session != null) {
@@ -5074,131 +5606,228 @@ class WorkspaceController extends ChangeNotifier {
       }
     } else if (type == 'message.updated') {
       final infoJson = event.properties['info'] as Map?;
+      final eventSessionId = infoJson?['sessionID']?.toString();
       _applyWatchedSessionTimelineEvent(
         event.properties,
-        sessionId: infoJson?['sessionID']?.toString(),
+        sessionId: eventSessionId,
         applyEvent: (messages) => applyMessageUpdatedEvent(
           messages,
           event.properties,
-          selectedSessionId: infoJson?['sessionID']?.toString(),
+          selectedSessionId: eventSessionId,
         ),
         persistImmediately: true,
       );
+      _refreshActiveChildLivePreviewForSession(eventSessionId);
       final project = _project;
       final sessionId = _selectedSessionId;
-      final baseMessages =
-          project != null && sessionId != null && sessionId.isNotEmpty
-          ? _stripOptimisticMessages(
+      final normalizedSelectedSessionId = sessionId?.trim();
+      final normalizedEventSessionId = eventSessionId?.trim();
+      final touchesSelectedSession =
+          normalizedSelectedSessionId == null ||
+          normalizedSelectedSessionId.isEmpty ||
+          normalizedSelectedSessionId == normalizedEventSessionId;
+      if (touchesSelectedSession) {
+        final baseMessages =
+            project != null && sessionId != null && sessionId.isNotEmpty
+            ? _stripOptimisticMessages(
+                project: project,
+                sessionId: sessionId,
+                messages: _messages,
+              )
+            : _messages;
+        final nextServerMessages = applyMessageUpdatedEvent(
+          baseMessages,
+          event.properties,
+          selectedSessionId: _selectedSessionId,
+        );
+        final nextMessages =
+            project != null && sessionId != null && sessionId.isNotEmpty
+            ? _mergeSessionMessages(
+                project: project,
+                sessionId: sessionId,
+                serverMessages: nextServerMessages,
+              )
+            : nextServerMessages;
+        final changed = !identical(nextMessages, _messages);
+        if (changed) {
+          _sessionLoading = false;
+          _showingCachedSessionMessages = false;
+          _sessionLoadError = null;
+          unawaited(
+            _persistSelectedSessionMessagesCache(
+              nextServerMessages,
+              immediate: true,
+            ),
+          );
+        }
+        _messages = nextMessages;
+        if (changed &&
+            project != null &&
+            sessionId != null &&
+            sessionId.isNotEmpty) {
+          unawaited(
+            _enforceSelectedSessionMemoryWindow(
               project: project,
               sessionId: sessionId,
-              messages: _messages,
-            )
-          : _messages;
-      final nextServerMessages = applyMessageUpdatedEvent(
-        baseMessages,
-        event.properties,
-        selectedSessionId: _selectedSessionId,
-      );
-      final nextMessages =
-          project != null && sessionId != null && sessionId.isNotEmpty
-          ? _mergeSessionMessages(
-              project: project,
-              sessionId: sessionId,
-              serverMessages: nextServerMessages,
-            )
-          : nextServerMessages;
-      final changed = !identical(nextMessages, _messages);
-      if (changed) {
-        _sessionLoading = false;
-        _showingCachedSessionMessages = false;
-        _sessionLoadError = null;
-        unawaited(
-          _persistSelectedSessionMessagesCache(
-            nextServerMessages,
-            immediate: true,
-          ),
-        );
-      }
-      _messages = nextMessages;
-      if (changed &&
-          project != null &&
-          sessionId != null &&
-          sessionId.isNotEmpty) {
-        unawaited(
-          _enforceSelectedSessionMemoryWindow(
-            project: project,
-            sessionId: sessionId,
-            notify: true,
-          ),
-        );
+              notify: true,
+            ),
+          );
+        }
       }
     } else if (type == 'message.part.updated') {
       _applyActiveChildLivePreviewPartEvent(event.properties);
       final partJson = event.properties['part'] as Map?;
+      final eventSessionId = partJson?['sessionID']?.toString();
       _applyWatchedSessionTimelineEvent(
         event.properties,
-        sessionId: partJson?['sessionID']?.toString(),
+        sessionId: eventSessionId,
         applyEvent: (messages) => applyMessagePartUpdatedEvent(
           messages,
           event.properties,
-          selectedSessionId: partJson?['sessionID']?.toString(),
+          selectedSessionId: eventSessionId,
         ),
       );
+      _refreshActiveChildLivePreviewForSession(eventSessionId);
       final project = _project;
       final sessionId = _selectedSessionId;
-      final baseMessages =
-          project != null && sessionId != null && sessionId.isNotEmpty
-          ? _stripOptimisticMessages(
-              project: project,
-              sessionId: sessionId,
-              messages: _messages,
-            )
-          : _messages;
-      final nextServerMessages = applyMessagePartUpdatedEvent(
-        baseMessages,
-        event.properties,
-        selectedSessionId: _selectedSessionId,
-      );
-      final nextMessages =
-          project != null && sessionId != null && sessionId.isNotEmpty
-          ? _mergeSessionMessages(
-              project: project,
-              sessionId: sessionId,
-              serverMessages: nextServerMessages,
-            )
-          : nextServerMessages;
-      final changed = !identical(nextMessages, _messages);
-      if (changed) {
-        _sessionLoading = false;
-        _showingCachedSessionMessages = false;
-        _sessionLoadError = null;
-        unawaited(_persistSelectedSessionMessagesCache(nextServerMessages));
-      }
-      _messages = nextMessages;
-      if (changed &&
-          project != null &&
-          sessionId != null &&
-          sessionId.isNotEmpty) {
-        unawaited(
-          _enforceSelectedSessionMemoryWindow(
-            project: project,
-            sessionId: sessionId,
-            notify: true,
-          ),
+      final normalizedSelectedSessionId = sessionId?.trim();
+      final normalizedEventSessionId = eventSessionId?.trim();
+      final touchesSelectedSession =
+          normalizedSelectedSessionId == null ||
+          normalizedSelectedSessionId.isEmpty ||
+          normalizedSelectedSessionId == normalizedEventSessionId;
+      if (touchesSelectedSession) {
+        final baseMessages =
+            project != null && sessionId != null && sessionId.isNotEmpty
+            ? _stripOptimisticMessages(
+                project: project,
+                sessionId: sessionId,
+                messages: _messages,
+              )
+            : _messages;
+        final nextServerMessages = applyMessagePartUpdatedEvent(
+          baseMessages,
+          event.properties,
+          selectedSessionId: _selectedSessionId,
         );
+        final nextMessages =
+            project != null && sessionId != null && sessionId.isNotEmpty
+            ? _mergeSessionMessages(
+                project: project,
+                sessionId: sessionId,
+                serverMessages: nextServerMessages,
+              )
+            : nextServerMessages;
+        final changed = !identical(nextMessages, _messages);
+        if (changed) {
+          _sessionLoading = false;
+          _showingCachedSessionMessages = false;
+          _sessionLoadError = null;
+          unawaited(_persistSelectedSessionMessagesCache(nextServerMessages));
+        }
+        _messages = nextMessages;
+        if (changed &&
+            project != null &&
+            sessionId != null &&
+            sessionId.isNotEmpty) {
+          unawaited(
+            _enforceSelectedSessionMemoryWindow(
+              project: project,
+              sessionId: sessionId,
+              notify: true,
+            ),
+          );
+        }
       }
-    } else if (type == 'message.removed') {
-      _clearActiveChildLivePreviewForMessageEvent(event.properties);
+    } else if (type == 'message.part.delta') {
+      final sessionId = event.properties['sessionID']?.toString();
       _applyWatchedSessionTimelineEvent(
         event.properties,
-        sessionId: event.properties['sessionID']?.toString(),
+        sessionId: sessionId,
+        applyEvent: (messages) => applyMessagePartDeltaEvent(
+          messages,
+          event.properties,
+          selectedSessionId: sessionId,
+        ),
+      );
+      _refreshActiveChildLivePreviewForSession(sessionId);
+      final project = _project;
+      final selectedSessionId = _selectedSessionId;
+      final normalizedSelectedSessionId = selectedSessionId?.trim();
+      final normalizedEventSessionId = sessionId?.trim();
+      final touchesSelectedSession =
+          normalizedSelectedSessionId == null ||
+          normalizedSelectedSessionId.isEmpty ||
+          normalizedSelectedSessionId == normalizedEventSessionId;
+      if (touchesSelectedSession) {
+        final baseMessages =
+            project != null &&
+                selectedSessionId != null &&
+                selectedSessionId.isNotEmpty
+            ? _stripOptimisticMessages(
+                project: project,
+                sessionId: selectedSessionId,
+                messages: _messages,
+              )
+            : _messages;
+        final nextServerMessages = applyMessagePartDeltaEvent(
+          baseMessages,
+          event.properties,
+          selectedSessionId: _selectedSessionId,
+        );
+        final nextMessages =
+            project != null &&
+                selectedSessionId != null &&
+                selectedSessionId.isNotEmpty
+            ? _mergeSessionMessages(
+                project: project,
+                sessionId: selectedSessionId,
+                serverMessages: nextServerMessages,
+              )
+            : nextServerMessages;
+        final changed = !identical(nextMessages, _messages);
+        if (changed) {
+          _sessionLoading = false;
+          _showingCachedSessionMessages = false;
+          _sessionLoadError = null;
+          unawaited(_persistSelectedSessionMessagesCache(nextServerMessages));
+        }
+        _messages = nextMessages;
+        if (changed &&
+            project != null &&
+            selectedSessionId != null &&
+            selectedSessionId.isNotEmpty) {
+          unawaited(
+            _enforceSelectedSessionMemoryWindow(
+              project: project,
+              sessionId: selectedSessionId,
+              notify: true,
+            ),
+          );
+        }
+      }
+    } else if (type == 'message.removed') {
+      final eventSessionId = event.properties['sessionID']?.toString();
+      final normalizedEventSessionId = eventSessionId?.trim() ?? '';
+      final refreshActiveChildPreviewFromTimeline =
+          normalizedEventSessionId.isNotEmpty &&
+          _watchedSessionIds.contains(normalizedEventSessionId);
+      if (!refreshActiveChildPreviewFromTimeline) {
+        _clearActiveChildLivePreviewForMessageEvent(event.properties);
+      }
+      _applyWatchedSessionTimelineEvent(
+        event.properties,
+        sessionId: eventSessionId,
         applyEvent: (messages) => applyMessageRemovedEvent(
           messages,
           event.properties,
-          selectedSessionId: event.properties['sessionID']?.toString(),
+          selectedSessionId: eventSessionId,
         ),
         persistImmediately: true,
       );
+      if (refreshActiveChildPreviewFromTimeline) {
+        _refreshActiveChildLivePreviewForSession(eventSessionId);
+      }
       final project = _project;
       final sessionId = _selectedSessionId;
       final baseMessages =
@@ -5382,6 +6011,12 @@ class WorkspaceController extends ChangeNotifier {
     if (project == null) {
       return;
     }
+    unawaited(
+      _removePersistedComposerSelections(
+        project,
+        removedSessionIds: removedSessionIds,
+      ),
+    );
     unawaited(
       _applySessionDeletedSelectionFallback(
         project: project,
@@ -6400,7 +7035,7 @@ class WorkspaceController extends ChangeNotifier {
         message.parts.length,
       );
       for (final part in message.parts) {
-        signature = Object.hash(
+        signature = Object.hashAll(<Object?>[
           signature,
           part.id,
           part.type,
@@ -6409,11 +7044,84 @@ class WorkspaceController extends ChangeNotifier {
           _stringSignature(part.text),
           _stringSignature(part.metadata['summary']?.toString()),
           _stringSignature(part.metadata['content']?.toString()),
+          _stringSignature(part.metadata['description']?.toString()),
+          _stringSignature(part.metadata['message']?.toString()),
           _stringSignature(part.metadata['command']?.toString()),
+          _stringSignature(part.metadata['query']?.toString()),
+          _stringSignature(part.metadata['path']?.toString()),
+          _stringSignature(part.metadata['url']?.toString()),
           _stringSignature(part.metadata['output']?.toString()),
           _stringSignature(part.metadata['title']?.toString()),
+          _stringSignature(
+            _previewNestedString(part.metadata, const <String>[
+              'state',
+              'title',
+            ]),
+          ),
+          _stringSignature(
+            _previewNestedString(part.metadata, const <String>[
+              'state',
+              'input',
+              'description',
+            ]),
+          ),
+          _stringSignature(
+            _previewNestedString(part.metadata, const <String>[
+              'state',
+              'input',
+              'command',
+            ]),
+          ),
+          _stringSignature(
+            _previewNestedString(part.metadata, const <String>[
+              'state',
+              'input',
+              'query',
+            ]),
+          ),
+          _stringSignature(
+            _previewNestedString(part.metadata, const <String>[
+              'state',
+              'input',
+              'path',
+            ]),
+          ),
+          _stringSignature(
+            _previewNestedString(part.metadata, const <String>[
+              'state',
+              'input',
+              'url',
+            ]),
+          ),
+          _stringSignature(
+            _previewNestedString(part.metadata, const <String>[
+              'input',
+              'description',
+            ]),
+          ),
+          _stringSignature(
+            _previewNestedString(part.metadata, const <String>[
+              'input',
+              'command',
+            ]),
+          ),
+          _stringSignature(
+            _previewNestedString(part.metadata, const <String>[
+              'input',
+              'query',
+            ]),
+          ),
+          _stringSignature(
+            _previewNestedString(part.metadata, const <String>[
+              'input',
+              'path',
+            ]),
+          ),
+          _stringSignature(
+            _previewNestedString(part.metadata, const <String>['input', 'url']),
+          ),
           _stringSignature(part.metadata['status']?.toString()),
-        );
+        ]);
       }
     }
     return signature;
@@ -7138,6 +7846,21 @@ class WorkspaceController extends ChangeNotifier {
     _setActiveChildLivePreview(sessionId, _partActivityPreviewText(part));
   }
 
+  void _refreshActiveChildLivePreviewForSession(String? sessionId) {
+    final normalized = sessionId?.trim() ?? '';
+    if (!_shouldTrackActiveChildLivePreview(normalized)) {
+      return;
+    }
+    final watched = _watchedSessionTimelineById[normalized];
+    if (watched == null) {
+      return;
+    }
+    _setActiveChildLivePreview(
+      normalized,
+      _sessionActivityPreviewText(watched.messages),
+    );
+  }
+
   void _clearActiveChildLivePreviewForMessageEvent(
     Map<String, Object?> properties,
   ) {
@@ -7819,4 +8542,14 @@ class _SlashCommandInvocation {
 
   final String name;
   final String arguments;
+}
+
+class _SessionCompactionModelSelection {
+  const _SessionCompactionModelSelection({
+    required this.providerId,
+    required this.modelId,
+  });
+
+  final String providerId;
+  final String modelId;
 }

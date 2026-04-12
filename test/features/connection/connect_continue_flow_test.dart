@@ -156,6 +156,61 @@ void main() {
       ConnectionProbeClassification.authFailure,
     );
   });
+
+  testWidgets(
+    'spec fetch failures keep the user on home and show spec verification copy',
+    (tester) async {
+      _setLargeSurface(tester);
+      final localeController = LocaleController();
+      addTearDown(localeController.dispose);
+
+      const profile = ServerProfile(
+        id: 'static-site',
+        label: 'Static Site',
+        baseUrl: 'https://example.com',
+      );
+      final probe = _FakeProbe(
+        (_) async => _report(ConnectionProbeClassification.specFetchFailure),
+      );
+
+      await tester.pumpWidget(
+        _TestApp(
+          child: WorkspaceHomeScreen(
+            flavor: AppFlavor.release,
+            localeController: localeController,
+            probeService: probe,
+            snapshot: const WorkspaceHomeSnapshot(
+              savedProfiles: <ServerProfile>[profile],
+              selectedProfile: profile,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('home-workspace-connect-button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey<String>('workspace-notice-banner')),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          'The server is reachable, but the OpenAPI spec could not be fetched or parsed cleanly.',
+        ),
+        findsWidgets,
+      );
+      expect(
+        find.textContaining("Couldn't connect to Static Site"),
+        findsNothing,
+      );
+      expect(find.byType(ConnectionHomeScreen), findsNothing);
+      expect(find.text('Live capability probe'), findsNothing);
+    },
+  );
 }
 
 class _FakeProbe implements OpenCodeServerProbe {

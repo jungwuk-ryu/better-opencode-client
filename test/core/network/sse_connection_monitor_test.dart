@@ -20,6 +20,25 @@ void main() {
     );
   });
 
+  test('monitor uses later frames after the initial heartbeat', () {
+    final monitor = SseConnectionMonitor(
+      heartbeatTimeout: const Duration(seconds: 5),
+    );
+    final start = DateTime.utc(2026, 1, 1, 0, 0, 0);
+
+    monitor.recordHeartbeat(start);
+    monitor.recordFrame(start.add(const Duration(seconds: 4)));
+
+    expect(
+      monitor.healthAt(start.add(const Duration(seconds: 7))),
+      SseConnectionHealth.connected,
+    );
+    expect(
+      monitor.healthAt(start.add(const Duration(seconds: 10))),
+      SseConnectionHealth.stale,
+    );
+  });
+
   test('monitor exposes reconnecting state', () {
     final monitor = SseConnectionMonitor(
       heartbeatTimeout: const Duration(seconds: 5),

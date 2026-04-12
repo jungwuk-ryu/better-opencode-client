@@ -6,26 +6,28 @@ import 'dart:ui' as ui;
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart'
-    show
-        DelayedMultiDragGestureRecognizer,
-        DragStartBehavior,
-        MultiDragGestureRecognizer;
+import 'package:flutter/gestures.dart' show DragStartBehavior;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:speech_to_text/speech_to_text.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../l10n/app_localizations.dart';
 import '../../app/app_controller.dart';
 import '../../app/app_release_notes_dialog.dart';
+import '../../app/app_routes.dart';
 import '../../app/app_scope.dart';
 import '../../core/connection/connection_models.dart';
 import '../../core/network/opencode_server_probe.dart';
+import '../../design_system/app_modal.dart';
 import '../../design_system/app_snack_bar.dart';
 import '../../design_system/app_spacing.dart';
+import '../../design_system/app_surface_decor.dart';
 import '../../design_system/app_theme.dart';
 import '../../i18n/locale_controller.dart';
 import '../../i18n/locale_scope.dart';
@@ -37,7 +39,10 @@ import '../chat/prompt_attachment_service.dart';
 import '../chat/session_context_insights.dart';
 import '../commands/command_service.dart';
 import '../files/file_models.dart';
+import '../projects/project_action_models.dart';
 import '../projects/project_catalog_service.dart';
+import '../projects/project_git_models.dart';
+import '../projects/project_git_service.dart';
 import '../projects/project_models.dart';
 import '../requests/pending_request_notification_service.dart';
 import '../requests/pending_request_sound_service.dart';
@@ -52,7 +57,10 @@ import '../terminal/pty_terminal_panel.dart';
 import '../tools/todo_models.dart';
 import 'project_picker_sheet.dart';
 import 'workspace_controller.dart';
+import 'workspace_git_sheet.dart';
+import 'workspace_inbox_sheet.dart';
 import 'workspace_layout_store.dart';
+import 'workspace_project_actions_sheet.dart';
 
 part 'workspace_screen_side_panel.dart';
 
@@ -73,6 +81,16 @@ _WorkspaceDensity _workspaceDensity(BuildContext context) {
   return _WorkspaceDensity(AppScope.of(context).layoutDensity);
 }
 
+const double _workspacePageGutter = 16;
+const double _workspaceCardGap = 12;
+const double _workspaceRowGap = 8;
+const double _workspacePanelRadius = 16;
+const double _workspaceInnerRadius = 12;
+
+double _compactSidebarDrawerWidth(MediaQueryData mediaQuery) {
+  return math.min(420, math.max(0, mediaQuery.size.width - 12)).toDouble();
+}
+
 class _WorkspaceDensity {
   const _WorkspaceDensity(this.layoutDensity);
 
@@ -87,9 +105,11 @@ class _WorkspaceDensity {
     return math.max(min, value * 0.82).toDouble();
   }
 
-  double sidebarWidth(double value) => compact ? 308 : value;
+  double sidebarWidth(double value) =>
+      compact ? math.max(232, value * 0.86) : value;
   double sidebarRailWidth(double value) => compact ? 64 : value;
-  double sidePanelWidth(double value) => compact ? 320 : value;
+  double sidePanelWidth(double value) =>
+      compact ? math.max(320, value * 0.9) : value;
   double maxContentWidth(double value) => compact ? value + 80 : value;
 }
 
@@ -240,7 +260,8 @@ class WebParityWorkspaceScreen extends StatefulWidget {
       _WebParityWorkspaceScreenState();
 }
 
-class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
+class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen>
+    with WidgetsBindingObserver {
   static const int _maxDesktopSessionPanes = 8;
   static const String _composerDraftKeyPrefix = 'workspace.composerDraft';
   static const String _composerHistoryKeyPrefix = 'workspace.composerHistory';
@@ -249,10 +270,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   static const String _desktopSidePanelWidthKeyPrefix =
       'workspace.desktopSidePanelWidth';
   static const int _maxComposerHistoryEntries = 100;
-  static const double _desktopSidebarDefaultWidth = 340;
-  static const double _desktopSidebarMinWidth = 260;
-  static const double _desktopSidebarMaxWidth = 520;
-  static const double _desktopSidePanelDefaultWidth = 360;
+  static const double _desktopSidebarDefaultWidth = 288;
+  static const double _desktopSidebarMinWidth = 240;
+  static const double _desktopSidebarMaxWidth = 420;
+  static const double _desktopSidePanelDefaultWidth = 430;
   static const double _desktopSidePanelMinWidth = 260;
   static const double _desktopSidePanelMaxWidth = 520;
   static const double _desktopCenterMinWidth = 480;
@@ -336,6 +357,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       const <WorkspaceController, PendingRequestBundle>{};
   Set<WorkspaceController> _primedPendingRequestNotificationControllers =
       const <WorkspaceController>{};
+  Map<WorkspaceController, String> _observedPaneShellSignatureByController =
+      const <WorkspaceController, String>{};
   bool _watchedSessionSyncScheduled = false;
   int _desktopSessionPaneLayoutRevision = 0;
   late String _activeDirectory;
@@ -345,6 +368,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   late final bool _ownsProjectCatalogService;
   late IntegrationStatusService _integrationStatusService;
   late bool _ownsIntegrationStatusService;
+  final ProjectGitService _projectGitService = ProjectGitService();
 
   PendingRequestNotificationService get _pendingRequestNotificationService =>
       widget.pendingRequestNotificationService ??
@@ -355,6 +379,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    FocusManager.instance.addEarlyKeyEventHandler(
+      _handleWorkspaceShortcutEarlyKeyEvent,
+    );
     _promptController.addListener(_handlePromptControllerChanged);
     _activeDirectory = widget.directory;
     _activeRouteSessionId = widget.sessionId;
@@ -383,12 +411,38 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     );
   }
 
+  String _newSessionDraftComposerScopeKey({
+    required String directory,
+    required String paneId,
+  }) {
+    return '${_composerScopeKey(directory: directory, sessionId: null)}::pane:$paneId';
+  }
+
+  String _composerScopeKeyForController(WorkspaceController controller) {
+    final sessionId = controller.selectedSessionId;
+    if (sessionId == null || sessionId.trim().isEmpty) {
+      final paneId = _activeDesktopSessionPaneId;
+      if (paneId != null && paneId.isNotEmpty) {
+        return _newSessionDraftComposerScopeKey(
+          directory: controller.directory,
+          paneId: paneId,
+        );
+      }
+    }
+    return _composerScopeKey(
+      directory: controller.directory,
+      sessionId: sessionId,
+    );
+  }
+
   String _resolvedActiveComposerScopeKey(WorkspaceController? controller) {
     return _activeComposerScopeKey ??
-        _composerScopeKey(
-          directory: controller?.directory ?? _activeDirectory,
-          sessionId: controller?.selectedSessionId ?? _activeRouteSessionId,
-        );
+        (controller == null
+            ? _composerScopeKey(
+                directory: _activeDirectory,
+                sessionId: _activeRouteSessionId,
+              )
+            : _composerScopeKeyForController(controller));
   }
 
   bool _isActiveComposerScope(String scopeKey) {
@@ -546,9 +600,16 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   }
 
   String _composerScopeKeyForPane(_WorkspacePaneViewModel paneViewModel) {
+    final sessionId = paneViewModel.pane.sessionId;
+    if (sessionId == null || sessionId.trim().isEmpty) {
+      return _newSessionDraftComposerScopeKey(
+        directory: paneViewModel.pane.directory,
+        paneId: paneViewModel.pane.id,
+      );
+    }
     return _composerScopeKey(
       directory: paneViewModel.pane.directory,
-      sessionId: paneViewModel.pane.sessionId,
+      sessionId: sessionId,
     );
   }
 
@@ -894,11 +955,36 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     unawaited(_restorePersistedComposerHistory(scopeKey));
   }
 
-  void _syncComposerScopeForController(WorkspaceController controller) {
-    final scopeKey = _composerScopeKey(
-      directory: controller.directory,
-      sessionId: controller.selectedSessionId,
+  void _activateBlankComposerScope(String scopeKey) {
+    if (_activeComposerScopeKey != scopeKey) {
+      _persistActiveComposerScope();
+    }
+    _disposeInactiveComposerController(scopeKey);
+    _activeComposerScopeKey = scopeKey;
+    _composerAttachments = const <PromptAttachment>[];
+    _promptSubmitEpoch = 0;
+    _recentSubmittedPromptDraft = null;
+    _bumpComposerDraftRevision(scopeKey);
+    _queueComposerDraftPersist(scopeKey, '');
+    _setComposerHistoryForScope(scopeKey, const <String>[]);
+    unawaited(_persistComposerHistoryForScope(scopeKey));
+    _updateComposerScopeState(
+      scopeKey,
+      draft: '',
+      attachments: const <PromptAttachment>[],
+      submittedDraftEpoch: 0,
+      recentSubmittedDraft: null,
+      persistDraft: false,
     );
+    _promptController.value = const TextEditingValue(
+      text: '',
+      selection: TextSelection.collapsed(offset: 0),
+      composing: TextRange.empty,
+    );
+  }
+
+  void _syncComposerScopeForController(WorkspaceController controller) {
+    final scopeKey = _composerScopeKeyForController(controller);
     _activateComposerScope(scopeKey);
   }
 
@@ -1054,10 +1140,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       return;
     }
     final paneLayoutChanged = _commitSelectedSessionToActivePane(controller);
-    final scopeKey = _composerScopeKey(
-      directory: controller.directory,
-      sessionId: controller.selectedSessionId,
-    );
+    final scopeKey = _composerScopeKeyForController(controller);
     if (scopeKey == _activeComposerScopeKey) {
       if (paneLayoutChanged) {
         unawaited(_persistDesktopSessionPaneLayout());
@@ -1087,6 +1170,14 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       action: action,
       replaceCurrent: replaceCurrent,
     );
+  }
+
+  void _replaceWorkspaceRoute({required String directory, String? sessionId}) {
+    final routeName = buildWorkspaceRoute(directory, sessionId: sessionId);
+    if (ModalRoute.of(context)?.settings.name == routeName) {
+      return;
+    }
+    Navigator.of(context).pushReplacementNamed(routeName);
   }
 
   int _nextSessionPaneSequenceFor(Iterable<_WorkspaceSessionPaneSpec> panes) {
@@ -1122,6 +1213,24 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       }
     }
     return true;
+  }
+
+  List<_WorkspaceSessionPaneSpec> _visibleDesktopSessionPanes(
+    WorkspaceController controller,
+  ) {
+    final profile = _profile;
+    if (profile == null) {
+      return List<_WorkspaceSessionPaneSpec>.unmodifiable(_desktopSessionPanes);
+    }
+    return _resolvedDesktopSessionPanes(
+      AppScope.of(context),
+      profile,
+      controller,
+    );
+  }
+
+  int _visibleDesktopSessionPaneCount(WorkspaceController controller) {
+    return _visibleDesktopSessionPanes(controller).length;
   }
 
   _WorkspaceSessionPaneLayoutSnapshot? _desktopSessionPaneLayoutSnapshot() {
@@ -1552,7 +1661,25 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) {
+      return;
+    }
+    final controllers = <WorkspaceController>{
+      ..._observedPaneControllers,
+      ?_controller,
+    };
+    for (final controller in controllers) {
+      unawaited(controller.resyncLiveState());
+    }
+  }
+
+  @override
   void dispose() {
+    FocusManager.instance.removeEarlyKeyEventHandler(
+      _handleWorkspaceShortcutEarlyKeyEvent,
+    );
+    WidgetsBinding.instance.removeObserver(this);
     _persistActiveComposerScope();
     _composerDraftPersistTimer?.cancel();
     if (_pendingComposerDraftByStorageKey.isNotEmpty) {
@@ -1567,6 +1694,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     _chatSearchController.dispose();
     _chatSearchFocusNode.dispose();
     _ptyService?.dispose();
+    _projectGitService.dispose();
     if (_ownsProjectCatalogService) {
       _projectCatalogService.dispose();
     }
@@ -1619,6 +1747,11 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     _activeDirectory = directory;
     _activeRouteSessionId = routeSessionId;
     _syncComposerScopeForController(nextController);
+    if (routeSessionId == null) {
+      _requestPromptComposerFocusForScope(
+        _composerScopeKeyForController(nextController),
+      );
+    }
 
     if (profileChanged || resetPaneDeck) {
       _compactPane = _CompactWorkspacePane.session;
@@ -1930,7 +2063,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                 left.title.toLowerCase().compareTo(right.title.toLowerCase()),
           );
 
-    final selection = await showModalBottomSheet<String>(
+    final selection = await showAppModalBottomSheet<String>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
@@ -1976,7 +2109,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     if (agents.isEmpty) {
       return;
     }
-    final selection = await showModalBottomSheet<String>(
+    final selection = await showAppModalBottomSheet<String>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
@@ -2027,7 +2160,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     if (options.length <= 1) {
       return;
     }
-    final selection = await showModalBottomSheet<String?>(
+    final selection = await showAppModalBottomSheet<String?>(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (context) => _SearchableSelectionSheet<_ReasoningChoice>(
@@ -2096,7 +2229,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     if (profile == null) {
       return;
     }
-    final target = await showModalBottomSheet<ProjectTarget>(
+    final target = await showAppModalBottomSheet<ProjectTarget>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
@@ -2130,7 +2263,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       );
       return;
     }
-    await showModalBottomSheet<void>(
+    await showAppModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
@@ -2141,6 +2274,627 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
           profile: profile,
           project: project,
           service: _integrationStatusService,
+        ),
+      ),
+    );
+  }
+
+  int _workspaceInboxCount(WorkspaceController controller) {
+    final unseenNotifications = controller.notifications
+        .where((notification) => !notification.viewed)
+        .length;
+    return controller.pendingRequests.questions.length +
+        controller.pendingRequests.permissions.length +
+        unseenNotifications;
+  }
+
+  Future<RepoStatusSnapshot?> _loadProjectActionRepoSnapshot(
+    WorkspaceController controller,
+  ) async {
+    final profile = _profile;
+    final project = controller.project;
+    final sessionId = controller.selectedSessionId?.trim();
+    if (profile == null ||
+        project == null ||
+        sessionId == null ||
+        sessionId.isEmpty) {
+      return null;
+    }
+    try {
+      return await _projectGitService.loadStatus(
+        profile: profile,
+        project: project,
+        sessionId: sessionId,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  List<ProjectServiceSnapshot> _buildProjectRuntimeSnapshots(
+    WorkspaceController controller, {
+    required RepoStatusSnapshot? repoSnapshot,
+  }) {
+    final project = controller.project;
+    final selectedStatus = controller.selectedStatus;
+    final runningPtyCount = _ptySessions
+        .where((session) => session.isRunning)
+        .length;
+    final snapshots = <ProjectServiceSnapshot>[
+      if (project?.commands?.start?.trim().isNotEmpty == true)
+        ProjectServiceSnapshot(
+          id: 'service.start',
+          title: context.wp('Saved Start Command'),
+          summary: context.wp(
+            'Keep the primary remote boot command close so restarting the project stays one tap away.',
+          ),
+          tone: ProjectRuntimeTone.info,
+          command: project!.commands!.start,
+          statusLabel: context.wp('Ready'),
+        ),
+      ProjectServiceSnapshot(
+        id: 'service.session',
+        title: context.wp('Agent Session'),
+        summary: selectedStatus?.message?.trim().isNotEmpty == true
+            ? selectedStatus!.message!.trim()
+            : context.wp(
+                'Track the active session status before jumping into review, triage, or terminal work.',
+              ),
+        tone: switch (selectedStatus?.type.trim().toLowerCase()) {
+          'running' || 'busy' || 'pending' => ProjectRuntimeTone.success,
+          'retry' => ProjectRuntimeTone.warning,
+          'error' => ProjectRuntimeTone.danger,
+          _ => ProjectRuntimeTone.neutral,
+        },
+        statusLabel: _workspaceSessionStatusLabel(
+          context,
+          selectedStatus?.type,
+        ),
+      ),
+      ProjectServiceSnapshot(
+        id: 'service.pty',
+        title: context.wp('Background Terminals'),
+        summary: runningPtyCount == 0
+            ? context.wp(
+                'No PTY tabs are currently active. Open one when you need long-lived terminal work.',
+              )
+            : context.wp(
+                '{count} PTY tabs are still active for this workspace.',
+                args: <String, Object?>{'count': runningPtyCount},
+              ),
+        tone: runningPtyCount == 0
+            ? ProjectRuntimeTone.neutral
+            : ProjectRuntimeTone.success,
+        statusLabel: runningPtyCount == 0
+            ? context.wp('Idle')
+            : context.wp(
+                '{count} live',
+                args: <String, Object?>{'count': runningPtyCount},
+              ),
+      ),
+      if (repoSnapshot != null)
+        ProjectServiceSnapshot(
+          id: 'service.repo',
+          title: context.wp('Repository'),
+          summary: repoSnapshot.clean
+              ? context.wp('Working tree is clean and ready for the next task.')
+              : context.wp(
+                  '{changed} changed • {staged} staged • {unstaged} unstaged',
+                  args: <String, Object?>{
+                    'changed': repoSnapshot.changedFiles.length,
+                    'staged': repoSnapshot.stagedCount,
+                    'unstaged': repoSnapshot.unstagedCount,
+                  },
+                ),
+          tone: repoSnapshot.conflictedCount > 0
+              ? ProjectRuntimeTone.danger
+              : repoSnapshot.clean
+              ? ProjectRuntimeTone.success
+              : ProjectRuntimeTone.warning,
+          statusLabel: repoSnapshot.currentBranch.isEmpty
+              ? context.wp('Unknown')
+              : repoSnapshot.currentBranch,
+        ),
+    ];
+    return List<ProjectServiceSnapshot>.unmodifiable(snapshots);
+  }
+
+  List<ProjectActionSection> _buildProjectActionSections(
+    WorkspaceController controller, {
+    required RepoStatusSnapshot? repoSnapshot,
+  }) {
+    final project = controller.project;
+    final session = controller.selectedSession;
+    final sessionId = controller.selectedSessionId?.trim();
+    final sessionSelected = sessionId != null && sessionId.isNotEmpty;
+    final inboxCount = _workspaceInboxCount(controller);
+    final startCommand = project?.commands?.start?.trim();
+    final startEnabled = sessionSelected && (startCommand?.isNotEmpty ?? false);
+    final repoBadge = repoSnapshot == null || repoSnapshot.clean
+        ? null
+        : context.wp(
+            '{count}',
+            args: <String, Object?>{'count': repoSnapshot.changedFiles.length},
+          );
+    return <ProjectActionSection>[
+      ProjectActionSection(
+        id: 'actions.quick',
+        title: context.wp('Quick Actions'),
+        subtitle: context.wp(
+          'Keep the high-frequency remote tasks one tap away on mobile.',
+        ),
+        items: <ProjectActionItem>[
+          ProjectActionItem(
+            id: 'git.workflow',
+            kind: ProjectActionKind.git,
+            icon: Icons.commit_rounded,
+            title: context.wp('Git Workflow'),
+            subtitle: repoSnapshot?.currentBranch.isNotEmpty == true
+                ? repoSnapshot!.currentBranch
+                : context.wp(
+                    'Review, stage, commit, push, pull, and switch branches.',
+                  ),
+            description: context.wp(
+              'Open the focused repository sheet with changed files, PR status, and terminal fallback.',
+            ),
+            badge: repoBadge,
+          ),
+          ProjectActionItem(
+            id: 'inbox.open',
+            kind: ProjectActionKind.inbox,
+            icon: Icons.inbox_outlined,
+            title: context.wp('Inbox'),
+            subtitle: inboxCount == 0
+                ? context.wp('No pending triage')
+                : context.wp(
+                    '{count} items need attention',
+                    args: <String, Object?>{'count': inboxCount},
+                  ),
+            description: context.wp(
+              'Questions, approvals, and unread activity stay grouped in one async queue.',
+            ),
+            badge: inboxCount == 0
+                ? null
+                : context.wp(
+                    '{count}',
+                    args: <String, Object?>{'count': inboxCount},
+                  ),
+            attention: inboxCount > 0,
+          ),
+          ProjectActionItem(
+            id: 'runtime.start',
+            kind: ProjectActionKind.command,
+            icon: Icons.play_arrow_rounded,
+            title: context.wp('Run Start Command'),
+            subtitle: startEnabled
+                ? context.wp('Launch the saved project boot command')
+                : context.wp('Select a session to run the saved boot command'),
+            description: context.wp(
+              'Use the stored project start command instead of retyping the same terminal step.',
+            ),
+            commandPreview: startCommand,
+            enabled: startEnabled,
+          ),
+          ProjectActionItem(
+            id: 'terminal.toggle',
+            kind: ProjectActionKind.terminal,
+            icon: _terminalPanelOpen
+                ? Icons.terminal_rounded
+                : Icons.terminal_outlined,
+            title: _terminalPanelOpen
+                ? context.wp('Hide Terminal')
+                : context.wp('Show Terminal'),
+            subtitle: context.wp(
+              'Use PTY tabs for long-running or fallback work.',
+            ),
+          ),
+          ProjectActionItem(
+            id: 'terminal.new',
+            kind: ProjectActionKind.terminal,
+            icon: Icons.add_box_outlined,
+            title: context.wp('New PTY Terminal'),
+            subtitle: context.wp(
+              'Spin up a fresh long-lived shell tab for this project.',
+            ),
+          ),
+        ],
+      ),
+      ProjectActionSection(
+        id: 'actions.session',
+        title: context.wp('Session'),
+        subtitle: context.wp(
+          'Move quickly between operating, summarizing, and sharing the current session.',
+        ),
+        items: <ProjectActionItem>[
+          ProjectActionItem(
+            id: 'session.new',
+            kind: ProjectActionKind.session,
+            icon: Icons.chat_bubble_outline_rounded,
+            title: context.wp('New Session'),
+            subtitle: context.wp('Start a fresh thread in this project.'),
+          ),
+          ProjectActionItem(
+            id: 'session.share',
+            kind: ProjectActionKind.link,
+            icon: session?.shareUrl?.trim().isNotEmpty == true
+                ? Icons.link_off_rounded
+                : Icons.ios_share_rounded,
+            title: session?.shareUrl?.trim().isNotEmpty == true
+                ? context.wp('Unshare Session')
+                : context.wp('Share Session'),
+            subtitle: context.wp('Create or remove a view-only handoff link.'),
+            enabled: sessionSelected,
+          ),
+          ProjectActionItem(
+            id: 'session.compact',
+            kind: ProjectActionKind.session,
+            icon: Icons.compress_rounded,
+            title: context.wp('Compact Session'),
+            subtitle: context.wp(
+              'Summarize the active context before it grows too large.',
+            ),
+            enabled: sessionSelected,
+          ),
+          ProjectActionItem(
+            id: 'session.refresh',
+            kind: ProjectActionKind.navigation,
+            icon: Icons.refresh_rounded,
+            title: context.wp('Refresh Session Timeline'),
+            subtitle: context.wp(
+              'Force a fresh fetch of the selected session history.',
+            ),
+            enabled: sessionSelected,
+          ),
+          ProjectActionItem(
+            id: 'permissions.toggle',
+            kind: ProjectActionKind.inbox,
+            icon: controller.autoAcceptsPermissionForSession(sessionId)
+                ? Icons.verified_user_rounded
+                : Icons.policy_outlined,
+            title: controller.autoAcceptsPermissionForSession(sessionId)
+                ? context.wp('Disable Permission Auto-Accept')
+                : context.wp('Enable Permission Auto-Accept'),
+            subtitle: context.wp(
+              'Control whether this session self-approves permissions.',
+            ),
+          ),
+        ],
+      ),
+      ProjectActionSection(
+        id: 'actions.panels',
+        title: context.wp('Workspace Panels'),
+        subtitle: context.wp(
+          'Jump directly into the review, files, and context surfaces from a single launcher.',
+        ),
+        items: <ProjectActionItem>[
+          ProjectActionItem(
+            id: 'panel.review',
+            kind: ProjectActionKind.review,
+            icon: Icons.rate_review_outlined,
+            title: context.wp('Open Review'),
+            subtitle: context.wp('Inspect changed files and diffs.'),
+            badge: controller.reviewStatuses.isEmpty
+                ? null
+                : context.wp(
+                    '{count}',
+                    args: <String, Object?>{
+                      'count': controller.reviewStatuses.length,
+                    },
+                  ),
+          ),
+          ProjectActionItem(
+            id: 'panel.files',
+            kind: ProjectActionKind.navigation,
+            icon: Icons.folder_open_outlined,
+            title: context.wp('Open Files'),
+            subtitle: context.wp(
+              'Browse the project tree and file search results.',
+            ),
+          ),
+          ProjectActionItem(
+            id: 'panel.context',
+            kind: ProjectActionKind.navigation,
+            icon: Icons.auto_awesome_mosaic_outlined,
+            title: context.wp('Open Context'),
+            subtitle: context.wp(
+              'Inspect context usage and request composition.',
+            ),
+          ),
+        ],
+      ),
+    ];
+  }
+
+  List<RecentRemoteLink> _buildProjectRemoteLinks(
+    WorkspaceController controller,
+  ) {
+    final profile = _profile;
+    final session = controller.selectedSession;
+    if (profile == null) {
+      return const <RecentRemoteLink>[];
+    }
+    return <RecentRemoteLink>[
+      RecentRemoteLink(
+        id: 'server.base',
+        label: context.wp('OpenCode Server'),
+        url: profile.normalizedBaseUrl,
+        source: context.wp('Server'),
+        supportingText: context.wp(
+          'Open the server root in an external browser.',
+        ),
+      ),
+      if (session?.shareUrl?.trim().isNotEmpty == true)
+        RecentRemoteLink(
+          id: 'session.share',
+          label: context.wp('Shared Session'),
+          url: session!.shareUrl!.trim(),
+          source: context.wp('Session'),
+          supportingText: context.wp(
+            'Re-open the current session handoff link.',
+          ),
+        ),
+      if (profile.normalizedBaseUrl.trim().isNotEmpty)
+        RecentRemoteLink(
+          id: 'server.health',
+          label: context.wp('Health Check'),
+          url: '${profile.normalizedBaseUrl}/global/health',
+          source: context.wp('Diagnostics'),
+          supportingText: context.wp(
+            'Quickly verify the remote health endpoint.',
+          ),
+        ),
+    ];
+  }
+
+  List<PortForwardPreset> _buildProjectPortPresets(ProjectTarget? project) {
+    final command = project?.commands?.start?.trim();
+    if (command == null || command.isEmpty) {
+      return const <PortForwardPreset>[];
+    }
+    final matches = <int>{};
+    for (final match in RegExp(
+      r'(?:--port(?:=|\s+)|-p\s+|PORT=|localhost:|127\.0\.0\.1:)(\d{2,5})',
+      caseSensitive: false,
+    ).allMatches(command)) {
+      final port = int.tryParse(match.group(1) ?? '');
+      if (port != null) {
+        matches.add(port);
+      }
+    }
+    return matches
+        .take(4)
+        .map((port) {
+          return PortForwardPreset(
+            id: 'port.$port',
+            label: context.wp(
+              'Forward {port}',
+              args: <String, Object?>{'port': port},
+            ),
+            localPort: port,
+            remotePort: port,
+            description: context.wp(
+              'Reusable SSH command for the detected dev port.',
+            ),
+          );
+        })
+        .toList(growable: false);
+  }
+
+  Future<void> _openRemoteProjectLink(RecentRemoteLink link) async {
+    final uri = Uri.tryParse(link.url);
+    if (uri == null) {
+      await Clipboard.setData(ClipboardData(text: link.url));
+      if (!mounted) {
+        return;
+      }
+      _showSnackBar(
+        context.wp(
+          'Copied the link instead because it could not be opened directly.',
+        ),
+        tone: AppSnackBarTone.info,
+      );
+      return;
+    }
+    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (launched || !mounted) {
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: link.url));
+    if (!mounted) {
+      return;
+    }
+    _showSnackBar(
+      context.wp(
+        'Copied the remote link because the external launcher was unavailable.',
+      ),
+      tone: AppSnackBarTone.info,
+    );
+  }
+
+  Future<void> _copyPortPresetCommand(PortForwardPreset preset) async {
+    await Clipboard.setData(ClipboardData(text: preset.command));
+    if (!mounted) {
+      return;
+    }
+    _showSnackBar(
+      context.wp(
+        'Copied the port forward command for {label}.',
+        args: <String, Object?>{'label': preset.label},
+      ),
+      tone: AppSnackBarTone.info,
+    );
+  }
+
+  Future<void> _openInboxSheet(WorkspaceController controller) async {
+    await showAppModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => FractionallySizedBox(
+        heightFactor: 0.86,
+        child: WorkspaceInboxSheet(
+          sessions: controller.sessions,
+          statuses: controller.statuses,
+          pendingRequests: controller.pendingRequests,
+          notifications: controller.notifications,
+          onOpenSession: (sessionId) => _selectSessionInPlace(
+            controller,
+            sessionId,
+            compact: _isCompactLayout(this.context),
+          ),
+          onAllowPermission: (requestId) =>
+              controller.replyToPermission(requestId, 'allow'),
+          onRejectPermission: (requestId) =>
+              controller.replyToPermission(requestId, 'reject'),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openGitWorkflowSheet(WorkspaceController controller) async {
+    final profile = _profile;
+    final project = controller.project;
+    if (profile == null || project == null) {
+      _showSnackBar(
+        context.wp(
+          'Wait for the project to load before opening Git workflow actions.',
+        ),
+        tone: AppSnackBarTone.info,
+      );
+      return;
+    }
+    await showAppModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => FractionallySizedBox(
+        heightFactor: 0.88,
+        child: WorkspaceGitSheet(
+          profile: profile,
+          project: project,
+          sessionId: controller.selectedSessionId,
+          service: _projectGitService,
+          onOpenTerminalFallback: _toggleTerminalPanel,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _handleProjectActionSelection(
+    WorkspaceController controller,
+    ProjectActionItem action,
+  ) async {
+    switch (action.id) {
+      case 'git.workflow':
+        await _openGitWorkflowSheet(controller);
+        return;
+      case 'inbox.open':
+        await _openInboxSheet(controller);
+        return;
+      case 'runtime.start':
+        final command = controller.project?.commands?.start?.trim();
+        if (command != null && command.isNotEmpty) {
+          await controller.runTerminalCommand(command);
+        }
+        return;
+      case 'terminal.toggle':
+        await _toggleTerminalPanel();
+        return;
+      case 'terminal.new':
+        await _createPtySession();
+        return;
+      case 'session.new':
+        await _startNewSessionDraft(controller);
+        return;
+      case 'session.share':
+        if (controller.selectedSession?.shareUrl?.trim().isNotEmpty == true) {
+          await _unshareSelectedSession(controller);
+        } else {
+          await _shareSelectedSession(controller);
+        }
+        return;
+      case 'session.compact':
+        await _summarizeSelectedSession(controller);
+        return;
+      case 'session.refresh':
+        await controller.refreshTimelineSession(controller.selectedSessionId);
+        return;
+      case 'permissions.toggle':
+        await _togglePermissionAutoAcceptForController(
+          controller,
+          sessionId: controller.selectedSessionId,
+        );
+        return;
+      case 'panel.review':
+        _toggleSideTab(
+          controller,
+          WorkspaceSideTab.review,
+          compact: _isCompactLayout(context),
+        );
+        return;
+      case 'panel.files':
+        _toggleSideTab(
+          controller,
+          WorkspaceSideTab.files,
+          compact: _isCompactLayout(context),
+        );
+        return;
+      case 'panel.context':
+        _toggleSideTab(
+          controller,
+          WorkspaceSideTab.context,
+          compact: _isCompactLayout(context),
+        );
+        return;
+      default:
+        return;
+    }
+  }
+
+  Future<void> _openProjectActionsSheet(WorkspaceController controller) async {
+    final profile = _profile;
+    final project = controller.project;
+    if (profile == null || project == null) {
+      _showSnackBar(
+        context.wp(
+          'Wait for the workspace project to finish loading before opening project actions.',
+        ),
+        tone: AppSnackBarTone.info,
+      );
+      return;
+    }
+    final repoSnapshot = await _loadProjectActionRepoSnapshot(controller);
+    if (!mounted) {
+      return;
+    }
+    await showAppModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => FractionallySizedBox(
+        heightFactor: 0.9,
+        child: WorkspaceProjectActionsSheet(
+          profileLabel: profile.effectiveLabel,
+          project: project,
+          session: controller.selectedSession,
+          status: controller.selectedStatus,
+          sections: _buildProjectActionSections(
+            controller,
+            repoSnapshot: repoSnapshot,
+          ),
+          serviceSnapshots: _buildProjectRuntimeSnapshots(
+            controller,
+            repoSnapshot: repoSnapshot,
+          ),
+          recentLinks: _buildProjectRemoteLinks(controller),
+          portPresets: _buildProjectPortPresets(project),
+          onSelectAction: (action) =>
+              _handleProjectActionSelection(controller, action),
+          onOpenLink: _openRemoteProjectLink,
+          onSelectPortPreset: _copyPortPresetCommand,
         ),
       ),
     );
@@ -2198,6 +2952,39 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         shortcut: 'mod+o',
         onSelected: () async {
           await _openProjectPickerShortcut();
+        },
+      ),
+      _WorkspaceCommandPaletteCommand(
+        id: 'project.actions',
+        title: context.wp('Project Actions'),
+        category: context.wp('Project'),
+        description: context.wp(
+          'Open the mobile-friendly remote operations launcher for this workspace.',
+        ),
+        onSelected: () async {
+          await _openProjectActionsSheet(controller);
+        },
+      ),
+      _WorkspaceCommandPaletteCommand(
+        id: 'project.git',
+        title: context.wp('Git Workflow'),
+        category: context.wp('Project'),
+        description: context.wp(
+          'Review repository state, stage files, commit, sync, and switch branches.',
+        ),
+        onSelected: () async {
+          await _openGitWorkflowSheet(controller);
+        },
+      ),
+      _WorkspaceCommandPaletteCommand(
+        id: 'project.inbox',
+        title: context.wp('Open Inbox'),
+        category: context.wp('Project'),
+        description: context.wp(
+          'Triage questions, approvals, and unread workspace activity.',
+        ),
+        onSelected: () async {
+          await _openInboxSheet(controller);
         },
       ),
       _WorkspaceCommandPaletteCommand(
@@ -2300,7 +3087,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         description: context.wp('Create a fresh chat session in this project.'),
         shortcut: 'mod+shift+s',
         onSelected: () async {
-          await _createNewSession(controller);
+          await _startNewSessionDraft(controller);
         },
       ),
       _WorkspaceCommandPaletteCommand(
@@ -2454,7 +3241,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       ),
     ];
 
-    if (!compact && _desktopSessionPanes.length < _maxDesktopSessionPanes) {
+    if (!compact &&
+        _visibleDesktopSessionPaneCount(controller) < _maxDesktopSessionPanes) {
       commands.add(
         _WorkspaceCommandPaletteCommand(
           id: 'pane.split',
@@ -2579,7 +3367,6 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     }
 
     for (final project in controller.availableProjects) {
-      final isCurrentProject = project.directory == _currentDirectory;
       commands.add(
         _WorkspaceCommandPaletteCommand(
           id: 'project.open.${project.directory}',
@@ -2588,12 +3375,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
             args: <String, Object?>{'project': project.title},
           ),
           category: context.wp('Project'),
-          description: isCurrentProject
-              ? context.wp(
-                  '{directory} • Current project',
-                  args: <String, Object?>{'directory': project.directory},
-                )
-              : project.directory,
+          description: project.directory,
           searchTerms: <String>[
             project.title,
             project.directory,
@@ -2826,7 +3608,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
 
   Future<void> _openCommandPalette(WorkspaceController controller) async {
     final appController = AppScope.of(context);
-    final command = await showDialog<_WorkspaceCommandPaletteCommand>(
+    final command = await showAppDialog<_WorkspaceCommandPaletteCommand>(
       context: context,
       barrierDismissible: true,
       barrierColor: Colors.black.withValues(alpha: 0.42),
@@ -2851,7 +3633,16 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   KeyEventResult _handleWorkspaceShortcutKeyEvent(
     FocusNode node,
     KeyEvent event,
-  ) {
+  ) => _handleWorkspaceShortcutEvent(event);
+
+  KeyEventResult _handleWorkspaceShortcutEarlyKeyEvent(KeyEvent event) {
+    if (!_isAppleShortcutPlatform || !HardwareKeyboard.instance.isMetaPressed) {
+      return KeyEventResult.ignored;
+    }
+    return _handleWorkspaceShortcutEvent(event);
+  }
+
+  KeyEventResult _handleWorkspaceShortcutEvent(KeyEvent event) {
     if (!_canHandleWorkspaceShortcuts() || event is! KeyDownEvent) {
       return KeyEventResult.ignored;
     }
@@ -2949,7 +3740,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       mod: true,
       shift: true,
     )) {
-      unawaited(_createNewSession(controller));
+      unawaited(_startNewSessionDraft(controller));
       return KeyEventResult.handled;
     }
     if (_matchesWorkspaceShortcut(
@@ -3622,7 +4413,19 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       return;
     }
     _dispatchObservedPendingRequestNotifications();
-    setState(() {});
+    final nextShellSignatures = <WorkspaceController, String>{
+      for (final controller in _observedPaneControllers)
+        controller: _observedPaneShellSignature(controller),
+    };
+    final shouldRebuild = !_sameObservedPaneShellSignatures(
+      _observedPaneShellSignatureByController,
+      nextShellSignatures,
+    );
+    _observedPaneShellSignatureByController =
+        Map<WorkspaceController, String>.unmodifiable(nextShellSignatures);
+    if (shouldRebuild) {
+      setState(() {});
+    }
   }
 
   void _clearObservedPaneControllers() {
@@ -3634,6 +4437,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         const <WorkspaceController, PendingRequestBundle>{};
     _primedPendingRequestNotificationControllers =
         const <WorkspaceController>{};
+    _observedPaneShellSignatureByController =
+        const <WorkspaceController, String>{};
   }
 
   void _syncObservedPaneControllers(Iterable<WorkspaceController> controllers) {
@@ -3672,6 +4477,42 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
           ))
             controller,
         });
+    _observedPaneShellSignatureByController =
+        Map<WorkspaceController, String>.unmodifiable(
+          <WorkspaceController, String>{
+            for (final entry in _observedPaneShellSignatureByController.entries)
+              if (next.contains(entry.key)) entry.key: entry.value,
+            for (final controller in next)
+              if (!_observedPaneShellSignatureByController.containsKey(
+                controller,
+              ))
+                controller: _observedPaneShellSignature(controller),
+          },
+        );
+  }
+
+  bool _sameObservedPaneShellSignatures(
+    Map<WorkspaceController, String> left,
+    Map<WorkspaceController, String> right,
+  ) {
+    if (left.length != right.length) {
+      return false;
+    }
+    for (final entry in left.entries) {
+      if (right[entry.key] != entry.value) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  String _observedPaneShellSignature(WorkspaceController controller) {
+    final sessionIds = controller.sessions
+        .map((session) => session.id)
+        .join('|');
+    final error = controller.error ?? '';
+    final selectedSessionId = controller.selectedSessionId ?? '';
+    return '${controller.loading}|$selectedSessionId|$error|$sessionIds';
   }
 
   void _dispatchObservedPendingRequestNotifications() {
@@ -3836,27 +4677,28 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   }
 
   void _splitDesktopSessionPane(WorkspaceController controller) {
-    if (_desktopSessionPanes.length >= _maxDesktopSessionPanes) {
+    _commitSelectedSessionToActivePane(controller);
+    final currentPanes = _visibleDesktopSessionPanes(controller);
+    if (currentPanes.length >= _maxDesktopSessionPanes) {
       _showSnackBar(
         context.wp('You can open up to 8 session panes.'),
         tone: AppSnackBarTone.warning,
       );
       return;
     }
-    _commitSelectedSessionToActivePane(controller);
     final activePaneId = _activeDesktopSessionPaneId;
-    final activeIndex = _desktopSessionPanes.indexWhere(
+    final activeIndex = currentPanes.indexWhere(
       (pane) => pane.id == activePaneId,
     );
     final insertIndex = activeIndex >= 0
         ? activeIndex + 1
-        : _desktopSessionPanes.length;
+        : currentPanes.length;
     final newPane = _WorkspaceSessionPaneSpec(
       id: 'pane_${_sessionPaneSequence++}',
       directory: controller.directory,
       sessionId: controller.selectedSessionId,
     );
-    final next = List<_WorkspaceSessionPaneSpec>.from(_desktopSessionPanes)
+    final next = List<_WorkspaceSessionPaneSpec>.from(currentPanes)
       ..insert(insertIndex, newPane);
     setState(() {
       _desktopSessionPanes = next;
@@ -3871,19 +4713,21 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     WorkspaceController controller,
     String paneId,
   ) async {
-    if (_desktopSessionPanes.length <= 1) {
-      return;
-    }
     final profile = _profile;
     _commitSelectedSessionToActivePane(controller);
+    final currentPanes = _visibleDesktopSessionPanes(controller);
+    if (currentPanes.length <= 1) {
+      return;
+    }
     if (_paneSessionVisibleElsewhere(
       directory: controller.directory,
       sessionId: controller.selectedSessionId,
       excludingPaneId: paneId,
+      panes: currentPanes,
     )) {
       controller.preserveSelectedSessionTimelineForWatch();
     }
-    final current = List<_WorkspaceSessionPaneSpec>.from(_desktopSessionPanes);
+    final current = List<_WorkspaceSessionPaneSpec>.from(currentPanes);
     final removedIndex = current.indexWhere((pane) => pane.id == paneId);
     if (removedIndex < 0) {
       return;
@@ -3924,12 +4768,13 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     required String directory,
     required String? sessionId,
     required String excludingPaneId,
+    Iterable<_WorkspaceSessionPaneSpec>? panes,
   }) {
     final normalizedSessionId = sessionId?.trim();
     if (normalizedSessionId == null || normalizedSessionId.isEmpty) {
       return false;
     }
-    for (final pane in _desktopSessionPanes) {
+    for (final pane in panes ?? _desktopSessionPanes) {
       if (pane.id == excludingPaneId) {
         continue;
       }
@@ -4351,7 +5196,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     if (!mounted || controller == null) {
       return;
     }
-    await _createNewSession(controller);
+    await _startNewSessionDraft(controller);
   }
 
   Future<void> _selectSideTabForPane(
@@ -4549,12 +5394,23 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     );
 
     try {
-      await controller.submitPrompt(
+      final previousSessionId = controller.selectedSessionId;
+      final submittedSessionId = await controller.submitPrompt(
         draft,
         attachments: attachments,
         mode: effectiveMode,
       );
       await _appendComposerHistoryEntry(scopeKey, draft);
+      final createdSessionId = submittedSessionId?.trim();
+      if (mounted &&
+          (previousSessionId == null || previousSessionId.isEmpty) &&
+          createdSessionId != null &&
+          createdSessionId.isNotEmpty) {
+        _replaceWorkspaceRoute(
+          directory: controller.directory,
+          sessionId: createdSessionId,
+        );
+      }
     } catch (error) {
       if (!mounted) {
         return;
@@ -4701,7 +5557,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     if (selected == null) {
       return;
     }
-    final nextTitle = await showDialog<String>(
+    final nextTitle = await showAppDialog<String>(
       context: context,
       builder: (context) => _RenameSessionDialog(initialTitle: selected.title),
     );
@@ -4845,17 +5701,26 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     }
   }
 
-  Future<void> _createNewSession(WorkspaceController controller) async {
+  Future<void> _startNewSessionDraft(WorkspaceController controller) async {
     _preserveSelectedSessionIfVisibleElsewhere(controller);
     try {
-      await controller.createEmptySession();
+      await controller.selectSession(null);
+      if (!mounted) {
+        return;
+      }
+      final scopeKey = _composerScopeKeyForController(controller);
+      setState(() {
+        _activateBlankComposerScope(scopeKey);
+        _requestPromptComposerFocusForScope(scopeKey);
+      });
+      _replaceWorkspaceRoute(directory: controller.directory);
     } catch (error) {
       if (!mounted) {
         return;
       }
       _showSnackBar(
         context.wp(
-          'Failed to create session: {error}',
+          'Failed to start a new session: {error}',
           args: <String, Object?>{'error': error},
         ),
         tone: AppSnackBarTone.danger,
@@ -4945,31 +5810,64 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     if (selected == null) {
       return;
     }
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(context.wp('Delete Session')),
-        content: Text(
-          context.wp(
-            'Delete "{title}"? This action cannot be undone.',
-            args: <String, Object?>{
-              'title': selected.title.trim().isEmpty
-                  ? context.wp('this session')
-                  : selected.title.trim(),
-            },
+      builder: (context) {
+        final theme = Theme.of(context);
+        final surfaces = theme.extension<AppSurfaces>()!;
+        return AppDialogFrame(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Material(
+            key: const ValueKey<String>('delete-session-dialog'),
+            color: surfaces.panelRaised,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppSpacing.dialogRadius),
+              side: BorderSide(color: surfaces.lineSoft),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    context.wp('Delete Session'),
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    context.wp(
+                      'Delete "{title}"? This action cannot be undone.',
+                      args: <String, Object?>{
+                        'title': selected.title.trim().isEmpty
+                            ? context.wp('this session')
+                            : selected.title.trim(),
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: <Widget>[
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        child: Text(context.wp('Cancel')),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      FilledButton(
+                        onPressed: () => Navigator.of(context).pop(true),
+                        child: Text(context.wp('Delete')),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
           ),
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text(context.wp('Cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: Text(context.wp('Delete')),
-          ),
-        ],
-      ),
+        );
+      },
     );
     if (confirmed != true) {
       return;
@@ -5007,7 +5905,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     WorkspaceController controller,
   ) async {
     final profile = appController.selectedProfile;
-    await showModalBottomSheet<void>(
+    await showAppModalBottomSheet<void>(
       context: context,
       useSafeArea: true,
       isScrollControlled: true,
@@ -5053,10 +5951,6 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         return;
       }
     }
-    await controller.selectSession(sessionId);
-    if (!mounted) {
-      return;
-    }
     final targetMessageId = focusMessageId?.trim();
     if (targetMessageId != null && targetMessageId.isNotEmpty) {
       _requestTimelineMessageFocus(
@@ -5065,6 +5959,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
         messageId: targetMessageId,
       );
     }
+    await controller.selectSession(sessionId);
   }
 
   bool _selectedSessionVisibleOutsideActivePane(
@@ -5155,7 +6050,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
     if (profile == null) {
       return;
     }
-    final draft = await showDialog<_ProjectEditDraft>(
+    final draft = await showAppDialog<_ProjectEditDraft>(
       context: context,
       barrierDismissible: true,
       builder: (context) => _EditProjectDialog(project: project),
@@ -5397,6 +6292,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
       submittedDraftEpoch: _submittedDraftEpochForScope(scopeKey),
       recentSubmittedDraft: _recentSubmittedDraftForScope(scopeKey),
       onOpenMcpPicker: () => _openMcpPicker(controller),
+      onOpenProjectActions: () => _openProjectActionsSheet(controller),
+      onOpenInbox: () => _openInboxSheet(controller),
       onToggleTerminal: _toggleTerminalPanel,
       onSelectSideTab: (tab) {
         unawaited(() async {
@@ -5478,6 +6375,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
           final mediaQuery = MediaQuery.of(context);
           final compact =
               mediaQuery.size.width < AppSpacing.wideLayoutBreakpoint;
+          final compactDrawerWidth = compact
+              ? _compactSidebarDrawerWidth(mediaQuery)
+              : null;
           final keyboardVisible = mediaQuery.viewInsets.bottom > 0;
           final terminalCompactFocusMode =
               compact && keyboardVisible && _terminalInputFocused;
@@ -5518,12 +6418,6 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                   activeController: controller,
                   projectLoadingShell: projectLoadingShell,
                 );
-          final activePaneId = compact
-              ? paneViewModels.first.pane.id
-              : (_activeDesktopSessionPaneId ??
-                    (paneViewModels.isNotEmpty
-                        ? paneViewModels.first.pane.id
-                        : null));
           final desktopSidebarVisible = !compact && _desktopSidebarVisible;
           final desktopSidePanelVisible = !compact && _desktopSidePanelVisible;
           final desktopSessionPanes = compact
@@ -5531,6 +6425,15 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
               : List<_WorkspaceSessionPaneSpec>.unmodifiable(
                   paneViewModels.map((paneViewModel) => paneViewModel.pane),
                 );
+          final activePaneId = compact
+              ? paneViewModels.first.pane.id
+              : (desktopSessionPanes.any(
+                      (pane) => pane.id == _activeDesktopSessionPaneId,
+                    )
+                    ? _activeDesktopSessionPaneId
+                    : (desktopSessionPanes.isNotEmpty
+                          ? desktopSessionPanes.first.id
+                          : null));
           _syncObservedPaneControllers(
             paneViewModels.map((paneViewModel) => paneViewModel.controller),
           );
@@ -5564,9 +6467,10 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
             resizeToAvoidBottomInset: !compact,
             drawer: compact
                 ? Drawer(
+                    width: compactDrawerWidth,
                     child: SafeArea(
                       child: _WorkspaceSidebar(
-                        width: _desktopSidebarDefaultWidth,
+                        width: compactDrawerWidth!,
                         currentDirectory: _currentDirectory,
                         currentSessionId: showProjectLoadingShell
                             ? null
@@ -5619,7 +6523,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                         onAddProject: () {
                           unawaited(_openProjectPickerShortcut());
                         },
-                        onNewSession: () => _createNewSession(controller),
+                        onNewSession: () => _startNewSessionDraft(controller),
                         onOpenSettings: () => _openWorkspaceSettingsSheet(
                           appController,
                           controller,
@@ -5692,7 +6596,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                     onAddProject: () {
                       unawaited(_openProjectPickerShortcut());
                     },
-                    onNewSession: () => _createNewSession(controller),
+                    onNewSession: () => _startNewSessionDraft(controller),
                     onOpenSettings: () =>
                         _openWorkspaceSettingsSheet(appController, controller),
                   );
@@ -5768,6 +6672,12 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                               onOpenCommandPalette: () {
                                 unawaited(_openCommandPalette(controller));
                               },
+                              onOpenProjectActions: () {
+                                unawaited(_openProjectActionsSheet(controller));
+                              },
+                              onOpenInbox: () {
+                                unawaited(_openInboxSheet(controller));
+                              },
                               onOpenContextPanel: () {
                                 _openSideTab(
                                   controller,
@@ -5778,6 +6688,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                               onOpenMcpPicker: () {
                                 unawaited(_openMcpPicker(controller));
                               },
+                              inboxCount: _workspaceInboxCount(controller),
                               onOpenChatSearch: _openChatSearch,
                               onCloseChatSearch: _closeChatSearch,
                               onChatSearchChanged: _handleChatSearchChanged,
@@ -5876,6 +6787,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                       activeWorkspaceLoading:
                                           controller.loading,
                                       activeWorkspaceError: controller.error,
+                                      activeComposerScopeKey:
+                                          activeComposerScopeKey,
                                       sidePanelVisible: desktopSidePanelVisible,
                                       sidePanelWidth:
                                           resolvedDesktopWidths.sidePanelWidth,
@@ -5968,7 +6881,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
                                       onInterruptPrompt:
                                           _interruptSelectedSession,
                                       onCreateSession: () =>
-                                          _createNewSession(controller),
+                                          _startNewSessionDraft(controller),
                                       onOpenSession: (sessionId) {
                                         unawaited(
                                           _selectSessionInPlace(
@@ -6204,7 +7117,10 @@ class _WorkspaceTopBar extends StatelessWidget {
     required this.chatSearchStatusText,
     required this.chatSearchNavigationEnabled,
     required this.onOpenCommandPalette,
+    required this.onOpenProjectActions,
+    required this.onOpenInbox,
     required this.onOpenMcpPicker,
+    required this.inboxCount,
     required this.onOpenChatSearch,
     required this.onCloseChatSearch,
     required this.onChatSearchChanged,
@@ -6243,7 +7159,10 @@ class _WorkspaceTopBar extends StatelessWidget {
   final String chatSearchStatusText;
   final bool chatSearchNavigationEnabled;
   final VoidCallback onOpenCommandPalette;
+  final VoidCallback onOpenProjectActions;
+  final VoidCallback onOpenInbox;
   final VoidCallback onOpenMcpPicker;
+  final int inboxCount;
   final VoidCallback onOpenChatSearch;
   final VoidCallback onCloseChatSearch;
   final ValueChanged<String> onChatSearchChanged;
@@ -6271,7 +7190,6 @@ class _WorkspaceTopBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
-    final keyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
     final density = _workspaceDensity(context);
     final desktopHorizontal = density.inset(AppSpacing.md, min: AppSpacing.sm);
     final desktopVertical = density.inset(AppSpacing.sm, min: AppSpacing.xs);
@@ -6330,6 +7248,25 @@ class _WorkspaceTopBar extends StatelessWidget {
               label: context.wp('Command palette'),
               icon: Icons.apps_rounded,
               onSelected: onOpenCommandPalette,
+            ),
+            _SessionOverflowMenuAction(
+              id: 'project-actions',
+              label: context.wp('Project Actions'),
+              icon: Icons.flash_on_outlined,
+              onSelected: onOpenProjectActions,
+            ),
+            _SessionOverflowMenuAction(
+              id: 'inbox',
+              label: inboxCount == 0
+                  ? context.wp('Inbox')
+                  : context.wp(
+                      'Inbox ({count})',
+                      args: <String, Object?>{'count': inboxCount},
+                    ),
+              icon: inboxCount == 0
+                  ? Icons.inbox_outlined
+                  : Icons.mark_email_unread_outlined,
+              onSelected: onOpenInbox,
             ),
             _SessionOverflowMenuAction(
               id: 'mcp',
@@ -6442,6 +7379,29 @@ class _WorkspaceTopBar extends StatelessWidget {
                 ),
           onTap: onToggleSidePanel!,
         ),
+      _WorkspaceActionChip(
+        key: const ValueKey<String>('workspace-project-actions-button'),
+        label: context.wp('Actions'),
+        icon: Icons.flash_on_outlined,
+        enabled: true,
+        tooltip: context.wp('Open the project actions launcher'),
+        onTap: onOpenProjectActions,
+      ),
+      _WorkspaceActionChip(
+        key: const ValueKey<String>('workspace-inbox-button'),
+        label: inboxCount == 0
+            ? context.wp('Inbox')
+            : context.wp(
+                'Inbox ({count})',
+                args: <String, Object?>{'count': inboxCount},
+              ),
+        icon: inboxCount == 0
+            ? Icons.inbox_outlined
+            : Icons.mark_email_unread_outlined,
+        enabled: true,
+        tooltip: context.wp('Open questions, approvals, and unread activity'),
+        onTap: onOpenInbox,
+      ),
       if (onSplitSessionPane != null)
         _WorkspaceActionChip(
           key: const ValueKey<String>('workspace-split-session-pane-button'),
@@ -6465,73 +7425,173 @@ class _WorkspaceTopBar extends StatelessWidget {
         projectDirectory.isNotEmpty ||
         headerActionChips.isNotEmpty;
     if (compact) {
-      return Material(
-        color: surfaces.panel,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final showContextRing =
-                session != null && constraints.maxWidth >= 340;
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Container(
-                  constraints: BoxConstraints(
-                    minHeight: density.inset(54, min: 46),
-                  ),
-                  padding: EdgeInsets.symmetric(
-                    horizontal: density.inset(AppSpacing.xxs, min: 2),
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    border: Border(
-                      bottom: BorderSide(color: surfaces.lineSoft),
+      return Padding(
+        padding: EdgeInsets.fromLTRB(
+          density.inset(AppSpacing.xs, min: 6),
+          density.inset(AppSpacing.xs, min: 6),
+          density.inset(AppSpacing.xs, min: 6),
+          0,
+        ),
+        child: AppGlassPanel(
+          radius: AppSpacing.sheetRadius,
+          blur: 26,
+          backgroundOpacity: theme.brightness == Brightness.dark ? 0.82 : 0.9,
+          padding: EdgeInsets.zero,
+          child: Material(
+            color: Colors.transparent,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final showContextRing =
+                    session != null && constraints.maxWidth >= 340;
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Container(
+                      constraints: BoxConstraints(
+                        minHeight: density.inset(56, min: 48),
+                      ),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: density.inset(AppSpacing.xxs, min: 2),
+                        vertical: density.inset(AppSpacing.xxs, min: 2),
+                      ),
+                      decoration: BoxDecoration(
+                        border: Border(
+                          bottom: BorderSide(
+                            color: surfaces.lineSoft.withValues(alpha: 0.9),
+                          ),
+                        ),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: <Widget>[
+                          IconButton(
+                            onPressed: onOpenDrawer,
+                            icon: const Icon(Icons.menu_rounded, size: 18),
+                            splashRadius: 18,
+                          ),
+                          if (canReturnToMain)
+                            IconButton(
+                              key: const ValueKey<String>(
+                                'workspace-back-to-main-session-button',
+                              ),
+                              tooltip: context.wp('Back to main session'),
+                              onPressed: onBackToMainSession,
+                              icon: const Icon(
+                                Icons.subdirectory_arrow_left_rounded,
+                                size: 18,
+                              ),
+                              splashRadius: 18,
+                            ),
+                          Expanded(
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: density.inset(
+                                  AppSpacing.xxs,
+                                  min: 2,
+                                ),
+                              ),
+                              child: _SessionIdentity(
+                                title: title,
+                                titleKey: ValueKey<String>(
+                                  'session-header-title-${session?.id ?? 'new'}',
+                                ),
+                                titleStyle: titleStyle,
+                                busy: busy,
+                              ),
+                            ),
+                          ),
+                          if (showContextRing)
+                            Padding(
+                              padding: EdgeInsets.only(
+                                right: density.inset(AppSpacing.xxs, min: 2),
+                              ),
+                              child: _SessionContextUsageRing(
+                                key: ValueKey<String>(
+                                  'session-header-context-ring-${session!.id}',
+                                ),
+                                usagePercent: contextSnapshot?.usagePercent,
+                                totalTokens: contextSnapshot?.totalTokens,
+                                contextLimit: contextSnapshot?.contextLimit,
+                                compact: true,
+                                onTap: onOpenContextPanel,
+                              ),
+                            ),
+                          _SessionOverflowMenuButton(
+                            compact: true,
+                            sections: menuSections,
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  child: Row(
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 180),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      child: searchBar,
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      );
+    }
+    return DecoratedBox(
+      key: const ValueKey<String>('workspace-desktop-top-bar-shell'),
+      decoration: BoxDecoration(
+        color: surfaces.panelMuted.withValues(alpha: 0.98),
+        border: Border(
+          bottom: BorderSide(color: surfaces.lineSoft.withValues(alpha: 0.9)),
+        ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: desktopHorizontal,
+                vertical: desktopVertical,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: <Widget>[
-                      IconButton(
-                        onPressed: onOpenDrawer,
-                        icon: const Icon(Icons.menu_rounded, size: 18),
-                        splashRadius: 18,
-                      ),
-                      if (canReturnToMain)
+                      if (compact)
                         IconButton(
-                          key: const ValueKey<String>(
-                            'workspace-back-to-main-session-button',
-                          ),
-                          tooltip: context.wp('Back to main session'),
-                          onPressed: onBackToMainSession,
-                          icon: const Icon(
-                            Icons.subdirectory_arrow_left_rounded,
-                            size: 18,
-                          ),
-                          splashRadius: 18,
+                          onPressed: onOpenDrawer,
+                          icon: const Icon(Icons.menu_rounded),
                         ),
-                      Expanded(
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: density.inset(AppSpacing.xxs, min: 2),
-                          ),
-                          child: _SessionIdentity(
-                            compact: true,
-                            title: title,
-                            titleKey: ValueKey<String>(
-                              'session-header-title-${session?.id ?? 'new'}',
-                            ),
-                            titleStyle: titleStyle,
-                            busy: busy,
-                            busyKey: ValueKey<String>(
-                              'session-header-busy-${session?.id ?? 'new'}',
-                            ),
-                          ),
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: surfaces.panel.withValues(alpha: 0.88),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: surfaces.lineSoft),
+                        ),
+                        child: IconButton(
+                          onPressed: onBackHome,
+                          icon: const Icon(Icons.arrow_back_rounded),
+                          tooltip: context.wp('Back Home'),
                         ),
                       ),
-                      if (showContextRing)
-                        Padding(
-                          padding: EdgeInsets.only(
-                            right: density.inset(AppSpacing.xxs, min: 2),
+                      SizedBox(width: density.inset(AppSpacing.sm, min: 6)),
+                      Expanded(
+                        child: _SessionIdentity(
+                          title: title,
+                          titleKey: ValueKey<String>(
+                            'session-header-title-${session?.id ?? 'new'}',
                           ),
+                          titleStyle: titleStyle,
+                          busy: busy,
+                        ),
+                      ),
+                      if (session != null)
+                        Padding(
+                          padding: const EdgeInsets.only(left: AppSpacing.sm),
                           child: _SessionContextUsageRing(
                             key: ValueKey<String>(
                               'session-header-context-ring-${session!.id}',
@@ -6539,168 +7599,133 @@ class _WorkspaceTopBar extends StatelessWidget {
                             usagePercent: contextSnapshot?.usagePercent,
                             totalTokens: contextSnapshot?.totalTokens,
                             contextLimit: contextSnapshot?.contextLimit,
-                            compact: true,
                             onTap: onOpenContextPanel,
                           ),
                         ),
-                      _SessionOverflowMenuButton(
-                        compact: true,
-                        sections: menuSections,
+                      SizedBox(width: density.inset(AppSpacing.xs, min: 4)),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          IconButton(
+                            key: const ValueKey<String>(
+                              'workspace-command-palette-button',
+                            ),
+                            onPressed: onOpenCommandPalette,
+                            icon: const Icon(Icons.apps_rounded),
+                            tooltip:
+                                '${context.wp('Command palette')} (${_formatWorkspaceShortcutLabel('mod+k')})',
+                          ),
+                          IconButton(
+                            key: const ValueKey<String>(
+                              'workspace-project-actions-icon-button',
+                            ),
+                            onPressed: onOpenProjectActions,
+                            icon: const Icon(Icons.flash_on_outlined),
+                            tooltip: context.wp('Project Actions'),
+                          ),
+                          IconButton(
+                            key: const ValueKey<String>(
+                              'workspace-inbox-icon-button',
+                            ),
+                            onPressed: onOpenInbox,
+                            icon: Icon(
+                              inboxCount == 0
+                                  ? Icons.inbox_outlined
+                                  : Icons.mark_email_unread_outlined,
+                            ),
+                            tooltip: inboxCount == 0
+                                ? context.wp('Inbox')
+                                : context.wp(
+                                    'Inbox ({count})',
+                                    args: <String, Object?>{
+                                      'count': inboxCount,
+                                    },
+                                  ),
+                          ),
+                          IconButton(
+                            key: const ValueKey<String>(
+                              'workspace-mcp-picker-button',
+                            ),
+                            onPressed: onOpenMcpPicker,
+                            icon: const Icon(Icons.extension_rounded),
+                            tooltip:
+                                '${context.wp('Toggle MCPs')} (${_formatWorkspaceShortcutLabel('mod+;')})',
+                          ),
+                          IconButton(
+                            key: const ValueKey<String>(
+                              'workspace-chat-search-button',
+                            ),
+                            onPressed: onOpenChatSearch,
+                            icon: const Icon(Icons.search_rounded),
+                            tooltip: context.wp('Search chat'),
+                          ),
+                          IconButton(
+                            onPressed: onToggleTerminal,
+                            icon: Icon(
+                              terminalOpen
+                                  ? Icons.terminal_rounded
+                                  : Icons.terminal_outlined,
+                            ),
+                            tooltip: terminalOpen
+                                ? context.wp('Hide terminal')
+                                : context.wp('Show terminal'),
+                          ),
+                          _SessionOverflowMenuButton(sections: menuSections),
+                        ],
                       ),
                     ],
                   ),
-                ),
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 180),
-                  switchInCurve: Curves.easeOutCubic,
-                  switchOutCurve: Curves.easeInCubic,
-                  child: searchBar,
-                ),
-              ],
-            );
-          },
-        ),
-      );
-    }
-    return Material(
-      color: surfaces.panel,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: desktopHorizontal,
-              vertical: desktopVertical,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: <Widget>[
-                    if (compact)
-                      IconButton(
-                        onPressed: onOpenDrawer,
-                        icon: const Icon(Icons.menu_rounded),
-                      ),
-                    IconButton(
-                      onPressed: onBackHome,
-                      icon: const Icon(Icons.arrow_back_rounded),
-                    ),
-                    SizedBox(width: density.inset(AppSpacing.sm, min: 6)),
-                    Expanded(
-                      child: _SessionIdentity(
-                        compact: false,
-                        title: title,
-                        titleKey: ValueKey<String>(
-                          'session-header-title-${session?.id ?? 'new'}',
-                        ),
-                        titleStyle: titleStyle,
-                        busy: busy,
-                        busyKey: ValueKey<String>(
-                          'session-header-busy-${session?.id ?? 'new'}',
-                        ),
-                      ),
-                    ),
-                    if (session != null)
-                      Padding(
-                        padding: const EdgeInsets.only(left: AppSpacing.sm),
-                        child: _SessionContextUsageRing(
-                          key: ValueKey<String>(
-                            'session-header-context-ring-${session!.id}',
+                  if (hasSessionMeta) ...<Widget>[
+                    SizedBox(height: density.inset(AppSpacing.sm, min: 6)),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Expanded(
+                          child: _WorkspaceSessionHeaderMetaBlock(
+                            profileLabel: profileLabel,
+                            projectDirectory: projectDirectory,
+                            canReturnToMain: canReturnToMain,
+                            rootSessionTitle: rootSession?.title ?? '',
+                            onBackToMainSession: onBackToMainSession,
                           ),
-                          usagePercent: contextSnapshot?.usagePercent,
-                          totalTokens: contextSnapshot?.totalTokens,
-                          contextLimit: contextSnapshot?.contextLimit,
-                          onTap: onOpenContextPanel,
                         ),
-                      ),
-                    SizedBox(width: density.inset(AppSpacing.xs, min: 4)),
-                    IconButton(
-                      key: const ValueKey<String>(
-                        'workspace-command-palette-button',
-                      ),
-                      onPressed: onOpenCommandPalette,
-                      icon: const Icon(Icons.apps_rounded),
-                      tooltip:
-                          '${context.wp('Command palette')} (${_formatWorkspaceShortcutLabel('mod+k')})',
-                    ),
-                    IconButton(
-                      key: const ValueKey<String>(
-                        'workspace-mcp-picker-button',
-                      ),
-                      onPressed: onOpenMcpPicker,
-                      icon: const Icon(Icons.extension_rounded),
-                      tooltip:
-                          '${context.wp('Toggle MCPs')} (${_formatWorkspaceShortcutLabel('mod+;')})',
-                    ),
-                    IconButton(
-                      key: const ValueKey<String>(
-                        'workspace-chat-search-button',
-                      ),
-                      onPressed: onOpenChatSearch,
-                      icon: const Icon(Icons.search_rounded),
-                      tooltip: context.wp('Search chat'),
-                    ),
-                    IconButton(
-                      onPressed: onToggleTerminal,
-                      icon: Icon(
-                        terminalOpen
-                            ? Icons.terminal_rounded
-                            : Icons.terminal_outlined,
-                      ),
-                      tooltip: terminalOpen
-                          ? context.wp('Hide terminal')
-                          : context.wp('Show terminal'),
-                    ),
-                    _SessionOverflowMenuButton(sections: menuSections),
-                  ],
-                ),
-                if (hasSessionMeta) ...<Widget>[
-                  SizedBox(height: density.inset(AppSpacing.sm, min: 6)),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Expanded(
-                        child: _WorkspaceSessionHeaderMetaBlock(
-                          profileLabel: profileLabel,
-                          projectDirectory: projectDirectory,
-                          canReturnToMain: canReturnToMain,
-                          rootSessionTitle: rootSession?.title ?? '',
-                          onBackToMainSession: onBackToMainSession,
-                        ),
-                      ),
-                      if (headerActionChips.isNotEmpty) ...<Widget>[
-                        SizedBox(width: density.inset(AppSpacing.md, min: 10)),
-                        Flexible(
-                          child: Align(
-                            alignment: Alignment.topRight,
-                            child: Wrap(
-                              key: const ValueKey<String>(
-                                'workspace-session-header-action-chips',
+                        if (headerActionChips.isNotEmpty) ...<Widget>[
+                          SizedBox(
+                            width: density.inset(AppSpacing.md, min: 10),
+                          ),
+                          Flexible(
+                            child: Align(
+                              alignment: Alignment.topRight,
+                              child: Wrap(
+                                key: const ValueKey<String>(
+                                  'workspace-session-header-action-chips',
+                                ),
+                                alignment: WrapAlignment.end,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                spacing: density.inset(AppSpacing.xs, min: 4),
+                                runSpacing: density.inset(
+                                  AppSpacing.xs,
+                                  min: 4,
+                                ),
+                                children: headerActionChips,
                               ),
-                              alignment: WrapAlignment.end,
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              spacing: density.inset(AppSpacing.xs, min: 4),
-                              runSpacing: density.inset(AppSpacing.xs, min: 4),
-                              children: headerActionChips,
                             ),
                           ),
-                        ),
+                        ],
                       ],
-                    ],
-                  ),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
-          ),
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 180),
-            switchInCurve: Curves.easeOutCubic,
-            switchOutCurve: Curves.easeInCubic,
-            child: searchBar,
-          ),
-        ],
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 180),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              child: searchBar,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -6934,17 +7959,14 @@ class _WorkspaceChatSearchBar extends StatelessWidget {
     final surfaces = theme.extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
     if (compact) {
-      return Container(
+      return AppGlassPanel(
         key: const ValueKey<String>('workspace-chat-search-panel'),
-        width: double.infinity,
+        radius: AppSpacing.panelRadius,
+        blur: 20,
+        backgroundOpacity: theme.brightness == Brightness.dark ? 0.78 : 0.9,
         padding: EdgeInsets.symmetric(
           horizontal: density.inset(AppSpacing.sm),
           vertical: density.inset(AppSpacing.xs),
-        ),
-        decoration: BoxDecoration(
-          color: surfaces.panelRaised.withValues(alpha: 0.94),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: surfaces.lineSoft),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -7036,17 +8058,14 @@ class _WorkspaceChatSearchBar extends StatelessWidget {
         ),
       );
     }
-    return Container(
+    return AppGlassPanel(
       key: const ValueKey<String>('workspace-chat-search-panel'),
-      width: double.infinity,
+      radius: AppSpacing.panelRadius,
+      blur: 22,
+      backgroundOpacity: theme.brightness == Brightness.dark ? 0.78 : 0.9,
       padding: EdgeInsets.symmetric(
         horizontal: density.inset(compact ? AppSpacing.sm : AppSpacing.md),
         vertical: density.inset(compact ? AppSpacing.xs : AppSpacing.sm),
-      ),
-      decoration: BoxDecoration(
-        color: surfaces.panelRaised.withValues(alpha: 0.94),
-        borderRadius: BorderRadius.circular(compact ? 16 : 18),
-        border: Border.all(color: surfaces.lineSoft),
       ),
       child: Row(
         children: <Widget>[
@@ -7144,14 +8163,9 @@ class _WorkspacePanelToggleChip extends StatelessWidget {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
-    final accent = theme.colorScheme.primary;
-    final backgroundColor = active
-        ? accent.withValues(alpha: 0.12)
-        : surfaces.panelRaised.withValues(alpha: 0.78);
-    final borderColor = active
-        ? accent.withValues(alpha: 0.26)
-        : surfaces.lineSoft;
-    final foregroundColor = active ? accent : surfaces.muted;
+    final foregroundColor = active
+        ? theme.colorScheme.onSurface
+        : surfaces.muted;
 
     return Tooltip(
       message: tooltip,
@@ -7159,7 +8173,7 @@ class _WorkspacePanelToggleChip extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
+          borderRadius: BorderRadius.circular(8),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
             curve: Curves.easeOutCubic,
@@ -7167,10 +8181,14 @@ class _WorkspacePanelToggleChip extends StatelessWidget {
               horizontal: density.inset(AppSpacing.sm),
               vertical: density.inset(AppSpacing.xs, min: 4),
             ),
-            decoration: BoxDecoration(
-              color: backgroundColor,
-              borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
-              border: Border.all(color: borderColor),
+            decoration: appSoftCardDecoration(
+              context,
+              radius: 8,
+              tone: AppSurfaceTone.accent,
+              muted: !active,
+              emphasized: false,
+              selected: active,
+              showShadow: false,
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -7180,7 +8198,7 @@ class _WorkspacePanelToggleChip extends StatelessWidget {
                 Text(
                   label,
                   style: theme.textTheme.labelMedium?.copyWith(
-                    color: active ? theme.colorScheme.onSurface : null,
+                    color: foregroundColor,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -7223,7 +8241,7 @@ class _WorkspaceActionChip extends StatelessWidget {
           color: Colors.transparent,
           child: InkWell(
             onTap: enabled ? onTap : null,
-            borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
+            borderRadius: BorderRadius.circular(8),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 180),
               curve: Curves.easeOutCubic,
@@ -7231,10 +8249,11 @@ class _WorkspaceActionChip extends StatelessWidget {
                 horizontal: density.inset(AppSpacing.sm),
                 vertical: density.inset(AppSpacing.xs, min: 4),
               ),
-              decoration: BoxDecoration(
-                color: surfaces.panelRaised.withValues(alpha: 0.82),
-                borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
-                border: Border.all(color: surfaces.lineSoft),
+              decoration: appSoftCardDecoration(
+                context,
+                radius: 8,
+                muted: true,
+                showShadow: false,
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -7263,7 +8282,6 @@ class _SessionOverflowMenuAction {
     required this.label,
     required this.icon,
     required this.onSelected,
-    this.checked = false,
     this.destructive = false,
     this.enabled = true,
   });
@@ -7272,7 +8290,6 @@ class _SessionOverflowMenuAction {
   final String label;
   final IconData icon;
   final VoidCallback? onSelected;
-  final bool checked;
   final bool destructive;
   final bool enabled;
 }
@@ -7318,7 +8335,7 @@ class _SessionOverflowMenuButtonState
     if (anchorRect == null) {
       return;
     }
-    final selected = await showGeneralDialog<_SessionOverflowMenuAction?>(
+    final selected = await showAppGeneralDialog<_SessionOverflowMenuAction?>(
       context: context,
       barrierDismissible: true,
       barrierLabel: 'Dismiss session menu',
@@ -7425,26 +8442,24 @@ class _SessionOverflowMenuPanel extends StatelessWidget {
     final surfaces = theme.extension<AppSurfaces>()!;
 
     return ClipRRect(
-      borderRadius: BorderRadius.circular(22),
+      borderRadius: BorderRadius.circular(18),
       child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+        filter: ui.ImageFilter.blur(sigmaX: 14, sigmaY: 14),
         child: Container(
           key: const ValueKey<String>('session-header-overflow-menu-panel'),
           constraints: const BoxConstraints(maxWidth: 320, minWidth: 260),
           decoration: BoxDecoration(
-            color: surfaces.panelRaised.withValues(alpha: 0.78),
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.09)),
+            color: surfaces.panelRaised.withValues(alpha: 0.96),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: surfaces.lineSoft.withValues(alpha: 0.96),
+            ),
             boxShadow: <BoxShadow>[
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.42),
-                blurRadius: 34,
-                offset: const Offset(0, 20),
-              ),
-              BoxShadow(
-                color: surfaces.background.withValues(alpha: 0.24),
-                blurRadius: 8,
-                offset: const Offset(0, 3),
+                color: Colors.black.withValues(alpha: 0.22),
+                blurRadius: 20,
+                spreadRadius: -10,
+                offset: const Offset(0, 10),
               ),
             ],
           ),
@@ -7493,11 +8508,9 @@ class _SessionOverflowMenuItem extends StatelessWidget {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
     final destructiveColor = surfaces.danger;
-    final accentColor = theme.colorScheme.primary;
     final itemColor = action.destructive
         ? destructiveColor
         : theme.colorScheme.onSurface;
-    final iconTone = action.checked ? accentColor : itemColor;
 
     return Opacity(
       opacity: action.enabled ? 1 : 0.44,
@@ -7522,15 +8535,15 @@ class _SessionOverflowMenuItem extends StatelessWidget {
                   width: 30,
                   height: 30,
                   decoration: BoxDecoration(
-                    color: (action.checked ? accentColor : itemColor)
-                        .withValues(alpha: action.destructive ? 0.12 : 0.14),
+                    color: itemColor.withValues(
+                      alpha: action.destructive ? 0.12 : 0.14,
+                    ),
                     borderRadius: BorderRadius.circular(11),
                     border: Border.all(
-                      color: (action.checked ? accentColor : itemColor)
-                          .withValues(alpha: 0.16),
+                      color: itemColor.withValues(alpha: 0.16),
                     ),
                   ),
-                  child: Icon(action.icon, size: 16, color: iconTone),
+                  child: Icon(action.icon, size: 16, color: itemColor),
                 ),
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(
@@ -7543,25 +8556,6 @@ class _SessionOverflowMenuItem extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (action.checked)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.xs,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: accentColor.withValues(alpha: 0.16),
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(
-                        color: accentColor.withValues(alpha: 0.24),
-                      ),
-                    ),
-                    child: Icon(
-                      Icons.check_rounded,
-                      size: 14,
-                      color: accentColor,
-                    ),
-                  ),
               ],
             ),
           ),
@@ -7608,7 +8602,7 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
     if (!mounted) {
       return;
     }
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
       useRootNavigator: true,
       builder: (dialogContext) => AppReleaseNotesDialog(notes: releaseNotes),
@@ -7684,10 +8678,10 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
-    final sectionGap = density.inset(AppSpacing.lg, min: AppSpacing.md);
+    final sectionGap = density.inset(AppSpacing.md, min: AppSpacing.sm);
     final sheetOuterPadding = density.inset(AppSpacing.md, min: AppSpacing.sm);
-    final sheetTopPadding = density.inset(AppSpacing.lg, min: AppSpacing.md);
-    final sheetHeaderLead = density.inset(AppSpacing.lg, min: AppSpacing.md);
+    final sheetTopPadding = density.inset(AppSpacing.md, min: AppSpacing.sm);
+    final sheetHeaderLead = density.inset(AppSpacing.md, min: AppSpacing.sm);
     final headerBottom = density.inset(AppSpacing.md, min: AppSpacing.sm);
 
     return AnimatedBuilder(
@@ -7713,6 +8707,9 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
           (policy) => policy.hasCustomPatterns,
         );
 
+        final isLight = theme.brightness == Brightness.light;
+        final sheetRadius = BorderRadius.circular(28);
+
         return Padding(
           padding: EdgeInsets.fromLTRB(
             sheetOuterPadding,
@@ -7721,36 +8718,23 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
             sheetOuterPadding,
           ),
           child: DecoratedBox(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(28),
-              boxShadow: <BoxShadow>[
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.42),
-                  blurRadius: 40,
-                  spreadRadius: -10,
-                  offset: const Offset(0, 24),
-                ),
-                BoxShadow(
-                  color: theme.colorScheme.primary.withValues(alpha: 0.1),
-                  blurRadius: 36,
-                  spreadRadius: -18,
-                  offset: const Offset(0, 10),
-                ),
-              ],
+            decoration: _workspaceSettingsSheetShadowDecoration(
+              context,
+              radius: sheetRadius,
             ),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(28),
+              borderRadius: sheetRadius,
               child: BackdropFilter(
                 key: const ValueKey<String>('workspace-settings-sheet-blur'),
-                filter: ui.ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+                filter: ui.ImageFilter.blur(
+                  sigmaX: isLight ? 22 : 30,
+                  sigmaY: isLight ? 22 : 30,
+                ),
                 child: Container(
                   key: const ValueKey<String>('workspace-settings-sheet'),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(28),
-                    color: surfaces.panel.withValues(alpha: 0.72),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.12),
-                    ),
+                  decoration: _workspaceSettingsSheetDecoration(
+                    context,
+                    radius: sheetRadius,
                   ),
                   child: Stack(
                     children: <Widget>[
@@ -7761,20 +8745,17 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                         child: IgnorePointer(
                           child: Container(
                             height: 1,
-                            color: Colors.white.withValues(alpha: 0.12),
+                            color: isLight
+                                ? Colors.white.withValues(alpha: 0.54)
+                                : Colors.white.withValues(alpha: 0.12),
                           ),
                         ),
                       ),
                       Column(
                         children: <Widget>[
                           Container(
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.025),
-                              border: Border(
-                                bottom: BorderSide(
-                                  color: Colors.white.withValues(alpha: 0.08),
-                                ),
-                              ),
+                            decoration: _workspaceSettingsHeaderDecoration(
+                              context,
                             ),
                             child: Padding(
                               padding: EdgeInsets.fromLTRB(
@@ -7828,8 +8809,14 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                               ),
                               children: <Widget>[
                                 _WorkspaceSettingsSection(
+                                  key: const ValueKey<String>(
+                                    'workspace-settings-section-server',
+                                  ),
                                   title: context.wp('Server'),
                                   child: _WorkspaceSettingsCard(
+                                    surfaceKey: const ValueKey<String>(
+                                      'workspace-settings-server-card-surface',
+                                    ),
                                     child: Column(
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
@@ -7942,29 +8929,55 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                 ),
                                 SizedBox(height: sectionGap),
                                 _WorkspaceSettingsSection(
-                                  title: context.wp('Shell'),
+                                  key: const ValueKey<String>(
+                                    'workspace-settings-section-session-loading',
+                                  ),
+                                  title: context.wp('Session loading'),
                                   child: _WorkspaceSettingsCard(
-                                    child:
-                                        _WorkspaceSettingsShellDisplayModeRow(
+                                    child: Column(
+                                      children: <Widget>[
+                                        _WorkspaceSettingsSessionHistoryPageSizeRow(
                                           key: const ValueKey<String>(
-                                            'workspace-settings-shell-toggle',
+                                            'workspace-settings-session-history-page-size-row',
                                           ),
                                           value: widget
                                               .appController
-                                              .shellToolDisplayMode,
+                                              .sessionHistoryPageSize,
                                           onChanged: (value) {
                                             unawaited(
                                               widget.appController
-                                                  .setShellToolDisplayMode(
+                                                  .setSessionHistoryPageSize(
                                                     value,
                                                   ),
                                             );
                                           },
                                         ),
+                                        const SizedBox(height: AppSpacing.sm),
+                                        _WorkspaceSettingsOversizedSessionBehaviorRow(
+                                          key: const ValueKey<String>(
+                                            'workspace-settings-oversized-session-behavior-row',
+                                          ),
+                                          value: widget
+                                              .appController
+                                              .oversizedSessionBehavior,
+                                          onChanged: (value) {
+                                            unawaited(
+                                              widget.appController
+                                                  .setOversizedSessionBehavior(
+                                                    value,
+                                                  ),
+                                            );
+                                          },
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                                 SizedBox(height: sectionGap),
                                 _WorkspaceSettingsSection(
+                                  key: const ValueKey<String>(
+                                    'workspace-settings-section-timeline',
+                                  ),
                                   title: context.wp('Timeline'),
                                   child: _WorkspaceSettingsCard(
                                     child: Column(
@@ -8020,49 +9033,35 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                 ),
                                 SizedBox(height: sectionGap),
                                 _WorkspaceSettingsSection(
-                                  title: context.wp('Session loading'),
+                                  key: const ValueKey<String>(
+                                    'workspace-settings-section-shell',
+                                  ),
+                                  title: context.wp('Shell'),
                                   child: _WorkspaceSettingsCard(
-                                    child: Column(
-                                      children: <Widget>[
-                                        _WorkspaceSettingsSessionHistoryPageSizeRow(
+                                    child:
+                                        _WorkspaceSettingsShellDisplayModeRow(
                                           key: const ValueKey<String>(
-                                            'workspace-settings-session-history-page-size-row',
+                                            'workspace-settings-shell-toggle',
                                           ),
                                           value: widget
                                               .appController
-                                              .sessionHistoryPageSize,
+                                              .shellToolDisplayMode,
                                           onChanged: (value) {
                                             unawaited(
                                               widget.appController
-                                                  .setSessionHistoryPageSize(
+                                                  .setShellToolDisplayMode(
                                                     value,
                                                   ),
                                             );
                                           },
                                         ),
-                                        const SizedBox(height: AppSpacing.sm),
-                                        _WorkspaceSettingsOversizedSessionBehaviorRow(
-                                          key: const ValueKey<String>(
-                                            'workspace-settings-oversized-session-behavior-row',
-                                          ),
-                                          value: widget
-                                              .appController
-                                              .oversizedSessionBehavior,
-                                          onChanged: (value) {
-                                            unawaited(
-                                              widget.appController
-                                                  .setOversizedSessionBehavior(
-                                                    value,
-                                                  ),
-                                            );
-                                          },
-                                        ),
-                                      ],
-                                    ),
                                   ),
                                 ),
                                 SizedBox(height: sectionGap),
                                 _WorkspaceSettingsSection(
+                                  key: const ValueKey<String>(
+                                    'workspace-settings-section-composer',
+                                  ),
                                   title: context.wp('Composer'),
                                   child: _WorkspaceSettingsCard(
                                     child: Column(
@@ -8104,6 +9103,9 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                 ),
                                 SizedBox(height: sectionGap),
                                 _WorkspaceSettingsSection(
+                                  key: const ValueKey<String>(
+                                    'workspace-settings-section-permissions',
+                                  ),
                                   title: context.wp('Permissions'),
                                   child: _WorkspaceSettingsCard(
                                     key: const ValueKey<String>(
@@ -8173,6 +9175,40 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                 ),
                                 SizedBox(height: sectionGap),
                                 _WorkspaceSettingsSection(
+                                  key: const ValueKey<String>(
+                                    'workspace-settings-section-sidebar',
+                                  ),
+                                  title: context.wp('Sidebar'),
+                                  child: _WorkspaceSettingsCard(
+                                    child: _WorkspaceSettingsToggleRow(
+                                      key: const ValueKey<String>(
+                                        'workspace-settings-sidebar-child-sessions-toggle',
+                                      ),
+                                      title: context.wp(
+                                        'Show sub-sessions in sidebar',
+                                      ),
+                                      subtitle: context.wp(
+                                        'Display nested agent sessions under their root session in the session list.',
+                                      ),
+                                      value: widget
+                                          .appController
+                                          .sidebarChildSessionsVisible,
+                                      onChanged: (value) {
+                                        unawaited(
+                                          widget.appController
+                                              .setSidebarChildSessionsVisible(
+                                                value,
+                                              ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(height: sectionGap),
+                                _WorkspaceSettingsSection(
+                                  key: const ValueKey<String>(
+                                    'workspace-settings-section-appearance',
+                                  ),
                                   title: context.wp('Appearance'),
                                   child: _WorkspaceSettingsCard(
                                     child: Column(
@@ -8270,6 +9306,18 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                 ),
                                 SizedBox(height: sectionGap),
                                 _WorkspaceSettingsSection(
+                                  key: const ValueKey<String>(
+                                    'workspace-settings-section-keyboard',
+                                  ),
+                                  title: context.wp('Keyboard'),
+                                  child:
+                                      const _WorkspaceKeyboardShortcutsCard(),
+                                ),
+                                SizedBox(height: sectionGap),
+                                _WorkspaceSettingsSection(
+                                  key: const ValueKey<String>(
+                                    'workspace-settings-section-whats-new',
+                                  ),
                                   title: context.wp("What's New"),
                                   child: _WorkspaceSettingsCard(
                                     child: Column(
@@ -8303,18 +9351,10 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                           padding: const EdgeInsets.all(
                                             AppSpacing.md,
                                           ),
-                                          decoration: BoxDecoration(
-                                            color: surfaces.panelMuted
-                                                .withValues(alpha: 0.52),
-                                            borderRadius: BorderRadius.circular(
-                                              18,
-                                            ),
-                                            border: Border.all(
-                                              color: Colors.white.withValues(
-                                                alpha: 0.075,
+                                          decoration:
+                                              _workspaceSettingsInsetDecoration(
+                                                context,
                                               ),
-                                            ),
-                                          ),
                                           child: Row(
                                             children: <Widget>[
                                               Expanded(
@@ -8397,40 +9437,6 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                     ),
                                   ),
                                 ),
-                                SizedBox(height: sectionGap),
-                                _WorkspaceSettingsSection(
-                                  title: context.wp('Keyboard'),
-                                  child:
-                                      const _WorkspaceKeyboardShortcutsCard(),
-                                ),
-                                SizedBox(height: sectionGap),
-                                _WorkspaceSettingsSection(
-                                  title: context.wp('Sidebar'),
-                                  child: _WorkspaceSettingsCard(
-                                    child: _WorkspaceSettingsToggleRow(
-                                      key: const ValueKey<String>(
-                                        'workspace-settings-sidebar-child-sessions-toggle',
-                                      ),
-                                      title: context.wp(
-                                        'Show sub-sessions in sidebar',
-                                      ),
-                                      subtitle: context.wp(
-                                        'Display nested agent sessions under their root session in the session list.',
-                                      ),
-                                      value: widget
-                                          .appController
-                                          .sidebarChildSessionsVisible,
-                                      onChanged: (value) {
-                                        unawaited(
-                                          widget.appController
-                                              .setSidebarChildSessionsVisible(
-                                                value,
-                                              ),
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                ),
                               ],
                             ),
                           ),
@@ -8448,8 +9454,144 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
   }
 }
 
+BoxDecoration _workspaceSettingsSheetShadowDecoration(
+  BuildContext context, {
+  required BorderRadiusGeometry radius,
+}) {
+  final theme = Theme.of(context);
+  final isLight = theme.brightness == Brightness.light;
+  return BoxDecoration(
+    borderRadius: radius,
+    boxShadow: isLight
+        ? <BoxShadow>[
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.10),
+              blurRadius: 30,
+              spreadRadius: -20,
+              offset: const Offset(0, 18),
+            ),
+            BoxShadow(
+              color: theme.colorScheme.primary.withValues(alpha: 0.035),
+              blurRadius: 28,
+              spreadRadius: -22,
+              offset: const Offset(0, 10),
+            ),
+          ]
+        : <BoxShadow>[
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.42),
+              blurRadius: 40,
+              spreadRadius: -10,
+              offset: const Offset(0, 24),
+            ),
+            BoxShadow(
+              color: theme.colorScheme.primary.withValues(alpha: 0.1),
+              blurRadius: 36,
+              spreadRadius: -18,
+              offset: const Offset(0, 10),
+            ),
+          ],
+  );
+}
+
+BoxDecoration _workspaceSettingsSheetDecoration(
+  BuildContext context, {
+  required BorderRadiusGeometry radius,
+}) {
+  final theme = Theme.of(context);
+  final surfaces = theme.extension<AppSurfaces>()!;
+  final isLight = theme.brightness == Brightness.light;
+  return BoxDecoration(
+    borderRadius: radius,
+    color: isLight
+        ? Color.alphaBlend(
+            Colors.white.withValues(alpha: 0.38),
+            surfaces.panel.withValues(alpha: 0.82),
+          )
+        : surfaces.panel.withValues(alpha: 0.72),
+    border: Border.all(
+      color: isLight
+          ? surfaces.lineSoft.withValues(alpha: 0.52)
+          : Colors.white.withValues(alpha: 0.12),
+    ),
+  );
+}
+
+BoxDecoration _workspaceSettingsHeaderDecoration(BuildContext context) {
+  final theme = Theme.of(context);
+  final surfaces = theme.extension<AppSurfaces>()!;
+  final isLight = theme.brightness == Brightness.light;
+  return BoxDecoration(
+    color: Colors.white.withValues(alpha: isLight ? 0.18 : 0.025),
+    border: Border(
+      bottom: BorderSide(
+        color: isLight
+            ? surfaces.lineSoft.withValues(alpha: 0.46)
+            : Colors.white.withValues(alpha: 0.08),
+      ),
+    ),
+  );
+}
+
+BoxDecoration _workspaceSettingsCardDecoration(BuildContext context) {
+  final theme = Theme.of(context);
+  final surfaces = theme.extension<AppSurfaces>()!;
+  final isLight = theme.brightness == Brightness.light;
+  return BoxDecoration(
+    borderRadius: BorderRadius.circular(20),
+    color: isLight
+        ? Color.alphaBlend(
+            Colors.white.withValues(alpha: 0.52),
+            surfaces.panelRaised.withValues(alpha: 0.34),
+          )
+        : surfaces.panelRaised.withValues(alpha: 0.42),
+    border: Border.all(
+      color: isLight
+          ? surfaces.lineSoft.withValues(alpha: 0.50)
+          : Colors.white.withValues(alpha: 0.08),
+    ),
+    boxShadow: isLight
+        ? const <BoxShadow>[]
+        : <BoxShadow>[
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.22),
+              blurRadius: 18,
+              spreadRadius: -10,
+              offset: const Offset(0, 12),
+            ),
+          ],
+  );
+}
+
+BoxDecoration _workspaceSettingsInsetDecoration(
+  BuildContext context, {
+  double radius = 18,
+}) {
+  final theme = Theme.of(context);
+  final surfaces = theme.extension<AppSurfaces>()!;
+  final isLight = theme.brightness == Brightness.light;
+  return BoxDecoration(
+    color: isLight
+        ? Color.alphaBlend(
+            Colors.white.withValues(alpha: 0.44),
+            surfaces.panelMuted.withValues(alpha: 0.26),
+          )
+        : surfaces.panelMuted.withValues(alpha: 0.52),
+    borderRadius: BorderRadius.circular(radius),
+    border: Border.all(
+      color: isLight
+          ? surfaces.lineSoft.withValues(alpha: 0.46)
+          : Colors.white.withValues(alpha: 0.075),
+    ),
+  );
+}
+
 class _WorkspaceSettingsSection extends StatelessWidget {
-  const _WorkspaceSettingsSection({required this.title, required this.child});
+  const _WorkspaceSettingsSection({
+    required this.title,
+    required this.child,
+    super.key,
+  });
 
   final String title;
   final Widget child;
@@ -8476,34 +9618,32 @@ class _WorkspaceSettingsSection extends StatelessWidget {
 }
 
 class _WorkspaceSettingsCard extends StatelessWidget {
-  const _WorkspaceSettingsCard({required this.child, super.key});
+  const _WorkspaceSettingsCard({
+    required this.child,
+    this.surfaceKey,
+    super.key,
+  });
 
   final Widget child;
+  final Key? surfaceKey;
 
   @override
   Widget build(BuildContext context) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final theme = Theme.of(context);
+    final isLight = theme.brightness == Brightness.light;
     final density = _workspaceDensity(context);
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
       child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+        filter: ui.ImageFilter.blur(
+          sigmaX: isLight ? 8 : 12,
+          sigmaY: isLight ? 8 : 12,
+        ),
         child: Container(
+          key: surfaceKey,
           width: double.infinity,
           padding: EdgeInsets.all(density.inset(AppSpacing.md)),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            color: surfaces.panelRaised.withValues(alpha: 0.42),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-            boxShadow: <BoxShadow>[
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.22),
-                blurRadius: 18,
-                spreadRadius: -10,
-                offset: const Offset(0, 12),
-              ),
-            ],
-          ),
+          decoration: _workspaceSettingsCardDecoration(context),
           child: child,
         ),
       ),
@@ -8531,14 +9671,10 @@ class _WorkspaceSettingsToggleRow extends StatelessWidget {
     final density = _workspaceDensity(context);
     return Container(
       padding: EdgeInsets.symmetric(
-        horizontal: density.inset(AppSpacing.md),
-        vertical: density.inset(AppSpacing.sm),
+        horizontal: density.inset(AppSpacing.sm, min: AppSpacing.xs),
+        vertical: density.inset(AppSpacing.xs, min: AppSpacing.xxs),
       ),
-      decoration: BoxDecoration(
-        color: surfaces.panelMuted.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
-      ),
+      decoration: _workspaceSettingsInsetDecoration(context),
       child: Row(
         children: <Widget>[
           Expanded(
@@ -8585,11 +9721,7 @@ class _WorkspaceSettingsShellDisplayModeRow extends StatelessWidget {
     final density = _workspaceDensity(context);
     return Container(
       padding: EdgeInsets.all(density.inset(AppSpacing.md)),
-      decoration: BoxDecoration(
-        color: surfaces.panelMuted.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
-      ),
+      decoration: _workspaceSettingsInsetDecoration(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -8662,11 +9794,7 @@ class _WorkspaceSettingsSessionHistoryPageSizeRow extends StatelessWidget {
     final density = _workspaceDensity(context);
     return Container(
       padding: EdgeInsets.all(density.inset(AppSpacing.md)),
-      decoration: BoxDecoration(
-        color: surfaces.panelMuted.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
-      ),
+      decoration: _workspaceSettingsInsetDecoration(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -8731,11 +9859,7 @@ class _WorkspaceSettingsOversizedSessionBehaviorRow extends StatelessWidget {
     final density = _workspaceDensity(context);
     return Container(
       padding: EdgeInsets.all(density.inset(AppSpacing.md)),
-      decoration: BoxDecoration(
-        color: surfaces.panelMuted.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
-      ),
+      decoration: _workspaceSettingsInsetDecoration(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -8811,11 +9935,7 @@ class _WorkspaceSettingsPermissionRow extends StatelessWidget {
     ];
     return Container(
       padding: EdgeInsets.all(density.inset(AppSpacing.md)),
-      decoration: BoxDecoration(
-        color: surfaces.panelMuted.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
-      ),
+      decoration: _workspaceSettingsInsetDecoration(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -8902,11 +10022,7 @@ class _WorkspaceSettingsFollowupModeRow extends StatelessWidget {
     final density = _workspaceDensity(context);
     return Container(
       padding: EdgeInsets.all(density.inset(AppSpacing.md)),
-      decoration: BoxDecoration(
-        color: surfaces.panelMuted.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
-      ),
+      decoration: _workspaceSettingsInsetDecoration(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -8979,11 +10095,7 @@ class _WorkspaceSettingsThemeRow extends StatelessWidget {
     final previewBrightness = theme.brightness;
     return Container(
       padding: EdgeInsets.all(density.inset(AppSpacing.md)),
-      decoration: BoxDecoration(
-        color: surfaces.panelMuted.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
-      ),
+      decoration: _workspaceSettingsInsetDecoration(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -9088,11 +10200,7 @@ class _WorkspaceSettingsColorSchemeRow extends StatelessWidget {
     };
     return Container(
       padding: EdgeInsets.all(density.inset(AppSpacing.md)),
-      decoration: BoxDecoration(
-        color: surfaces.panelMuted.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
-      ),
+      decoration: _workspaceSettingsInsetDecoration(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -9412,11 +10520,7 @@ class _WorkspaceSettingsLanguageRow extends StatelessWidget {
     };
     return Container(
       padding: EdgeInsets.all(density.inset(AppSpacing.md)),
-      decoration: BoxDecoration(
-        color: surfaces.panelMuted.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
-      ),
+      decoration: _workspaceSettingsInsetDecoration(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -9507,11 +10611,7 @@ class _WorkspaceSettingsLayoutDensityRow extends StatelessWidget {
     final density = _workspaceDensity(context);
     return Container(
       padding: EdgeInsets.all(density.inset(AppSpacing.md)),
-      decoration: BoxDecoration(
-        color: surfaces.panelMuted.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
-      ),
+      decoration: _workspaceSettingsInsetDecoration(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -9579,11 +10679,7 @@ class _WorkspaceSettingsMultiPaneComposerModeRow extends StatelessWidget {
     final density = _workspaceDensity(context);
     return Container(
       padding: EdgeInsets.all(density.inset(AppSpacing.md)),
-      decoration: BoxDecoration(
-        color: surfaces.panelMuted.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
-      ),
+      decoration: _workspaceSettingsInsetDecoration(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -9653,11 +10749,7 @@ class _WorkspaceSettingsTextScaleRow extends StatelessWidget {
     final percentLabel = '${(value * 100).round()}%';
     return Container(
       padding: EdgeInsets.all(density.inset(AppSpacing.md)),
-      decoration: BoxDecoration(
-        color: surfaces.panelMuted.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
-      ),
+      decoration: _workspaceSettingsInsetDecoration(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -10022,11 +11114,7 @@ class _WorkspaceShortcutRow extends StatelessWidget {
         horizontal: density.inset(AppSpacing.md),
         vertical: density.inset(AppSpacing.sm),
       ),
-      decoration: BoxDecoration(
-        color: surfaces.panelMuted.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
-      ),
+      decoration: _workspaceSettingsInsetDecoration(context),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -10227,143 +11315,128 @@ class _WorkspaceCommandPaletteSheetState
     final filtered = _filteredCommands;
     final highlightedIndex = _resolvedHighlightedIndex(filtered.length);
     final mediaQuery = MediaQuery.of(context);
-    return Dialog(
+    return AppDialogFrame(
       insetPadding: EdgeInsets.fromLTRB(
         AppSpacing.lg,
         AppSpacing.xl,
         AppSpacing.lg,
-        AppSpacing.lg + mediaQuery.viewInsets.bottom,
+        AppSpacing.lg,
       ),
-      backgroundColor: Colors.transparent,
-      elevation: 0,
+      constraints: BoxConstraints(
+        maxWidth: 760,
+        maxHeight: math.min(mediaQuery.size.height * 0.76, 640),
+      ),
       child: Focus(
         autofocus: true,
         onKeyEvent: _handleKeyEvent,
-        child: Center(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: 760,
-              maxHeight: math.min(mediaQuery.size.height * 0.76, 640),
-            ),
-            child: Material(
-              key: const ValueKey<String>('workspace-command-palette-sheet'),
-              color: surfaces.panel,
-              borderRadius: BorderRadius.circular(28),
-              child: Container(
-                padding: const EdgeInsets.all(AppSpacing.md),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(28),
-                  border: Border.all(color: surfaces.lineSoft),
-                  boxShadow: <BoxShadow>[
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.24),
-                      blurRadius: 28,
-                      offset: const Offset(0, 18),
-                    ),
-                  ],
+        child: Material(
+          color: Colors.transparent,
+          child: AppGlassPanel(
+            key: const ValueKey<String>('workspace-command-palette-sheet'),
+            radius: AppSpacing.dialogRadius,
+            blur: 24,
+            backgroundOpacity: theme.brightness == Brightness.dark ? 0.82 : 0.9,
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  'Command Palette',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      'Command Palette',
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.xxs),
-                    Text(
-                      'Search workspace actions, themes, models, agents, and custom commands.',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: surfaces.muted,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    TextField(
-                      key: const ValueKey<String>(
-                        'workspace-command-palette-field',
-                      ),
-                      controller: _queryController,
-                      focusNode: _queryFocusNode,
-                      autofocus: true,
-                      textInputAction: TextInputAction.search,
-                      onSubmitted: (_) => _submitHighlighted(),
-                      decoration: InputDecoration(
-                        hintText: context.wp('Type a command or search'),
-                        prefixIcon: const Icon(Icons.search_rounded),
-                        isDense: true,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    Text(
-                      context.wp(
-                        'Enter runs the highlighted command. Tab or arrow keys move the selection.',
-                      ),
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color: surfaces.muted,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    Expanded(
-                      child: filtered.isEmpty
-                          ? Center(
-                              child: Column(
-                                key: const ValueKey<String>(
-                                  'workspace-command-palette-empty-state',
-                                ),
-                                mainAxisSize: MainAxisSize.min,
-                                children: <Widget>[
-                                  Icon(
-                                    Icons.search_off_rounded,
-                                    color: surfaces.muted,
-                                  ),
-                                  const SizedBox(height: AppSpacing.sm),
-                                  Text(
-                                    context.wp('No matching commands'),
-                                    style: theme.textTheme.titleSmall,
-                                  ),
-                                  const SizedBox(height: AppSpacing.xxs),
-                                  Text(
-                                    context.wp(
-                                      'Try a project name, session title, theme, model, or slash command.',
-                                    ),
-                                    textAlign: TextAlign.center,
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: surfaces.muted,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            )
-                          : ListView.separated(
-                              itemCount: filtered.length,
-                              separatorBuilder: (_, _) =>
-                                  const SizedBox(height: AppSpacing.xs),
-                              itemBuilder: (context, index) {
-                                final command = filtered[index];
-                                final highlighted = index == highlightedIndex;
-                                return _WorkspaceCommandPaletteTile(
-                                  key: ValueKey<String>(
-                                    'workspace-command-palette-option-${command.id}',
-                                  ),
-                                  command: command,
-                                  highlighted: highlighted,
-                                  onTap: () => _selectCommand(command),
-                                  onHover: (hovering) {
-                                    if (!hovering) {
-                                      return;
-                                    }
-                                    setState(() {
-                                      _highlightedIndex = index;
-                                    });
-                                  },
-                                );
-                              },
+                const SizedBox(height: AppSpacing.xxs),
+                Text(
+                  'Search workspace actions, themes, models, agents, and custom commands.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: surfaces.muted,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                TextField(
+                  key: const ValueKey<String>(
+                    'workspace-command-palette-field',
+                  ),
+                  controller: _queryController,
+                  focusNode: _queryFocusNode,
+                  autofocus: true,
+                  textInputAction: TextInputAction.search,
+                  onSubmitted: (_) => _submitHighlighted(),
+                  decoration: InputDecoration(
+                    hintText: context.wp('Type a command or search'),
+                    prefixIcon: const Icon(Icons.search_rounded),
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  context.wp(
+                    'Enter runs the highlighted command. Tab or arrow keys move the selection.',
+                  ),
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: surfaces.muted,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                Expanded(
+                  child: filtered.isEmpty
+                      ? Center(
+                          child: Column(
+                            key: const ValueKey<String>(
+                              'workspace-command-palette-empty-state',
                             ),
-                    ),
-                  ],
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              Icon(
+                                Icons.search_off_rounded,
+                                color: surfaces.muted,
+                              ),
+                              const SizedBox(height: AppSpacing.sm),
+                              Text(
+                                context.wp('No matching commands'),
+                                style: theme.textTheme.titleSmall,
+                              ),
+                              const SizedBox(height: AppSpacing.xxs),
+                              Text(
+                                context.wp(
+                                  'Try a project name, session title, theme, model, or slash command.',
+                                ),
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: surfaces.muted,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : ListView.separated(
+                          itemCount: filtered.length,
+                          separatorBuilder: (_, _) =>
+                              const SizedBox(height: AppSpacing.xs),
+                          itemBuilder: (context, index) {
+                            final command = filtered[index];
+                            final highlighted = index == highlightedIndex;
+                            return _WorkspaceCommandPaletteTile(
+                              key: ValueKey<String>(
+                                'workspace-command-palette-option-${command.id}',
+                              ),
+                              command: command,
+                              highlighted: highlighted,
+                              onTap: () => _selectCommand(command),
+                              onHover: (hovering) {
+                                if (!hovering) {
+                                  return;
+                                }
+                                setState(() {
+                                  _highlightedIndex = index;
+                                });
+                              },
+                            );
+                          },
+                        ),
                 ),
-              ),
+              ],
             ),
           ),
         ),
@@ -10779,22 +11852,15 @@ class _WorkspaceMcpPickerSheetState extends State<_WorkspaceMcpPickerSheet> {
             maxHeight: math.min(mediaQuery.size.height * 0.86, 760),
           ),
           child: Material(
-            key: const ValueKey<String>('workspace-mcp-picker-sheet'),
-            color: surfaces.panel,
-            borderRadius: BorderRadius.circular(28),
-            child: Container(
+            color: Colors.transparent,
+            child: AppGlassPanel(
+              key: const ValueKey<String>('workspace-mcp-picker-sheet'),
+              radius: AppSpacing.sheetRadius,
+              blur: 24,
+              backgroundOpacity: theme.brightness == Brightness.dark
+                  ? 0.82
+                  : 0.9,
               padding: const EdgeInsets.all(AppSpacing.md),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(28),
-                border: Border.all(color: surfaces.lineSoft),
-                boxShadow: <BoxShadow>[
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.24),
-                    blurRadius: 28,
-                    offset: const Offset(0, 18),
-                  ),
-                ],
-              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
@@ -11196,6 +12262,17 @@ String _workspaceMcpStatusLabel(String status) {
   };
 }
 
+String _workspaceSessionStatusLabel(BuildContext context, String? status) {
+  return switch (status?.trim().toLowerCase()) {
+    'running' || 'busy' || 'pending' => context.wp('Active'),
+    'retry' => context.wp('Needs attention'),
+    'error' => context.wp('Error'),
+    'idle' || null || '' => context.wp('Idle'),
+    final other when other.isNotEmpty => other.replaceAll('_', ' '),
+    _ => context.wp('Idle'),
+  };
+}
+
 _WorkspaceMcpStatusMeta _workspaceMcpStatusMeta(
   BuildContext context,
   ThemeData theme,
@@ -11341,28 +12418,21 @@ class _WorkspaceSettingsStatusChip extends StatelessWidget {
 
 class _SessionIdentity extends StatelessWidget {
   const _SessionIdentity({
-    required this.compact,
     required this.title,
     required this.titleKey,
     required this.titleStyle,
     required this.busy,
-    required this.busyKey,
   });
 
-  final bool compact;
   final String title;
   final Key titleKey;
   final TextStyle? titleStyle;
   final bool busy;
-  final Key busyKey;
 
   @override
   Widget build(BuildContext context) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     return Row(
       children: <Widget>[
-        _SessionGlyph(compact: compact),
-        SizedBox(width: compact ? AppSpacing.sm : AppSpacing.md),
         Expanded(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -11373,72 +12443,6 @@ class _SessionIdentity extends StatelessWidget {
                 active: busy,
                 text: TextSpan(text: title, style: titleStyle),
               ),
-              if (busy)
-                Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final primary = Theme.of(context).colorScheme.primary;
-                      final maxWidth = constraints.maxWidth.isFinite
-                          ? constraints.maxWidth
-                          : double.infinity;
-                      if (maxWidth <= 14) {
-                        final dotSize = maxWidth.clamp(4.0, 8.0);
-                        return Align(
-                          alignment: Alignment.centerLeft,
-                          child: Container(
-                            key: busyKey,
-                            width: dotSize,
-                            height: dotSize,
-                            decoration: BoxDecoration(
-                              color: primary,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                        );
-                      }
-                      final showLabel = !compact && maxWidth >= 56;
-                      return Container(
-                        key: busyKey,
-                        padding: EdgeInsets.symmetric(
-                          horizontal: showLabel ? AppSpacing.xs : 4,
-                          vertical: showLabel ? 3 : 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: primary.withValues(alpha: 0.14),
-                          borderRadius: BorderRadius.circular(AppSpacing.md),
-                          border: Border.all(
-                            color: primary.withValues(alpha: 0.28),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: <Widget>[
-                            Container(
-                              width: 6,
-                              height: 6,
-                              decoration: BoxDecoration(
-                                color: primary,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            if (showLabel) ...<Widget>[
-                              const SizedBox(width: AppSpacing.xxs),
-                              Text(
-                                'Busy',
-                                style: Theme.of(context).textTheme.labelMedium
-                                    ?.copyWith(
-                                      color: surfaces.accentSoft,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ),
             ],
           ),
         ),
@@ -11447,41 +12451,7 @@ class _SessionIdentity extends StatelessWidget {
   }
 }
 
-class _SessionGlyph extends StatelessWidget {
-  const _SessionGlyph({required this.compact});
-
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
-    final size = compact ? 3.0 : 4.0;
-    final gap = compact ? 2.0 : 2.5;
-    final accent = Theme.of(context).colorScheme.primary;
-    return SizedBox(
-      width: compact ? 16 : 18,
-      height: compact ? 16 : 18,
-      child: Wrap(
-        spacing: gap,
-        runSpacing: gap,
-        children: List<Widget>.generate(9, (index) {
-          final highlight = <int>{1, 3, 4, 5, 7}.contains(index);
-          return DecoratedBox(
-            decoration: BoxDecoration(
-              color: (highlight ? accent : surfaces.lineSoft).withValues(
-                alpha: highlight ? 0.8 : 0.7,
-              ),
-              borderRadius: BorderRadius.circular(1.5),
-            ),
-            child: SizedBox(width: size, height: size),
-          );
-        }),
-      ),
-    );
-  }
-}
-
-class _SessionContextUsageRing extends StatelessWidget {
+class _SessionContextUsageRing extends StatefulWidget {
   const _SessionContextUsageRing({
     required this.usagePercent,
     required this.totalTokens,
@@ -11498,17 +12468,118 @@ class _SessionContextUsageRing extends StatelessWidget {
   final VoidCallback? onTap;
 
   @override
+  State<_SessionContextUsageRing> createState() =>
+      _SessionContextUsageRingState();
+}
+
+class _SessionContextUsageRingState extends State<_SessionContextUsageRing>
+    with TickerProviderStateMixin {
+  late final AnimationController _progressController;
+  late final AnimationController _pulseController;
+  late Animation<double> _progressAnimation;
+  late Animation<Color?> _colorAnimation;
+  late double _targetValue;
+  late Color _targetColor;
+
+  @override
+  void initState() {
+    super.initState();
+    _targetValue = _normalizedUsageValue(widget.usagePercent);
+    _targetColor = const Color(0x00000000);
+    _progressController = AnimationController(
+      vsync: this,
+      duration: Duration.zero,
+    )..value = 1;
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 680),
+    );
+    _progressAnimation = AlwaysStoppedAnimation<double>(_targetValue);
+    _colorAnimation = AlwaysStoppedAnimation<Color?>(_targetColor);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final resolvedColor = _resolvedUsageColor();
+    if (_targetColor.toARGB32() == resolvedColor.toARGB32() &&
+        (_colorAnimation.value?.toARGB32() ?? _targetColor.toARGB32()) ==
+            resolvedColor.toARGB32()) {
+      return;
+    }
+    _targetColor = resolvedColor;
+    _colorAnimation = AlwaysStoppedAnimation<Color?>(resolvedColor);
+  }
+
+  @override
+  void didUpdateWidget(covariant _SessionContextUsageRing oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final nextValue = _normalizedUsageValue(widget.usagePercent);
+    final nextColor = _resolvedUsageColor();
+    final currentValue = _progressAnimation.value;
+    final currentColor = _colorAnimation.value ?? _targetColor;
+    final valueDelta = (nextValue - currentValue).abs();
+    final colorChanged = currentColor.toARGB32() != nextColor.toARGB32();
+    if (valueDelta < 0.0001 && !colorChanged) {
+      return;
+    }
+
+    final curve = CurvedAnimation(
+      parent: _progressController,
+      curve: Curves.easeOutCubic,
+    );
+    _progressAnimation = Tween<double>(
+      begin: currentValue,
+      end: nextValue,
+    ).animate(curve);
+    _colorAnimation = ColorTween(
+      begin: currentColor,
+      end: nextColor,
+    ).animate(curve);
+    _targetValue = nextValue;
+    _targetColor = nextColor;
+    _progressController.duration = _contextUsageAnimationDuration(valueDelta);
+    _progressController.forward(from: 0);
+    if (widget.usagePercent != null) {
+      _pulseController.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _progressController.dispose();
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  double _normalizedUsageValue(int? usagePercent) {
+    if (usagePercent == null) {
+      return 0;
+    }
+    return usagePercent.clamp(0, 100) / 100;
+  }
+
+  Color _resolvedUsageColor() {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final percent = widget.usagePercent?.clamp(0, 100);
+    return _sessionContextUsageColor(percent, theme, surfaces);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
     final locale = Localizations.localeOf(context).toLanguageTag();
     final numberFormat = NumberFormat.decimalPattern(locale);
-    final percent = usagePercent?.clamp(0, 100);
-    final value = percent == null ? 0.0 : percent / 100;
-    final color = _sessionContextUsageColor(percent, theme, surfaces);
-    final strokeWidth = compact ? 2.8 : 3.2;
-    final size = compact ? 24.0 : 28.0;
-    final tooltip = switch ((percent, totalTokens, contextLimit)) {
+    final percent = widget.usagePercent?.clamp(0, 100);
+    final strokeWidth = widget.compact ? 2.8 : 3.2;
+    final size = widget.compact ? 24.0 : 28.0;
+    final tooltip = switch ((
+      percent,
+      widget.totalTokens,
+      widget.contextLimit,
+    )) {
       (null, _, _) => 'Context window usage unavailable',
       (final usage?, final total?, final limit?) =>
         '$usage% of context window used '
@@ -11518,66 +12589,197 @@ class _SessionContextUsageRing extends StatelessWidget {
 
     final indicator = Semantics(
       label: tooltip,
-      button: onTap != null,
-      child: SizedBox(
-        width: size,
-        height: size,
-        child: Stack(
-          fit: StackFit.expand,
-          children: <Widget>[
-            DecoratedBox(
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: surfaces.lineSoft,
-                  width: strokeWidth,
+      button: widget.onTap != null,
+      child: AnimatedBuilder(
+        animation: Listenable.merge(<Listenable>[
+          _progressController,
+          _pulseController,
+        ]),
+        child: null,
+        builder: (context, _) {
+          final displayedValue = _progressAnimation.value.clamp(0.0, 1.0);
+          final displayedColor = _colorAnimation.value ?? _targetColor;
+          final pulse = math
+              .sin(_pulseController.value * math.pi)
+              .clamp(0.0, 1.0);
+          final glow =
+              (pulse +
+                      (_progressController.isAnimating
+                          ? (1 - _progressController.value) * 0.28
+                          : 0))
+                  .clamp(0.0, 1.0);
+          return SizedBox(
+            width: size,
+            height: size,
+            child: Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                RepaintBoundary(
+                  child: CustomPaint(
+                    painter: _SessionContextUsageRingPainter(
+                      progress: displayedValue,
+                      color: displayedColor,
+                      trackColor: surfaces.lineSoft,
+                      strokeWidth: strokeWidth,
+                      glow: glow,
+                    ),
+                  ),
                 ),
-              ),
+                Center(
+                  child: Transform.scale(
+                    scale: 1 + (glow * 0.14),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: displayedColor.withValues(
+                          alpha: percent == null ? 0.28 : 0.92,
+                        ),
+                        shape: BoxShape.circle,
+                        boxShadow: <BoxShadow>[
+                          BoxShadow(
+                            color: displayedColor.withValues(
+                              alpha: percent == null
+                                  ? 0.0
+                                  : 0.18 + (glow * 0.2),
+                            ),
+                            blurRadius: 8 + (glow * 10),
+                            spreadRadius: -2,
+                          ),
+                        ],
+                      ),
+                      child: SizedBox(
+                        width: widget.compact ? 4.2 : 5.2,
+                        height: widget.compact ? 4.2 : 5.2,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-            if (percent != null)
-              Padding(
-                padding: const EdgeInsets.all(0.5),
-                child: CircularProgressIndicator(
-                  value: value,
-                  strokeWidth: strokeWidth,
-                  backgroundColor: Colors.transparent,
-                  color: color,
-                  strokeCap: StrokeCap.round,
-                ),
-              ),
-            Center(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: percent == null ? 0.28 : 0.85),
-                  shape: BoxShape.circle,
-                ),
-                child: SizedBox(
-                  width: compact ? 4 : 5,
-                  height: compact ? 4 : 5,
-                ),
-              ),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
 
     return Tooltip(
       message: tooltip,
       waitDuration: const Duration(milliseconds: 120),
-      child: onTap == null
+      child: widget.onTap == null
           ? indicator
           : Material(
               color: Colors.transparent,
               shape: const CircleBorder(),
               child: InkResponse(
-                onTap: onTap,
+                onTap: widget.onTap,
                 radius: size * 0.9,
                 customBorder: const CircleBorder(),
                 child: indicator,
               ),
             ),
     );
+  }
+}
+
+class _SessionContextUsageRingPainter extends CustomPainter {
+  const _SessionContextUsageRingPainter({
+    required this.progress,
+    required this.color,
+    required this.trackColor,
+    required this.strokeWidth,
+    required this.glow,
+  });
+
+  final double progress;
+  final Color color;
+  final Color trackColor;
+  final double strokeWidth;
+  final double glow;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = size.center(Offset.zero);
+    final radius = math.max(
+      0.0,
+      (math.min(size.width, size.height) / 2) - strokeWidth,
+    );
+    final trackPaint = Paint()
+      ..color = trackColor.withValues(alpha: 0.92)
+      ..strokeWidth = strokeWidth
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    final tickPaint = Paint()
+      ..color = trackColor.withValues(alpha: 0.34)
+      ..strokeWidth = 1.15
+      ..strokeCap = StrokeCap.round;
+
+    for (final fraction in const <double>[0, 0.25, 0.5, 0.75]) {
+      final angle = (-math.pi / 2) + (math.pi * 2 * fraction);
+      final direction = Offset(math.cos(angle), math.sin(angle));
+      canvas.drawLine(
+        center + (direction * (radius + (strokeWidth * 0.35))),
+        center + (direction * (radius + (strokeWidth * 1.05))),
+        tickPaint,
+      );
+    }
+
+    if (glow > 0.01) {
+      canvas.drawCircle(
+        center,
+        radius + strokeWidth,
+        Paint()
+          ..color = color.withValues(alpha: 0.08 + (glow * 0.08))
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = strokeWidth + (glow * 2.6)
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, 6 + (glow * 8)),
+      );
+    }
+
+    canvas.drawCircle(center, radius, trackPaint);
+    if (progress <= 0) {
+      return;
+    }
+
+    final arcPaint = Paint()
+      ..color = color
+      ..strokeWidth = strokeWidth
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      -math.pi / 2,
+      math.max(progress, 0.02) * math.pi * 2,
+      false,
+      arcPaint,
+    );
+
+    final headAngle = (-math.pi / 2) + (math.pi * 2 * progress);
+    final headOffset =
+        center + (Offset(math.cos(headAngle), math.sin(headAngle)) * radius);
+    canvas.drawCircle(
+      headOffset,
+      strokeWidth * (0.9 + (glow * 0.65)),
+      Paint()
+        ..color = color.withValues(alpha: 0.24 + (glow * 0.22))
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 5 + (glow * 7)),
+    );
+    canvas.drawCircle(
+      headOffset,
+      strokeWidth * 0.58,
+      Paint()..color = Colors.white.withValues(alpha: 0.92),
+    );
+    canvas.drawCircle(
+      headOffset,
+      strokeWidth * 0.4,
+      Paint()..color = color.withValues(alpha: 0.98),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _SessionContextUsageRingPainter oldDelegate) {
+    return progress != oldDelegate.progress ||
+        color != oldDelegate.color ||
+        trackColor != oldDelegate.trackColor ||
+        strokeWidth != oldDelegate.strokeWidth ||
+        glow != oldDelegate.glow;
   }
 }
 
@@ -11639,40 +12841,6 @@ class _WorkspaceSidebar extends StatefulWidget {
   State<_WorkspaceSidebar> createState() => _WorkspaceSidebarState();
 }
 
-void _triggerProjectReorderHapticFeedback() {
-  unawaited(
-    HapticFeedback.selectionClick().catchError((Object _, StackTrace __) {
-      return;
-    }),
-  );
-}
-
-class _HapticDelayedMultiDragGestureRecognizer
-    extends DelayedMultiDragGestureRecognizer {
-  _HapticDelayedMultiDragGestureRecognizer({super.debugOwner});
-
-  @override
-  void acceptGesture(int pointer) {
-    _triggerProjectReorderHapticFeedback();
-    super.acceptGesture(pointer);
-  }
-}
-
-class _HapticReorderableDelayedDragStartListener
-    extends ReorderableDelayedDragStartListener {
-  const _HapticReorderableDelayedDragStartListener({
-    super.key,
-    required super.child,
-    required super.index,
-    super.enabled,
-  });
-
-  @override
-  MultiDragGestureRecognizer createRecognizer() {
-    return _HapticDelayedMultiDragGestureRecognizer(debugOwner: this);
-  }
-}
-
 class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
   List<ProjectTarget> _orderedProjects = const <ProjectTarget>[];
 
@@ -11730,8 +12898,12 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
     return List<ProjectTarget>.unmodifiable(next);
   }
 
-  Future<void> _handleProjectReorder(int oldIndex, int newIndex) async {
-    if (_orderedProjects.length < 2) {
+  Future<void> _handleProjectReorder(
+    int oldIndex,
+    int newIndex,
+    List<ProjectTarget> visibleProjects,
+  ) async {
+    if (visibleProjects.length < 2) {
       return;
     }
     if (oldIndex < newIndex) {
@@ -11739,14 +12911,27 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
     }
     if (oldIndex == newIndex ||
         oldIndex < 0 ||
-        oldIndex >= _orderedProjects.length ||
+        oldIndex >= visibleProjects.length ||
         newIndex < 0 ||
-        newIndex >= _orderedProjects.length) {
+        newIndex >= visibleProjects.length) {
       return;
     }
-    final next = List<ProjectTarget>.of(_orderedProjects);
-    final moved = next.removeAt(oldIndex);
-    next.insert(newIndex, moved);
+    final reorderedVisibleProjects = List<ProjectTarget>.of(visibleProjects);
+    final moved = reorderedVisibleProjects.removeAt(oldIndex);
+    reorderedVisibleProjects.insert(newIndex, moved);
+    final reorderedVisibleDirectories = reorderedVisibleProjects
+        .map((project) => project.directory)
+        .toSet();
+    var visibleProjectIndex = 0;
+    final next = <ProjectTarget>[];
+    for (final project in _orderedProjects) {
+      if (reorderedVisibleDirectories.contains(project.directory)) {
+        next.add(reorderedVisibleProjects[visibleProjectIndex]);
+        visibleProjectIndex += 1;
+        continue;
+      }
+      next.add(project);
+    }
     setState(() {
       _orderedProjects = List<ProjectTarget>.unmodifiable(next);
     });
@@ -11766,14 +12951,23 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
       _ => false,
     };
     final density = _workspaceDensity(context);
-    final railWidth = density.sidebarRailWidth(72);
     final panelPadding = density.inset(AppSpacing.md, min: AppSpacing.xs);
-    final sectionGap = density.inset(AppSpacing.lg, min: AppSpacing.md);
+    final sectionGap = density.inset(AppSpacing.md, min: AppSpacing.sm);
     final microGap = density.inset(AppSpacing.sm, min: AppSpacing.xs);
     final projects = _orderedProjects;
+    final visibleProjects = projects
+        .where((project) => project.directory != widget.currentDirectory)
+        .toList(growable: false);
     final currentProject =
         widget.project ??
         _projectForDirectory(projects, widget.currentDirectory);
+    final currentProjectTitle = () {
+      final title = currentProject?.title.trim();
+      if (title != null && title.isNotEmpty) {
+        return title;
+      }
+      return projectDisplayLabel(widget.currentDirectory);
+    }();
     final rootSelectedSessionId = _rootSessionFor(
       widget.allSessions,
       _sessionById(widget.allSessions, widget.currentSessionId),
@@ -11785,257 +12979,404 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
       selectedSessionId: widget.currentSessionId,
       includeNested: widget.showSubsessions,
     );
-
-    return SizedBox(
-      width: density.sidebarWidth(widget.width),
-      child: Row(
-        children: <Widget>[
-          Container(
-            width: railWidth,
-            color: surfaces.panel,
-            child: Column(
-              children: <Widget>[
-                SizedBox(height: panelPadding),
-                Expanded(
-                  child: ReorderableListView.builder(
-                    key: const ValueKey<String>(
-                      'workspace-project-sidebar-reorder-list',
-                    ),
-                    buildDefaultDragHandles: false,
-                    padding: EdgeInsets.zero,
-                    itemCount: projects.length,
-                    onReorder: (oldIndex, newIndex) =>
-                        unawaited(_handleProjectReorder(oldIndex, newIndex)),
-                    proxyDecorator: (child, index, animation) {
-                      final curved = CurvedAnimation(
-                        parent: animation,
-                        curve: Curves.easeOutCubic,
-                      );
-                      return FadeTransition(
-                        opacity: Tween<double>(
-                          begin: 0.94,
-                          end: 1,
-                        ).animate(curved),
-                        child: ScaleTransition(
-                          scale: Tween<double>(
-                            begin: 1,
-                            end: 1.04,
-                          ).animate(curved),
-                          child: child,
-                        ),
-                      );
-                    },
-                    itemBuilder: (context, index) {
-                      final project = projects[index];
-                      final selected =
-                          project.directory == widget.currentDirectory;
-                      final tile = _ProjectSidebarTile(
-                        key: ValueKey<String>(
-                          'workspace-project-${project.directory}',
-                        ),
-                        project: project,
-                        notificationState: widget
-                            .projectNotificationStateForDirectory(
-                              project.directory,
-                            ),
-                        selected: selected,
-                        onSelect: () => widget.onSelectProject(project),
-                        onEdit: () => widget.onEditProject(project),
-                        onRemove: () => widget.onRemoveProject(project),
-                      );
-                      final reorderableTile = projects.length > 1
-                          ? compactLayout
-                                ? _HapticReorderableDelayedDragStartListener(
-                                    index: index,
-                                    child: tile,
-                                  )
-                                : ReorderableDragStartListener(
-                                    index: index,
-                                    child: tile,
-                                  )
-                          : tile;
-                      return Padding(
-                        key: ValueKey<String>(
-                          'workspace-project-item-${project.directory}',
-                        ),
-                        padding: EdgeInsets.fromLTRB(
-                          density.inset(AppSpacing.sm),
-                          0,
-                          density.inset(AppSpacing.sm),
-                          index == projects.length - 1 ? 0 : microGap,
-                        ),
-                        child: reorderableTile,
-                      );
-                    },
-                  ),
+    final projectListHeight = visibleProjects.isEmpty
+        ? 0.0
+        : math.min(
+            compactLayout ? 152.0 : 220.0,
+            visibleProjects.length * (compactLayout ? 54.0 : 62.0),
+          );
+    final workspaceSection = <Widget>[
+      _WorkspaceSidebarSectionLabel(
+        label: context.wp('Workspace'),
+        trailing: visibleProjects.isEmpty
+            ? null
+            : Text(
+                '${visibleProjects.length}',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: surfaces.muted,
+                  fontWeight: FontWeight.w700,
                 ),
-                IconButton(
-                  key: const ValueKey<String>(
-                    'workspace-sidebar-add-project-button',
+              ),
+      ),
+      SizedBox(height: microGap),
+      Container(
+        width: double.infinity,
+        padding: EdgeInsets.all(panelPadding),
+        decoration: appSoftCardDecoration(
+          context,
+          radius: 20,
+          muted: true,
+          selected: true,
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            _ProjectAvatar(
+              project:
+                  currentProject ??
+                  ProjectTarget(
+                    directory: widget.currentDirectory,
+                    label: projectDisplayLabel(widget.currentDirectory),
+                    source: 'workspace',
                   ),
-                  onPressed: widget.onAddProject,
-                  icon: const Icon(Icons.add_rounded),
-                  tooltip: context.wp('Add project'),
-                ),
-                IconButton(
-                  key: const ValueKey<String>(
-                    'workspace-sidebar-settings-button',
-                  ),
-                  onPressed: widget.onOpenSettings,
-                  icon: const Icon(Icons.settings_rounded),
-                  tooltip:
-                      '${context.wp('Workspace settings')} (${_formatWorkspaceShortcutLabel('mod+comma')})',
-                ),
-                SizedBox(height: panelPadding),
-              ],
+              size: 42,
+              fontSize: 18,
+              rounded: 12,
             ),
-          ),
-          Expanded(
-            child: Container(
-              color: surfaces.panelRaised,
-              padding: EdgeInsets.all(panelPadding),
+            SizedBox(width: microGap),
+            Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  if (currentProject != null) ...<Widget>[
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: <Widget>[
-                              Text(
-                                currentProject.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.titleLarge?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                currentProject.directory,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: GoogleFonts.ibmPlexMono(
-                                  fontSize: 12,
-                                  color: surfaces.muted,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        SizedBox(width: microGap),
-                        _SidebarProjectMenuButton(
-                          project: currentProject,
-                          onEdit: () => widget.onEditProject(currentProject),
-                          onRemove: () =>
-                              widget.onRemoveProject(currentProject),
-                        ),
-                      ],
-                    ),
-                    SizedBox(height: sectionGap),
-                  ] else ...<Widget>[
-                    Text(
-                      projectDisplayLabel(widget.currentDirectory),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    SizedBox(height: sectionGap),
-                  ],
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      key: const ValueKey<String>(
-                        'workspace-sidebar-new-session-button',
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: theme.colorScheme.onSurface,
-                        alignment: Alignment.centerLeft,
-                        padding: EdgeInsets.symmetric(
-                          horizontal: panelPadding,
-                          vertical: density.inset(AppSpacing.md),
-                        ),
-                        textStyle: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                        side: BorderSide(color: surfaces.lineSoft),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        backgroundColor: surfaces.panel,
-                      ),
-                      onPressed: widget.loadingProjectContents
-                          ? null
-                          : widget.onNewSession,
-                      icon: const Icon(Icons.edit_note_rounded, size: 18),
-                      label: Text(context.wp('New session')),
+                  Text(
+                    currentProjectTitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
-                  SizedBox(height: panelPadding),
-                  Expanded(
-                    child: widget.loadingProjectContents
-                        ? const _SidebarSessionLoadingState()
-                        : sessionEntries.isEmpty
-                        ? Text(
-                            context.wp('Start a new session to begin.'),
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: surfaces.muted,
-                            ),
-                          )
-                        : ListView.separated(
-                            itemCount: sessionEntries.length,
-                            separatorBuilder: (_, _) =>
-                                SizedBox(height: density.inset(AppSpacing.xs)),
-                            itemBuilder: (context, index) {
-                              final entry = sessionEntries[index];
-                              return _SidebarSessionTreeRow(
-                                key: ValueKey<String>(
-                                  'workspace-session-entry-${entry.session.id}-${entry.depth}',
-                                ),
-                                entry: entry,
-                                project: currentProject,
-                                notificationState: widget
-                                    .sessionNotificationStateForSession(
-                                      entry.session.id,
-                                    ),
-                                hoverPreviewState: widget
-                                    .hoverPreviewStateForSession(
-                                      entry.session.id,
-                                    ),
-                                selected: widget.showSubsessions
-                                    ? entry.session.id ==
-                                          widget.currentSessionId
-                                    : entry.rootId == rootSelectedSessionId,
-                                hoverPreviewEnabled: hoverPreviewEnabled,
-                                onHoverPreviewRequested: () {
-                                  unawaited(
-                                    widget.onPrefetchSessionHoverPreview(
-                                      entry.session.id,
-                                    ),
-                                  );
-                                },
-                                onFocusPreviewMessage: (messageId) =>
-                                    widget.onFocusSessionMessage(
-                                      entry.session.id,
-                                      messageId,
-                                    ),
-                                onTap: () =>
-                                    widget.onSelectSession(entry.session.id),
-                              );
-                            },
-                          ),
+                  const SizedBox(height: 4),
+                  Text(
+                    currentProject?.directory ?? widget.currentDirectory,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.ibmPlexMono(
+                      fontSize: 11.5,
+                      color: surfaces.muted,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ],
               ),
             ),
+            if (currentProject != null) ...<Widget>[
+              SizedBox(width: microGap),
+              _SidebarProjectMenuButton(
+                project: currentProject,
+                onEdit: () => widget.onEditProject(currentProject),
+                onRemove: () => widget.onRemoveProject(currentProject),
+              ),
+            ],
+          ],
+        ),
+      ),
+      if (visibleProjects.isNotEmpty) ...<Widget>[
+        SizedBox(height: panelPadding),
+        SizedBox(
+          height: projectListHeight,
+          child: ReorderableListView.builder(
+            key: const ValueKey<String>(
+              'workspace-project-sidebar-reorder-list',
+            ),
+            buildDefaultDragHandles: false,
+            padding: EdgeInsets.zero,
+            itemCount: visibleProjects.length,
+            onReorder: (oldIndex, newIndex) => unawaited(
+              _handleProjectReorder(oldIndex, newIndex, visibleProjects),
+            ),
+            proxyDecorator: (child, index, animation) {
+              final curved = CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeOutCubic,
+              );
+              return FadeTransition(
+                opacity: Tween<double>(begin: 0.94, end: 1).animate(curved),
+                child: ScaleTransition(
+                  scale: Tween<double>(begin: 1, end: 1.02).animate(curved),
+                  child: child,
+                ),
+              );
+            },
+            itemBuilder: (context, index) {
+              final project = visibleProjects[index];
+              final selected = project.directory == widget.currentDirectory;
+              final reorderHandle = visibleProjects.length > 1
+                  ? ReorderableDragStartListener(
+                      index: index,
+                      child: _ProjectReorderHandle(
+                        key: ValueKey<String>(
+                          'workspace-project-reorder-handle-${project.directory}',
+                        ),
+                      ),
+                    )
+                  : null;
+              final tile = _ProjectSidebarTile(
+                key: ValueKey<String>('workspace-project-${project.directory}'),
+                project: project,
+                notificationState: widget.projectNotificationStateForDirectory(
+                  project.directory,
+                ),
+                selected: selected,
+                reorderHandle: reorderHandle,
+                onSelect: () => widget.onSelectProject(project),
+                onEdit: () => widget.onEditProject(project),
+                onRemove: () => widget.onRemoveProject(project),
+              );
+              return Padding(
+                key: ValueKey<String>(
+                  'workspace-project-item-${project.directory}',
+                ),
+                padding: EdgeInsets.only(
+                  bottom: index == visibleProjects.length - 1 ? 0 : microGap,
+                ),
+                child: tile,
+              );
+            },
           ),
-        ],
+        ),
+      ],
+    ];
+    final threadSection = <Widget>[
+      _WorkspaceSidebarSectionLabel(
+        label: context.wp('Threads'),
+        trailing: Text(
+          '${sessionEntries.length}',
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: surfaces.muted,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+      SizedBox(height: microGap),
+      SizedBox(
+        width: double.infinity,
+        child: FilledButton.tonalIcon(
+          key: const ValueKey<String>('workspace-sidebar-new-session-button'),
+          onPressed: widget.loadingProjectContents ? null : widget.onNewSession,
+          icon: const Icon(Icons.edit_note_rounded, size: 18),
+          label: Text(context.wp('New thread')),
+          style: FilledButton.styleFrom(
+            alignment: Alignment.centerLeft,
+            padding: EdgeInsets.symmetric(
+              horizontal: panelPadding,
+              vertical: density.inset(AppSpacing.md),
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
+        ),
+      ),
+      SizedBox(height: panelPadding),
+      Expanded(
+        child: widget.loadingProjectContents
+            ? const _SidebarSessionLoadingState()
+            : sessionEntries.isEmpty
+            ? Center(
+                child: Text(
+                  context.wp('Start a new thread to begin.'),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: surfaces.muted,
+                  ),
+                ),
+              )
+            : ListView.separated(
+                itemCount: sessionEntries.length,
+                separatorBuilder: (_, _) =>
+                    SizedBox(height: density.inset(AppSpacing.xs)),
+                itemBuilder: (context, index) {
+                  final entry = sessionEntries[index];
+                  return _SidebarSessionTreeRow(
+                    key: ValueKey<String>(
+                      'workspace-session-entry-${entry.session.id}-${entry.depth}',
+                    ),
+                    entry: entry,
+                    project: currentProject,
+                    notificationState: widget
+                        .sessionNotificationStateForSession(entry.session.id),
+                    hoverPreviewState: widget.hoverPreviewStateForSession(
+                      entry.session.id,
+                    ),
+                    selected: widget.showSubsessions
+                        ? entry.session.id == widget.currentSessionId
+                        : entry.rootId == rootSelectedSessionId,
+                    hoverPreviewEnabled: hoverPreviewEnabled,
+                    onHoverPreviewRequested: () {
+                      unawaited(
+                        widget.onPrefetchSessionHoverPreview(entry.session.id),
+                      );
+                    },
+                    onFocusPreviewMessage: (messageId) => widget
+                        .onFocusSessionMessage(entry.session.id, messageId),
+                    onTap: () => widget.onSelectSession(entry.session.id),
+                  );
+                },
+              ),
+      ),
+    ];
+    final sidebarWidth = compactLayout
+        ? widget.width
+        : density.sidebarWidth(widget.width);
+
+    return SizedBox(
+      width: sidebarWidth,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: surfaces.panelMuted,
+          border: Border(
+            right: BorderSide(color: surfaces.lineSoft.withValues(alpha: 0.85)),
+          ),
+        ),
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            panelPadding,
+            density.inset(AppSpacing.md, min: AppSpacing.sm),
+            panelPadding,
+            panelPadding,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              _WorkspaceSidebarNavButton(
+                key: const ValueKey<String>(
+                  'workspace-sidebar-add-project-button',
+                ),
+                icon: Icons.folder_open_rounded,
+                label: context.wp('Open project'),
+                onTap: widget.onAddProject,
+              ),
+              SizedBox(height: sectionGap),
+              if (compactLayout) ...threadSection else ...workspaceSection,
+              SizedBox(height: sectionGap),
+              if (compactLayout) ...workspaceSection else ...threadSection,
+              SizedBox(height: panelPadding),
+              _WorkspaceSidebarNavButton(
+                key: const ValueKey<String>(
+                  'workspace-sidebar-settings-button',
+                ),
+                icon: Icons.settings_rounded,
+                label: context.wp('Settings'),
+                secondaryLabel: _formatWorkspaceShortcutLabel('mod+comma'),
+                onTap: widget.onOpenSettings,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WorkspaceSidebarSectionLabel extends StatelessWidget {
+  const _WorkspaceSidebarSectionLabel({required this.label, this.trailing});
+
+  final String label;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              color: surfaces.muted,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.3,
+            ),
+          ),
+        ),
+        ...?trailing == null ? null : <Widget>[trailing!],
+      ],
+    );
+  }
+}
+
+class _WorkspaceSidebarNavButton extends StatelessWidget {
+  const _WorkspaceSidebarNavButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.secondaryLabel,
+    super.key,
+  });
+
+  final IconData icon;
+  final String label;
+  final String? secondaryLabel;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final compactLayout =
+        MediaQuery.sizeOf(context).width < AppSpacing.wideLayoutBreakpoint;
+    final iconBoxSize = compactLayout ? 26.0 : 30.0;
+    final iconSize = compactLayout ? 14.0 : 16.0;
+    final borderRadius = compactLayout ? 14.0 : 16.0;
+    final horizontalPadding = compactLayout ? AppSpacing.sm : AppSpacing.md;
+    final verticalPadding = compactLayout ? 10.0 : AppSpacing.md;
+    final showSecondaryLabel =
+        !compactLayout &&
+        secondaryLabel != null &&
+        secondaryLabel!.trim().isNotEmpty;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(borderRadius),
+        child: Ink(
+          width: double.infinity,
+          padding: EdgeInsets.symmetric(
+            horizontal: horizontalPadding,
+            vertical: verticalPadding,
+          ),
+          decoration: appSoftCardDecoration(
+            context,
+            radius: borderRadius,
+            muted: true,
+            emphasized: true,
+          ),
+          child: Row(
+            children: <Widget>[
+              Container(
+                width: iconBoxSize,
+                height: iconBoxSize,
+                decoration: BoxDecoration(
+                  color: surfaces.panel.withValues(alpha: 0.9),
+                  borderRadius: BorderRadius.circular(compactLayout ? 8 : 10),
+                  border: Border.all(color: surfaces.lineSoft),
+                ),
+                child: Icon(
+                  icon,
+                  size: iconSize,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+              SizedBox(width: compactLayout ? AppSpacing.xs : AppSpacing.sm),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      label,
+                      style:
+                          (compactLayout
+                                  ? theme.textTheme.bodySmall
+                                  : theme.textTheme.bodyMedium)
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                    if (showSecondaryLabel) ...<Widget>[
+                      const SizedBox(height: 2),
+                      Text(
+                        secondaryLabel!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: surfaces.muted,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -12101,7 +13442,7 @@ Future<_ProjectMenuAction?> _showProjectContextMenu({
   required Offset position,
   required ProjectTarget project,
 }) {
-  return showGeneralDialog<_ProjectMenuAction>(
+  return showAppGeneralDialog<_ProjectMenuAction>(
     context: context,
     barrierDismissible: true,
     barrierLabel: context.wp('Dismiss project menu'),
@@ -12176,6 +13517,7 @@ class _ProjectSidebarTile extends StatefulWidget {
     required this.project,
     required this.notificationState,
     required this.selected,
+    this.reorderHandle,
     required this.onSelect,
     required this.onEdit,
     required this.onRemove,
@@ -12185,6 +13527,7 @@ class _ProjectSidebarTile extends StatefulWidget {
   final ProjectTarget project;
   final WorkspaceSidebarNotificationState notificationState;
   final bool selected;
+  final Widget? reorderHandle;
   final VoidCallback onSelect;
   final VoidCallback onEdit;
   final VoidCallback onRemove;
@@ -12213,6 +13556,7 @@ class _ProjectSidebarTileState extends State<_ProjectSidebarTile> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     return Tooltip(
       message: widget.project.title,
@@ -12224,47 +13568,96 @@ class _ProjectSidebarTileState extends State<_ProjectSidebarTile> {
           onLongPressStart: (details) => _showMenu(details.globalPosition),
           child: InkWell(
             onTap: widget.onSelect,
-            borderRadius: BorderRadius.circular(AppSpacing.md),
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: <Widget>[
-                Container(
-                  height: 48,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: widget.selected
-                        ? Theme.of(
-                            context,
-                          ).colorScheme.primary.withValues(alpha: 0.16)
-                        : surfaces.panelRaised,
-                    borderRadius: BorderRadius.circular(AppSpacing.md),
-                    border: Border.all(
-                      color: widget.selected
-                          ? Theme.of(context).colorScheme.primary
-                          : surfaces.lineSoft,
-                    ),
-                  ),
-                  child: _ProjectAvatar(
+            borderRadius: BorderRadius.circular(16),
+            child: Ink(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.md,
+                vertical: AppSpacing.sm,
+              ),
+              decoration: appSoftCardDecoration(
+                context,
+                radius: 16,
+                muted: !widget.selected,
+                selected: widget.selected,
+              ),
+              child: Row(
+                children: <Widget>[
+                  _ProjectAvatar(
                     project: widget.project,
-                    size: 38,
-                    fontSize: 22,
+                    size: 32,
+                    fontSize: 15,
                     rounded: 10,
                   ),
-                ),
-                if (widget.notificationState.visible)
-                  Positioned(
-                    top: 6,
-                    right: 6,
-                    child: _WorkspaceSidebarNotificationBadge(
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          widget.project.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          projectDisplayLabel(widget.project.directory),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: surfaces.muted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (widget.notificationState.visible) ...<Widget>[
+                    const SizedBox(width: AppSpacing.xs),
+                    _WorkspaceSidebarNotificationBadge(
                       key: ValueKey<String>(
                         'workspace-project-notification-badge-${widget.project.directory}',
                       ),
                       state: widget.notificationState,
                       compact: true,
                     ),
-                  ),
-              ],
+                  ],
+                  if (widget.reorderHandle != null) ...<Widget>[
+                    const SizedBox(width: AppSpacing.xs),
+                    widget.reorderHandle!,
+                  ],
+                ],
+              ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ProjectReorderHandle extends StatelessWidget {
+  const _ProjectReorderHandle({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    return Tooltip(
+      message: context.wp('Reorder project'),
+      waitDuration: const Duration(milliseconds: 150),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: surfaces.panelRaised,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: surfaces.lineSoft),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.xs),
+          child: Icon(
+            Icons.drag_indicator_rounded,
+            size: 18,
+            color: surfaces.muted,
           ),
         ),
       ),
@@ -12371,17 +13764,46 @@ class _SidebarSessionTreeRow extends StatefulWidget {
 }
 
 class _SidebarSessionTreeRowState extends State<_SidebarSessionTreeRow> {
+  static const double _hoverPreviewGap = AppSpacing.xs;
+  static const double _hoverPreviewMinWidth = 220.0;
+  static const double _hoverPreviewPreferredWidth = 300.0;
+  static const Duration _hoverPreviewCloseDelay = Duration(milliseconds: 160);
+
   Timer? _hoverPrefetchTimer;
+  Timer? _hoverPreviewCloseTimer;
+  final LayerLink _hoverPreviewLayerLink = LayerLink();
+  OverlayEntry? _hoverPreviewOverlayEntry;
   bool _hovering = false;
+  bool _hoverPreviewOverlayHovered = false;
+  bool _hoverPreviewOverlaySyncScheduled = false;
 
   @override
   void dispose() {
     _hoverPrefetchTimer?.cancel();
+    _hoverPreviewCloseTimer?.cancel();
+    _removeHoverPreviewOverlay();
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant _SidebarSessionTreeRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _scheduleHoverPreviewOverlaySync();
+  }
+
+  bool get _hoverPreviewVisible {
+    return widget.hoverPreviewEnabled &&
+        (_hovering || _hoverPreviewOverlayHovered) &&
+        (widget.hoverPreviewState.loading ||
+            widget.hoverPreviewState.hasContent);
   }
 
   void _handleHoverChanged(bool hovering) {
     if (!widget.hoverPreviewEnabled) {
+      _hoverPrefetchTimer?.cancel();
+      _hoverPreviewCloseTimer?.cancel();
+      _hoverPreviewOverlayHovered = false;
+      _removeHoverPreviewOverlay();
       return;
     }
     if (!hovering) {
@@ -12391,14 +13813,17 @@ class _SidebarSessionTreeRowState extends State<_SidebarSessionTreeRow> {
           _hovering = false;
         });
       }
+      _scheduleHoverPreviewClose();
       return;
     }
     _hoverPrefetchTimer?.cancel();
+    _hoverPreviewCloseTimer?.cancel();
     if (!_hovering) {
       setState(() {
         _hovering = true;
       });
     }
+    _scheduleHoverPreviewOverlaySync();
     _hoverPrefetchTimer = Timer(const Duration(milliseconds: 180), () {
       if (!mounted || !_hovering) {
         return;
@@ -12407,136 +13832,207 @@ class _SidebarSessionTreeRowState extends State<_SidebarSessionTreeRow> {
     });
   }
 
+  void _handleHoverPreviewOverlayChanged(bool hovering) {
+    if (_hoverPreviewOverlayHovered == hovering) {
+      if (hovering) {
+        _hoverPreviewCloseTimer?.cancel();
+      }
+      return;
+    }
+    setState(() {
+      _hoverPreviewOverlayHovered = hovering;
+    });
+    if (hovering) {
+      _hoverPreviewCloseTimer?.cancel();
+      _syncHoverPreviewOverlay();
+    } else {
+      _scheduleHoverPreviewClose();
+    }
+  }
+
+  void _scheduleHoverPreviewClose() {
+    _hoverPreviewCloseTimer?.cancel();
+    _hoverPreviewCloseTimer = Timer(_hoverPreviewCloseDelay, () {
+      if (!mounted || _hovering || _hoverPreviewOverlayHovered) {
+        return;
+      }
+      _removeHoverPreviewOverlay();
+    });
+  }
+
+  void _scheduleHoverPreviewOverlaySync() {
+    if (_hoverPreviewOverlaySyncScheduled) {
+      return;
+    }
+    _hoverPreviewOverlaySyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _hoverPreviewOverlaySyncScheduled = false;
+      if (!mounted) {
+        return;
+      }
+      _syncHoverPreviewOverlay();
+    });
+  }
+
+  void _syncHoverPreviewOverlay() {
+    if (!_hoverPreviewVisible) {
+      _removeHoverPreviewOverlay();
+      return;
+    }
+    final existingEntry = _hoverPreviewOverlayEntry;
+    if (existingEntry != null) {
+      existingEntry.markNeedsBuild();
+      return;
+    }
+    _hoverPreviewOverlayEntry = OverlayEntry(
+      builder: _buildHoverPreviewOverlay,
+    );
+    Overlay.of(context, rootOverlay: true).insert(_hoverPreviewOverlayEntry!);
+  }
+
+  void _removeHoverPreviewOverlay() {
+    _hoverPreviewCloseTimer?.cancel();
+    _hoverPreviewCloseTimer = null;
+    _hoverPreviewOverlayEntry?.remove();
+    _hoverPreviewOverlayEntry = null;
+  }
+
+  Widget _buildHoverPreviewOverlay(BuildContext overlayContext) {
+    final geometry = _hoverPreviewGeometry(overlayContext);
+    return Positioned.fill(
+      child: CompositedTransformFollower(
+        link: _hoverPreviewLayerLink,
+        showWhenUnlinked: false,
+        targetAnchor: Alignment.topLeft,
+        followerAnchor: Alignment.topLeft,
+        offset: Offset(geometry.offsetX, 0),
+        child: Align(
+          alignment: Alignment.topLeft,
+          child: MouseRegion(
+            onEnter: (_) => _handleHoverPreviewOverlayChanged(true),
+            onExit: (_) => _handleHoverPreviewOverlayChanged(false),
+            child: SizedBox(
+              width: geometry.width,
+              child: _SidebarSessionHoverPreviewPanel(
+                session: widget.entry.session,
+                state: widget.hoverPreviewState,
+                onFocusMessage: widget.onFocusPreviewMessage,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  ({double offsetX, double width}) _hoverPreviewGeometry(
+    BuildContext overlayContext,
+  ) {
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      return (offsetX: _hoverPreviewGap, width: _hoverPreviewPreferredWidth);
+    }
+
+    final overlayWidth = MediaQuery.sizeOf(overlayContext).width;
+    final rowTopLeft = renderObject.localToGlobal(Offset.zero);
+    final rowWidth = renderObject.size.width;
+    final availableRight =
+        overlayWidth - rowTopLeft.dx - rowWidth - _hoverPreviewGap;
+    if (availableRight >= _hoverPreviewMinWidth) {
+      return (
+        offsetX: rowWidth + _hoverPreviewGap,
+        width: math.min(_hoverPreviewPreferredWidth, availableRight),
+      );
+    }
+
+    final availableLeft = rowTopLeft.dx - _hoverPreviewGap;
+    if (availableLeft >= _hoverPreviewMinWidth) {
+      final width = math.min(_hoverPreviewPreferredWidth, availableLeft);
+      return (offsetX: -width - _hoverPreviewGap, width: width);
+    }
+
+    return (offsetX: rowWidth + _hoverPreviewGap, width: _hoverPreviewMinWidth);
+  }
+
+  double _sessionRowIndent(BuildContext context) {
+    final compactLayout =
+        MediaQuery.sizeOf(context).width < AppSpacing.wideLayoutBreakpoint;
+    return widget.entry.depth * (compactLayout ? 12.0 : 18.0);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final surfaces = theme.extension<AppSurfaces>()!;
+    final compactLayout =
+        MediaQuery.sizeOf(context).width < AppSpacing.wideLayoutBreakpoint;
     final title = widget.entry.session.title.trim().isEmpty
         ? context.wp('Untitled session')
         : widget.entry.session.title.trim();
     final active = widget.entry.active;
     final isRoot = widget.entry.depth == 0;
-    final indent = widget.entry.depth * 18.0;
-    final previewVisible =
-        widget.hoverPreviewEnabled &&
-        _hovering &&
-        (widget.hoverPreviewState.loading ||
-            widget.hoverPreviewState.hasContent);
+    final indent = _sessionRowIndent(context);
 
     return MouseRegion(
       onEnter: (_) => _handleHoverChanged(true),
       onExit: (_) => _handleHoverChanged(false),
-      child: Padding(
-        padding: EdgeInsets.only(left: indent),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(14),
-                onTap: widget.onTap,
-                child: Ink(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.sm,
-                    vertical: AppSpacing.sm,
-                  ),
-                  decoration: BoxDecoration(
-                    color: widget.selected
-                        ? theme.colorScheme.primary.withValues(alpha: 0.12)
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Row(
-                    children: <Widget>[
-                      SizedBox(
-                        width: 22,
-                        child: Center(
-                          child: isRoot
-                              ? (widget.project != null
-                                    ? _ProjectAvatar(
-                                        project: widget.project!,
-                                        size: 16,
-                                        fontSize: 10,
-                                        rounded: 5,
-                                      )
-                                    : Container(
-                                        width: 6,
-                                        height: 6,
-                                        decoration: BoxDecoration(
-                                          color: theme.colorScheme.primary,
-                                          shape: BoxShape.circle,
-                                        ),
-                                      ))
-                              : Container(
-                                  width: 10,
-                                  height: 2,
-                                  decoration: BoxDecoration(
-                                    color: surfaces.muted,
-                                    borderRadius: BorderRadius.circular(999),
+      child: CompositedTransformTarget(
+        link: _hoverPreviewLayerLink,
+        child: Padding(
+          padding: EdgeInsets.only(left: indent),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(compactLayout ? 12 : 14),
+              onTap: widget.onTap,
+              child: Ink(
+                padding: EdgeInsets.symmetric(
+                  horizontal: compactLayout ? AppSpacing.xs : AppSpacing.sm,
+                  vertical: compactLayout ? AppSpacing.xs : AppSpacing.sm,
+                ),
+                decoration: BoxDecoration(
+                  color: widget.selected
+                      ? theme.colorScheme.primary.withValues(alpha: 0.12)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(compactLayout ? 12 : 14),
+                ),
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: _ShimmeringRichText(
+                        key: ValueKey<String>(
+                          'sidebar-session-shimmer-${widget.entry.session.id}',
+                        ),
+                        active: active,
+                        text: TextSpan(
+                          text: title,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: isRoot
+                                ? FontWeight.w600
+                                : FontWeight.w500,
+                            color: widget.selected
+                                ? theme.colorScheme.onSurface
+                                : theme.colorScheme.onSurface.withValues(
+                                    alpha: isRoot ? 0.96 : 0.9,
                                   ),
-                                ),
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: _ShimmeringRichText(
-                          key: ValueKey<String>(
-                            'sidebar-session-shimmer-${widget.entry.session.id}',
-                          ),
-                          active: active,
-                          text: TextSpan(
-                            text: title,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              fontWeight: isRoot
-                                  ? FontWeight.w600
-                                  : FontWeight.w500,
-                              color: widget.selected
-                                  ? theme.colorScheme.onSurface
-                                  : theme.colorScheme.onSurface.withValues(
-                                      alpha: isRoot ? 0.96 : 0.9,
-                                    ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ),
-                      if (widget.notificationState.visible) ...<Widget>[
-                        const SizedBox(width: AppSpacing.xs),
-                        _WorkspaceSidebarNotificationBadge(
-                          key: ValueKey<String>(
-                            'workspace-session-notification-badge-${widget.entry.session.id}',
-                          ),
-                          state: widget.notificationState,
+                    ),
+                    if (widget.notificationState.visible) ...<Widget>[
+                      const SizedBox(width: AppSpacing.xs),
+                      _WorkspaceSidebarNotificationBadge(
+                        key: ValueKey<String>(
+                          'workspace-session-notification-badge-${widget.entry.session.id}',
                         ),
-                      ],
+                        state: widget.notificationState,
+                      ),
                     ],
-                  ),
+                  ],
                 ),
               ),
             ),
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 180),
-              switchInCurve: Curves.easeOutCubic,
-              switchOutCurve: Curves.easeInCubic,
-              child: !previewVisible
-                  ? const SizedBox.shrink()
-                  : Padding(
-                      key: ValueKey<String>(
-                        'sidebar-session-hover-preview-wrap-${widget.entry.session.id}',
-                      ),
-                      padding: const EdgeInsets.only(
-                        left: 30,
-                        top: AppSpacing.xxs,
-                      ),
-                      child: _SidebarSessionHoverPreviewPanel(
-                        session: widget.entry.session,
-                        state: widget.hoverPreviewState,
-                        onFocusMessage: widget.onFocusPreviewMessage,
-                      ),
-                    ),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -12752,70 +14248,52 @@ class _ProjectContextMenuPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final surfaces = theme.extension<AppSurfaces>()!;
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(18),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          constraints: const BoxConstraints(minWidth: 220, maxWidth: 236),
-          decoration: BoxDecoration(
-            color: surfaces.panelRaised.withValues(alpha: 0.82),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-            boxShadow: <BoxShadow>[
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.34),
-                blurRadius: 28,
-                offset: const Offset(0, 18),
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 220, maxWidth: 236),
+      child: AppGlassPanel(
+        radius: 18,
+        blur: 20,
+        backgroundOpacity: theme.brightness == Brightness.dark ? 0.8 : 0.9,
+        borderOpacity: 0.1,
+        padding: const EdgeInsets.all(AppSpacing.xs),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.sm,
+                AppSpacing.xs,
+                AppSpacing.sm,
+                AppSpacing.sm,
               ),
-            ],
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.xs),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.sm,
-                    AppSpacing.xs,
-                    AppSpacing.sm,
-                    AppSpacing.sm,
+              child: Row(
+                children: <Widget>[
+                  _ProjectAvatar(project: project, size: 34, fontSize: 18),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Text(
+                      project.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall,
+                    ),
                   ),
-                  child: Row(
-                    children: <Widget>[
-                      _ProjectAvatar(project: project, size: 34, fontSize: 18),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: Text(
-                          project.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.titleSmall,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                _ProjectContextMenuItem(
-                  label: context.wp('Edit project'),
-                  icon: Icons.edit_rounded,
-                  onTap: () =>
-                      Navigator.of(context).pop(_ProjectMenuAction.edit),
-                ),
-                _ProjectContextMenuItem(
-                  label: context.wp('Delete project'),
-                  icon: Icons.delete_outline_rounded,
-                  destructive: true,
-                  onTap: () =>
-                      Navigator.of(context).pop(_ProjectMenuAction.remove),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
+            _ProjectContextMenuItem(
+              label: context.wp('Edit project'),
+              icon: Icons.edit_rounded,
+              onTap: () => Navigator.of(context).pop(_ProjectMenuAction.edit),
+            ),
+            _ProjectContextMenuItem(
+              label: context.wp('Delete project'),
+              icon: Icons.delete_outline_rounded,
+              destructive: true,
+              onTap: () => Navigator.of(context).pop(_ProjectMenuAction.remove),
+            ),
+          ],
         ),
       ),
     );
@@ -12972,272 +14450,242 @@ class _EditProjectDialogState extends State<_EditProjectDialog> {
     final surfaces = theme.extension<AppSurfaces>()!;
     final hasCustomIcon = _iconDataUrl != null && _iconDataUrl!.isNotEmpty;
 
-    return Dialog(
-      backgroundColor: Colors.transparent,
+    return AppDialogFrame(
       insetPadding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.lg,
         vertical: AppSpacing.xl,
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(28),
-        child: BackdropFilter(
-          filter: ui.ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 520),
-            decoration: BoxDecoration(
-              color: surfaces.panel.withValues(alpha: 0.92),
-              borderRadius: BorderRadius.circular(28),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-              boxShadow: <BoxShadow>[
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.42),
-                  blurRadius: 42,
-                  offset: const Offset(0, 24),
+      constraints: const BoxConstraints(maxWidth: 520),
+      child: AppGlassPanel(
+        radius: AppSpacing.dialogRadius,
+        blur: 24,
+        backgroundOpacity: theme.brightness == Brightness.dark ? 0.84 : 0.92,
+        borderOpacity: 0.1,
+        padding: const EdgeInsets.all(AppSpacing.xl),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Text(
+                      context.wp('Edit project'),
+                      style: theme.textTheme.titleLarge,
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                    tooltip: context.wp('Close'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              TextField(
+                controller: _nameController,
+                decoration: InputDecoration(labelText: context.wp('Name')),
+                autofocus: true,
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              Text(
+                context.wp('Icon'),
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: surfaces.muted,
                 ),
-              ],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(AppSpacing.xl),
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Row(
-                      children: <Widget>[
-                        Expanded(
-                          child: Text(
-                            context.wp('Edit project'),
-                            style: theme.textTheme.titleLarge,
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Stack(
+                    children: <Widget>[
+                      InkWell(
+                        onTap: _pickIcon,
+                        borderRadius: BorderRadius.circular(14),
+                        child: Container(
+                          width: 92,
+                          height: 92,
+                          decoration: BoxDecoration(
+                            color: surfaces.panelRaised,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: surfaces.lineSoft),
+                          ),
+                          alignment: Alignment.center,
+                          child: _ProjectAvatar(
+                            project: widget.project.copyWith(
+                              name: _nameController.text.trim().isEmpty
+                                  ? widget.project.name
+                                  : _nameController.text.trim(),
+                              label: projectDisplayLabel(
+                                widget.project.directory,
+                                name: _nameController.text.trim().isEmpty
+                                    ? widget.project.name
+                                    : _nameController.text.trim(),
+                              ),
+                              icon: ProjectIconInfo(
+                                url: _iconDataUrl,
+                                override: _iconDataUrl,
+                                color: _selectedColor,
+                              ),
+                            ),
+                            size: 84,
+                            fontSize: 34,
+                            rounded: 10,
                           ),
                         ),
-                        IconButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          icon: const Icon(Icons.close_rounded),
-                          tooltip: context.wp('Close'),
+                      ),
+                      if (hasCustomIcon)
+                        Positioned(
+                          right: 6,
+                          top: 6,
+                          child: Material(
+                            color: Colors.black.withValues(alpha: 0.56),
+                            shape: const CircleBorder(),
+                            child: InkWell(
+                              customBorder: const CircleBorder(),
+                              onTap: () {
+                                setState(() {
+                                  _iconDataUrl = null;
+                                });
+                              },
+                              child: const Padding(
+                                padding: EdgeInsets.all(6),
+                                child: Icon(Icons.close_rounded, size: 16),
+                              ),
+                            ),
+                          ),
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.lg),
-                    TextField(
-                      controller: _nameController,
-                      decoration: InputDecoration(
-                        labelText: context.wp('Name'),
+                    ],
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: AppSpacing.xs),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            _pickingIcon
+                                ? context.wp('Loading image...')
+                                : context.wp('Click to choose an image'),
+                            style: theme.textTheme.bodyMedium,
+                          ),
+                          const SizedBox(height: AppSpacing.xxs),
+                          Text(
+                            context.wp('Recommended: 128x128px'),
+                            style: theme.textTheme.bodySmall,
+                          ),
+                        ],
                       ),
-                      autofocus: true,
                     ),
-                    const SizedBox(height: AppSpacing.lg),
-                    Text(
-                      context.wp('Icon'),
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        color: surfaces.muted,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Stack(
-                          children: <Widget>[
-                            InkWell(
-                              onTap: _pickIcon,
-                              borderRadius: BorderRadius.circular(14),
-                              child: Container(
-                                width: 92,
-                                height: 92,
-                                decoration: BoxDecoration(
-                                  color: surfaces.panelRaised,
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(color: surfaces.lineSoft),
-                                ),
-                                alignment: Alignment.center,
-                                child: _ProjectAvatar(
-                                  project: widget.project.copyWith(
-                                    name: _nameController.text.trim().isEmpty
-                                        ? widget.project.name
-                                        : _nameController.text.trim(),
-                                    label: projectDisplayLabel(
-                                      widget.project.directory,
+                  ),
+                ],
+              ),
+              if (!hasCustomIcon) ...<Widget>[
+                const SizedBox(height: AppSpacing.lg),
+                Text(
+                  context.wp('Color'),
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: surfaces.muted,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Wrap(
+                  spacing: AppSpacing.sm,
+                  runSpacing: AppSpacing.sm,
+                  children: _projectAvatarColorKeys
+                      .map((colorKey) {
+                        final palette = _projectAvatarPalette(colorKey);
+                        final selected = colorKey == _selectedColor;
+                        return InkWell(
+                          onTap: () {
+                            setState(() {
+                              _selectedColor = colorKey;
+                            });
+                          },
+                          borderRadius: BorderRadius.circular(12),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 160),
+                            width: 46,
+                            height: 46,
+                            decoration: BoxDecoration(
+                              color: selected
+                                  ? Colors.white.withValues(alpha: 0.08)
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: selected
+                                    ? Colors.white.withValues(alpha: 0.9)
+                                    : Colors.white.withValues(alpha: 0.06),
+                                width: selected ? 2 : 1,
+                              ),
+                            ),
+                            padding: const EdgeInsets.all(4),
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: palette.background,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  _projectInitial(
+                                    widget.project.copyWith(
                                       name: _nameController.text.trim().isEmpty
                                           ? widget.project.name
                                           : _nameController.text.trim(),
-                                    ),
-                                    icon: ProjectIconInfo(
-                                      url: _iconDataUrl,
-                                      override: _iconDataUrl,
-                                      color: _selectedColor,
-                                    ),
-                                  ),
-                                  size: 84,
-                                  fontSize: 34,
-                                  rounded: 10,
-                                ),
-                              ),
-                            ),
-                            if (hasCustomIcon)
-                              Positioned(
-                                right: 6,
-                                top: 6,
-                                child: Material(
-                                  color: Colors.black.withValues(alpha: 0.56),
-                                  shape: const CircleBorder(),
-                                  child: InkWell(
-                                    customBorder: const CircleBorder(),
-                                    onTap: () {
-                                      setState(() {
-                                        _iconDataUrl = null;
-                                      });
-                                    },
-                                    child: const Padding(
-                                      padding: EdgeInsets.all(6),
-                                      child: Icon(
-                                        Icons.close_rounded,
-                                        size: 16,
+                                      label: projectDisplayLabel(
+                                        widget.project.directory,
+                                        name:
+                                            _nameController.text.trim().isEmpty
+                                            ? widget.project.name
+                                            : _nameController.text.trim(),
                                       ),
                                     ),
                                   ),
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    color: palette.foreground,
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
                               ),
-                          ],
-                        ),
-                        const SizedBox(width: AppSpacing.md),
-                        Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.only(top: AppSpacing.xs),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: <Widget>[
-                                Text(
-                                  _pickingIcon
-                                      ? context.wp('Loading image...')
-                                      : context.wp('Click to choose an image'),
-                                  style: theme.textTheme.bodyMedium,
-                                ),
-                                const SizedBox(height: AppSpacing.xxs),
-                                Text(
-                                  context.wp('Recommended: 128x128px'),
-                                  style: theme.textTheme.bodySmall,
-                                ),
-                              ],
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                    if (!hasCustomIcon) ...<Widget>[
-                      const SizedBox(height: AppSpacing.lg),
-                      Text(
-                        context.wp('Color'),
-                        style: theme.textTheme.labelLarge?.copyWith(
-                          color: surfaces.muted,
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.sm),
-                      Wrap(
-                        spacing: AppSpacing.sm,
-                        runSpacing: AppSpacing.sm,
-                        children: _projectAvatarColorKeys
-                            .map((colorKey) {
-                              final palette = _projectAvatarPalette(colorKey);
-                              final selected = colorKey == _selectedColor;
-                              return InkWell(
-                                onTap: () {
-                                  setState(() {
-                                    _selectedColor = colorKey;
-                                  });
-                                },
-                                borderRadius: BorderRadius.circular(12),
-                                child: AnimatedContainer(
-                                  duration: const Duration(milliseconds: 160),
-                                  width: 46,
-                                  height: 46,
-                                  decoration: BoxDecoration(
-                                    color: selected
-                                        ? Colors.white.withValues(alpha: 0.08)
-                                        : Colors.transparent,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: selected
-                                          ? Colors.white.withValues(alpha: 0.9)
-                                          : Colors.white.withValues(
-                                              alpha: 0.06,
-                                            ),
-                                      width: selected ? 2 : 1,
-                                    ),
-                                  ),
-                                  padding: const EdgeInsets.all(4),
-                                  child: DecoratedBox(
-                                    decoration: BoxDecoration(
-                                      color: palette.background,
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Center(
-                                      child: Text(
-                                        _projectInitial(
-                                          widget.project.copyWith(
-                                            name:
-                                                _nameController.text
-                                                    .trim()
-                                                    .isEmpty
-                                                ? widget.project.name
-                                                : _nameController.text.trim(),
-                                            label: projectDisplayLabel(
-                                              widget.project.directory,
-                                              name:
-                                                  _nameController.text
-                                                      .trim()
-                                                      .isEmpty
-                                                  ? widget.project.name
-                                                  : _nameController.text.trim(),
-                                            ),
-                                          ),
-                                        ),
-                                        style: theme.textTheme.titleMedium
-                                            ?.copyWith(
-                                              color: palette.foreground,
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              );
-                            })
-                            .toList(growable: false),
-                      ),
-                    ],
-                    const SizedBox(height: AppSpacing.lg),
-                    TextField(
-                      controller: _startupController,
-                      maxLines: 3,
-                      minLines: 3,
-                      decoration: InputDecoration(
-                        labelText: context.wp('Workspace startup script'),
-                        hintText: context.wp('e.g. bun install'),
-                        helperText: context.wp(
-                          'Runs after creating a new workspace (worktree).',
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.xl),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: <Widget>[
-                        TextButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          child: Text(context.wp('Cancel')),
-                        ),
-                        const SizedBox(width: AppSpacing.sm),
-                        FilledButton(
-                          onPressed: _submit,
-                          child: Text(context.wp('Save')),
-                        ),
-                      ],
-                    ),
-                  ],
+                        );
+                      })
+                      .toList(growable: false),
+                ),
+              ],
+              const SizedBox(height: AppSpacing.lg),
+              TextField(
+                controller: _startupController,
+                maxLines: 3,
+                minLines: 3,
+                decoration: InputDecoration(
+                  labelText: context.wp('Workspace startup script'),
+                  hintText: context.wp('e.g. bun install'),
+                  helperText: context.wp(
+                    'Runs after creating a new workspace (worktree).',
+                  ),
                 ),
               ),
-            ),
+              const SizedBox(height: AppSpacing.xl),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: <Widget>[
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: Text(context.wp('Cancel')),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  FilledButton(
+                    onPressed: _submit,
+                    child: Text(context.wp('Save')),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
       ),
@@ -13637,25 +15085,64 @@ class _RenameSessionDialogState extends State<_RenameSessionDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(context.wp('Rename Session')),
-      content: TextField(
-        controller: _titleController,
-        autofocus: true,
-        decoration: InputDecoration(labelText: context.wp('Session title')),
-        onSubmitted: (value) => Navigator.of(context).pop(value.trim()),
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    return AppDialogFrame(
+      insetPadding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.xl,
       ),
-      actions: <Widget>[
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(context.wp('Cancel')),
+      constraints: const BoxConstraints(maxWidth: 420),
+      child: AppGlassPanel(
+        key: const ValueKey<String>('rename-session-dialog'),
+        radius: AppSpacing.dialogRadius,
+        blur: 24,
+        backgroundOpacity: theme.brightness == Brightness.dark ? 0.84 : 0.92,
+        borderOpacity: 0.1,
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              context.wp('Rename Session'),
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xxs),
+            Text(
+              context.wp('Give this session a short, recognizable title.'),
+              style: theme.textTheme.bodySmall?.copyWith(color: surfaces.muted),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            TextField(
+              controller: _titleController,
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: context.wp('Session title'),
+              ),
+              onSubmitted: (value) => Navigator.of(context).pop(value.trim()),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text(context.wp('Cancel')),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                FilledButton(
+                  onPressed: () =>
+                      Navigator.of(context).pop(_titleController.text.trim()),
+                  child: Text(context.wp('Save')),
+                ),
+              ],
+            ),
+          ],
         ),
-        FilledButton(
-          onPressed: () =>
-              Navigator.of(context).pop(_titleController.text.trim()),
-          child: Text(context.wp('Save')),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -13668,6 +15155,7 @@ class _WorkspaceBody extends StatelessWidget {
     required this.activePaneId,
     required this.activeWorkspaceLoading,
     required this.activeWorkspaceError,
+    required this.activeComposerScopeKey,
     required this.sidePanelVisible,
     required this.sidePanelWidth,
     required this.submittingPrompt,
@@ -13735,6 +15223,7 @@ class _WorkspaceBody extends StatelessWidget {
   final String? activePaneId;
   final bool activeWorkspaceLoading;
   final String? activeWorkspaceError;
+  final String activeComposerScopeKey;
   final bool sidePanelVisible;
   final double sidePanelWidth;
   final bool submittingPrompt;
@@ -13825,164 +15314,158 @@ class _WorkspaceBody extends StatelessWidget {
     final questionRequest = controller.currentQuestionRequest;
     final permissionRequest = controller.currentPermissionRequest;
     final usesInlinePaneComposer = inlineComposerBuilder != null;
-    final content = LayoutBuilder(
-      builder: (context, constraints) {
-        final expandedTerminalHeight = constraints.maxHeight.isFinite
-            ? constraints.maxHeight
-            : null;
+    Widget buildWorkspaceStream({required bool includeTerminalSlot}) {
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          final expandedTerminalHeight = constraints.maxHeight.isFinite
+              ? constraints.maxHeight
+              : null;
 
-        return Column(
-          children: <Widget>[
-            if (!terminalFocusMode)
-              Expanded(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: surfaces.background,
-                    borderRadius: compact
-                        ? null
-                        : const BorderRadius.only(
-                            topLeft: Radius.circular(AppSpacing.cardRadius),
-                          ),
-                  ),
-                  child: _WorkspaceSessionPaneDeck(
-                    compact: compact,
-                    paneViewModels: paneViewModels,
-                    activePaneId: activePaneId,
-                    shellToolDisplayMode: shellToolDisplayMode,
-                    timelineProgressDetailsVisible:
-                        timelineProgressDetailsVisible,
-                    chatSearchQuery: chatSearchQuery,
-                    chatSearchMatchMessageIds: chatSearchMatchMessageIds,
-                    chatSearchActiveMessageId: chatSearchActiveMessageId,
-                    chatSearchRevision: chatSearchRevision,
-                    timelineJumpEpoch: timelineJumpEpoch,
-                    focusedTimelineMessageIdForScope:
-                        focusedTimelineMessageIdForScope,
-                    focusedTimelineMessageRevisionForScope:
-                        focusedTimelineMessageRevisionForScope,
-                    todoDockCollapsedForScope: todoDockCollapsedForScope,
-                    onTodoDockCollapsedChanged: onTodoDockCollapsedChanged,
-                    subAgentPanelCollapsedForScope:
-                        subAgentPanelCollapsedForScope,
-                    onSubAgentPanelCollapsedChanged:
-                        onSubAgentPanelCollapsedChanged,
-                    onSelectPane: onSelectSessionPane,
-                    onClosePane: onCloseSessionPane,
-                    onForkMessage: onForkMessage,
-                    onRevertMessage: onRevertMessage,
-                    onOpenSession: onOpenSession,
-                    onRetrySelectedSession:
-                        controller.retrySelectedSessionMessages,
-                    inlineComposerBuilder: inlineComposerBuilder,
-                  ),
-                ),
-              ),
-            if (!terminalFocusMode &&
-                !usesInlinePaneComposer &&
-                activeWorkspaceLoading)
-              Container(
-                padding: EdgeInsets.fromLTRB(
-                  density.inset(compact ? AppSpacing.sm : AppSpacing.lg),
-                  density.inset(compact ? AppSpacing.xs : AppSpacing.md),
-                  density.inset(compact ? AppSpacing.sm : AppSpacing.lg),
-                  density.inset(compact ? AppSpacing.sm : AppSpacing.lg),
-                ),
-                decoration: BoxDecoration(
-                  color: surfaces.panel,
-                  border: Border(top: BorderSide(color: surfaces.lineSoft)),
-                ),
-                child: _PromptComposerLoadingPlaceholder(compact: compact),
-              )
-            else if (!terminalFocusMode &&
-                !usesInlinePaneComposer &&
-                activeWorkspaceError == null &&
-                questionRequest != null)
-              _PendingQuestionComposerNotice(
-                request: questionRequest,
-                compact: compact,
-              )
-            else if (!terminalFocusMode &&
-                !usesInlinePaneComposer &&
-                activeWorkspaceError == null &&
-                permissionRequest != null)
-              _PendingPermissionComposerNotice(
-                request: permissionRequest,
-                compact: compact,
-              )
-            else if (!terminalFocusMode &&
-                !usesInlinePaneComposer &&
-                activeWorkspaceError == null)
-              _PromptComposer(
-                controller: promptController,
-                compact: compact,
-                scopeKey:
-                    '${controller.directory}::${controller.selectedSessionId ?? 'new'}',
-                focusRequestToken: promptFocusRequestToken,
-                submitting: submittingPrompt,
-                busyFollowupMode: busyFollowupMode,
-                interruptible: interruptiblePrompt,
-                interrupting: interruptingPrompt,
-                pickingAttachments: pickingAttachments,
-                attachments: attachments,
-                queuedPrompts: controller.selectedSessionQueuedPrompts,
-                failedQueuedPromptId:
-                    controller.selectedSessionFailedQueuedPromptId,
-                sendingQueuedPromptId:
-                    controller.selectedSessionSendingQueuedPromptId,
-                agents: controller.composerAgents,
-                models: controller.composerModels,
-                selectedAgentName: controller.selectedAgentName,
-                selectedModel: controller.selectedModel,
-                selectedReasoning: controller.selectedReasoning,
-                reasoningValues: controller.availableReasoningValues,
-                customCommands: controller.composerCommands,
-                historyEntries: historyEntries,
-                permissionAutoAccepting: controller
-                    .autoAcceptsPermissionForSession(
-                      controller.selectedSessionId,
+          return Column(
+            children: <Widget>[
+              if (!terminalFocusMode)
+                Expanded(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(color: surfaces.background),
+                    child: _WorkspaceSessionPaneDeck(
+                      compact: compact,
+                      paneViewModels: paneViewModels,
+                      activePaneId: activePaneId,
+                      shellToolDisplayMode: shellToolDisplayMode,
+                      timelineProgressDetailsVisible:
+                          timelineProgressDetailsVisible,
+                      chatSearchQuery: chatSearchQuery,
+                      chatSearchMatchMessageIds: chatSearchMatchMessageIds,
+                      chatSearchActiveMessageId: chatSearchActiveMessageId,
+                      chatSearchRevision: chatSearchRevision,
+                      timelineJumpEpoch: timelineJumpEpoch,
+                      focusedTimelineMessageIdForScope:
+                          focusedTimelineMessageIdForScope,
+                      focusedTimelineMessageRevisionForScope:
+                          focusedTimelineMessageRevisionForScope,
+                      todoDockCollapsedForScope: todoDockCollapsedForScope,
+                      onTodoDockCollapsedChanged: onTodoDockCollapsedChanged,
+                      subAgentPanelCollapsedForScope:
+                          subAgentPanelCollapsedForScope,
+                      onSubAgentPanelCollapsedChanged:
+                          onSubAgentPanelCollapsedChanged,
+                      onSelectPane: onSelectSessionPane,
+                      onClosePane: onCloseSessionPane,
+                      onForkMessage: onForkMessage,
+                      onRevertMessage: onRevertMessage,
+                      onOpenSession: onOpenSession,
+                      onRetrySelectedSession:
+                          controller.retrySelectedSessionMessages,
+                      inlineComposerBuilder: inlineComposerBuilder,
                     ),
-                onSelectAgent: controller.selectAgent,
-                onSelectModel: controller.selectModel,
-                onSelectReasoning: controller.selectReasoning,
-                onTogglePermissionAutoAccept: onTogglePermissionAutoAccept,
-                onCreateSession: onCreateSession,
-                onInterrupt: onInterruptPrompt,
-                onPickAttachments: onPickAttachments,
-                onDropFiles: onDropFiles,
-                onPasteClipboardImage: onPasteClipboardImage,
-                onContentInserted: onContentInserted,
-                dropRegionBuilder: dropRegionBuilder,
-                onRemoveAttachment: onRemoveAttachment,
-                onEditQueuedPrompt: onEditQueuedPrompt,
-                onDeleteQueuedPrompt: onDeleteQueuedPrompt,
-                onSendQueuedPromptNow: onSendQueuedPromptNow,
-                onShareSession: onShareSession,
-                onUnshareSession: onUnshareSession,
-                onSummarizeSession: onSummarizeSession,
-                submittedDraftEpoch: submittedDraftEpoch,
-                recentSubmittedDraft: recentSubmittedDraft,
-                onOpenMcpPicker: onOpenMcpPicker,
-                onToggleTerminal: onToggleTerminal,
-                onSelectSideTab: (tab) {
-                  if (!compact && !sidePanelVisible) {
-                    onShowSidePanel?.call();
-                  }
-                  controller.setSideTab(tab);
-                },
-                onSubmit: onSubmitPrompt,
-              ),
-            if (terminalPanel != null)
-              _WorkspaceTerminalPanelSlot(
-                open: terminalPanelOpen,
-                hidden: collapseInlineTerminal,
-                expanded: terminalFocusMode,
-                expandedHeight: expandedTerminalHeight,
-                child: terminalPanel!,
-              ),
-          ],
-        );
-      },
-    );
+                  ),
+                ),
+              if (!terminalFocusMode &&
+                  !usesInlinePaneComposer &&
+                  activeWorkspaceLoading)
+                Container(
+                  padding: EdgeInsets.fromLTRB(
+                    density.inset(compact ? AppSpacing.sm : AppSpacing.lg),
+                    density.inset(compact ? AppSpacing.xs : AppSpacing.md),
+                    density.inset(compact ? AppSpacing.sm : AppSpacing.lg),
+                    density.inset(compact ? AppSpacing.sm : AppSpacing.lg),
+                  ),
+                  decoration: BoxDecoration(
+                    color: surfaces.panel,
+                    border: Border(top: BorderSide(color: surfaces.lineSoft)),
+                  ),
+                  child: _PromptComposerLoadingPlaceholder(compact: compact),
+                )
+              else if (!terminalFocusMode &&
+                  !usesInlinePaneComposer &&
+                  activeWorkspaceError == null &&
+                  questionRequest != null)
+                _PendingQuestionComposerNotice(
+                  request: questionRequest,
+                  compact: compact,
+                )
+              else if (!terminalFocusMode &&
+                  !usesInlinePaneComposer &&
+                  activeWorkspaceError == null &&
+                  permissionRequest != null)
+                _PendingPermissionComposerNotice(
+                  request: permissionRequest,
+                  compact: compact,
+                )
+              else if (!terminalFocusMode &&
+                  !usesInlinePaneComposer &&
+                  activeWorkspaceError == null)
+                _PromptComposer(
+                  controller: promptController,
+                  compact: compact,
+                  scopeKey: activeComposerScopeKey,
+                  focusRequestToken: promptFocusRequestToken,
+                  submitting: submittingPrompt,
+                  busyFollowupMode: busyFollowupMode,
+                  interruptible: interruptiblePrompt,
+                  interrupting: interruptingPrompt,
+                  pickingAttachments: pickingAttachments,
+                  attachments: attachments,
+                  queuedPrompts: controller.selectedSessionQueuedPrompts,
+                  failedQueuedPromptId:
+                      controller.selectedSessionFailedQueuedPromptId,
+                  sendingQueuedPromptId:
+                      controller.selectedSessionSendingQueuedPromptId,
+                  agents: controller.composerAgents,
+                  models: controller.composerModels,
+                  selectedAgentName: controller.selectedAgentName,
+                  selectedModel: controller.selectedModel,
+                  selectedReasoning: controller.selectedReasoning,
+                  reasoningValues: controller.availableReasoningValues,
+                  customCommands: controller.composerCommands,
+                  historyEntries: historyEntries,
+                  permissionAutoAccepting: controller
+                      .autoAcceptsPermissionForSession(
+                        controller.selectedSessionId,
+                      ),
+                  onSelectAgent: controller.selectAgent,
+                  onSelectModel: controller.selectModel,
+                  onSelectReasoning: controller.selectReasoning,
+                  onTogglePermissionAutoAccept: onTogglePermissionAutoAccept,
+                  onCreateSession: onCreateSession,
+                  onInterrupt: onInterruptPrompt,
+                  onPickAttachments: onPickAttachments,
+                  onDropFiles: onDropFiles,
+                  onPasteClipboardImage: onPasteClipboardImage,
+                  onContentInserted: onContentInserted,
+                  dropRegionBuilder: dropRegionBuilder,
+                  onRemoveAttachment: onRemoveAttachment,
+                  onEditQueuedPrompt: onEditQueuedPrompt,
+                  onDeleteQueuedPrompt: onDeleteQueuedPrompt,
+                  onSendQueuedPromptNow: onSendQueuedPromptNow,
+                  onShareSession: onShareSession,
+                  onUnshareSession: onUnshareSession,
+                  onSummarizeSession: onSummarizeSession,
+                  submittedDraftEpoch: submittedDraftEpoch,
+                  recentSubmittedDraft: recentSubmittedDraft,
+                  onOpenMcpPicker: onOpenMcpPicker,
+                  onToggleTerminal: onToggleTerminal,
+                  onSelectSideTab: (tab) {
+                    if (!compact && !sidePanelVisible) {
+                      onShowSidePanel?.call();
+                    }
+                    controller.setSideTab(tab);
+                  },
+                  onSubmit: onSubmitPrompt,
+                ),
+              if (includeTerminalSlot && terminalPanel != null)
+                _WorkspaceTerminalPanelSlot(
+                  open: terminalPanelOpen,
+                  hidden: collapseInlineTerminal,
+                  expanded: terminalFocusMode,
+                  expandedHeight: expandedTerminalHeight,
+                  child: terminalPanel!,
+                ),
+            ],
+          );
+        },
+      );
+    }
 
     final sidePanel = _SidePanel(
       controller: controller,
@@ -14004,42 +15487,82 @@ class _WorkspaceBody extends StatelessWidget {
                     padding: EdgeInsets.only(
                       bottom: mediaQuery.viewInsets.bottom,
                     ),
-                    child: content,
+                    child: buildWorkspaceStream(includeTerminalSlot: true),
                   )
                 : sidePanel,
           ),
         ],
       );
     }
+    final desktopBody = buildWorkspaceStream(includeTerminalSlot: false);
 
-    return Row(
-      children: <Widget>[
-        Expanded(child: content),
-        _HorizontalReveal(
-          key: const ValueKey<String>('workspace-desktop-side-panel-reveal'),
-          visible: sidePanelVisible,
-          alignment: Alignment.centerRight,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              _DesktopResizeHandle(
-                key: const ValueKey<String>(
-                  'workspace-desktop-side-panel-resize-handle',
+    return DecoratedBox(
+      key: const ValueKey<String>('workspace-desktop-body-shell'),
+      decoration: BoxDecoration(color: surfaces.background),
+      child: Column(
+        children: <Widget>[
+          Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Expanded(
+                  child: DecoratedBox(
+                    key: const ValueKey<String>('workspace-desktop-main-pane'),
+                    decoration: BoxDecoration(color: surfaces.background),
+                    child: desktopBody,
+                  ),
                 ),
-                onDragUpdate: onResizeSidePanel,
-                onDragEnd: onFinishResizeSidePanel,
-              ),
-              Container(width: 1, color: Theme.of(context).dividerColor),
-              SizedBox(
-                key: const ValueKey<String>('workspace-desktop-side-panel'),
-                width: density.sidePanelWidth(sidePanelWidth),
-                child: sidePanel,
-              ),
-            ],
+                _HorizontalReveal(
+                  key: const ValueKey<String>(
+                    'workspace-desktop-side-panel-reveal',
+                  ),
+                  visible: sidePanelVisible,
+                  alignment: Alignment.centerRight,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      _DesktopResizeHandle(
+                        key: const ValueKey<String>(
+                          'workspace-desktop-side-panel-resize-handle',
+                        ),
+                        onDragUpdate: onResizeSidePanel,
+                        onDragEnd: onFinishResizeSidePanel,
+                      ),
+                      SizedBox(
+                        key: const ValueKey<String>(
+                          'workspace-desktop-side-panel',
+                        ),
+                        width: density.sidePanelWidth(sidePanelWidth),
+                        child: sidePanel,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-      ],
+          if (terminalPanel != null) ...<Widget>[
+            DecoratedBox(
+              key: const ValueKey<String>('workspace-desktop-terminal-pane'),
+              decoration: BoxDecoration(
+                color: surfaces.panelMuted,
+                border: Border(
+                  top: BorderSide(
+                    color: surfaces.lineSoft.withValues(alpha: 0.85),
+                  ),
+                ),
+              ),
+              child: _WorkspaceTerminalPanelSlot(
+                open: terminalPanelOpen,
+                hidden: false,
+                expanded: false,
+                child: terminalPanel!,
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -14085,7 +15608,7 @@ Future<void> _showCompactWorkspaceSheet(
   required Widget Function(BuildContext context, StateSetter setModalState)
   contentBuilder,
 }) {
-  return showModalBottomSheet<void>(
+  return showAppModalBottomSheet<void>(
     context: context,
     backgroundColor: Colors.transparent,
     isScrollControlled: true,
@@ -14104,21 +15627,14 @@ Future<void> _showCompactWorkspaceSheet(
               alignment: Alignment.bottomCenter,
               child: FractionallySizedBox(
                 heightFactor: 0.82,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: surfaces.background,
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(28),
-                    ),
-                    border: Border.all(color: surfaces.lineSoft),
-                    boxShadow: <BoxShadow>[
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.28),
-                        blurRadius: 28,
-                        offset: const Offset(0, -6),
-                      ),
-                    ],
-                  ),
+                child: AppGlassPanel(
+                  radius: AppSpacing.sheetRadius,
+                  blur: 28,
+                  tone: AppSurfaceTone.accent,
+                  backgroundOpacity: theme.brightness == Brightness.dark
+                      ? 0.84
+                      : 0.92,
+                  padding: EdgeInsets.zero,
                   child: SafeArea(
                     top: false,
                     child: Column(
@@ -14193,7 +15709,6 @@ class _CompactSessionActivityBar extends StatelessWidget {
     this.onOpenPermission,
     this.onOpenTodos,
     this.onOpenSubAgents,
-    super.key,
   });
 
   final int todoCount;
@@ -14258,22 +15773,34 @@ class _CompactSessionActivityBar extends StatelessWidget {
         AppSpacing.sm,
         AppSpacing.xs,
         AppSpacing.sm,
-        AppSpacing.sm,
+        AppSpacing.xs,
       ),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 920),
-          child: SingleChildScrollView(
+          child: AppGlassPanel(
             key: const ValueKey<String>('compact-session-activity-bar'),
-            scrollDirection: Axis.horizontal,
-            padding: EdgeInsets.zero,
-            child: Row(
-              children: <Widget>[
-                for (var index = 0; index < items.length; index += 1) ...[
-                  if (index > 0) const SizedBox(width: AppSpacing.xs),
-                  items[index],
+            radius: AppSpacing.panelRadius,
+            blur: 12,
+            backgroundOpacity: theme.brightness == Brightness.dark
+                ? 0.76
+                : 0.92,
+            showShadow: false,
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.xs,
+              vertical: AppSpacing.xs,
+            ),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: EdgeInsets.zero,
+              child: Row(
+                children: <Widget>[
+                  for (var index = 0; index < items.length; index += 1) ...[
+                    if (index > 0) const SizedBox(width: AppSpacing.xs),
+                    items[index],
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ),
@@ -14311,7 +15838,10 @@ class _CompactActivitySummaryButton extends StatelessWidget {
             vertical: AppSpacing.xs,
           ),
           decoration: BoxDecoration(
-            color: surfaces.panelMuted.withValues(alpha: 0.78),
+            color: Color.alphaBlend(
+              accent.withValues(alpha: 0.1),
+              surfaces.panelRaised.withValues(alpha: 0.94),
+            ),
             borderRadius: BorderRadius.circular(999),
             border: Border.all(color: accent.withValues(alpha: 0.28)),
           ),
@@ -14440,6 +15970,28 @@ class _HorizontalReveal extends StatelessWidget {
   }
 }
 
+ProjectTarget _workspacePaneProjectForController(
+  WorkspaceController controller,
+  String directory, {
+  ProjectTarget? fallbackProject,
+}) {
+  final currentProject = controller.project;
+  if (currentProject != null && currentProject.directory == directory) {
+    return currentProject;
+  }
+  for (final project in controller.availableProjects) {
+    if (project.directory == directory) {
+      return project;
+    }
+  }
+  return fallbackProject ??
+      ProjectTarget(
+        directory: directory,
+        label: projectDisplayLabel(directory),
+        source: 'session-pane',
+      );
+}
+
 class _WorkspaceSessionPaneDeck extends StatelessWidget {
   const _WorkspaceSessionPaneDeck({
     required this.compact,
@@ -14521,35 +16073,43 @@ class _WorkspaceSessionPaneDeck extends StatelessWidget {
         children: [
           for (var index = 0; index < paneViewModels.length; index += 1) ...[
             Expanded(
-              child: _WorkspaceSessionPaneCard(
-                paneViewModel: paneViewModels[index],
-                compact: compact,
-                selected: paneViewModels[index].pane.id == resolvedActivePaneId,
-                showSelectionChrome: showSelectionChrome,
-                canClose: !compact && paneViewModels.length > 1,
-                shellToolDisplayMode: shellToolDisplayMode,
-                timelineProgressDetailsVisible: timelineProgressDetailsVisible,
-                chatSearchQuery: chatSearchQuery,
-                chatSearchMatchMessageIds: chatSearchMatchMessageIds,
-                chatSearchActiveMessageId: chatSearchActiveMessageId,
-                chatSearchRevision: chatSearchRevision,
-                timelineJumpEpoch: timelineJumpEpoch,
-                focusedTimelineMessageIdForScope:
-                    focusedTimelineMessageIdForScope,
-                focusedTimelineMessageRevisionForScope:
-                    focusedTimelineMessageRevisionForScope,
-                todoDockCollapsedForScope: todoDockCollapsedForScope,
-                onTodoDockCollapsedChanged: onTodoDockCollapsedChanged,
-                subAgentPanelCollapsedForScope: subAgentPanelCollapsedForScope,
-                onSubAgentPanelCollapsedChanged:
-                    onSubAgentPanelCollapsedChanged,
-                onSelectPane: onSelectPane,
-                onClosePane: onClosePane,
-                onForkMessage: onForkMessage,
-                onRevertMessage: onRevertMessage,
-                onOpenSession: onOpenSession,
-                onRetrySelectedSession: onRetrySelectedSession,
-                inlineComposerBuilder: inlineComposerBuilder,
+              child: AnimatedBuilder(
+                animation: paneViewModels[index].controller,
+                builder: (context, _) {
+                  return _WorkspaceSessionPaneCard(
+                    paneViewModel: paneViewModels[index],
+                    compact: compact,
+                    selected:
+                        paneViewModels[index].pane.id == resolvedActivePaneId,
+                    showSelectionChrome: showSelectionChrome,
+                    canClose: !compact && paneViewModels.length > 1,
+                    shellToolDisplayMode: shellToolDisplayMode,
+                    timelineProgressDetailsVisible:
+                        timelineProgressDetailsVisible,
+                    chatSearchQuery: chatSearchQuery,
+                    chatSearchMatchMessageIds: chatSearchMatchMessageIds,
+                    chatSearchActiveMessageId: chatSearchActiveMessageId,
+                    chatSearchRevision: chatSearchRevision,
+                    timelineJumpEpoch: timelineJumpEpoch,
+                    focusedTimelineMessageIdForScope:
+                        focusedTimelineMessageIdForScope,
+                    focusedTimelineMessageRevisionForScope:
+                        focusedTimelineMessageRevisionForScope,
+                    todoDockCollapsedForScope: todoDockCollapsedForScope,
+                    onTodoDockCollapsedChanged: onTodoDockCollapsedChanged,
+                    subAgentPanelCollapsedForScope:
+                        subAgentPanelCollapsedForScope,
+                    onSubAgentPanelCollapsedChanged:
+                        onSubAgentPanelCollapsedChanged,
+                    onSelectPane: onSelectPane,
+                    onClosePane: onClosePane,
+                    onForkMessage: onForkMessage,
+                    onRevertMessage: onRevertMessage,
+                    onOpenSession: onOpenSession,
+                    onRetrySelectedSession: onRetrySelectedSession,
+                    inlineComposerBuilder: inlineComposerBuilder,
+                  );
+                },
               ),
             ),
             if (index < paneViewModels.length - 1) SizedBox(width: spacing),
@@ -14629,15 +16189,19 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
     final density = _workspaceDensity(context);
     final pane = paneViewModel.pane;
     final controller = paneViewModel.controller;
-    final project = paneViewModel.project;
+    final project = _workspacePaneProjectForController(
+      controller,
+      pane.directory,
+      fallbackProject: paneViewModel.project,
+    );
     final sessionId = pane.sessionId?.trim();
     final session = _sessionById(controller.sessions, sessionId);
     final timelineState = controller.timelineStateForSession(sessionId);
     final busy = controller.sessionBusyForSession(sessionId);
     final title = _sessionHeaderTitle(context, session, project);
     final projectLabel = (() {
-      final label = project?.label.trim();
-      if (label != null && label.isNotEmpty) {
+      final label = project.label.trim();
+      if (label.isNotEmpty) {
         return label;
       }
       return projectDisplayLabel(pane.directory);
@@ -14815,22 +16379,18 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
       if (currentSessionId == null || paneTodos.isEmpty) {
         return;
       }
-      var collapsed = false;
       await _showCompactWorkspaceSheet(
         context,
         title: context.wp('To-do'),
-        contentBuilder: (sheetContext, setModalState) => _SessionTodoDock(
+        contentBuilder: (sheetContext, _) => _SessionTodoDock(
           sessionId: currentSessionId,
           todos: paneTodos,
           live: paneTodoLive,
           blocked: false,
           compact: true,
-          collapsed: collapsed,
-          onCollapsedChanged: (nextCollapsed) {
-            setModalState(() {
-              collapsed = nextCollapsed;
-            });
-          },
+          collapsible: false,
+          collapsed: false,
+          onCollapsedChanged: (_) {},
           onClearStale: () => controller.clearTodosForSession(currentSessionId),
         ),
       );
@@ -14864,6 +16424,13 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
       );
     }
 
+    final paneRadius = compact ? _workspaceInnerRadius : _workspacePanelRadius;
+    void focusPane() {
+      if (!selected) {
+        unawaited(handleFocus());
+      }
+    }
+
     return Semantics(
       selected: selected,
       label: title,
@@ -14871,449 +16438,448 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           key: ValueKey<String>('workspace-session-pane-${pane.id}'),
-          onTap: selected ? null : () => unawaited(handleFocus()),
-          borderRadius: BorderRadius.circular(compact ? 18 : 22),
-          child: AnimatedContainer(
-            key: ValueKey<String>(
-              'workspace-session-pane-container-${pane.id}',
-            ),
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOutCubic,
-            decoration: BoxDecoration(
-              color: visuallySelected
-                  ? surfaces.panel.withValues(alpha: 0.98)
-                  : surfaces.panelRaised.withValues(alpha: 0.94),
-              borderRadius: BorderRadius.circular(compact ? 18 : 22),
-              border: Border.all(
-                color: visuallySelected
-                    ? theme.colorScheme.primary.withValues(alpha: 0.78)
-                    : surfaces.lineSoft,
-                width: visuallySelected ? 1.8 : 1,
+          onTap: selected ? null : focusPane,
+          borderRadius: BorderRadius.circular(paneRadius),
+          child: Listener(
+            behavior: HitTestBehavior.translucent,
+            onPointerDown: selected ? null : (_) => focusPane(),
+            child: AnimatedContainer(
+              key: ValueKey<String>(
+                'workspace-session-pane-container-${pane.id}',
               ),
-              boxShadow: <BoxShadow>[
-                BoxShadow(
-                  color:
-                      (visuallySelected
-                              ? theme.colorScheme.primary
-                              : Colors.black)
-                          .withValues(alpha: visuallySelected ? 0.14 : 0.08),
-                  blurRadius: visuallySelected ? 24 : 14,
-                  offset: const Offset(0, 10),
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOutCubic,
+              decoration: BoxDecoration(
+                color: visuallySelected
+                    ? surfaces.panelRaised.withValues(alpha: 0.98)
+                    : surfaces.panel.withValues(alpha: 0.96),
+                borderRadius: BorderRadius.circular(paneRadius),
+                border: Border.all(
+                  color: visuallySelected
+                      ? theme.colorScheme.primary.withValues(alpha: 0.58)
+                      : surfaces.lineSoft.withValues(alpha: 0.95),
+                  width: visuallySelected ? 1.4 : 1,
                 ),
-              ],
-            ),
-            child: Column(
-              children: <Widget>[
-                Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    density.inset(compact ? AppSpacing.sm : AppSpacing.md),
-                    density.inset(compact ? AppSpacing.sm : AppSpacing.md),
-                    density.inset(compact ? AppSpacing.sm : AppSpacing.md),
-                    density.inset(compact ? AppSpacing.xs : AppSpacing.sm),
-                  ),
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final headerWidth = constraints.maxWidth;
-                      final hideTitle = headerWidth < 72;
-                      final showSubtitle = headerWidth >= 180;
-                      final showSelectedBadge =
-                          visuallySelected && headerWidth >= 140;
-                      final useCompactCloseButton = headerWidth < 120;
+                boxShadow: <BoxShadow>[
+                  if (visuallySelected)
+                    BoxShadow(
+                      color: theme.colorScheme.shadow.withValues(
+                        alpha: theme.brightness == Brightness.dark
+                            ? 0.16
+                            : 0.035,
+                      ),
+                      blurRadius: 14,
+                      spreadRadius: -12,
+                      offset: const Offset(0, 7),
+                    ),
+                ],
+              ),
+              child: Column(
+                children: <Widget>[
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      density.inset(compact ? AppSpacing.sm : AppSpacing.md),
+                      density.inset(compact ? AppSpacing.sm : AppSpacing.md),
+                      density.inset(compact ? AppSpacing.sm : AppSpacing.md),
+                      density.inset(compact ? AppSpacing.xs : AppSpacing.sm),
+                    ),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final headerWidth = constraints.maxWidth;
+                        final hideTitle = headerWidth < 72;
+                        final showSubtitle = headerWidth >= 180;
+                        final showSelectedBadge =
+                            visuallySelected && headerWidth >= 140;
+                        final useCompactCloseButton = headerWidth < 120;
 
-                      Widget closeButton() {
-                        return IconButton(
-                          key: ValueKey<String>(
-                            'workspace-session-pane-close-${pane.id}',
-                          ),
-                          onPressed: () => onClosePane(pane.id),
-                          tooltip: context.wp('Close pane'),
-                          icon: Icon(
-                            Icons.close_rounded,
-                            size: useCompactCloseButton ? 14 : 18,
-                          ),
-                          splashRadius: useCompactCloseButton ? 14 : 18,
-                          visualDensity: VisualDensity.compact,
-                          padding: EdgeInsets.zero,
-                          constraints: BoxConstraints.tightFor(
-                            width: useCompactCloseButton ? 20 : 28,
-                            height: useCompactCloseButton ? 20 : 28,
-                          ),
-                        );
-                      }
+                        Widget closeButton() {
+                          return IconButton(
+                            key: ValueKey<String>(
+                              'workspace-session-pane-close-${pane.id}',
+                            ),
+                            onPressed: () => onClosePane(pane.id),
+                            tooltip: context.wp('Close pane'),
+                            icon: Icon(
+                              Icons.close_rounded,
+                              size: useCompactCloseButton ? 14 : 18,
+                            ),
+                            splashRadius: useCompactCloseButton ? 14 : 18,
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: BoxConstraints.tightFor(
+                              width: useCompactCloseButton ? 20 : 28,
+                              height: useCompactCloseButton ? 20 : 28,
+                            ),
+                          );
+                        }
 
-                      return Row(
-                        children: <Widget>[
-                          Expanded(
-                            child: hideTitle
-                                ? const SizedBox.shrink()
-                                : Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: <Widget>[
-                                      Tooltip(
-                                        message: title,
-                                        child: Text(
-                                          title,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style:
-                                              (compact || !showSubtitle
-                                                      ? theme
-                                                            .textTheme
-                                                            .titleSmall
-                                                      : theme
-                                                            .textTheme
-                                                            .titleMedium)
-                                                  ?.copyWith(
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                        ),
-                                      ),
-                                      if (showSubtitle) ...<Widget>[
-                                        SizedBox(
-                                          height: density.inset(
-                                            AppSpacing.xxs,
-                                            min: 2,
+                        return Row(
+                          children: <Widget>[
+                            Expanded(
+                              child: hideTitle
+                                  ? const SizedBox.shrink()
+                                  : Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: <Widget>[
+                                        Tooltip(
+                                          message: title,
+                                          child: Text(
+                                            title,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style:
+                                                (compact || !showSubtitle
+                                                        ? theme
+                                                              .textTheme
+                                                              .titleSmall
+                                                        : theme
+                                                              .textTheme
+                                                              .titleMedium)
+                                                    ?.copyWith(
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                    ),
                                           ),
                                         ),
-                                        Row(
-                                          children: <Widget>[
-                                            if (busy) ...<Widget>[
-                                              Container(
-                                                key: ValueKey<String>(
-                                                  'workspace-session-pane-busy-indicator-${pane.id}',
+                                        if (showSubtitle) ...<Widget>[
+                                          SizedBox(
+                                            height: density.inset(
+                                              AppSpacing.xxs,
+                                              min: 2,
+                                            ),
+                                          ),
+                                          Row(
+                                            children: <Widget>[
+                                              if (busy) ...<Widget>[
+                                                Container(
+                                                  key: ValueKey<String>(
+                                                    'workspace-session-pane-busy-indicator-${pane.id}',
+                                                  ),
+                                                  width: compact ? 7 : 8,
+                                                  height: compact ? 7 : 8,
+                                                  decoration: BoxDecoration(
+                                                    color: theme
+                                                        .colorScheme
+                                                        .primary,
+                                                    shape: BoxShape.circle,
+                                                  ),
                                                 ),
-                                                width: compact ? 7 : 8,
-                                                height: compact ? 7 : 8,
-                                                decoration: BoxDecoration(
-                                                  color:
-                                                      theme.colorScheme.primary,
-                                                  shape: BoxShape.circle,
+                                                SizedBox(
+                                                  width: density.inset(
+                                                    AppSpacing.xxs,
+                                                    min: 4,
+                                                  ),
                                                 ),
-                                              ),
-                                              SizedBox(
-                                                width: density.inset(
-                                                  AppSpacing.xxs,
-                                                  min: 4,
+                                              ],
+                                              Expanded(
+                                                child: Text(
+                                                  subtitle,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: theme
+                                                      .textTheme
+                                                      .bodySmall
+                                                      ?.copyWith(
+                                                        color: visuallySelected
+                                                            ? theme
+                                                                  .colorScheme
+                                                                  .primary
+                                                                  .withValues(
+                                                                    alpha: 0.92,
+                                                                  )
+                                                            : surfaces.muted,
+                                                      ),
                                                 ),
                                               ),
                                             ],
-                                            Expanded(
-                                              child: Text(
-                                                subtitle,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: theme.textTheme.bodySmall
-                                                    ?.copyWith(
-                                                      color: visuallySelected
-                                                          ? theme
-                                                                .colorScheme
-                                                                .primary
-                                                                .withValues(
-                                                                  alpha: 0.92,
-                                                                )
-                                                          : surfaces.muted,
-                                                    ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
+                                          ),
+                                        ],
                                       ],
-                                    ],
-                                  ),
-                          ),
-                          if (showSelectedBadge)
-                            Container(
-                              key: ValueKey<String>(
-                                'workspace-session-pane-selected-badge-${pane.id}',
-                              ),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: AppSpacing.xs,
-                                vertical: 5,
-                              ),
-                              decoration: BoxDecoration(
-                                color: theme.colorScheme.primary.withValues(
-                                  alpha: 0.16,
-                                ),
-                                borderRadius: BorderRadius.circular(
-                                  AppSpacing.pillRadius,
-                                ),
-                                border: Border.all(
-                                  color: theme.colorScheme.primary.withValues(
-                                    alpha: 0.24,
-                                  ),
-                                ),
-                              ),
-                              child: Text(
-                                'Active',
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: theme.colorScheme.primary,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                          if (canClose) ...<Widget>[
-                            SizedBox(
-                              width: hideTitle
-                                  ? 2
-                                  : density.inset(AppSpacing.xs, min: 4),
-                            ),
-                            closeButton(),
-                          ],
-                        ],
-                      );
-                    },
-                  ),
-                ),
-                Divider(height: 1, color: surfaces.lineSoft),
-                Expanded(
-                  child: Column(
-                    children: <Widget>[
-                      if (!compact && activeChildSessions.isNotEmpty)
-                        _ActiveSubSessionPanel(
-                          key: ValueKey<String>(
-                            'pane-subsessions-${pane.id}::$normalizedSessionId',
-                          ),
-                          rootSessionId: rootSession?.id,
-                          sessions: activeChildSessions,
-                          previewBySessionId: activeChildSessionPreviewById,
-                          currentSessionId: sessionId,
-                          compact: compact,
-                          collapsed: subAgentPanelCollapsedForScope(
-                            sessionUiScopeKey,
-                          ),
-                          onCollapsedChanged: (collapsed) =>
-                              onSubAgentPanelCollapsedChanged(
-                                sessionUiScopeKey,
-                                collapsed,
-                              ),
-                          onOpenSession: handleOpenSession,
-                        ),
-                      Expanded(
-                        child: Stack(
-                          children: <Widget>[
-                            Positioned.fill(
-                              child: sessionId == null && controller.loading
-                                  ? KeyedSubtree(
-                                      key: ValueKey<String>(
-                                        'workspace-session-pane-loading-${pane.id}',
-                                      ),
-                                      child: _TimelineStatusCard(
-                                        icon: const SizedBox(
-                                          width: 20,
-                                          height: 20,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                          ),
-                                        ),
-                                        title:
-                                            'Loading ${projectLabel.isEmpty ? 'project' : projectLabel}...',
-                                        message:
-                                            'Keeping the rest of the workspace visible while this project connects.',
-                                      ),
-                                    )
-                                  : sessionId == null &&
-                                        controller.error != null
-                                  ? KeyedSubtree(
-                                      key: ValueKey<String>(
-                                        'workspace-session-pane-error-${pane.id}',
-                                      ),
-                                      child: _TimelineStatusCard(
-                                        icon: Icon(
-                                          Icons.wifi_tethering_error_rounded,
-                                          color: theme.colorScheme.error,
-                                          size: 22,
-                                        ),
-                                        title: context.wp(
-                                          "Couldn't load {project}",
-                                          args: <String, Object?>{
-                                            'project': projectLabel.isEmpty
-                                                ? context.wp('this project')
-                                                : projectLabel,
-                                          },
-                                        ),
-                                        message: controller.error!,
-                                        action: OutlinedButton(
-                                          onPressed: () =>
-                                              unawaited(handleRetryWorkspace()),
-                                          child: Text(context.wp('Retry')),
-                                        ),
-                                      ),
-                                    )
-                                  : sessionId == null
-                                  ? _NewSessionView(
-                                      project: project,
-                                      messages: timelineState.messages,
-                                    )
-                                  : _MessageTimeline(
-                                      key: ValueKey<String>(
-                                        'timeline-$timelinePageStorageKey',
-                                      ),
-                                      storageScopeKey: timelineScopeKey,
-                                      pageStorageKeyValue:
-                                          timelinePageStorageKey,
-                                      currentSessionId: sessionId,
-                                      working: busy,
-                                      loading: timelineState.loading,
-                                      showingCachedMessages:
-                                          timelineState.showingCachedMessages,
-                                      historyMore: timelineState.historyMore,
-                                      historyLoading:
-                                          timelineState.historyLoading,
-                                      error: timelineState.error,
-                                      messages: timelineState.orderedMessages,
-                                      timelineContentSignature:
-                                          controller.timelineContentSignature,
-                                      compact: compact,
-                                      sessions: controller.sessions,
-                                      selectedSession: selected
-                                          ? controller.selectedSession
-                                          : session,
-                                      configSnapshot: controller.configSnapshot,
-                                      shellToolDisplayMode:
-                                          shellToolDisplayMode,
-                                      keyboardInsetBottom: compact
-                                          ? MediaQuery.viewInsetsOf(
-                                              context,
-                                            ).bottom
-                                          : 0,
-                                      timelineProgressDetailsVisible:
-                                          timelineProgressDetailsVisible,
-                                      searchQuery: searchScoped
-                                          ? chatSearchQuery
-                                          : '',
-                                      matchingMessageIds: searchScoped
-                                          ? chatSearchMatchMessageIds.toSet()
-                                          : const <String>{},
-                                      activeMatchMessageId: searchScoped
-                                          ? chatSearchActiveMessageId
-                                          : null,
-                                      searchRevision: searchScoped
-                                          ? chatSearchRevision
-                                          : 0,
-                                      focusedMessageId:
-                                          focusedTimelineMessageIdForScope(
-                                            sessionFocusScopeKey,
-                                          ),
-                                      focusedMessageRevision:
-                                          focusedTimelineMessageRevisionForScope(
-                                            sessionFocusScopeKey,
-                                          ),
-                                      onForkMessage: handleForkMessage,
-                                      onRevertMessage: handleRevertMessage,
-                                      onOpenSession: handleOpenSession,
-                                      onRetry: handleRetry,
-                                      onIgnoreOversizedSession:
-                                          handleIgnoreOversizedSession,
-                                      oversizedSessionBehavior: AppScope.of(
-                                        context,
-                                      ).oversizedSessionBehavior,
-                                      onLoadMore: handleLoadMoreHistory,
-                                      jumpToBottomEpoch: selected
-                                          ? timelineJumpEpoch
-                                          : 0,
                                     ),
                             ),
-                            if (compact &&
-                                sessionId != null &&
-                                (paneQuestionRequest != null ||
-                                    panePermissionRequest != null ||
-                                    compactTodoCount > 0 ||
-                                    activeChildSessions.isNotEmpty))
-                              Positioned.fill(
-                                child: Align(
-                                  alignment: Alignment.bottomCenter,
-                                  child: _CompactSessionActivityBar(
-                                    todoCount: compactTodoCount,
-                                    subAgentCount: activeChildSessions.length,
-                                    hasQuestion: paneQuestionRequest != null,
-                                    hasPermission:
-                                        panePermissionRequest != null,
-                                    onOpenQuestion: paneQuestionRequest == null
-                                        ? null
-                                        : () => unawaited(
-                                            showCompactQuestionSheet(),
-                                          ),
-                                    onOpenPermission:
-                                        panePermissionRequest == null
-                                        ? null
-                                        : () => unawaited(
-                                            showCompactPermissionSheet(),
-                                          ),
-                                    onOpenTodos: compactTodoCount == 0
-                                        ? null
-                                        : () =>
-                                              unawaited(showCompactTodoSheet()),
-                                    onOpenSubAgents: activeChildSessions.isEmpty
-                                        ? null
-                                        : () => unawaited(
-                                            showCompactSubAgentSheet(),
-                                          ),
+                            if (showSelectedBadge)
+                              Container(
+                                key: ValueKey<String>(
+                                  'workspace-session-pane-selected-badge-${pane.id}',
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: AppSpacing.xs,
+                                  vertical: 5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.primary.withValues(
+                                    alpha: 0.16,
+                                  ),
+                                  borderRadius: BorderRadius.circular(
+                                    AppSpacing.pillRadius,
+                                  ),
+                                  border: Border.all(
+                                    color: theme.colorScheme.primary.withValues(
+                                      alpha: 0.24,
+                                    ),
+                                  ),
+                                ),
+                                child: Text(
+                                  'Active',
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: theme.colorScheme.primary,
+                                    fontWeight: FontWeight.w800,
                                   ),
                                 ),
                               ),
-                          ],
-                        ),
-                      ),
-                      if (!compact &&
-                          sessionId != null &&
-                          paneQuestionRequest != null)
-                        _QuestionPromptDock(
-                          key: ValueKey<String>(
-                            'session-question-dock-${pane.id}::$normalizedSessionId-${paneQuestionRequest.id}',
-                          ),
-                          request: paneQuestionRequest,
-                          compact: compact,
-                          onReply: controller.replyToQuestion,
-                          onReject: controller.rejectQuestion,
-                        ),
-                      if (!compact &&
-                          sessionId != null &&
-                          panePermissionRequest != null)
-                        _PermissionPromptDock(
-                          key: ValueKey<String>(
-                            'session-permission-dock-${pane.id}::$normalizedSessionId-${panePermissionRequest.id}',
-                          ),
-                          request: panePermissionRequest,
-                          compact: compact,
-                          responding: controller.permissionRequestResponding(
-                            panePermissionRequest.id,
-                          ),
-                          onDecide: controller.replyToPermission,
-                        ),
-                      if (!compact && sessionId != null)
-                        _SessionTodoDock(
-                          key: ValueKey<String>(
-                            'session-todo-dock-${pane.id}::$normalizedSessionId',
-                          ),
-                          sessionId: sessionId,
-                          todos: paneTodos,
-                          live: paneTodoLive,
-                          blocked:
-                              paneQuestionRequest != null ||
-                              panePermissionRequest != null,
-                          compact: compact,
-                          collapsed: todoDockCollapsedForScope(
-                            sessionUiScopeKey,
-                          ),
-                          onCollapsedChanged: (collapsed) =>
-                              onTodoDockCollapsedChanged(
-                                sessionUiScopeKey,
-                                collapsed,
+                            if (canClose) ...<Widget>[
+                              SizedBox(
+                                width: hideTitle
+                                    ? 2
+                                    : density.inset(AppSpacing.xs, min: 4),
                               ),
-                          onClearStale: () =>
-                              controller.clearTodosForSession(sessionId),
-                        ),
-                      if (inlineComposerBuilder != null)
-                        inlineComposerBuilder!(
-                          paneViewModel,
-                          selected,
-                          compact,
-                        ),
-                    ],
+                              closeButton(),
+                            ],
+                          ],
+                        );
+                      },
+                    ),
                   ),
-                ),
-              ],
+                  Divider(height: 1, color: surfaces.lineSoft),
+                  Expanded(
+                    child: Column(
+                      children: <Widget>[
+                        if (!compact && activeChildSessions.isNotEmpty)
+                          _ActiveSubSessionPanel(
+                            key: ValueKey<String>(
+                              'pane-subsessions-${pane.id}::$normalizedSessionId',
+                            ),
+                            rootSessionId: rootSession?.id,
+                            sessions: activeChildSessions,
+                            previewBySessionId: activeChildSessionPreviewById,
+                            currentSessionId: sessionId,
+                            compact: compact,
+                            collapsed: subAgentPanelCollapsedForScope(
+                              sessionUiScopeKey,
+                            ),
+                            onCollapsedChanged: (collapsed) =>
+                                onSubAgentPanelCollapsedChanged(
+                                  sessionUiScopeKey,
+                                  collapsed,
+                                ),
+                            onOpenSession: handleOpenSession,
+                          ),
+                        Expanded(
+                          child: Stack(
+                            children: <Widget>[
+                              Positioned.fill(
+                                child: sessionId == null && controller.loading
+                                    ? KeyedSubtree(
+                                        key: ValueKey<String>(
+                                          'workspace-session-pane-loading-${pane.id}',
+                                        ),
+                                        child: _TimelineStatusCard(
+                                          icon: const SizedBox(
+                                            width: 20,
+                                            height: 20,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          ),
+                                          title:
+                                              'Loading ${projectLabel.isEmpty ? 'project' : projectLabel}...',
+                                          message:
+                                              'Keeping the rest of the workspace visible while this project connects.',
+                                        ),
+                                      )
+                                    : sessionId == null &&
+                                          controller.error != null
+                                    ? KeyedSubtree(
+                                        key: ValueKey<String>(
+                                          'workspace-session-pane-error-${pane.id}',
+                                        ),
+                                        child: _TimelineStatusCard(
+                                          icon: Icon(
+                                            Icons.wifi_tethering_error_rounded,
+                                            color: theme.colorScheme.error,
+                                            size: 22,
+                                          ),
+                                          title: context.wp(
+                                            "Couldn't load {project}",
+                                            args: <String, Object?>{
+                                              'project': projectLabel.isEmpty
+                                                  ? context.wp('this project')
+                                                  : projectLabel,
+                                            },
+                                          ),
+                                          message: controller.error!,
+                                          action: OutlinedButton(
+                                            onPressed: () => unawaited(
+                                              handleRetryWorkspace(),
+                                            ),
+                                            child: Text(context.wp('Retry')),
+                                          ),
+                                        ),
+                                      )
+                                    : sessionId == null
+                                    ? _NewSessionView(
+                                        project: project,
+                                        messages: timelineState.messages,
+                                      )
+                                    : _MessageTimeline(
+                                        key: ValueKey<String>(
+                                          'timeline-$timelinePageStorageKey',
+                                        ),
+                                        storageScopeKey: timelineScopeKey,
+                                        pageStorageKeyValue:
+                                            timelinePageStorageKey,
+                                        currentSessionId: sessionId,
+                                        working: busy,
+                                        loading: timelineState.loading,
+                                        showingCachedMessages:
+                                            timelineState.showingCachedMessages,
+                                        historyMore: timelineState.historyMore,
+                                        historyLoading:
+                                            timelineState.historyLoading,
+                                        error: timelineState.error,
+                                        messages: timelineState.orderedMessages,
+                                        timelineContentSignature:
+                                            controller.timelineContentSignature,
+                                        compact: compact,
+                                        sessions: controller.sessions,
+                                        selectedSession: selected
+                                            ? controller.selectedSession
+                                            : session,
+                                        configSnapshot:
+                                            controller.configSnapshot,
+                                        shellToolDisplayMode:
+                                            shellToolDisplayMode,
+                                        keyboardInsetBottom: compact
+                                            ? MediaQuery.viewInsetsOf(
+                                                context,
+                                              ).bottom
+                                            : 0,
+                                        timelineProgressDetailsVisible:
+                                            timelineProgressDetailsVisible,
+                                        searchQuery: searchScoped
+                                            ? chatSearchQuery
+                                            : '',
+                                        matchingMessageIds: searchScoped
+                                            ? chatSearchMatchMessageIds.toSet()
+                                            : const <String>{},
+                                        activeMatchMessageId: searchScoped
+                                            ? chatSearchActiveMessageId
+                                            : null,
+                                        searchRevision: searchScoped
+                                            ? chatSearchRevision
+                                            : 0,
+                                        focusedMessageId:
+                                            focusedTimelineMessageIdForScope(
+                                              sessionFocusScopeKey,
+                                            ),
+                                        focusedMessageRevision:
+                                            focusedTimelineMessageRevisionForScope(
+                                              sessionFocusScopeKey,
+                                            ),
+                                        onForkMessage: handleForkMessage,
+                                        onRevertMessage: handleRevertMessage,
+                                        onOpenSession: handleOpenSession,
+                                        onRetry: handleRetry,
+                                        onIgnoreOversizedSession:
+                                            handleIgnoreOversizedSession,
+                                        oversizedSessionBehavior: AppScope.of(
+                                          context,
+                                        ).oversizedSessionBehavior,
+                                        onLoadMore: handleLoadMoreHistory,
+                                        jumpToBottomEpoch: selected
+                                            ? timelineJumpEpoch
+                                            : 0,
+                                      ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (compact &&
+                            sessionId != null &&
+                            (paneQuestionRequest != null ||
+                                panePermissionRequest != null ||
+                                compactTodoCount > 0 ||
+                                activeChildSessions.isNotEmpty))
+                          _CompactSessionActivityBar(
+                            todoCount: compactTodoCount,
+                            subAgentCount: activeChildSessions.length,
+                            hasQuestion: paneQuestionRequest != null,
+                            hasPermission: panePermissionRequest != null,
+                            onOpenQuestion: paneQuestionRequest == null
+                                ? null
+                                : () => unawaited(showCompactQuestionSheet()),
+                            onOpenPermission: panePermissionRequest == null
+                                ? null
+                                : () => unawaited(showCompactPermissionSheet()),
+                            onOpenTodos: compactTodoCount == 0
+                                ? null
+                                : () => unawaited(showCompactTodoSheet()),
+                            onOpenSubAgents: activeChildSessions.isEmpty
+                                ? null
+                                : () => unawaited(showCompactSubAgentSheet()),
+                          ),
+                        if (!compact &&
+                            sessionId != null &&
+                            paneQuestionRequest != null)
+                          _QuestionPromptDock(
+                            key: ValueKey<String>(
+                              'session-question-dock-${pane.id}::$normalizedSessionId-${paneQuestionRequest.id}',
+                            ),
+                            request: paneQuestionRequest,
+                            compact: compact,
+                            onReply: controller.replyToQuestion,
+                            onReject: controller.rejectQuestion,
+                          ),
+                        if (!compact &&
+                            sessionId != null &&
+                            panePermissionRequest != null)
+                          _PermissionPromptDock(
+                            key: ValueKey<String>(
+                              'session-permission-dock-${pane.id}::$normalizedSessionId-${panePermissionRequest.id}',
+                            ),
+                            request: panePermissionRequest,
+                            compact: compact,
+                            responding: controller.permissionRequestResponding(
+                              panePermissionRequest.id,
+                            ),
+                            onDecide: controller.replyToPermission,
+                          ),
+                        if (!compact && sessionId != null)
+                          _SessionTodoDock(
+                            key: ValueKey<String>(
+                              'session-todo-dock-${pane.id}::$normalizedSessionId',
+                            ),
+                            sessionId: sessionId,
+                            todos: paneTodos,
+                            live: paneTodoLive,
+                            blocked:
+                                paneQuestionRequest != null ||
+                                panePermissionRequest != null,
+                            compact: compact,
+                            collapsed: todoDockCollapsedForScope(
+                              sessionUiScopeKey,
+                            ),
+                            onCollapsedChanged: (collapsed) =>
+                                onTodoDockCollapsedChanged(
+                                  sessionUiScopeKey,
+                                  collapsed,
+                                ),
+                            onClearStale: () =>
+                                controller.clearTodosForSession(sessionId),
+                          ),
+                        if (inlineComposerBuilder != null)
+                          inlineComposerBuilder!(
+                            paneViewModel,
+                            selected,
+                            compact,
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -15821,7 +17387,9 @@ class _ActiveSubSessionChip extends StatelessWidget {
       child: InkWell(
         key: ValueKey<String>('active-subsession-chip-${session.id}'),
         onTap: onTap,
-        borderRadius: BorderRadius.circular(compact ? 14 : 16),
+        borderRadius: BorderRadius.circular(
+          compact ? _workspaceInnerRadius : _workspacePanelRadius,
+        ),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           curve: Curves.easeOutCubic,
@@ -15834,32 +17402,12 @@ class _ActiveSubSessionChip extends StatelessWidget {
             density.inset(compact ? AppSpacing.sm : AppSpacing.md),
             density.inset(compact ? AppSpacing.sm : AppSpacing.md),
           ),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: <Color>[
-                selected
-                    ? selectedColor.withValues(alpha: 0.18)
-                    : surfaces.panelRaised.withValues(alpha: 0.98),
-                selected
-                    ? selectedColor.withValues(alpha: 0.08)
-                    : surfaces.panelEmphasis.withValues(alpha: 0.9),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(compact ? 14 : 16),
-            border: Border.all(
-              color: selected
-                  ? selectedColor.withValues(alpha: 0.52)
-                  : surfaces.lineSoft,
-            ),
-            boxShadow: <BoxShadow>[
-              BoxShadow(
-                color: Colors.black.withValues(alpha: selected ? 0.12 : 0.08),
-                blurRadius: selected ? 18 : 14,
-                offset: const Offset(0, 8),
-              ),
-            ],
+          decoration: appSoftCardDecoration(
+            context,
+            radius: compact ? _workspaceInnerRadius : _workspacePanelRadius,
+            tone: AppSurfaceTone.accent,
+            muted: !selected,
+            selected: selected,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -16388,6 +17936,9 @@ class _MessageTimelineState extends State<_MessageTimeline> {
   int _visibleStartIndex = 0;
   bool _loadingOlder = false;
   bool _loadOlderCheckScheduled = false;
+  bool _focusedMessageHistoryLoadScheduled = false;
+  bool _focusedMessageNavigationInProgress = false;
+  String? _pendingFocusedMessageHistoryId;
   late final ScrollController _scrollController = ScrollController(
     keepScrollOffset: false,
   );
@@ -16407,6 +17958,13 @@ class _MessageTimelineState extends State<_MessageTimeline> {
   bool _awaitingOlderHistoryInsert = false;
   bool _showJumpToLatest = false;
   final Map<String, GlobalKey> _messageItemKeys = <String, GlobalKey>{};
+  bool _manualScrollInProgress = false;
+  bool _deferredAutoScrollToBottom = false;
+  bool _deferredAutoScrollAnchoredToBottom = false;
+  bool _deferredAutoScrollFlushScheduled = false;
+  VoidCallback? _deferredAutoScrollIdleListener;
+  ScrollPosition? _deferredAutoScrollIdlePosition;
+  int _programmaticScrollDepth = 0;
 
   List<ChatMessage> get _visibleMessages => widget.messages.sublist(
     _visibleStartIndex.clamp(0, widget.messages.length),
@@ -16434,6 +17992,16 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     }
     _lastJumpToBottomEpoch = widget.jumpToBottomEpoch;
     _scrollController.addListener(_handleScroll);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      final focusedMessageId = _normalizedFocusedMessageId;
+      if (focusedMessageId == null) {
+        return;
+      }
+      _revealOrLoadFocusedMessage(focusedMessageId);
+    });
   }
 
   @override
@@ -16447,12 +18015,22 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     final becameNonEmpty =
         oldWidget.messages.isEmpty && widget.messages.isNotEmpty;
     final messagesShrank = widget.messages.length < oldWidget.messages.length;
+    final messagesGrew = widget.messages.length > oldWidget.messages.length;
     final searchChanged =
         oldWidget.activeMatchMessageId != widget.activeMatchMessageId ||
         oldWidget.searchRevision != widget.searchRevision;
     final focusedMessageChanged =
         oldWidget.focusedMessageId != widget.focusedMessageId ||
         oldWidget.focusedMessageRevision != widget.focusedMessageRevision;
+    if (focusedMessageChanged || sessionChanged) {
+      _pendingFocusedMessageHistoryId = null;
+      _focusedMessageNavigationInProgress = false;
+    }
+    final focusedMessageId = _normalizedFocusedMessageId;
+    final pendingFocusedMessageGrew =
+        messagesGrew &&
+        focusedMessageId != null &&
+        _pendingFocusedMessageHistoryId == focusedMessageId;
     final messageIds = widget.messages
         .map((message) => message.info.id)
         .toSet();
@@ -16505,8 +18083,14 @@ class _MessageTimelineState extends State<_MessageTimeline> {
           (focusedMessageChanged ||
               sessionChanged ||
               becameNonEmpty ||
-              messagesShrank)) {
-        _revealSearchMatch(widget.focusedMessageId!);
+              messagesShrank ||
+              pendingFocusedMessageGrew)) {
+        final focusHandled =
+            focusedMessageId != null &&
+            _revealOrLoadFocusedMessage(focusedMessageId);
+        if (!focusHandled) {
+          _syncTimelinePosition(forceBottom: jumpToBottomRequested);
+        }
       } else {
         _syncTimelinePosition(forceBottom: jumpToBottomRequested);
       }
@@ -16525,6 +18109,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
 
   @override
   void dispose() {
+    _clearDeferredAutoScrollIdleListener();
     _scrollController.removeListener(_handleScroll);
     _scrollController.dispose();
     super.dispose();
@@ -16539,6 +18124,129 @@ class _MessageTimelineState extends State<_MessageTimeline> {
       messageId,
       () => GlobalKey(debugLabel: 'timeline-message-$messageId'),
     );
+  }
+
+  String? get _normalizedFocusedMessageId {
+    final messageId = widget.focusedMessageId?.trim();
+    if (messageId == null || messageId.isEmpty) {
+      return null;
+    }
+    return messageId;
+  }
+
+  bool _containsMessage(String messageId) {
+    return widget.messages.any((message) => message.info.id == messageId);
+  }
+
+  bool _revealOrLoadFocusedMessage(String messageId) {
+    if (_containsMessage(messageId)) {
+      _focusedMessageNavigationInProgress = true;
+      if (_pendingFocusedMessageHistoryId == messageId) {
+        _pendingFocusedMessageHistoryId = null;
+      }
+      _revealSearchMatch(messageId);
+      return true;
+    }
+    if (!_hasMoreHistory && !widget.historyLoading && !_loadingOlder) {
+      if (_pendingFocusedMessageHistoryId == messageId) {
+        _pendingFocusedMessageHistoryId = null;
+      }
+      _focusedMessageNavigationInProgress = false;
+      return false;
+    }
+    _focusedMessageNavigationInProgress = true;
+    _pendingFocusedMessageHistoryId = messageId;
+    _scheduleFocusedMessageHistoryLoad(messageId);
+    return true;
+  }
+
+  void _scheduleFocusedMessageHistoryLoad(String messageId) {
+    if (_focusedMessageHistoryLoadScheduled || !_hasMoreHistory) {
+      return;
+    }
+    _focusedMessageHistoryLoadScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _focusedMessageHistoryLoadScheduled = false;
+      if (!mounted || _normalizedFocusedMessageId != messageId) {
+        return;
+      }
+      if (_containsMessage(messageId)) {
+        _revealSearchMatch(messageId);
+        return;
+      }
+      if (!_hasMoreHistory) {
+        if (_pendingFocusedMessageHistoryId == messageId) {
+          _pendingFocusedMessageHistoryId = null;
+        }
+        _focusedMessageNavigationInProgress = false;
+        return;
+      }
+      if (widget.historyLoading || _loadingOlder) {
+        _scheduleFocusedMessageHistoryLoad(messageId);
+        return;
+      }
+      final previousVisibleStartIndex = _visibleStartIndex;
+      final previousMessageCount = widget.messages.length;
+      final previousHistoryMore = widget.historyMore;
+      unawaited(
+        _loadOlderMessages()
+            .whenComplete(() {
+              if (!mounted || _normalizedFocusedMessageId != messageId) {
+                return;
+              }
+              if (_containsMessage(messageId)) {
+                _revealSearchMatch(messageId);
+                return;
+              }
+              final madeProgress =
+                  _visibleStartIndex < previousVisibleStartIndex ||
+                  widget.messages.length > previousMessageCount ||
+                  widget.historyMore != previousHistoryMore;
+              if (madeProgress && _hasMoreHistory) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted || _normalizedFocusedMessageId != messageId) {
+                    return;
+                  }
+                  _scheduleFocusedMessageHistoryLoad(messageId);
+                });
+              } else {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted || _normalizedFocusedMessageId != messageId) {
+                    return;
+                  }
+                  if (_containsMessage(messageId)) {
+                    _revealSearchMatch(messageId);
+                    return;
+                  }
+                  final madeDeferredProgress =
+                      _visibleStartIndex < previousVisibleStartIndex ||
+                      widget.messages.length > previousMessageCount ||
+                      widget.historyMore != previousHistoryMore;
+                  if (madeDeferredProgress && _hasMoreHistory) {
+                    _scheduleFocusedMessageHistoryLoad(messageId);
+                    return;
+                  }
+                  _clearFocusedMessageHistoryRequest(messageId);
+                });
+              }
+            })
+            .catchError((Object error, StackTrace stackTrace) {
+              if (!mounted || _normalizedFocusedMessageId != messageId) {
+                return;
+              }
+              _clearFocusedMessageHistoryRequest(messageId);
+            }),
+      );
+    });
+  }
+
+  void _clearFocusedMessageHistoryRequest(String messageId) {
+    if (_pendingFocusedMessageHistoryId == messageId) {
+      _pendingFocusedMessageHistoryId = null;
+    }
+    if (_normalizedFocusedMessageId == messageId) {
+      _focusedMessageNavigationInProgress = false;
+    }
   }
 
   void _beginOlderHistoryPreservation() {
@@ -16580,7 +18288,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     final delta = position.maxScrollExtent - beforeExtent;
     final target = (beforePixels + delta).clamp(0.0, position.maxScrollExtent);
     if ((target - position.pixels).abs() > 1) {
-      _scrollController.jumpTo(target);
+      _runProgrammaticJump(() => _scrollController.jumpTo(target));
     }
     _wasNearBottom = false;
   }
@@ -16603,7 +18311,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
           return;
         }
         if (_scrollController.hasClients) {
-          _scrollController.jumpTo(0);
+          _runProgrammaticJump(() => _scrollController.jumpTo(0));
         }
         _revealSearchMatch(messageId);
       });
@@ -16612,7 +18320,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     if (_scrollController.hasClients &&
         _scrollController.position.hasPixels &&
         _scrollController.offset > 1) {
-      _scrollController.jumpTo(0);
+      _runProgrammaticJump(() => _scrollController.jumpTo(0));
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
@@ -16620,19 +18328,35 @@ class _MessageTimelineState extends State<_MessageTimeline> {
       }
       final targetContext = _messageItemKeys[messageId]?.currentContext;
       if (targetContext == null) {
+        _completeFocusedMessageNavigation(messageId);
         return;
       }
-      Scrollable.ensureVisible(
-        targetContext,
-        alignment: 0.18,
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOutCubic,
+      unawaited(
+        Scrollable.ensureVisible(
+          targetContext,
+          alignment: 0.18,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+        ).whenComplete(() => _completeFocusedMessageNavigation(messageId)),
       );
     });
   }
 
+  void _completeFocusedMessageNavigation(String messageId) {
+    if (!_focusedMessageNavigationInProgress ||
+        _normalizedFocusedMessageId != messageId) {
+      return;
+    }
+    _focusedMessageNavigationInProgress = false;
+  }
+
   Future<void> _handleScroll() async {
     _updateJumpToLatestVisibility();
+    if (_deferredAutoScrollToBottom &&
+        !_manualScrollInProgress &&
+        _programmaticScrollDepth == 0) {
+      _flushDeferredAutoScroll();
+    }
     if (_loadingOlder || widget.historyLoading || !_hasMoreHistory) {
       return;
     }
@@ -16645,6 +18369,170 @@ class _MessageTimelineState extends State<_MessageTimeline> {
       return;
     }
     await _loadOlderMessages();
+  }
+
+  bool _handleScrollNotification(ScrollNotification notification) {
+    if (notification.metrics.axis != Axis.vertical ||
+        _programmaticScrollDepth > 0) {
+      return false;
+    }
+    if (notification is ScrollStartNotification &&
+        notification.dragDetails != null) {
+      _markManualScrollInteraction();
+      return false;
+    }
+    if (notification is ScrollUpdateNotification &&
+        notification.dragDetails != null) {
+      _markManualScrollInteraction();
+      return false;
+    }
+    if (notification is UserScrollNotification &&
+        notification.direction == ScrollDirection.idle) {
+      _manualScrollInProgress = false;
+      _flushDeferredAutoScroll();
+      return false;
+    }
+    if (notification is ScrollEndNotification) {
+      _manualScrollInProgress = false;
+      _flushDeferredAutoScroll();
+    }
+    return false;
+  }
+
+  void _runProgrammaticJump(VoidCallback action) {
+    _programmaticScrollDepth += 1;
+    try {
+      action();
+    } finally {
+      _programmaticScrollDepth = math.max(0, _programmaticScrollDepth - 1);
+    }
+  }
+
+  Future<void> _runProgrammaticAnimate(Future<void> Function() action) async {
+    _programmaticScrollDepth += 1;
+    try {
+      await action();
+    } finally {
+      _programmaticScrollDepth = math.max(0, _programmaticScrollDepth - 1);
+    }
+  }
+
+  void _markManualScrollInteraction() {
+    _manualScrollInProgress = true;
+    _deferredAutoScrollToBottom = false;
+    _deferredAutoScrollAnchoredToBottom = false;
+    _clearDeferredAutoScrollIdleListener();
+    _clearBottomLock();
+  }
+
+  void _clearManualScrollInteractionIfIdle() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_manualScrollInProgress) {
+        return;
+      }
+      if (_scrollController.hasClients &&
+          (_scrollController.position.isScrollingNotifier.value ||
+              _scrollController.position.outOfRange)) {
+        return;
+      }
+      _manualScrollInProgress = false;
+      _flushDeferredAutoScroll();
+    });
+  }
+
+  void _deferAutoScrollToBottom({bool anchored = true}) {
+    _deferredAutoScrollToBottom = true;
+    _deferredAutoScrollAnchoredToBottom =
+        _deferredAutoScrollAnchoredToBottom || anchored;
+  }
+
+  void _scheduleDeferredAutoScrollFlush({bool waitForScrollIdle = false}) {
+    if (_deferredAutoScrollFlushScheduled || !_deferredAutoScrollToBottom) {
+      return;
+    }
+    if (waitForScrollIdle && _scrollController.hasClients) {
+      final position = _scrollController.position;
+      if (position.outOfRange) {
+        _scheduleDeferredAutoScrollAfterIdle(position);
+        return;
+      }
+    }
+    _clearDeferredAutoScrollIdleListener();
+    _deferredAutoScrollFlushScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _deferredAutoScrollFlushScheduled = false;
+      if (!mounted) {
+        return;
+      }
+      _flushDeferredAutoScroll();
+    });
+  }
+
+  void _scheduleDeferredAutoScrollAfterIdle(ScrollPosition position) {
+    if (!position.isScrollingNotifier.value) {
+      return;
+    }
+    _clearDeferredAutoScrollIdleListener();
+    _deferredAutoScrollFlushScheduled = true;
+    late final VoidCallback listener;
+    listener = () {
+      if (position.isScrollingNotifier.value) {
+        return;
+      }
+      if (_deferredAutoScrollIdleListener == listener) {
+        _clearDeferredAutoScrollIdleListener();
+      }
+      if (!mounted) {
+        return;
+      }
+      _scheduleDeferredAutoScrollFlush(waitForScrollIdle: true);
+    };
+    _deferredAutoScrollIdleListener = listener;
+    _deferredAutoScrollIdlePosition = position;
+    position.isScrollingNotifier.addListener(listener);
+  }
+
+  void _clearDeferredAutoScrollIdleListener() {
+    final listener = _deferredAutoScrollIdleListener;
+    final position = _deferredAutoScrollIdlePosition;
+    if (listener != null && position != null) {
+      position.isScrollingNotifier.removeListener(listener);
+    }
+    _deferredAutoScrollIdleListener = null;
+    _deferredAutoScrollIdlePosition = null;
+    _deferredAutoScrollFlushScheduled = false;
+  }
+
+  void _flushDeferredAutoScroll() {
+    if (!_deferredAutoScrollToBottom || _manualScrollInProgress) {
+      return;
+    }
+    final anchoredToBottom = _deferredAutoScrollAnchoredToBottom;
+    _deferredAutoScrollToBottom = false;
+    _deferredAutoScrollAnchoredToBottom = false;
+    if (!_scrollController.hasClients) {
+      return;
+    }
+    final position = _scrollController.position;
+    if (!position.hasContentDimensions) {
+      return;
+    }
+    if (position.outOfRange) {
+      _deferAutoScrollToBottom(anchored: anchoredToBottom);
+      _scheduleDeferredAutoScrollFlush(waitForScrollIdle: true);
+      return;
+    }
+    final nearBottomNow = _positionNearBottom(position);
+    if (!(anchoredToBottom || nearBottomNow || _bottomLockScopeKey != null)) {
+      _updateJumpToLatestVisibility();
+      return;
+    }
+    if (_bottomLockScopeKey != null) {
+      _scheduleBottomLock();
+      return;
+    }
+    _beginBottomLock(widget.storageScopeKey);
+    _jumpToBottomIfPossible();
   }
 
   void _scheduleLoadOlderCheck() {
@@ -16671,9 +18559,6 @@ class _MessageTimelineState extends State<_MessageTimeline> {
         !mounted) {
       return;
     }
-    if (!_scrollController.hasClients) {
-      return;
-    }
     if (_hiddenMessageCount == 0) {
       _beginOlderHistoryPreservation();
       try {
@@ -16682,6 +18567,9 @@ class _MessageTimelineState extends State<_MessageTimeline> {
         _clearOlderHistoryPreservation();
         rethrow;
       }
+      return;
+    }
+    if (!_scrollController.hasClients) {
       return;
     }
     final nextStart = math.max(0, _visibleStartIndex - _windowGrowthSize);
@@ -16770,14 +18658,16 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     }
     _wasNearBottom = true;
     if (!position.hasPixels || (target - position.pixels).abs() <= 1) {
-      _scrollController.jumpTo(target);
+      _runProgrammaticJump(() => _scrollController.jumpTo(target));
       _updateJumpToLatestVisibility(notify: false);
       return;
     }
-    await _scrollController.animateTo(
-      target,
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOutCubic,
+    await _runProgrammaticAnimate(
+      () => _scrollController.animateTo(
+        target,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      ),
     );
     if (!mounted) {
       return;
@@ -16793,6 +18683,11 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     if (!position.hasContentDimensions) {
       return;
     }
+    if (position.outOfRange) {
+      _deferAutoScrollToBottom();
+      _scheduleDeferredAutoScrollFlush(waitForScrollIdle: true);
+      return;
+    }
     final target = position.maxScrollExtent;
     if ((target - position.pixels).abs() <= 1) {
       _wasNearBottom = true;
@@ -16801,14 +18696,16 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     }
     if (animate && position.hasPixels) {
       unawaited(
-        _scrollController.animateTo(
-          target,
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOutCubic,
+        _runProgrammaticAnimate(
+          () => _scrollController.animateTo(
+            target,
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+          ),
         ),
       );
     } else {
-      _scrollController.jumpTo(target);
+      _runProgrammaticJump(() => _scrollController.jumpTo(target));
     }
     _wasNearBottom = true;
     _updateJumpToLatestVisibility(notify: false);
@@ -16818,6 +18715,10 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     unawaited(
       Future<void>.delayed(delay, () {
         if (!mounted || !_scrollController.hasClients) {
+          return;
+        }
+        if (_manualScrollInProgress) {
+          _deferredAutoScrollToBottom = true;
           return;
         }
         _jumpToBottomIfPossible();
@@ -16871,6 +18772,10 @@ class _MessageTimelineState extends State<_MessageTimeline> {
       if (expectedScopeKey == null) {
         return;
       }
+      if (_manualScrollInProgress) {
+        _deferAutoScrollToBottom();
+        return;
+      }
       if (!_scrollController.hasClients) {
         _scheduleBottomLock();
         return;
@@ -16884,9 +18789,14 @@ class _MessageTimelineState extends State<_MessageTimeline> {
         _scheduleBottomLock();
         return;
       }
+      if (position.outOfRange) {
+        _deferAutoScrollToBottom();
+        _scheduleDeferredAutoScrollFlush(waitForScrollIdle: true);
+        return;
+      }
       final target = position.maxScrollExtent;
       if (!position.hasPixels || (target - position.pixels).abs() > 1) {
-        _scrollController.jumpTo(target);
+        _runProgrammaticJump(() => _scrollController.jumpTo(target));
       }
       _wasNearBottom = true;
       _updateJumpToLatestVisibility(notify: false);
@@ -16911,6 +18821,10 @@ class _MessageTimelineState extends State<_MessageTimeline> {
   void _scheduleKeyboardInsetFollow({bool force = false}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scrollController.hasClients || _searchActive) {
+        return;
+      }
+      if (_manualScrollInProgress) {
+        _deferAutoScrollToBottom();
         return;
       }
       final position = _scrollController.position;
@@ -16969,19 +18883,30 @@ class _MessageTimelineState extends State<_MessageTimeline> {
         (contentChanged && (_wasNearBottom || nearBottomNow));
 
     if (shouldFollowTimeline) {
-      final target = position.maxScrollExtent;
-      if ((target - position.pixels).abs() <= 1) {
-        _wasNearBottom = true;
-      } else if (sessionChanged || !position.hasPixels) {
-        _scrollController.jumpTo(target);
-        _wasNearBottom = true;
+      if (_manualScrollInProgress) {
+        _deferAutoScrollToBottom();
+      } else if (position.outOfRange) {
+        _deferAutoScrollToBottom();
+        _scheduleDeferredAutoScrollFlush(waitForScrollIdle: true);
       } else {
-        _scrollController.animateTo(
-          target,
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOutCubic,
-        );
-        _wasNearBottom = true;
+        final target = position.maxScrollExtent;
+        if ((target - position.pixels).abs() <= 1) {
+          _wasNearBottom = true;
+        } else if (sessionChanged || !position.hasPixels) {
+          _runProgrammaticJump(() => _scrollController.jumpTo(target));
+          _wasNearBottom = true;
+        } else {
+          unawaited(
+            _runProgrammaticAnimate(
+              () => _scrollController.animateTo(
+                target,
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOutCubic,
+              ),
+            ),
+          );
+          _wasNearBottom = true;
+        }
       }
     }
 
@@ -17009,6 +18934,9 @@ class _MessageTimelineState extends State<_MessageTimeline> {
           activeMatchMessageId != null &&
           activeMatchMessageId.isNotEmpty) {
         _revealSearchMatch(activeMatchMessageId);
+        return;
+      }
+      if (_focusedMessageNavigationInProgress) {
         return;
       }
       _syncTimelinePosition();
@@ -17093,154 +19021,184 @@ class _MessageTimelineState extends State<_MessageTimeline> {
         Expanded(
           child: Stack(
             children: <Widget>[
-              Scrollbar(
-                controller: _scrollController,
-                thumbVisibility: true,
-                interactive: true,
-                child: Builder(
-                  builder: (context) {
-                    final visibleMessages = _visibleMessages;
-                    final showLoadOlderIndicator =
-                        _hiddenMessageCount > 0 ||
-                        widget.historyMore ||
-                        widget.historyLoading;
-                    final placeholderIndex =
-                        visibleMessages.length +
-                        (showLoadOlderIndicator ? 1 : 0);
-                    final itemCount =
-                        placeholderIndex + (showThinkingPlaceholder ? 1 : 0);
-                    final normalizedSearchTerms = _searchActive
-                        ? _normalizedSearchTerms(widget.searchQuery)
-                        : const <String>[];
+              Listener(
+                onPointerDown: (_) => _markManualScrollInteraction(),
+                onPointerMove: (_) => _markManualScrollInteraction(),
+                onPointerSignal: (_) => _markManualScrollInteraction(),
+                onPointerUp: (_) => _clearManualScrollInteractionIfIdle(),
+                onPointerCancel: (_) => _clearManualScrollInteractionIfIdle(),
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: _handleScrollNotification,
+                  child: Scrollbar(
+                    controller: _scrollController,
+                    thumbVisibility: true,
+                    interactive: true,
+                    child: Builder(
+                      builder: (context) {
+                        final visibleMessages = _visibleMessages;
+                        final showLoadOlderIndicator =
+                            _hiddenMessageCount > 0 ||
+                            widget.historyMore ||
+                            widget.historyLoading;
+                        final placeholderIndex =
+                            visibleMessages.length +
+                            (showLoadOlderIndicator ? 1 : 0);
+                        final itemCount =
+                            placeholderIndex +
+                            (showThinkingPlaceholder ? 1 : 0);
+                        final normalizedSearchTerms = _searchActive
+                            ? _normalizedSearchTerms(widget.searchQuery)
+                            : const <String>[];
 
-                    return ListView.builder(
-                      controller: _scrollController,
-                      key: PageStorageKey<String>(widget.pageStorageKeyValue),
-                      padding: EdgeInsets.fromLTRB(
-                        density.inset(
-                          widget.compact ? AppSpacing.sm : AppSpacing.xl,
-                        ),
-                        density.inset(
-                          widget.compact ? AppSpacing.sm : AppSpacing.xl,
-                        ),
-                        density.inset(
-                          widget.compact ? AppSpacing.sm : AppSpacing.xl,
-                        ),
-                        density.inset(
-                          widget.compact ? AppSpacing.xs : AppSpacing.lg,
-                        ),
-                      ),
-                      itemCount: itemCount,
-                      cacheExtent: _searchActive ? 200000 : 1600,
-                      itemBuilder: (context, index) {
-                        if (showThinkingPlaceholder &&
-                            index == placeholderIndex) {
-                          return Center(
-                            child: ConstrainedBox(
-                              constraints: BoxConstraints(
-                                maxWidth: density.maxContentWidth(860),
-                              ),
-                              child: Padding(
-                                padding: EdgeInsets.only(
-                                  top: visibleMessages.isEmpty
-                                      ? 0
-                                      : (widget.compact
-                                            ? density.inset(AppSpacing.sm)
-                                            : density.inset(AppSpacing.md)),
-                                ),
-                                child: _TimelineThinkingPlaceholder(
-                                  compact: widget.compact,
-                                ),
-                              ),
+                        return ListView.builder(
+                          controller: _scrollController,
+                          key: PageStorageKey<String>(
+                            widget.pageStorageKeyValue,
+                          ),
+                          padding: EdgeInsets.fromLTRB(
+                            density.inset(
+                              widget.compact
+                                  ? AppSpacing.xs
+                                  : _workspacePageGutter,
                             ),
-                          );
-                        }
-                        if (showLoadOlderIndicator && index == 0) {
-                          return KeyedSubtree(
-                            key: _loadOlderItemKey,
-                            child: Center(
-                              child: ConstrainedBox(
-                                constraints: BoxConstraints(
-                                  maxWidth: density.maxContentWidth(860),
-                                ),
-                                child: Padding(
-                                  padding: EdgeInsets.only(
-                                    bottom: widget.compact
-                                        ? density.inset(AppSpacing.sm)
-                                        : density.inset(AppSpacing.md),
-                                  ),
-                                  child: _TimelineLoadOlderIndicator(
-                                    hiddenCount: _hiddenMessageCount,
-                                    loading:
-                                        _loadingOlder || widget.historyLoading,
-                                    serverMore: widget.historyMore,
-                                    compact: widget.compact,
-                                    onPressed: () =>
-                                        unawaited(_loadOlderMessages()),
-                                  ),
-                                ),
-                              ),
+                            density.inset(
+                              widget.compact
+                                  ? AppSpacing.xs
+                                  : _workspacePageGutter,
                             ),
-                          );
-                        }
-
-                        final messageIndex =
-                            index - (showLoadOlderIndicator ? 1 : 0);
-                        final message = visibleMessages[messageIndex];
-                        final isLast =
-                            messageIndex == visibleMessages.length - 1;
-                        final matched = widget.matchingMessageIds.contains(
-                          message.info.id,
-                        );
-                        final activeMatch =
-                            widget.activeMatchMessageId == message.info.id;
-                        return KeyedSubtree(
-                          key: _messageItemKey(message.info.id),
-                          child: RepaintBoundary(
-                            child: Center(
-                              child: ConstrainedBox(
-                                constraints: BoxConstraints(
-                                  maxWidth: density.maxContentWidth(860),
-                                ),
-                                child: Padding(
-                                  padding: EdgeInsets.only(
-                                    bottom: isLast
-                                        ? 0
-                                        : (widget.compact
-                                              ? density.inset(AppSpacing.md)
-                                              : density.inset(AppSpacing.xl)),
+                            density.inset(
+                              widget.compact
+                                  ? AppSpacing.xs
+                                  : _workspacePageGutter,
+                            ),
+                            density.inset(
+                              widget.compact
+                                  ? AppSpacing.xs
+                                  : _workspaceCardGap,
+                            ),
+                          ),
+                          itemCount: itemCount,
+                          cacheExtent: _searchActive ? 200000 : 1600,
+                          itemBuilder: (context, index) {
+                            if (showThinkingPlaceholder &&
+                                index == placeholderIndex) {
+                              return Center(
+                                child: ConstrainedBox(
+                                  constraints: BoxConstraints(
+                                    maxWidth: density.maxContentWidth(860),
                                   ),
-                                  child: SizedBox(
-                                    width: double.infinity,
-                                    child: _TimelineMessage(
-                                      currentSessionId: widget.currentSessionId,
-                                      message: message,
+                                  child: Padding(
+                                    padding: EdgeInsets.only(
+                                      top: visibleMessages.isEmpty
+                                          ? 0
+                                          : (widget.compact
+                                                ? density.inset(AppSpacing.sm)
+                                                : density.inset(AppSpacing.md)),
+                                    ),
+                                    child: _TimelineThinkingPlaceholder(
                                       compact: widget.compact,
-                                      searchTerms: matched
-                                          ? normalizedSearchTerms
-                                          : const <String>[],
-                                      searchMatched: matched,
-                                      searchActive: activeMatch,
-                                      sessions: widget.sessions,
-                                      selectedSession: widget.selectedSession,
-                                      configSnapshot: widget.configSnapshot,
-                                      shellToolDisplayMode:
-                                          widget.shellToolDisplayMode,
-                                      timelineProgressDetailsVisible:
-                                          widget.timelineProgressDetailsVisible,
-                                      onForkMessage: widget.onForkMessage,
-                                      onRevertMessage: widget.onRevertMessage,
-                                      onOpenSession: widget.onOpenSession,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }
+                            if (showLoadOlderIndicator && index == 0) {
+                              return KeyedSubtree(
+                                key: _loadOlderItemKey,
+                                child: Center(
+                                  child: ConstrainedBox(
+                                    constraints: BoxConstraints(
+                                      maxWidth: density.maxContentWidth(860),
+                                    ),
+                                    child: Padding(
+                                      padding: EdgeInsets.only(
+                                        bottom: widget.compact
+                                            ? density.inset(AppSpacing.sm)
+                                            : density.inset(AppSpacing.md),
+                                      ),
+                                      child: _TimelineLoadOlderIndicator(
+                                        hiddenCount: _hiddenMessageCount,
+                                        loading:
+                                            _loadingOlder ||
+                                            widget.historyLoading,
+                                        serverMore: widget.historyMore,
+                                        compact: widget.compact,
+                                        onPressed: () =>
+                                            unawaited(_loadOlderMessages()),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }
+
+                            final messageIndex =
+                                index - (showLoadOlderIndicator ? 1 : 0);
+                            final message = visibleMessages[messageIndex];
+                            final isLast =
+                                messageIndex == visibleMessages.length - 1;
+                            final matched = widget.matchingMessageIds.contains(
+                              message.info.id,
+                            );
+                            final activeMatch =
+                                widget.activeMatchMessageId == message.info.id;
+                            return KeyedSubtree(
+                              key: _messageItemKey(message.info.id),
+                              child: RepaintBoundary(
+                                child: Center(
+                                  child: ConstrainedBox(
+                                    constraints: BoxConstraints(
+                                      maxWidth: density.maxContentWidth(860),
+                                    ),
+                                    child: Padding(
+                                      padding: EdgeInsets.only(
+                                        bottom: isLast
+                                            ? 0
+                                            : (widget.compact
+                                                  ? density.inset(
+                                                      AppSpacing.sm,
+                                                      min: AppSpacing.xs,
+                                                    )
+                                                  : density.inset(
+                                                      _workspaceCardGap,
+                                                    )),
+                                      ),
+                                      child: SizedBox(
+                                        width: double.infinity,
+                                        child: _TimelineMessage(
+                                          currentSessionId:
+                                              widget.currentSessionId,
+                                          message: message,
+                                          compact: widget.compact,
+                                          searchTerms: matched
+                                              ? normalizedSearchTerms
+                                              : const <String>[],
+                                          searchMatched: matched,
+                                          searchActive: activeMatch,
+                                          sessions: widget.sessions,
+                                          selectedSession:
+                                              widget.selectedSession,
+                                          configSnapshot: widget.configSnapshot,
+                                          shellToolDisplayMode:
+                                              widget.shellToolDisplayMode,
+                                          timelineProgressDetailsVisible: widget
+                                              .timelineProgressDetailsVisible,
+                                          onForkMessage: widget.onForkMessage,
+                                          onRevertMessage:
+                                              widget.onRevertMessage,
+                                          onOpenSession: widget.onOpenSession,
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 ),
                               ),
-                            ),
-                          ),
+                            );
+                          },
                         );
                       },
-                    );
-                  },
+                    ),
+                  ),
                 ),
               ),
               Positioned(
@@ -17304,6 +19262,9 @@ class _TimelineJumpToLatestButton extends StatelessWidget {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
+    final borderRadius = BorderRadius.circular(
+      compact ? AppSpacing.pillRadius : 16,
+    );
     final content = compact
         ? Icon(
             Icons.arrow_downward_rounded,
@@ -17329,41 +19290,59 @@ class _TimelineJumpToLatestButton extends StatelessWidget {
             ],
           );
 
-    return Material(
-      color: Colors.transparent,
-      child: Ink(
-        decoration: BoxDecoration(
-          color: theme.colorScheme.primary,
-          borderRadius: BorderRadius.circular(
-            compact ? AppSpacing.pillRadius : 16,
+    return DecoratedBox(
+      key: const ValueKey<String>('timeline-jump-to-latest-shadow'),
+      decoration: BoxDecoration(
+        borderRadius: borderRadius,
+        boxShadow: _timelineJumpToLatestShadows(theme),
+      ),
+      child: Material(
+        color: theme.colorScheme.primary,
+        borderRadius: borderRadius,
+        clipBehavior: Clip.antiAlias,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: borderRadius,
+            border: Border.all(color: surfaces.panel.withValues(alpha: 0.18)),
           ),
-          boxShadow: <BoxShadow>[
-            BoxShadow(
-              color: theme.colorScheme.shadow.withValues(alpha: 0.18),
-              blurRadius: 18,
-              offset: const Offset(0, 8),
-            ),
-          ],
-          border: Border.all(color: surfaces.panel.withValues(alpha: 0.18)),
-        ),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(
-            compact ? AppSpacing.pillRadius : 16,
-          ),
-          onTap: onPressed,
-          child: Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: density.inset(
-                compact ? AppSpacing.sm : AppSpacing.md,
+          child: InkWell(
+            borderRadius: borderRadius,
+            onTap: onPressed,
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: density.inset(
+                  compact ? AppSpacing.sm : AppSpacing.md,
+                ),
+                vertical: density.inset(AppSpacing.sm),
               ),
-              vertical: density.inset(AppSpacing.sm),
+              child: content,
             ),
-            child: content,
           ),
         ),
       ),
     );
   }
+}
+
+List<BoxShadow> _timelineJumpToLatestShadows(ThemeData theme) {
+  if (theme.brightness == Brightness.light) {
+    return <BoxShadow>[
+      BoxShadow(
+        color: theme.colorScheme.shadow.withValues(alpha: 0.045),
+        blurRadius: 16,
+        spreadRadius: -12,
+        offset: const Offset(0, 8),
+      ),
+    ];
+  }
+
+  return <BoxShadow>[
+    BoxShadow(
+      color: theme.colorScheme.shadow.withValues(alpha: 0.18),
+      blurRadius: 18,
+      offset: const Offset(0, 8),
+    ),
+  ];
 }
 
 class _TimelineLoadOlderIndicator extends StatelessWidget {
@@ -17397,45 +19376,59 @@ class _TimelineLoadOlderIndicator extends StatelessWidget {
         ? context.wp('Earlier messages available')
         : context.wp('Load earlier messages');
     final hint = loading ? null : context.wp('Scroll up or tap to load more');
-    final content = Container(
-      key: const ValueKey<String>('timeline-load-older-indicator'),
-      padding: EdgeInsets.symmetric(
-        horizontal: density.inset(compact ? AppSpacing.sm : AppSpacing.md),
-        vertical: density.inset(compact ? AppSpacing.xs : AppSpacing.sm),
-      ),
-      decoration: BoxDecoration(
-        color: surfaces.panelMuted.withValues(alpha: 0.92),
-        borderRadius: BorderRadius.circular(compact ? 12 : 14),
-        border: Border.all(color: surfaces.lineSoft),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          if (loading) ...<Widget>[
-            const SizedBox(
-              width: 14,
-              height: 14,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
+    final content = ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: compact ? 300 : 540),
+      child: Container(
+        key: const ValueKey<String>('timeline-load-older-indicator'),
+        padding: EdgeInsets.symmetric(
+          horizontal: density.inset(compact ? AppSpacing.sm : AppSpacing.md),
+          vertical: density.inset(compact ? AppSpacing.xs : AppSpacing.sm),
+        ),
+        decoration: BoxDecoration(
+          color: surfaces.panelMuted.withValues(alpha: 0.92),
+          borderRadius: BorderRadius.circular(compact ? 12 : 14),
+          border: Border.all(color: surfaces.lineSoft),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.max,
+          children: <Widget>[
+            if (loading)
+              const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            else
+              Icon(Icons.expand_less_rounded, size: 16, color: surfaces.muted),
             const SizedBox(width: AppSpacing.xs),
-          ] else
-            Icon(Icons.expand_less_rounded, size: 16, color: surfaces.muted),
-          Text(
-            label,
-            style:
-                (compact
-                        ? theme.textTheme.labelMedium
-                        : theme.textTheme.bodySmall)
-                    ?.copyWith(fontWeight: FontWeight.w600),
-          ),
-          if (hint != null) ...<Widget>[
-            const SizedBox(width: AppSpacing.xs),
-            Text(
-              hint,
-              style: theme.textTheme.bodySmall?.copyWith(color: surfaces.muted),
+            Expanded(
+              child: Text.rich(
+                TextSpan(
+                  children: <InlineSpan>[
+                    TextSpan(
+                      text: label,
+                      style:
+                          (compact
+                                  ? theme.textTheme.labelMedium
+                                  : theme.textTheme.bodySmall)
+                              ?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                    if (hint != null)
+                      TextSpan(
+                        text: ' $hint',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: surfaces.muted,
+                        ),
+                      ),
+                  ],
+                ),
+                textAlign: TextAlign.center,
+                softWrap: true,
+                maxLines: compact ? 3 : 2,
+              ),
             ),
           ],
-        ],
+        ),
       ),
     );
     return Align(
@@ -17740,6 +19733,8 @@ class _PromptComposer extends StatefulWidget {
     required this.onDeleteQueuedPrompt,
     required this.onSendQueuedPromptNow,
     required this.onOpenMcpPicker,
+    this.onOpenProjectActions,
+    this.onOpenInbox,
     required this.onToggleTerminal,
     required this.onSelectSideTab,
     required this.onSubmit,
@@ -17793,6 +19788,8 @@ class _PromptComposer extends StatefulWidget {
   final Future<void> Function(String queuedPromptId) onDeleteQueuedPrompt;
   final Future<void> Function(String queuedPromptId) onSendQueuedPromptNow;
   final Future<void> Function() onOpenMcpPicker;
+  final Future<void> Function()? onOpenProjectActions;
+  final Future<void> Function()? onOpenInbox;
   final Future<void> Function() onToggleTerminal;
   final ValueChanged<WorkspaceSideTab> onSelectSideTab;
   final Future<void> Function(WorkspacePromptDispatchMode? mode) onSubmit;
@@ -17812,16 +19809,37 @@ class _PromptComposerState extends State<_PromptComposer> {
   static const Duration _restoredDraftGuardDuration = Duration(seconds: 1);
 
   final FocusNode _focusNode = FocusNode();
+  final SpeechToText _speechToText = SpeechToText();
+  final LayerLink _slashCommandsLayerLink = LayerLink();
+  final GlobalKey _slashCommandsAnchorKey = GlobalKey(
+    debugLabel: 'composer-slash-anchor',
+  );
+  OverlayEntry? _slashCommandsOverlayEntry;
   Timer? _restoredDraftGuardTimer;
   String? _guardedRestoredDraft;
   bool _clearingRestoredDraft = false;
+  bool _slashCommandsOverlaySyncScheduled = false;
   int _historyIndex = -1;
+  int _slashCommandSelectionIndex = 0;
   String? _savedHistoryDraft;
+  String? _lastSlashQuery;
   bool _applyingPromptHistory = false;
   bool _draggingFiles = false;
+  bool _voiceInitialized = false;
+  bool _voiceAvailable = false;
+  bool _voiceListening = false;
+  String? _voiceBaseText;
 
   bool get _canSubmit =>
       widget.controller.text.trim().isNotEmpty || widget.attachments.isNotEmpty;
+
+  bool get _supportsVoiceInput {
+    if (kIsWeb) {
+      return false;
+    }
+    final platform = Theme.of(context).platform;
+    return platform == TargetPlatform.android || platform == TargetPlatform.iOS;
+  }
 
   bool _usesDesktopEnterToSubmit(TargetPlatform platform) {
     switch (platform) {
@@ -17965,10 +19983,85 @@ class _PromptComposerState extends State<_PromptComposer> {
     );
   }
 
+  bool _hasPlainSlashCommandNavigationModifiers(KeyEvent event) {
+    final keyboard = HardwareKeyboard.instance;
+    return !keyboard.isAltPressed &&
+        !keyboard.isControlPressed &&
+        !keyboard.isMetaPressed &&
+        !keyboard.isShiftPressed;
+  }
+
+  int _resolvedSlashCommandSelectionIndex(int length) {
+    if (length <= 0) {
+      return 0;
+    }
+    return _slashCommandSelectionIndex.clamp(0, length - 1);
+  }
+
+  void _syncSlashCommandSelectionState() {
+    final query = _slashQuery;
+    final commands = _filteredSlashCommands;
+    if (_lastSlashQuery != query) {
+      _lastSlashQuery = query;
+      _slashCommandSelectionIndex = 0;
+      return;
+    }
+    if (commands.isEmpty) {
+      _slashCommandSelectionIndex = 0;
+      return;
+    }
+    if (_slashCommandSelectionIndex >= commands.length) {
+      _slashCommandSelectionIndex = commands.length - 1;
+    }
+  }
+
+  KeyEventResult _handleSlashCommandKeyEvent(KeyEvent event) {
+    if (!_hasPlainSlashCommandNavigationModifiers(event)) {
+      return KeyEventResult.ignored;
+    }
+    final commands = _filteredSlashCommands;
+    if (commands.isEmpty) {
+      return KeyEventResult.ignored;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+      setState(() {
+        _slashCommandSelectionIndex =
+            (_resolvedSlashCommandSelectionIndex(commands.length) + 1) %
+            commands.length;
+      });
+      _slashCommandsOverlayEntry?.markNeedsBuild();
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+      setState(() {
+        _slashCommandSelectionIndex =
+            (_resolvedSlashCommandSelectionIndex(commands.length) -
+                1 +
+                commands.length) %
+            commands.length;
+      });
+      _slashCommandsOverlayEntry?.markNeedsBuild();
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.tab &&
+        !HardwareKeyboard.instance.isShiftPressed) {
+      final selected =
+          commands[_resolvedSlashCommandSelectionIndex(commands.length)];
+      unawaited(_selectSlashCommand(selected));
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
   KeyEventResult _handleComposerKeyEvent(FocusNode node, KeyEvent event) {
-    if (!_usesDesktopEnterToSubmit(Theme.of(context).platform) ||
-        event is! KeyDownEvent ||
-        _hasActiveTextComposition) {
+    if (event is! KeyDownEvent || _hasActiveTextComposition) {
+      return KeyEventResult.ignored;
+    }
+    final slashCommandResult = _handleSlashCommandKeyEvent(event);
+    if (slashCommandResult == KeyEventResult.handled) {
+      return KeyEventResult.handled;
+    }
+    if (!_usesDesktopEnterToSubmit(Theme.of(context).platform)) {
       return KeyEventResult.ignored;
     }
     if (_isPlainArrowHistoryKey(event)) {
@@ -17991,7 +20084,17 @@ class _PromptComposerState extends State<_PromptComposer> {
   @override
   void initState() {
     super.initState();
+    _focusNode.addListener(_handleComposerFocusChanged);
     widget.controller.addListener(_handleComposerChanged);
+    _scheduleSlashCommandsOverlaySync();
+    if (widget.focusRequestToken > 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          return;
+        }
+        _focusNode.requestFocus();
+      });
+    }
   }
 
   @override
@@ -18011,11 +20114,17 @@ class _PromptComposerState extends State<_PromptComposer> {
       _clearRestoredDraftGuard();
       _resetPromptHistoryNavigation();
       _draggingFiles = false;
+      if (_voiceListening) {
+        unawaited(_speechToText.stop());
+        _voiceListening = false;
+      }
       _dismissFocus();
     }
     if ((widget.submitting || widget.pickingAttachments) && _draggingFiles) {
       _draggingFiles = false;
     }
+    _syncSlashCommandSelectionState();
+    _scheduleSlashCommandsOverlaySync();
     if (oldWidget.focusRequestToken != widget.focusRequestToken) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) {
@@ -18029,9 +20138,20 @@ class _PromptComposerState extends State<_PromptComposer> {
   @override
   void dispose() {
     _restoredDraftGuardTimer?.cancel();
+    _removeSlashCommandsOverlay();
+    _focusNode.removeListener(_handleComposerFocusChanged);
     widget.controller.removeListener(_handleComposerChanged);
+    unawaited(_speechToText.cancel());
     _focusNode.dispose();
     super.dispose();
+  }
+
+  void _handleComposerFocusChanged() {
+    if (!_focusNode.hasFocus) {
+      _removeSlashCommandsOverlay();
+      return;
+    }
+    _scheduleSlashCommandsOverlaySync();
   }
 
   void _handleComposerChanged() {
@@ -18065,9 +20185,48 @@ class _PromptComposerState extends State<_PromptComposer> {
       _historyIndex = -1;
       _savedHistoryDraft = null;
     }
+    _syncSlashCommandSelectionState();
     if (mounted) {
       setState(() {});
+      _scheduleSlashCommandsOverlaySync();
     }
+  }
+
+  void _scheduleSlashCommandsOverlaySync() {
+    if (_slashCommandsOverlaySyncScheduled) {
+      return;
+    }
+    _slashCommandsOverlaySyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _slashCommandsOverlaySyncScheduled = false;
+      if (!mounted) {
+        return;
+      }
+      _syncSlashCommandsOverlay();
+    });
+  }
+
+  void _syncSlashCommandsOverlay() {
+    final commands = _filteredSlashCommands;
+    if (!_focusNode.hasFocus || commands.isEmpty) {
+      _removeSlashCommandsOverlay();
+      return;
+    }
+    _syncSlashCommandSelectionState();
+    final existingEntry = _slashCommandsOverlayEntry;
+    if (existingEntry != null) {
+      existingEntry.markNeedsBuild();
+      return;
+    }
+    _slashCommandsOverlayEntry = OverlayEntry(
+      builder: _buildSlashCommandsOverlay,
+    );
+    Overlay.of(context, rootOverlay: true).insert(_slashCommandsOverlayEntry!);
+  }
+
+  void _removeSlashCommandsOverlay() {
+    _slashCommandsOverlayEntry?.remove();
+    _slashCommandsOverlayEntry = null;
   }
 
   void _armRestoredDraftGuard(String? draft) {
@@ -18096,6 +20255,139 @@ class _PromptComposerState extends State<_PromptComposer> {
       _focusNode.unfocus();
     }
     FocusManager.instance.primaryFocus?.unfocus();
+    _removeSlashCommandsOverlay();
+  }
+
+  Future<bool> _ensureVoiceInputReady() async {
+    if (!_supportsVoiceInput) {
+      return false;
+    }
+    if (_voiceInitialized) {
+      return _voiceAvailable;
+    }
+    try {
+      final available = await _speechToText.initialize(
+        onStatus: (status) {
+          if (!mounted) {
+            return;
+          }
+          setState(() {
+            _voiceListening = status.trim().toLowerCase() == 'listening';
+          });
+        },
+        onError: (error) {
+          if (!mounted) {
+            return;
+          }
+          setState(() {
+            _voiceListening = false;
+          });
+          _showVoiceMessage(error.errorMsg);
+        },
+      );
+      if (!mounted) {
+        return available;
+      }
+      setState(() {
+        _voiceInitialized = true;
+        _voiceAvailable = available;
+      });
+      return available;
+    } catch (error) {
+      if (!mounted) {
+        return false;
+      }
+      setState(() {
+        _voiceInitialized = true;
+        _voiceAvailable = false;
+      });
+      _showVoiceMessage(error.toString());
+      return false;
+    }
+  }
+
+  void _showVoiceMessage(String message) {
+    final normalized = message.trim();
+    if (normalized.isEmpty) {
+      return;
+    }
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(normalized)));
+  }
+
+  void _applyVoiceTranscript(String transcript) {
+    final normalizedTranscript = transcript.trim();
+    if (normalizedTranscript.isEmpty) {
+      return;
+    }
+    final baseText = (_voiceBaseText ?? widget.controller.text).trim();
+    final combined = baseText.isEmpty
+        ? normalizedTranscript
+        : '$baseText\n$normalizedTranscript';
+    widget.controller.value = TextEditingValue(
+      text: combined,
+      selection: TextSelection.collapsed(offset: combined.length),
+      composing: TextRange.empty,
+    );
+  }
+
+  Future<void> _toggleVoiceInput() async {
+    if (_voiceListening) {
+      await _speechToText.stop();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _voiceListening = false;
+      });
+      return;
+    }
+    final available = await _ensureVoiceInputReady();
+    if (!mounted) {
+      return;
+    }
+    if (!available) {
+      _showVoiceMessage(
+        context.wp('Voice input is unavailable on this device right now.'),
+      );
+      return;
+    }
+    final localeId = Localizations.localeOf(context).toLanguageTag();
+    _voiceBaseText = widget.controller.text.trim();
+    await _speechToText.listen(
+      onResult: (result) {
+        _applyVoiceTranscript(result.recognizedWords);
+        if (!mounted) {
+          return;
+        }
+        if (result.finalResult) {
+          setState(() {
+            _voiceListening = false;
+          });
+        }
+      },
+      localeId: localeId,
+      listenOptions: SpeechListenOptions(
+        listenMode: ListenMode.dictation,
+        partialResults: true,
+        cancelOnError: true,
+      ),
+    );
+    if (!mounted) {
+      return;
+    }
+    final started = _speechToText.isListening;
+    setState(() {
+      _voiceListening = started;
+    });
+    if (!started) {
+      _showVoiceMessage(
+        context.wp(
+          'Voice input could not start. Check microphone permission and try again.',
+        ),
+      );
+    }
   }
 
   void _setDraggingFiles(bool value) {
@@ -18206,6 +20498,33 @@ class _PromptComposerState extends State<_PromptComposer> {
         type: _ComposerSlashCommandType.builtin,
         action: _ComposerBuiltinSlashAction.mcpPicker,
       ),
+      if (_supportsVoiceInput)
+        _ComposerSlashCommand(
+          id: 'builtin.voice',
+          trigger: 'voice',
+          title: context.wp('Toggle voice input'),
+          description: context.wp('Start or stop dictation in the composer'),
+          type: _ComposerSlashCommandType.builtin,
+          action: _ComposerBuiltinSlashAction.voiceInput,
+        ),
+      if (widget.onOpenProjectActions != null)
+        _ComposerSlashCommand(
+          id: 'builtin.actions',
+          trigger: 'actions',
+          title: context.wp('Open project actions'),
+          description: context.wp('Launch the grouped remote operations sheet'),
+          type: _ComposerSlashCommandType.builtin,
+          action: _ComposerBuiltinSlashAction.projectActions,
+        ),
+      if (widget.onOpenInbox != null)
+        _ComposerSlashCommand(
+          id: 'builtin.inbox',
+          trigger: 'inbox',
+          title: context.wp('Open inbox'),
+          description: context.wp('Triage approvals, questions, and activity'),
+          type: _ComposerSlashCommandType.builtin,
+          action: _ComposerBuiltinSlashAction.inbox,
+        ),
       _ComposerSlashCommand(
         id: 'builtin.terminal',
         trigger: 'terminal',
@@ -18314,6 +20633,10 @@ class _PromptComposerState extends State<_PromptComposer> {
     }
     final builtin = _exactBuiltinSlashCommand;
     if (builtin != null) {
+      if (builtin.action == _ComposerBuiltinSlashAction.compactSession) {
+        await widget.onSubmit(mode);
+        return;
+      }
       await _selectSlashCommand(builtin);
       return;
     }
@@ -18332,6 +20655,7 @@ class _PromptComposerState extends State<_PromptComposer> {
   }
 
   Future<void> _selectSlashCommand(_ComposerSlashCommand command) async {
+    _removeSlashCommandsOverlay();
     if (command.type == _ComposerSlashCommandType.custom) {
       _applyCustomSlashCommand(command.trigger);
       return;
@@ -18358,7 +20682,7 @@ class _PromptComposerState extends State<_PromptComposer> {
   Future<WorkspacePromptDispatchMode?> _showSubmitModePicker(
     BuildContext context,
   ) {
-    return showModalBottomSheet<WorkspacePromptDispatchMode>(
+    return showAppModalBottomSheet<WorkspacePromptDispatchMode>(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (context) => _ComposerSubmitModeSheet(
@@ -18459,6 +20783,21 @@ class _PromptComposerState extends State<_PromptComposer> {
       case _ComposerBuiltinSlashAction.mcpPicker:
         await widget.onOpenMcpPicker();
         break;
+      case _ComposerBuiltinSlashAction.voiceInput:
+        await _toggleVoiceInput();
+        break;
+      case _ComposerBuiltinSlashAction.projectActions:
+        final callback = widget.onOpenProjectActions;
+        if (callback != null) {
+          await callback();
+        }
+        break;
+      case _ComposerBuiltinSlashAction.inbox:
+        final callback = widget.onOpenInbox;
+        if (callback != null) {
+          await callback();
+        }
+        break;
       case _ComposerBuiltinSlashAction.terminal:
         await widget.onToggleTerminal();
         break;
@@ -18530,12 +20869,213 @@ class _PromptComposerState extends State<_PromptComposer> {
     );
   }
 
+  ({double width, double maxHeight}) _slashCommandsOverlayGeometry(
+    BuildContext overlayContext,
+    bool isCompact,
+  ) {
+    final renderObject = _slashCommandsAnchorKey.currentContext
+        ?.findRenderObject();
+    final mediaQuery = MediaQuery.of(overlayContext);
+    final density = _workspaceDensity(overlayContext);
+    final fallbackWidth = math.min(
+      mediaQuery.size.width - (AppSpacing.md * 2),
+      _workspaceDensity(context).maxContentWidth(920),
+    );
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      return (width: fallbackWidth, maxHeight: isCompact ? 240.0 : 320.0);
+    }
+
+    final topLeft = renderObject.localToGlobal(Offset.zero);
+    final safeTop = mediaQuery.padding.top + AppSpacing.sm;
+    final gap = density.inset(AppSpacing.sm, min: 8);
+    final padding = density.inset(isCompact ? AppSpacing.xs : AppSpacing.sm);
+    final placementGuard = density.inset(AppSpacing.sm, min: 8);
+    final availableAbove = topLeft.dy - safeTop - gap;
+    final preferredHeight = isCompact ? 240.0 : 320.0;
+    final maxListHeight = availableAbove - (padding * 2) - placementGuard;
+    return (
+      width: renderObject.size.width,
+      maxHeight: math.max(0.0, math.min(preferredHeight, maxListHeight)),
+    );
+  }
+
+  Widget _buildSlashCommandsOverlay(BuildContext overlayContext) {
+    final commands = _filteredSlashCommands;
+    if (commands.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final density = _workspaceDensity(overlayContext);
+    final isCompact = widget.compact || density.compact;
+    final geometry = _slashCommandsOverlayGeometry(overlayContext, isCompact);
+    final estimatedHeight = _slashCommandsEstimatedOverlayHeight(
+      overlayContext,
+      commandCount: commands.length,
+      isCompact: isCompact,
+      maxHeight: geometry.maxHeight,
+    );
+    return Positioned.fill(
+      child: CompositedTransformFollower(
+        link: _slashCommandsLayerLink,
+        showWhenUnlinked: false,
+        targetAnchor: Alignment.topLeft,
+        followerAnchor: Alignment.topLeft,
+        offset: Offset(
+          0,
+          -estimatedHeight - density.inset(AppSpacing.sm, min: 8),
+        ),
+        child: Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: geometry.width,
+            child: _buildSlashCommandPopover(
+              overlayContext,
+              commands,
+              isCompact: isCompact,
+              maxHeight: geometry.maxHeight,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  double _slashCommandsEstimatedOverlayHeight(
+    BuildContext context, {
+    required int commandCount,
+    required bool isCompact,
+    required double maxHeight,
+  }) {
+    final density = _workspaceDensity(context);
+    final padding = density.inset(isCompact ? AppSpacing.xs : AppSpacing.sm);
+    final rowHeight = density.inset(isCompact ? 48.0 : 56.0, min: 44);
+    final separatorHeight = math.max(0, commandCount - 1) * AppSpacing.xs;
+    final listContentHeight = (rowHeight * commandCount) + separatorHeight;
+    final placementGuard = density.inset(AppSpacing.sm, min: 8);
+    return (padding * 2) +
+        math.min(maxHeight, listContentHeight) +
+        placementGuard;
+  }
+
+  Widget _buildSlashCommandPopover(
+    BuildContext context,
+    List<_ComposerSlashCommand> slashCommands, {
+    required bool isCompact,
+    required double maxHeight,
+  }) {
+    final density = _workspaceDensity(context);
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final selectedIndex = _resolvedSlashCommandSelectionIndex(
+      slashCommands.length,
+    );
+    return AppGlassPanel(
+      key: const ValueKey<String>('composer-slash-popover'),
+      radius: isCompact ? 16 : 18,
+      blur: isCompact ? 18 : 24,
+      tone: AppSurfaceTone.accent,
+      backgroundOpacity: Theme.of(context).brightness == Brightness.dark
+          ? 0.76
+          : 0.84,
+      borderOpacity: Theme.of(context).brightness == Brightness.dark
+          ? 0.18
+          : 0.22,
+      padding: EdgeInsets.all(
+        density.inset(isCompact ? AppSpacing.xs : AppSpacing.sm),
+      ),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxHeight),
+        child: ListView.separated(
+          shrinkWrap: true,
+          padding: EdgeInsets.zero,
+          itemCount: slashCommands.length,
+          separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.xs),
+          itemBuilder: (context, index) {
+            final command = slashCommands[index];
+            final selected = index == selectedIndex;
+            return Material(
+              color: Colors.transparent,
+              child: InkWell(
+                key: ValueKey<String>('composer-slash-option-${command.id}'),
+                borderRadius: BorderRadius.circular(8),
+                onTap: () => _selectSlashCommand(command),
+                child: Ink(
+                  decoration: appSoftCardDecoration(
+                    context,
+                    radius: 8,
+                    tone: AppSurfaceTone.accent,
+                    muted: !selected,
+                    selected: selected,
+                  ),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: isCompact
+                        ? density.inset(AppSpacing.sm)
+                        : density.inset(AppSpacing.md),
+                    vertical: isCompact
+                        ? density.inset(AppSpacing.xs)
+                        : density.inset(AppSpacing.sm),
+                  ),
+                  child: Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: Row(
+                          children: <Widget>[
+                            Text(
+                              '/${command.trigger}',
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w600),
+                            ),
+                            if ((command.description ?? '')
+                                .trim()
+                                .isNotEmpty) ...<Widget>[
+                              const SizedBox(width: AppSpacing.sm),
+                              Expanded(
+                                child: Text(
+                                  command.description!,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.bodyMedium
+                                      ?.copyWith(color: surfaces.muted),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      if (command.type == _ComposerSlashCommandType.custom &&
+                          command.source != null &&
+                          command.source != 'command') ...<Widget>[
+                        const SizedBox(width: AppSpacing.sm),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.sm,
+                            vertical: 4,
+                          ),
+                          decoration: appSoftCardDecoration(
+                            context,
+                            radius: AppSpacing.pillRadius,
+                            muted: true,
+                          ),
+                          child: Text(
+                            command.source!,
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(color: surfaces.muted),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
     final reasoningLabel = _reasoningLabel(context, widget.selectedReasoning);
-    final slashCommands = _filteredSlashCommands;
     final isCompact = widget.compact || density.compact;
     final submitIcon = _showsInterruptAction
         ? Icons.stop_rounded
@@ -18556,480 +21096,396 @@ class _PromptComposerState extends State<_PromptComposer> {
         density.inset(isCompact ? AppSpacing.sm : AppSpacing.md),
       ),
       child: Center(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: density.maxContentWidth(920)),
-          child: Stack(
-            children: <Widget>[
-              widget.dropRegionBuilder(
-                enabled: dropEnabled,
-                onHoverChanged: _setDraggingFiles,
-                onFilesDropped: (files) async {
-                  _setDraggingFiles(false);
-                  await widget.onDropFiles(files);
-                },
-                child: Container(
-                  padding: EdgeInsets.all(
-                    density.inset(isCompact ? AppSpacing.sm : AppSpacing.md),
-                  ),
-                  decoration: BoxDecoration(
-                    color: surfaces.panel,
-                    borderRadius: BorderRadius.circular(isCompact ? 16 : 20),
-                    border: Border.all(
-                      color: _draggingFiles
-                          ? Theme.of(
-                              context,
-                            ).colorScheme.primary.withValues(alpha: 0.55)
-                          : surfaces.lineSoft,
-                      width: _draggingFiles ? 1.5 : 1,
+        child: CompositedTransformTarget(
+          key: _slashCommandsAnchorKey,
+          link: _slashCommandsLayerLink,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: density.maxContentWidth(920)),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: <Widget>[
+                widget.dropRegionBuilder(
+                  enabled: dropEnabled,
+                  onHoverChanged: _setDraggingFiles,
+                  onFilesDropped: (files) async {
+                    _setDraggingFiles(false);
+                    await widget.onDropFiles(files);
+                  },
+                  child: AppGlassPanel(
+                    key: const ValueKey<String>('composer-panel'),
+                    radius: isCompact
+                        ? AppSpacing.compactPanelRadius
+                        : AppSpacing.panelRadius,
+                    blur: isCompact ? 18 : 24,
+                    tone: AppSurfaceTone.accent,
+                    backgroundOpacity:
+                        Theme.of(context).brightness == Brightness.dark
+                        ? 0.78
+                        : 0.9,
+                    borderOpacity: _draggingFiles ? 0.24 : 0.12,
+                    padding: EdgeInsets.all(
+                      density.inset(isCompact ? AppSpacing.sm : AppSpacing.md),
                     ),
-                    boxShadow: <BoxShadow>[
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.22),
-                        blurRadius: isCompact ? 16 : 24,
-                        offset: Offset(0, isCompact ? 6 : 10),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    children: <Widget>[
-                      if (widget.queuedPrompts.isNotEmpty) ...<Widget>[
-                        if (isCompact)
-                          _CompactActivitySummaryButton(
-                            key: const ValueKey<String>(
-                              'composer-queued-summary-button',
-                            ),
-                            icon: Icons.schedule_send_rounded,
-                            label: context.wp(
-                              widget.queuedPrompts.length == 1
-                                  ? '1 queued follow-up'
-                                  : '{count} queued follow-ups',
-                              args: <String, Object?>{
-                                'count': widget.queuedPrompts.length,
-                              },
-                            ),
-                            accent: Theme.of(context).colorScheme.primary,
-                            onTap: () => unawaited(_openQueuedPromptsSheet()),
-                          )
-                        else
-                          _ComposerQueuedPromptDock(
-                            compact: isCompact,
-                            queuedPrompts: widget.queuedPrompts,
-                            failedQueuedPromptId: widget.failedQueuedPromptId,
-                            sendingQueuedPromptId: widget.sendingQueuedPromptId,
-                            busy: widget.interruptible,
-                            onEditQueuedPrompt: widget.onEditQueuedPrompt,
-                            onDeleteQueuedPrompt: widget.onDeleteQueuedPrompt,
-                            onSendQueuedPromptNow: widget.onSendQueuedPromptNow,
-                          ),
-                        SizedBox(
-                          height: density.inset(
-                            isCompact ? AppSpacing.sm : AppSpacing.md,
-                          ),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(
+                          isCompact
+                              ? AppSpacing.compactPanelRadius
+                              : AppSpacing.panelRadius,
                         ),
-                      ],
-                      if (slashCommands.isNotEmpty) ...<Widget>[
-                        ConstrainedBox(
-                          constraints: BoxConstraints(
-                            maxHeight: density.inset(
-                              isCompact ? 240 : 320,
-                              min: 220,
+                        border: Border.all(
+                          color: _draggingFiles
+                              ? Theme.of(
+                                  context,
+                                ).colorScheme.primary.withValues(alpha: 0.55)
+                              : Colors.transparent,
+                          width: _draggingFiles ? 1.5 : 0,
+                        ),
+                      ),
+                      child: Column(
+                        children: <Widget>[
+                          if (widget.queuedPrompts.isNotEmpty) ...<Widget>[
+                            if (isCompact)
+                              _CompactActivitySummaryButton(
+                                key: const ValueKey<String>(
+                                  'composer-queued-summary-button',
+                                ),
+                                icon: Icons.schedule_send_rounded,
+                                label: context.wp(
+                                  widget.queuedPrompts.length == 1
+                                      ? '1 queued follow-up'
+                                      : '{count} queued follow-ups',
+                                  args: <String, Object?>{
+                                    'count': widget.queuedPrompts.length,
+                                  },
+                                ),
+                                accent: Theme.of(context).colorScheme.primary,
+                                onTap: () =>
+                                    unawaited(_openQueuedPromptsSheet()),
+                              )
+                            else
+                              _ComposerQueuedPromptDock(
+                                compact: isCompact,
+                                queuedPrompts: widget.queuedPrompts,
+                                failedQueuedPromptId:
+                                    widget.failedQueuedPromptId,
+                                sendingQueuedPromptId:
+                                    widget.sendingQueuedPromptId,
+                                busy: widget.interruptible,
+                                onEditQueuedPrompt: widget.onEditQueuedPrompt,
+                                onDeleteQueuedPrompt:
+                                    widget.onDeleteQueuedPrompt,
+                                onSendQueuedPromptNow:
+                                    widget.onSendQueuedPromptNow,
+                              ),
+                            SizedBox(
+                              height: density.inset(
+                                isCompact ? AppSpacing.sm : AppSpacing.md,
+                              ),
+                            ),
+                          ],
+                          if (widget.attachments.isNotEmpty) ...<Widget>[
+                            _ComposerAttachmentStrip(
+                              attachments: widget.attachments,
+                              onRemove: widget.onRemoveAttachment,
+                            ),
+                            SizedBox(
+                              height: density.inset(
+                                isCompact ? AppSpacing.sm : AppSpacing.md,
+                              ),
+                            ),
+                          ],
+                          Actions(
+                            actions: <Type, Action<Intent>>{
+                              PasteTextIntent: _ComposerPasteTextAction(
+                                onPasteImage: widget.onPasteClipboardImage,
+                                onPasteText: _pasteClipboardText,
+                              ),
+                            },
+                            child: Focus(
+                              canRequestFocus: false,
+                              skipTraversal: true,
+                              onKeyEvent: _handleComposerKeyEvent,
+                              child: TextField(
+                                key: widget.textFieldKey,
+                                controller: widget.controller,
+                                focusNode: _focusNode,
+                                minLines: isCompact ? 2 : 3,
+                                maxLines: isCompact ? 6 : 8,
+                                contextMenuBuilder: kIsWeb
+                                    ? null
+                                    : (
+                                        BuildContext context,
+                                        EditableTextState editableTextState,
+                                      ) {
+                                        return AdaptiveTextSelectionToolbar.buttonItems(
+                                          anchors: editableTextState
+                                              .contextMenuAnchors,
+                                          buttonItems: _contextMenuButtonItems(
+                                            editableTextState,
+                                          ),
+                                        );
+                                      },
+                                contentInsertionConfiguration:
+                                    ContentInsertionConfiguration(
+                                      allowedMimeTypes: PromptAttachmentService
+                                          .supportedContentInsertionMimeTypes,
+                                      onContentInserted: (content) {
+                                        unawaited(
+                                          widget.onContentInserted(content),
+                                        );
+                                      },
+                                    ),
+                                decoration: InputDecoration(
+                                  border: InputBorder.none,
+                                  enabledBorder: InputBorder.none,
+                                  focusedBorder: InputBorder.none,
+                                  filled: false,
+                                  hintText: context.wp('Ask anything...'),
+                                  contentPadding: EdgeInsets.zero,
+                                ),
+                                style: Theme.of(
+                                  context,
+                                ).textTheme.bodyLarge?.copyWith(height: 1.55),
+                                onTap: widget.onActivateComposer,
+                                onSubmitted: (_) => _handleSubmit(),
+                              ),
                             ),
                           ),
-                          child: DecoratedBox(
-                            key: const ValueKey<String>(
-                              'composer-slash-popover',
+                          SizedBox(
+                            height: density.inset(
+                              isCompact ? AppSpacing.xs : AppSpacing.sm,
                             ),
-                            decoration: BoxDecoration(
-                              color: surfaces.panelMuted,
-                              borderRadius: BorderRadius.circular(
-                                isCompact ? 14 : 18,
+                          ),
+                          Row(
+                            children: <Widget>[
+                              _ComposerIconButton(
+                                key: const ValueKey<String>(
+                                  'composer-attach-button',
+                                ),
+                                compact: isCompact,
+                                icon: Icons.add_rounded,
+                                onTap:
+                                    widget.submitting ||
+                                        widget.pickingAttachments
+                                    ? null
+                                    : () {
+                                        unawaited(widget.onPickAttachments());
+                                      },
+                                busy: widget.pickingAttachments,
                               ),
-                              border: Border.all(color: surfaces.lineSoft),
-                            ),
-                            child: ListView.separated(
-                              shrinkWrap: true,
-                              padding: EdgeInsets.all(
-                                density.inset(
+                              if (_supportsVoiceInput) ...<Widget>[
+                                SizedBox(
+                                  width: density.inset(
+                                    isCompact ? AppSpacing.xs : AppSpacing.sm,
+                                  ),
+                                ),
+                                _ComposerIconButton(
+                                  key: const ValueKey<String>(
+                                    'composer-voice-button',
+                                  ),
+                                  compact: isCompact,
+                                  icon: _voiceListening
+                                      ? Icons.stop_circle_outlined
+                                      : Icons.mic_none_rounded,
+                                  onTap: widget.submitting
+                                      ? null
+                                      : () {
+                                          unawaited(_toggleVoiceInput());
+                                        },
+                                  filled: _voiceListening,
+                                ),
+                              ],
+                              SizedBox(
+                                width: density.inset(
                                   isCompact ? AppSpacing.xs : AppSpacing.sm,
                                 ),
                               ),
-                              itemCount: slashCommands.length,
-                              separatorBuilder: (_, _) =>
-                                  const SizedBox(height: AppSpacing.xs),
-                              itemBuilder: (context, index) {
-                                final command = slashCommands[index];
-                                return Material(
-                                  color: Colors.transparent,
-                                  child: InkWell(
-                                    key: ValueKey<String>(
-                                      'composer-slash-option-${command.id}',
-                                    ),
-                                    borderRadius: BorderRadius.circular(12),
-                                    onTap: () => _selectSlashCommand(command),
-                                    child: Ink(
-                                      decoration: BoxDecoration(
-                                        color: index == 0
-                                            ? surfaces.panel
-                                            : Colors.transparent,
-                                        borderRadius: BorderRadius.circular(
-                                          isCompact ? 10 : 12,
+                              _ComposerIconButton(
+                                key: const ValueKey<String>(
+                                  'composer-permissions-button',
+                                ),
+                                compact: isCompact,
+                                icon: widget.permissionAutoAccepting
+                                    ? Icons.verified_user_rounded
+                                    : Icons.policy_outlined,
+                                onTap: () {
+                                  unawaited(
+                                    widget.onTogglePermissionAutoAccept(),
+                                  );
+                                },
+                                filled: widget.permissionAutoAccepting,
+                              ),
+                              SizedBox(
+                                width: density.inset(
+                                  isCompact ? AppSpacing.xs : AppSpacing.sm,
+                                ),
+                              ),
+                              Expanded(
+                                child: SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: Row(
+                                    children: <Widget>[
+                                      _ComposerSelectionPill(
+                                        compact: isCompact,
+                                        label:
+                                            widget.selectedAgentName ??
+                                            context.wp('Agent'),
+                                        onTap: widget.agents.isEmpty
+                                            ? null
+                                            : () async {
+                                                final selection =
+                                                    await _showAgentPicker(
+                                                      context,
+                                                    );
+                                                if (selection != null) {
+                                                  widget.onSelectAgent(
+                                                    selection,
+                                                  );
+                                                }
+                                              },
+                                      ),
+                                      SizedBox(
+                                        width: density.inset(
+                                          isCompact
+                                              ? AppSpacing.xxs
+                                              : AppSpacing.xs,
+                                          min: 3,
                                         ),
                                       ),
-                                      padding: EdgeInsets.symmetric(
-                                        horizontal: isCompact
-                                            ? density.inset(AppSpacing.sm)
-                                            : density.inset(AppSpacing.md),
-                                        vertical: isCompact
-                                            ? density.inset(AppSpacing.xs)
-                                            : density.inset(AppSpacing.sm),
+                                      _ComposerSelectionPill(
+                                        compact: isCompact,
+                                        label:
+                                            widget.selectedModel?.name ??
+                                            context.wp('Model'),
+                                        onTap: widget.models.isEmpty
+                                            ? null
+                                            : () async {
+                                                final selection =
+                                                    await _showModelPicker(
+                                                      context,
+                                                    );
+                                                if (selection != null) {
+                                                  widget.onSelectModel(
+                                                    selection,
+                                                  );
+                                                }
+                                              },
                                       ),
-                                      child: Row(
-                                        children: <Widget>[
-                                          Expanded(
-                                            child: Row(
-                                              children: <Widget>[
-                                                Text(
-                                                  '/${command.trigger}',
-                                                  style: Theme.of(context)
-                                                      .textTheme
-                                                      .titleMedium
-                                                      ?.copyWith(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                      ),
-                                                ),
-                                                if ((command.description ?? '')
-                                                    .trim()
-                                                    .isNotEmpty) ...<Widget>[
-                                                  const SizedBox(
-                                                    width: AppSpacing.sm,
-                                                  ),
-                                                  Expanded(
-                                                    child: Text(
-                                                      command.description!,
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                      style: Theme.of(context)
-                                                          .textTheme
-                                                          .bodyMedium
-                                                          ?.copyWith(
-                                                            color:
-                                                                surfaces.muted,
-                                                          ),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ],
-                                            ),
-                                          ),
-                                          if (command.type ==
-                                                  _ComposerSlashCommandType
-                                                      .custom &&
-                                              command.source != null &&
-                                              command.source !=
-                                                  'command') ...<Widget>[
-                                            const SizedBox(
-                                              width: AppSpacing.sm,
-                                            ),
-                                            Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: AppSpacing.sm,
-                                                    vertical: 4,
-                                                  ),
-                                              decoration: BoxDecoration(
-                                                color: surfaces.panel,
-                                                borderRadius:
-                                                    BorderRadius.circular(999),
-                                              ),
-                                              child: Text(
-                                                command.source!,
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .labelSmall
-                                                    ?.copyWith(
-                                                      color: surfaces.muted,
-                                                    ),
-                                              ),
-                                            ),
-                                          ],
-                                        ],
+                                      SizedBox(
+                                        width: density.inset(
+                                          isCompact
+                                              ? AppSpacing.xxs
+                                              : AppSpacing.xs,
+                                          min: 3,
+                                        ),
                                       ),
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                        ),
-                        SizedBox(
-                          height: density.inset(
-                            isCompact ? AppSpacing.sm : AppSpacing.md,
-                          ),
-                        ),
-                      ],
-                      if (widget.attachments.isNotEmpty) ...<Widget>[
-                        _ComposerAttachmentStrip(
-                          attachments: widget.attachments,
-                          onRemove: widget.onRemoveAttachment,
-                        ),
-                        SizedBox(
-                          height: density.inset(
-                            isCompact ? AppSpacing.sm : AppSpacing.md,
-                          ),
-                        ),
-                      ],
-                      Actions(
-                        actions: <Type, Action<Intent>>{
-                          PasteTextIntent: _ComposerPasteTextAction(
-                            onPasteImage: widget.onPasteClipboardImage,
-                            onPasteText: _pasteClipboardText,
-                          ),
-                        },
-                        child: Focus(
-                          canRequestFocus: false,
-                          skipTraversal: true,
-                          onKeyEvent: _handleComposerKeyEvent,
-                          child: TextField(
-                            key: widget.textFieldKey,
-                            controller: widget.controller,
-                            focusNode: _focusNode,
-                            minLines: isCompact ? 2 : 3,
-                            maxLines: isCompact ? 6 : 8,
-                            contextMenuBuilder: kIsWeb
-                                ? null
-                                : (
-                                    BuildContext context,
-                                    EditableTextState editableTextState,
-                                  ) {
-                                    return AdaptiveTextSelectionToolbar.buttonItems(
-                                      anchors:
-                                          editableTextState.contextMenuAnchors,
-                                      buttonItems: _contextMenuButtonItems(
-                                        editableTextState,
-                                      ),
-                                    );
-                                  },
-                            contentInsertionConfiguration:
-                                ContentInsertionConfiguration(
-                                  allowedMimeTypes: PromptAttachmentService
-                                      .supportedContentInsertionMimeTypes,
-                                  onContentInserted: (content) {
-                                    unawaited(
-                                      widget.onContentInserted(content),
-                                    );
-                                  },
-                                ),
-                            decoration: InputDecoration(
-                              border: InputBorder.none,
-                              enabledBorder: InputBorder.none,
-                              focusedBorder: InputBorder.none,
-                              filled: false,
-                              hintText: context.wp('Ask anything...'),
-                              contentPadding: EdgeInsets.zero,
-                            ),
-                            style: Theme.of(
-                              context,
-                            ).textTheme.bodyLarge?.copyWith(height: 1.55),
-                            onTap: widget.onActivateComposer,
-                            onSubmitted: (_) => _handleSubmit(),
-                          ),
-                        ),
-                      ),
-                      SizedBox(
-                        height: density.inset(
-                          isCompact ? AppSpacing.xs : AppSpacing.sm,
-                        ),
-                      ),
-                      Row(
-                        children: <Widget>[
-                          _ComposerIconButton(
-                            key: const ValueKey<String>(
-                              'composer-attach-button',
-                            ),
-                            compact: isCompact,
-                            icon: Icons.add_rounded,
-                            onTap:
-                                widget.submitting || widget.pickingAttachments
-                                ? null
-                                : () {
-                                    unawaited(widget.onPickAttachments());
-                                  },
-                            busy: widget.pickingAttachments,
-                          ),
-                          SizedBox(
-                            width: density.inset(
-                              isCompact ? AppSpacing.xs : AppSpacing.sm,
-                            ),
-                          ),
-                          _ComposerIconButton(
-                            key: const ValueKey<String>(
-                              'composer-permissions-button',
-                            ),
-                            compact: isCompact,
-                            icon: widget.permissionAutoAccepting
-                                ? Icons.verified_user_rounded
-                                : Icons.policy_outlined,
-                            onTap: () {
-                              unawaited(widget.onTogglePermissionAutoAccept());
-                            },
-                            filled: widget.permissionAutoAccepting,
-                          ),
-                          SizedBox(
-                            width: density.inset(
-                              isCompact ? AppSpacing.xs : AppSpacing.sm,
-                            ),
-                          ),
-                          Expanded(
-                            child: SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              child: Row(
-                                children: <Widget>[
-                                  _ComposerSelectionPill(
-                                    compact: isCompact,
-                                    label:
-                                        widget.selectedAgentName ??
-                                        context.wp('Agent'),
-                                    onTap: widget.agents.isEmpty
-                                        ? null
-                                        : () async {
-                                            final selection =
-                                                await _showAgentPicker(context);
-                                            if (selection != null) {
-                                              widget.onSelectAgent(selection);
-                                            }
-                                          },
-                                  ),
-                                  SizedBox(
-                                    width: density.inset(
-                                      isCompact
-                                          ? AppSpacing.xxs
-                                          : AppSpacing.xs,
-                                      min: 3,
-                                    ),
-                                  ),
-                                  _ComposerSelectionPill(
-                                    compact: isCompact,
-                                    label:
-                                        widget.selectedModel?.name ??
-                                        context.wp('Model'),
-                                    onTap: widget.models.isEmpty
-                                        ? null
-                                        : () async {
-                                            final selection =
-                                                await _showModelPicker(context);
-                                            if (selection != null) {
-                                              widget.onSelectModel(selection);
-                                            }
-                                          },
-                                  ),
-                                  SizedBox(
-                                    width: density.inset(
-                                      isCompact
-                                          ? AppSpacing.xxs
-                                          : AppSpacing.xs,
-                                      min: 3,
-                                    ),
-                                  ),
-                                  _ComposerSelectionPill(
-                                    compact: isCompact,
-                                    label: reasoningLabel,
-                                    onTap: widget.selectedModel == null
-                                        ? null
-                                        : () async {
-                                            final selection =
-                                                await _showReasoningPicker(
-                                                  context,
+                                      _ComposerSelectionPill(
+                                        compact: isCompact,
+                                        label: reasoningLabel,
+                                        onTap: widget.selectedModel == null
+                                            ? null
+                                            : () async {
+                                                final selection =
+                                                    await _showReasoningPicker(
+                                                      context,
+                                                    );
+                                                if (selection == null) {
+                                                  return;
+                                                }
+                                                widget.onSelectReasoning(
+                                                  selection ==
+                                                          _PromptComposer
+                                                              ._defaultReasoningSentinel
+                                                      ? null
+                                                      : selection,
                                                 );
-                                            if (selection == null) {
-                                              return;
-                                            }
-                                            widget.onSelectReasoning(
-                                              selection ==
-                                                      _PromptComposer
-                                                          ._defaultReasoningSentinel
-                                                  ? null
-                                                  : selection,
-                                            );
-                                          },
+                                              },
+                                      ),
+                                    ],
                                   ),
-                                ],
+                                ),
                               ),
-                            ),
-                          ),
-                          SizedBox(
-                            width: density.inset(
-                              isCompact ? AppSpacing.xs : AppSpacing.sm,
-                            ),
-                          ),
-                          _ComposerIconButton(
-                            key: const ValueKey<String>(
-                              'composer-submit-button',
-                            ),
-                            compact: isCompact,
-                            icon: submitIcon,
-                            onTap: submitEnabled
-                                ? () => unawaited(_handleSubmit())
-                                : null,
-                            onLongPress: submitEnabled
-                                ? () => unawaited(_handleSubmitLongPress())
-                                : null,
-                            filled: true,
-                            busy: _showsInterruptAction
-                                ? widget.interrupting
-                                : submitBusy,
+                              SizedBox(
+                                width: density.inset(
+                                  isCompact ? AppSpacing.xs : AppSpacing.sm,
+                                ),
+                              ),
+                              _ComposerIconButton(
+                                key: const ValueKey<String>(
+                                  'composer-submit-button',
+                                ),
+                                compact: isCompact,
+                                icon: submitIcon,
+                                onTap: submitEnabled
+                                    ? () => unawaited(_handleSubmit())
+                                    : null,
+                                onLongPress: submitEnabled
+                                    ? () => unawaited(_handleSubmitLongPress())
+                                    : null,
+                                filled: true,
+                                busy: _showsInterruptAction
+                                    ? widget.interrupting
+                                    : submitBusy,
+                              ),
+                            ],
                           ),
                         ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
-              ),
-              if (_draggingFiles)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: DecoratedBox(
-                      key: const ValueKey<String>('composer-drop-overlay'),
-                      decoration: BoxDecoration(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.primary.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(
-                          isCompact ? 16 : 20,
+                if (_draggingFiles)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        key: const ValueKey<String>('composer-drop-overlay'),
+                        decoration: BoxDecoration(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.primary.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(
+                            isCompact ? 16 : 20,
+                          ),
                         ),
-                      ),
-                      child: Center(
-                        child: Container(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: density.inset(
-                              isCompact ? AppSpacing.md : AppSpacing.lg,
+                        child: Center(
+                          child: Container(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: density.inset(
+                                isCompact ? AppSpacing.md : AppSpacing.lg,
+                              ),
+                              vertical: density.inset(
+                                isCompact ? AppSpacing.sm : AppSpacing.md,
+                              ),
                             ),
-                            vertical: density.inset(
-                              isCompact ? AppSpacing.sm : AppSpacing.md,
+                            decoration: BoxDecoration(
+                              color: Color.alphaBlend(
+                                Theme.of(
+                                  context,
+                                ).colorScheme.primary.withValues(alpha: 0.08),
+                                surfaces.panelRaised.withValues(alpha: 0.96),
+                              ),
+                              borderRadius: BorderRadius.circular(
+                                isCompact ? 14 : 18,
+                              ),
+                              border: Border.all(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.primary.withValues(alpha: 0.35),
+                              ),
                             ),
-                          ),
-                          decoration: BoxDecoration(
-                            color: surfaces.panelRaised.withValues(alpha: 0.96),
-                            borderRadius: BorderRadius.circular(
-                              isCompact ? 14 : 18,
+                            child: Text(
+                              context.wp('Drop files or images to attach'),
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w600),
                             ),
-                            border: Border.all(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.primary.withValues(alpha: 0.35),
-                            ),
-                          ),
-                          child: Text(
-                            context.wp('Drop files or images to attach'),
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(fontWeight: FontWeight.w600),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -19037,7 +21493,7 @@ class _PromptComposerState extends State<_PromptComposer> {
   }
 
   Future<String?> _showAgentPicker(BuildContext context) {
-    return showModalBottomSheet<String>(
+    return showAppModalBottomSheet<String>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
@@ -19097,7 +21553,7 @@ class _PromptComposerState extends State<_PromptComposer> {
                 left.title.toLowerCase().compareTo(right.title.toLowerCase()),
           );
 
-    return showModalBottomSheet<String>(
+    return showAppModalBottomSheet<String>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
@@ -19148,7 +21604,7 @@ class _PromptComposerState extends State<_PromptComposer> {
         ),
       ),
     ];
-    return showModalBottomSheet<String?>(
+    return showAppModalBottomSheet<String?>(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (context) => _SearchableSelectionSheet<_ReasoningChoice>(
@@ -19221,11 +21677,7 @@ class _ComposerAttachmentTile extends StatelessWidget {
     return Container(
       width: attachment.isImage ? 112 : 200,
       padding: EdgeInsets.all(density.inset(AppSpacing.sm)),
-      decoration: BoxDecoration(
-        color: surfaces.panelMuted,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: surfaces.lineSoft),
-      ),
+      decoration: appSoftCardDecoration(context, radius: 14, muted: true),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -19329,6 +21781,9 @@ enum _ComposerBuiltinSlashAction {
   reasoningPicker,
   permissionAutoAccept,
   mcpPicker,
+  voiceInput,
+  projectActions,
+  inbox,
   terminal,
   reviewTab,
   filesTab,
@@ -19380,14 +21835,15 @@ class _PendingQuestionComposerNotice extends StatelessWidget {
       child: Center(
         child: ConstrainedBox(
           constraints: BoxConstraints(maxWidth: density.maxContentWidth(920)),
-          child: Container(
+          child: AppGlassPanel(
+            radius: compact
+                ? AppSpacing.compactPanelRadius
+                : AppSpacing.panelRadius,
+            blur: compact ? 18 : 22,
+            tone: AppSurfaceTone.accent,
+            showShadow: false,
             padding: EdgeInsets.all(
               density.inset(compact ? AppSpacing.sm : AppSpacing.md),
-            ),
-            decoration: BoxDecoration(
-              color: surfaces.panel,
-              borderRadius: BorderRadius.circular(compact ? 16 : 20),
-              border: Border.all(color: surfaces.lineSoft),
             ),
             child: Row(
               children: <Widget>[
@@ -19474,14 +21930,15 @@ class _PendingPermissionComposerNotice extends StatelessWidget {
       child: Center(
         child: ConstrainedBox(
           constraints: BoxConstraints(maxWidth: density.maxContentWidth(920)),
-          child: Container(
+          child: AppGlassPanel(
+            radius: compact
+                ? AppSpacing.compactPanelRadius
+                : AppSpacing.panelRadius,
+            blur: compact ? 18 : 22,
+            tone: AppSurfaceTone.warning,
+            showShadow: false,
             padding: EdgeInsets.all(
               density.inset(compact ? AppSpacing.sm : AppSpacing.md),
-            ),
-            decoration: BoxDecoration(
-              color: surfaces.panel,
-              borderRadius: BorderRadius.circular(compact ? 16 : 20),
-              border: Border.all(color: surfaces.lineSoft),
             ),
             child: Row(
               children: <Widget>[
@@ -19877,20 +22334,13 @@ class _QuestionPromptDockState extends State<_QuestionPromptDock> {
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 920),
-          child: Container(
+          child: AppGlassPanel(
+            radius: isCompact
+                ? AppSpacing.compactPanelRadius
+                : AppSpacing.panelRadius,
+            blur: isCompact ? 20 : 24,
+            tone: AppSurfaceTone.accent,
             padding: EdgeInsets.all(isCompact ? AppSpacing.sm : AppSpacing.md),
-            decoration: BoxDecoration(
-              color: surfaces.panel,
-              borderRadius: BorderRadius.circular(isCompact ? 16 : 20),
-              border: Border.all(color: surfaces.lineSoft),
-              boxShadow: <BoxShadow>[
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.22),
-                  blurRadius: isCompact ? 16 : 24,
-                  offset: Offset(0, isCompact ? 6 : 10),
-                ),
-              ],
-            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
@@ -20144,20 +22594,13 @@ class _PermissionPromptDock extends StatelessWidget {
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 920),
-          child: Container(
+          child: AppGlassPanel(
+            radius: compact
+                ? AppSpacing.compactPanelRadius
+                : AppSpacing.panelRadius,
+            blur: compact ? 20 : 24,
+            tone: AppSurfaceTone.warning,
             padding: EdgeInsets.all(compact ? AppSpacing.sm : AppSpacing.md),
-            decoration: BoxDecoration(
-              color: surfaces.panel,
-              borderRadius: BorderRadius.circular(compact ? 16 : 20),
-              border: Border.all(color: surfaces.lineSoft),
-              boxShadow: <BoxShadow>[
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.22),
-                  blurRadius: compact ? 16 : 24,
-                  offset: Offset(0, compact ? 6 : 10),
-                ),
-              ],
-            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -20225,10 +22668,11 @@ class _PermissionPromptDock extends StatelessWidget {
                               horizontal: AppSpacing.sm,
                               vertical: AppSpacing.xxs,
                             ),
-                            decoration: BoxDecoration(
-                              color: surfaces.panelMuted,
-                              borderRadius: BorderRadius.circular(999),
-                              border: Border.all(color: surfaces.lineSoft),
+                            decoration: appSoftCardDecoration(
+                              context,
+                              radius: AppSpacing.pillRadius,
+                              tone: AppSurfaceTone.warning,
+                              muted: true,
                             ),
                             child: Text(
                               pattern,
@@ -20349,10 +22793,12 @@ class _QuestionChoiceTile extends StatelessWidget {
         child: Container(
           width: double.infinity,
           padding: EdgeInsets.all(compact ? AppSpacing.sm : AppSpacing.md),
-          decoration: BoxDecoration(
-            color: selected ? surfaces.panelRaised : surfaces.panelMuted,
-            borderRadius: BorderRadius.circular(compact ? 14 : 16),
-            border: Border.all(color: borderColor),
+          decoration: appSoftCardDecoration(
+            context,
+            radius: compact ? 14 : 16,
+            tone: AppSurfaceTone.accent,
+            muted: !selected,
+            selected: selected,
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -20404,10 +22850,10 @@ _TodoDockState _todoDockState({
   if (count == 0) {
     return _TodoDockState.hide;
   }
+  if (!live) {
+    return _TodoDockState.clear;
+  }
   if (!done) {
-    if (!live) {
-      return _TodoDockState.clear;
-    }
     return _TodoDockState.open;
   }
   return _TodoDockState.close;
@@ -20423,6 +22869,7 @@ class _SessionTodoDock extends StatefulWidget {
     required this.collapsed,
     required this.onCollapsedChanged,
     required this.onClearStale,
+    this.collapsible = true,
     super.key,
   });
 
@@ -20434,6 +22881,7 @@ class _SessionTodoDock extends StatefulWidget {
   final bool collapsed;
   final ValueChanged<bool> onCollapsedChanged;
   final VoidCallback onClearStale;
+  final bool collapsible;
 
   @override
   State<_SessionTodoDock> createState() => _SessionTodoDockState();
@@ -20533,6 +22981,8 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
     return widget.todos.isEmpty ? null : widget.todos.first;
   }
 
+  bool get _effectiveCollapsed => widget.collapsible && widget.collapsed;
+
   void _handleScroll() {
     if (!_scrollController.hasClients) {
       return;
@@ -20588,7 +23038,7 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
           _closing = false;
         });
       }
-      if (!widget.collapsed) {
+      if (!_effectiveCollapsed) {
         _scheduleEnsureVisible();
       }
       return;
@@ -20606,7 +23056,7 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
       });
     }
     _scheduleClose(todoSignature);
-    if (initial && !widget.collapsed) {
+    if (initial && !_effectiveCollapsed) {
       _scheduleEnsureVisible();
     }
   }
@@ -20658,7 +23108,7 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final activeTodo = _activeTodo;
       if (!mounted ||
-          widget.collapsed ||
+          _effectiveCollapsed ||
           !_visible ||
           widget.blocked ||
           activeTodo == null) {
@@ -20690,6 +23140,9 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
   }
 
   void _toggleCollapsed() {
+    if (!widget.collapsible) {
+      return;
+    }
     final nextCollapsed = !widget.collapsed;
     widget.onCollapsedChanged(nextCollapsed);
     if (!nextCollapsed) {
@@ -20706,6 +23159,8 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
     final preview = _activeTodo?.content.trim() ?? '';
     final shouldRender = _visible && widget.todos.isNotEmpty && !widget.blocked;
     final isCompact = widget.compact;
+    final collapsible = widget.collapsible;
+    final collapsed = _effectiveCollapsed;
 
     return AnimatedSize(
       duration: const Duration(milliseconds: 220),
@@ -20722,16 +23177,17 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
               child: Center(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 920),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: surfaces.panel,
-                      borderRadius: BorderRadius.circular(isCompact ? 16 : 20),
-                      border: Border.all(color: surfaces.lineSoft),
-                    ),
+                  child: AppGlassPanel(
+                    radius: isCompact
+                        ? AppSpacing.compactPanelRadius
+                        : AppSpacing.panelRadius,
+                    blur: isCompact ? 18 : 22,
+                    tone: AppSurfaceTone.success,
+                    padding: EdgeInsets.zero,
                     child: Column(
                       children: <Widget>[
                         InkWell(
-                          onTap: _toggleCollapsed,
+                          onTap: collapsible ? _toggleCollapsed : null,
                           borderRadius: BorderRadius.vertical(
                             top: Radius.circular(isCompact ? 16 : 20),
                             bottom: Radius.circular(isCompact ? 16 : 20),
@@ -20746,7 +23202,7 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
                             child: Row(
                               children: <Widget>[
                                 Expanded(
-                                  child: widget.collapsed && preview.isNotEmpty
+                                  child: collapsed && preview.isNotEmpty
                                       ? Row(
                                           children: <Widget>[
                                             Flexible(
@@ -20808,24 +23264,25 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
                                                   ),
                                         ),
                                 ),
-                                IconButton(
-                                  key: const ValueKey<String>(
-                                    'session-todo-toggle-button',
-                                  ),
-                                  onPressed: _toggleCollapsed,
-                                  icon: AnimatedRotation(
-                                    turns: widget.collapsed ? 0.5 : 0,
-                                    duration: const Duration(milliseconds: 180),
-                                    child: Icon(
-                                      Icons.keyboard_arrow_down_rounded,
-                                      color: surfaces.muted,
+                                if (collapsible)
+                                  IconButton(
+                                    key: const ValueKey<String>(
+                                      'session-todo-toggle-button',
                                     ),
+                                    onPressed: _toggleCollapsed,
+                                    icon: AnimatedRotation(
+                                      turns: collapsed ? 0.5 : 0,
+                                      duration: const Duration(
+                                        milliseconds: 180,
+                                      ),
+                                      child: Icon(
+                                        Icons.keyboard_arrow_down_rounded,
+                                        color: surfaces.muted,
+                                      ),
+                                    ),
+                                    splashRadius: isCompact ? 16 : 18,
+                                    tooltip: collapsed ? 'Expand' : 'Collapse',
                                   ),
-                                  splashRadius: isCompact ? 16 : 18,
-                                  tooltip: widget.collapsed
-                                      ? 'Expand'
-                                      : 'Collapse',
-                                ),
                               ],
                             ),
                           ),
@@ -20834,7 +23291,7 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
                           child: AnimatedSize(
                             duration: const Duration(milliseconds: 220),
                             curve: Curves.easeOutCubic,
-                            child: widget.collapsed
+                            child: collapsed
                                 ? const SizedBox.shrink()
                                 : Stack(
                                     children: <Widget>[
@@ -20853,7 +23310,7 @@ class _SessionTodoDockState extends State<_SessionTodoDock> {
                                                 ? AppSpacing.sm
                                                 : AppSpacing.md,
                                             isCompact
-                                                ? AppSpacing.lg
+                                                ? AppSpacing.md
                                                 : AppSpacing.xl,
                                           ),
                                           child: Column(
@@ -21017,36 +23474,53 @@ class _CompactPaneSwitcher extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
-    return Container(
-      key: const ValueKey<String>('workspace-compact-pane-switcher'),
-      height: height,
-      decoration: BoxDecoration(
-        color: surfaces.panel,
-        border: Border(bottom: BorderSide(color: surfaces.lineSoft)),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.sm,
+        AppSpacing.xs,
+        AppSpacing.sm,
+        0,
       ),
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: _CompactPaneButton(
-              key: const ValueKey<String>(
-                'workspace-compact-pane-session-button',
-              ),
-              label: context.wp('Session'),
-              selected: activePane == _CompactWorkspacePane.session,
-              onTap: () => onChanged(_CompactWorkspacePane.session),
+      child: AppGlassPanel(
+        key: const ValueKey<String>('workspace-compact-pane-switcher'),
+        radius: AppSpacing.panelRadius,
+        blur: 18,
+        backgroundOpacity: Theme.of(context).brightness == Brightness.dark
+            ? 0.78
+            : 0.9,
+        showShadow: false,
+        padding: EdgeInsets.zero,
+        child: SizedBox(
+          height: height,
+          child: Padding(
+            padding: const EdgeInsets.all(4),
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: _CompactPaneButton(
+                    key: const ValueKey<String>(
+                      'workspace-compact-pane-session-button',
+                    ),
+                    label: context.wp('Session'),
+                    selected: activePane == _CompactWorkspacePane.session,
+                    onTap: () => onChanged(_CompactWorkspacePane.session),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                Expanded(
+                  child: _CompactPaneButton(
+                    key: const ValueKey<String>(
+                      'workspace-compact-pane-side-button',
+                    ),
+                    label: sideLabel,
+                    selected: activePane == _CompactWorkspacePane.side,
+                    onTap: () => onChanged(_CompactWorkspacePane.side),
+                  ),
+                ),
+              ],
             ),
           ),
-          Container(width: 1, color: surfaces.lineSoft),
-          Expanded(
-            child: _CompactPaneButton(
-              key: const ValueKey<String>('workspace-compact-pane-side-button'),
-              label: sideLabel,
-              selected: activePane == _CompactWorkspacePane.side,
-              onTap: () => onChanged(_CompactWorkspacePane.side),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -21067,19 +23541,31 @@ class _CompactPaneButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final accent = Theme.of(context).colorScheme.primary;
     return InkWell(
       onTap: onTap,
+      borderRadius: BorderRadius.circular(AppSpacing.formFieldRadius),
       child: Container(
         alignment: Alignment.center,
+        margin: const EdgeInsets.symmetric(vertical: 2),
         decoration: BoxDecoration(
-          border: Border(
-            bottom: BorderSide(
-              color: selected
-                  ? Theme.of(context).colorScheme.onSurface
-                  : Colors.transparent,
-              width: 1.5,
-            ),
+          color: selected ? accent.withValues(alpha: 0.12) : Colors.transparent,
+          borderRadius: BorderRadius.circular(AppSpacing.formFieldRadius),
+          border: Border.all(
+            color: selected
+                ? accent.withValues(alpha: 0.22)
+                : Colors.transparent,
           ),
+          boxShadow: selected
+              ? <BoxShadow>[
+                  BoxShadow(
+                    color: accent.withValues(alpha: 0.12),
+                    blurRadius: 16,
+                    spreadRadius: -10,
+                    offset: const Offset(0, 8),
+                  ),
+                ]
+              : const <BoxShadow>[],
         ),
         child: Text(
           label,
@@ -21439,7 +23925,7 @@ class _UserTimelineMessageState extends State<_UserTimelineMessage> {
       widget.configSnapshot?.providerCatalog,
     );
     final stamp = _formatTimelineMessageStamp(context, widget.message);
-    await showModalBottomSheet<void>(
+    await showAppModalBottomSheet<void>(
       context: context,
       useSafeArea: true,
       showDragHandle: true,
@@ -21860,13 +24346,16 @@ class _TimelinePart extends StatelessWidget {
       if (body.trim().isEmpty) {
         return const SizedBox.shrink();
       }
-      return _StreamingTextPart(
-        key: ValueKey<String>('timeline-streaming-text-${part.id}'),
-        partId: part.id,
-        text: body,
-        animate: _shouldAnimateStreamingText(part, textStreamingActive),
-        searchTerms: searchTerms,
-        searchActive: searchActive,
+      return SelectionArea(
+        key: ValueKey<String>('timeline-selectable-text-${part.id}'),
+        child: _StreamingTextPart(
+          key: ValueKey<String>('timeline-streaming-text-${part.id}'),
+          partId: part.id,
+          text: body,
+          animate: _shouldAnimateStreamingText(part, textStreamingActive),
+          searchTerms: searchTerms,
+          searchActive: searchActive,
+        ),
       );
     }
     if (part.type == 'compaction') {
@@ -21893,7 +24382,7 @@ class _TimelinePart extends StatelessWidget {
         subtitle: _shellToolSubtitle(part),
         command: _shellToolCommand(part),
         output: _shellToolOutput(part),
-        running: _toolStateStatus(part) == 'running',
+        running: _toolStateIsRunning(_toolStateStatus(part)),
         shimmerActive: shimmerActive,
         displayMode: shellToolDisplayMode,
         compact: compact,
@@ -22141,12 +24630,16 @@ class _ShellTimelinePart extends StatefulWidget {
 
 class _ShellTimelinePartState extends State<_ShellTimelinePart> {
   static const int _compactCollapsedCommandMaxLines = 2;
-  static const double _expandedLogMaxHeight = 164;
+  static const int _expandedLogVisibleLines = 5;
+  static const double _expandedLogFontSize = 13;
+  static const double _expandedLogLineHeight = 1.5;
+  static const double _expandedLogFadeHeight = 28;
 
   Timer? _copiedTimer;
   late final ScrollController _logScrollController = ScrollController();
   late bool _expanded = _desiredExpanded(widget.displayMode, widget.running);
   bool _copied = false;
+  bool _logScrolledPastTop = false;
 
   static bool _desiredExpanded(ShellToolDisplayMode mode, bool running) {
     return switch (mode) {
@@ -22166,6 +24659,14 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
       return '\$ $command';
     }
     return '\$ $command\n\n$output';
+  }
+
+  double get _expandedLogViewportHeight {
+    final padding = _timelineShellBodyPadding(widget.compact);
+    return (_expandedLogFontSize *
+            _expandedLogLineHeight *
+            _expandedLogVisibleLines) +
+        padding.vertical;
   }
 
   @override
@@ -22190,13 +24691,16 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
   @override
   void initState() {
     super.initState();
+    _logScrollController.addListener(_handleLogScroll);
     _scheduleScrollToLatest();
   }
 
   @override
   void dispose() {
     _copiedTimer?.cancel();
-    _logScrollController.dispose();
+    _logScrollController
+      ..removeListener(_handleLogScroll)
+      ..dispose();
     super.dispose();
   }
 
@@ -22231,6 +24735,7 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
         _logScrollController.jumpTo(
           _logScrollController.position.maxScrollExtent,
         );
+        _syncLogFadeVisibility();
       });
       return;
     }
@@ -22241,6 +24746,28 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
       _logScrollController.jumpTo(
         _logScrollController.position.maxScrollExtent,
       );
+      _syncLogFadeVisibility();
+    });
+  }
+
+  void _handleLogScroll() {
+    _syncLogFadeVisibility();
+  }
+
+  void _syncLogFadeVisibility() {
+    if (!_logScrollController.hasClients) {
+      return;
+    }
+    final next = _logScrollController.offset > 0.5;
+    if (next == _logScrolledPastTop) {
+      return;
+    }
+    if (!mounted) {
+      _logScrolledPastTop = next;
+      return;
+    }
+    setState(() {
+      _logScrolledPastTop = next;
     });
   }
 
@@ -22273,8 +24800,8 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
       color: surfaces.muted,
     );
     final monoStyle = GoogleFonts.ibmPlexMono(
-      fontSize: 13,
-      height: 1.5,
+      fontSize: _expandedLogFontSize,
+      height: _expandedLogLineHeight,
       color: theme.colorScheme.onSurface,
     );
     final previewSurface = surfaces.panelMuted;
@@ -22396,7 +24923,7 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
           Container(
             width: double.infinity,
             margin: _timelineExpandableBodyMargin,
-            padding: _timelineShellBodyPadding,
+            padding: _timelineShellBodyPadding(widget.compact),
             decoration: BoxDecoration(
               color: previewSurface,
               borderRadius: BorderRadius.circular(16),
@@ -22449,48 +24976,99 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
                       'timeline-shell-expanded-${widget.partId}',
                     ),
                     width: double.infinity,
-                    margin: const EdgeInsets.only(
-                      left: AppSpacing.sm,
-                      right: AppSpacing.sm,
-                      bottom: AppSpacing.xs,
+                    margin: EdgeInsets.only(
+                      top: showCollapsedBody ? _workspaceRowGap : 0,
+                      bottom: _workspaceRowGap,
                     ),
                     decoration: BoxDecoration(
                       color: surfaces.panel,
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(
+                        _workspaceInnerRadius,
+                      ),
                       border: Border.all(color: surfaces.lineSoft),
                     ),
                     child: AnimatedOpacity(
                       duration: const Duration(milliseconds: 180),
                       curve: Curves.easeOutCubic,
                       opacity: _expanded ? 1 : 0,
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(
-                          maxHeight: _expandedLogMaxHeight,
+                      child: SizedBox(
+                        key: ValueKey<String>(
+                          'timeline-shell-log-viewport-${widget.partId}',
                         ),
-                        child: SingleChildScrollView(
-                          controller: _logScrollController,
-                          padding: _timelineShellBodyPadding,
-                          child: SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: Text.rich(
-                              TextSpan(
-                                style: monoStyle,
-                                children: _buildSearchHighlightedTextSpans(
-                                  text: output,
-                                  style: monoStyle,
-                                  terms: widget.searchTerms,
-                                  highlightColor: _searchTextHighlightColor(
-                                    context,
-                                    active: widget.searchActive,
-                                    code: true,
+                        height: _expandedLogViewportHeight,
+                        child: Stack(
+                          children: <Widget>[
+                            Positioned.fill(
+                              child: SingleChildScrollView(
+                                key: ValueKey<String>(
+                                  'timeline-shell-log-scroll-${widget.partId}',
+                                ),
+                                controller: _logScrollController,
+                                padding: _timelineShellBodyPadding(
+                                  widget.compact,
+                                ),
+                                child: SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: SelectionArea(
+                                    key: ValueKey<String>(
+                                      'timeline-shell-output-selection-${widget.partId}',
+                                    ),
+                                    child: Text.rich(
+                                      TextSpan(
+                                        style: monoStyle,
+                                        children:
+                                            _buildSearchHighlightedTextSpans(
+                                              text: output,
+                                              style: monoStyle,
+                                              terms: widget.searchTerms,
+                                              highlightColor:
+                                                  _searchTextHighlightColor(
+                                                    context,
+                                                    active: widget.searchActive,
+                                                    code: true,
+                                                  ),
+                                            ),
+                                      ),
+                                      key: ValueKey<String>(
+                                        'timeline-shell-body-${widget.partId}',
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),
-                              key: ValueKey<String>(
-                                'timeline-shell-body-${widget.partId}',
+                            ),
+                            IgnorePointer(
+                              child: AnimatedOpacity(
+                                duration: const Duration(milliseconds: 150),
+                                curve: Curves.easeOutCubic,
+                                opacity: _logScrolledPastTop ? 1 : 0,
+                                child: Align(
+                                  alignment: Alignment.topCenter,
+                                  child: Container(
+                                    key: ValueKey<String>(
+                                      'timeline-shell-log-top-fade-${widget.partId}',
+                                    ),
+                                    height: _expandedLogFadeHeight,
+                                    decoration: BoxDecoration(
+                                      borderRadius: const BorderRadius.vertical(
+                                        top: Radius.circular(
+                                          _workspaceInnerRadius,
+                                        ),
+                                      ),
+                                      gradient: LinearGradient(
+                                        begin: Alignment.topCenter,
+                                        end: Alignment.bottomCenter,
+                                        colors: <Color>[
+                                          surfaces.panel,
+                                          surfaces.panel.withValues(alpha: 0),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
+                          ],
                         ),
                       ),
                     ),
@@ -22855,25 +25433,22 @@ const EdgeInsets _timelineExpandableHeaderPadding = EdgeInsets.symmetric(
 );
 
 const EdgeInsets _timelineExpandableBodyMargin = EdgeInsets.only(
-  top: AppSpacing.xs,
+  top: _workspaceRowGap,
 );
 
 const EdgeInsets _timelineExpandableBodyPadding = EdgeInsets.fromLTRB(
-  AppSpacing.sm,
-  AppSpacing.md,
-  AppSpacing.sm,
-  AppSpacing.md,
+  _workspaceCardGap,
+  _workspaceCardGap,
+  _workspaceCardGap,
+  _workspaceCardGap,
 );
 
-const EdgeInsets _timelineShellBodyPadding = EdgeInsets.fromLTRB(
-  AppSpacing.sm,
-  AppSpacing.md,
-  56,
-  AppSpacing.md,
-);
+EdgeInsets _timelineShellBodyPadding(bool compact) {
+  return EdgeInsets.all(compact ? AppSpacing.sm : _workspaceCardGap);
+}
 
 const EdgeInsets _timelineExploredContextDetailPadding = EdgeInsets.only(
-  top: AppSpacing.xs,
+  top: AppSpacing.xxs,
 );
 
 class _ShimmeringRichText extends StatefulWidget {
@@ -22945,6 +25520,7 @@ class _ShimmeringRichTextState extends State<_ShimmeringRichText>
       animation: _controller,
       child: child,
       builder: (context, child) {
+        final highlightColor = _textShimmerHighlightColor(context, widget.text);
         return ShaderMask(
           blendMode: BlendMode.srcATop,
           shaderCallback: (bounds) {
@@ -22957,6 +25533,7 @@ class _ShimmeringRichTextState extends State<_ShimmeringRichText>
             return _shimmerHighlightGradient(
               shimmerBounds,
               _controller.value,
+              highlightColor: highlightColor,
             ).createShader(shimmerBounds);
           },
           child: child,
@@ -23004,6 +25581,70 @@ LinearGradient _shimmerHighlightGradient(
   );
 }
 
+Color _textShimmerHighlightColor(BuildContext context, InlineSpan text) {
+  final theme = Theme.of(context);
+  final surfaces = theme.extension<AppSurfaces>()!;
+  final textColor =
+      _firstInlineSpanTextColor(text) ??
+      DefaultTextStyle.of(context).style.color ??
+      theme.colorScheme.onSurface;
+  final textBrightness = ThemeData.estimateBrightnessForColor(textColor);
+  if (textBrightness == Brightness.dark) {
+    return _highestContrastColor(textColor, <Color>[
+      Colors.white,
+      Color.lerp(textColor, Colors.white, 0.82)!,
+      theme.colorScheme.primary,
+      surfaces.accentSoft,
+    ]);
+  }
+  return _highestContrastColor(textColor, <Color>[
+    theme.colorScheme.primary,
+    surfaces.accentSoft,
+    theme.colorScheme.secondary,
+    Color.lerp(textColor, surfaces.background, 0.58)!,
+  ]);
+}
+
+Color? _firstInlineSpanTextColor(InlineSpan span) {
+  if (span is! TextSpan) {
+    return null;
+  }
+  final color = span.style?.color;
+  if (color != null) {
+    return color;
+  }
+  final children = span.children;
+  if (children == null) {
+    return null;
+  }
+  for (final child in children) {
+    final childColor = _firstInlineSpanTextColor(child);
+    if (childColor != null) {
+      return childColor;
+    }
+  }
+  return null;
+}
+
+Color _highestContrastColor(Color base, Iterable<Color> candidates) {
+  var selected = candidates.first;
+  var selectedContrast = _contrastRatio(base, selected);
+  for (final candidate in candidates.skip(1)) {
+    final contrast = _contrastRatio(base, candidate);
+    if (contrast > selectedContrast) {
+      selected = candidate;
+      selectedContrast = contrast;
+    }
+  }
+  return selected;
+}
+
+double _contrastRatio(Color a, Color b) {
+  final lighter = math.max(a.computeLuminance(), b.computeLuminance());
+  final darker = math.min(a.computeLuminance(), b.computeLuminance());
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
 double _shimmerHighlightWidth(double width) {
   return (width * 0.14).clamp(28.0, 64.0);
 }
@@ -23016,7 +25657,7 @@ LinearGradient _shimmerSurfaceGradient(
   Color highlightColor = Colors.white,
 }) {
   final width = bounds.width <= 0 ? 1.0 : bounds.width;
-  final bandWidth = (width * 0.58).clamp(96.0, 240.0);
+  final bandWidth = (width * 0.82).clamp(120.0, 360.0);
   final start = ui.lerpDouble(-bandWidth, width, progress) ?? -bandWidth;
   final end = start + bandWidth;
   final safeWidth = width <= 0 ? 1.0 : width;
@@ -23033,15 +25674,53 @@ LinearGradient _shimmerSurfaceGradient(
   );
 
   return LinearGradient(
-    begin: Alignment.centerLeft,
-    end: Alignment.centerRight,
+    begin: const Alignment(-1, -0.35),
+    end: const Alignment(1, 0.35),
     colors: <Color>[
       Colors.transparent,
-      highlightColor.withValues(alpha: 0.04),
-      highlightColor.withValues(alpha: 0.1),
-      highlightColor.withValues(alpha: 0.28),
-      highlightColor.withValues(alpha: 0.1),
-      highlightColor.withValues(alpha: 0.04),
+      highlightColor.withValues(alpha: 0.025),
+      highlightColor.withValues(alpha: 0.06),
+      highlightColor.withValues(alpha: 0.16),
+      highlightColor.withValues(alpha: 0.06),
+      highlightColor.withValues(alpha: 0.025),
+      Colors.transparent,
+    ],
+    stops: <double>[0, left, innerLeft, center, innerRight, right, 1],
+  );
+}
+
+LinearGradient _shimmerBoxLineGradient(
+  Rect bounds,
+  double progress, {
+  Color highlightColor = Colors.white,
+}) {
+  final width = bounds.width <= 0 ? 1.0 : bounds.width;
+  final bandWidth = (width * 0.62).clamp(64.0, 180.0);
+  final start = ui.lerpDouble(-bandWidth, width, progress) ?? -bandWidth;
+  final end = start + bandWidth;
+  final safeWidth = width <= 0 ? 1.0 : width;
+  final left = (start / safeWidth).clamp(0.0, 1.0);
+  final right = (end / safeWidth).clamp(0.0, 1.0);
+  final center = ((start + end) / 2 / safeWidth).clamp(0.0, 1.0);
+  final innerLeft = (ui.lerpDouble(left, center, 0.5) ?? center).clamp(
+    0.0,
+    1.0,
+  );
+  final innerRight = (ui.lerpDouble(center, right, 0.5) ?? center).clamp(
+    0.0,
+    1.0,
+  );
+
+  return LinearGradient(
+    begin: const Alignment(-1, -0.2),
+    end: const Alignment(1, 0.2),
+    colors: <Color>[
+      Colors.transparent,
+      highlightColor.withValues(alpha: 0.018),
+      highlightColor.withValues(alpha: 0.05),
+      highlightColor.withValues(alpha: 0.18),
+      highlightColor.withValues(alpha: 0.05),
+      highlightColor.withValues(alpha: 0.018),
       Colors.transparent,
     ],
     stops: <double>[0, left, innerLeft, center, innerRight, right, 1],
@@ -23071,8 +25750,8 @@ class _ShimmerBoxState extends State<_ShimmerBox>
     vsync: this,
     duration: Duration(
       milliseconds: switch (widget.style) {
-        _ShimmerBoxStyle.line => 3000,
-        _ShimmerBoxStyle.surface => 1800,
+        _ShimmerBoxStyle.line => 2600,
+        _ShimmerBoxStyle.surface => 2200,
       },
     ),
   )..repeat();
@@ -23086,6 +25765,26 @@ class _ShimmerBoxState extends State<_ShimmerBox>
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final baseColor = Color.alphaBlend(
+      surfaces.lineSoft.withValues(
+        alpha: switch (widget.style) {
+          _ShimmerBoxStyle.line => isDark ? 0.34 : 0.16,
+          _ShimmerBoxStyle.surface => isDark ? 0.22 : 0.14,
+        },
+      ),
+      switch (widget.style) {
+        _ShimmerBoxStyle.line => surfaces.panelMuted,
+        _ShimmerBoxStyle.surface => surfaces.panelEmphasis,
+      },
+    );
+    final border = switch (widget.style) {
+      _ShimmerBoxStyle.line => null,
+      _ShimmerBoxStyle.surface => Border.all(
+        color: surfaces.lineSoft.withValues(alpha: isDark ? 0.26 : 0.34),
+      ),
+    };
     return LayoutBuilder(
       builder: (context, constraints) {
         final maxWidth = constraints.maxWidth.isFinite
@@ -23095,50 +25794,54 @@ class _ShimmerBoxState extends State<_ShimmerBox>
         return SizedBox(
           width: width,
           height: widget.height,
-          child: Stack(
-            fit: StackFit.expand,
-            children: <Widget>[
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  color: surfaces.panelRaised,
-                  borderRadius: BorderRadius.circular(widget.borderRadius),
-                ),
-              ),
-              AnimatedBuilder(
-                animation: _controller,
-                child: DecoratedBox(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(widget.borderRadius),
+            child: Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                DecoratedBox(
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: baseColor,
                     borderRadius: BorderRadius.circular(widget.borderRadius),
+                    border: border,
                   ),
                 ),
-                builder: (context, shimmerChild) {
-                  return ShaderMask(
-                    blendMode: BlendMode.srcIn,
-                    shaderCallback: (bounds) {
-                      final shimmerBounds = Rect.fromLTWH(
-                        0,
-                        0,
-                        bounds.width <= 0 ? 1 : bounds.width,
-                        bounds.height <= 0 ? 1 : bounds.height,
-                      );
-                      final gradient = switch (widget.style) {
-                        _ShimmerBoxStyle.line => _shimmerHighlightGradient(
-                          shimmerBounds,
-                          _controller.value,
-                        ),
-                        _ShimmerBoxStyle.surface => _shimmerSurfaceGradient(
-                          shimmerBounds,
-                          _controller.value,
-                        ),
-                      };
-                      return gradient.createShader(shimmerBounds);
-                    },
-                    child: shimmerChild,
-                  );
-                },
-              ),
-            ],
+                AnimatedBuilder(
+                  animation: _controller,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(widget.borderRadius),
+                    ),
+                  ),
+                  builder: (context, shimmerChild) {
+                    return ShaderMask(
+                      blendMode: BlendMode.srcIn,
+                      shaderCallback: (bounds) {
+                        final shimmerBounds = Rect.fromLTWH(
+                          0,
+                          0,
+                          bounds.width <= 0 ? 1 : bounds.width,
+                          bounds.height <= 0 ? 1 : bounds.height,
+                        );
+                        final gradient = switch (widget.style) {
+                          _ShimmerBoxStyle.line => _shimmerBoxLineGradient(
+                            shimmerBounds,
+                            _controller.value,
+                          ),
+                          _ShimmerBoxStyle.surface => _shimmerSurfaceGradient(
+                            shimmerBounds,
+                            _controller.value,
+                          ),
+                        };
+                        return gradient.createShader(shimmerBounds);
+                      },
+                      child: shimmerChild,
+                    );
+                  },
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -23718,6 +26421,9 @@ class _StreamingTextPart extends StatefulWidget {
 class _StreamingTextPartState extends State<_StreamingTextPart> {
   static const Duration _revealStep = Duration(milliseconds: 55);
   static const Duration _fadeDuration = Duration(milliseconds: 220);
+  static const int _maxAnimatedBacklogChunks = 8;
+  static const int _maxAnimatedAppendLength = 80;
+  static const int _maxAnimatedAppendedLineBreaks = 1;
 
   late _StreamingWordSequence _sequence;
   late int _visibleChunkCount;
@@ -23732,6 +26438,14 @@ class _StreamingTextPartState extends State<_StreamingTextPart> {
     if (widget.animate &&
         widget.text.trim().isNotEmpty &&
         _sequence.chunks.isNotEmpty) {
+      if (_shouldCatchUpWithoutFade(
+        appendedText: widget.text,
+        chunkBacklog: _sequence.chunks.length,
+      )) {
+        _visibleChunkCount = _sequence.chunks.length;
+        _revealingChunkIndex = null;
+        return;
+      }
       _visibleChunkCount = 1;
       _revealingChunkIndex = 0;
       _animationEpoch = 1;
@@ -23757,9 +26471,22 @@ class _StreamingTextPartState extends State<_StreamingTextPart> {
       return;
     }
 
+    final appendedText = oldWidget.text.isEmpty
+        ? widget.text
+        : widget.text.substring(oldWidget.text.length);
     _sequence = nextSequence;
     if (_visibleChunkCount > _sequence.chunks.length) {
       _visibleChunkCount = _sequence.chunks.length;
+    }
+    final chunkBacklog = _sequence.chunks.length - _visibleChunkCount;
+    if (_shouldCatchUpWithoutFade(
+      appendedText: appendedText,
+      chunkBacklog: chunkBacklog,
+    )) {
+      _cancelRevealTimer();
+      _visibleChunkCount = _sequence.chunks.length;
+      _revealingChunkIndex = null;
+      return;
     }
     if (_visibleChunkCount < _sequence.chunks.length) {
       _revealNextChunk(immediate: true);
@@ -23809,6 +26536,25 @@ class _StreamingTextPartState extends State<_StreamingTextPart> {
     _scheduleReveal();
   }
 
+  bool _shouldCatchUpWithoutFade({
+    required String appendedText,
+    required int chunkBacklog,
+  }) {
+    if (chunkBacklog <= 0) {
+      return false;
+    }
+    if (chunkBacklog > _maxAnimatedBacklogChunks) {
+      return true;
+    }
+    if (appendedText.length > _maxAnimatedAppendLength) {
+      return true;
+    }
+    if (_lineBreakCount(appendedText) > _maxAnimatedAppendedLineBreaks) {
+      return true;
+    }
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!widget.animate || widget.text.trim().isEmpty) {
@@ -23824,9 +26570,6 @@ class _StreamingTextPartState extends State<_StreamingTextPart> {
     final searchHighlightColor = _searchTextHighlightColor(
       context,
       active: widget.searchActive,
-    );
-    final transparentStyle = (baseStyle ?? const TextStyle()).copyWith(
-      color: Colors.transparent,
     );
     final spans = <InlineSpan>[];
     if (_sequence.leadingWhitespace.isNotEmpty) {
@@ -23898,22 +26641,14 @@ class _StreamingTextPartState extends State<_StreamingTextPart> {
         );
       }
     }
-    for (
-      var index = _visibleChunkCount;
-      index < _sequence.chunks.length;
-      index += 1
-    ) {
-      spans.add(
-        TextSpan(text: _sequence.chunks[index].text, style: transparentStyle),
-      );
-    }
-
     return Text.rich(
       TextSpan(style: baseStyle, children: spans),
       key: ValueKey<String>('streaming-text-${widget.partId}'),
     );
   }
 }
+
+int _lineBreakCount(String value) => '\n'.allMatches(value).length;
 
 class _StreamingWordSequence {
   const _StreamingWordSequence({
@@ -24073,19 +26808,21 @@ class _ComposerIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
     final enabled = onTap != null || busy;
+    final accent = theme.colorScheme.primary;
     final color = filled
         ? enabled
-              ? Theme.of(context).colorScheme.primary
+              ? accent
               : surfaces.panelRaised
         : surfaces.panelRaised;
     final foreground = filled
         ? enabled
-              ? Theme.of(context).colorScheme.onPrimary
+              ? theme.colorScheme.onPrimary
               : surfaces.muted
         : enabled
-        ? Theme.of(context).colorScheme.onSurface
+        ? theme.colorScheme.onSurface
         : surfaces.muted;
     return InkWell(
       onTap: onTap,
@@ -24094,11 +26831,28 @@ class _ComposerIconButton extends StatelessWidget {
       child: Container(
         width: compact ? 36 : 40,
         height: compact ? 36 : 40,
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(compact ? 10 : 12),
-          border: Border.all(color: filled ? color : surfaces.lineSoft),
-        ),
+        decoration: filled
+            ? BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(compact ? 10 : 12),
+                border: Border.all(color: color),
+                boxShadow: <BoxShadow>[
+                  BoxShadow(
+                    color: theme.colorScheme.shadow.withValues(
+                      alpha: theme.brightness == Brightness.dark ? 0.16 : 0.04,
+                    ),
+                    blurRadius: 16,
+                    spreadRadius: -12,
+                    offset: const Offset(0, 7),
+                  ),
+                ],
+              )
+            : appSoftCardDecoration(
+                context,
+                radius: compact ? 10 : 12,
+                muted: !enabled,
+                emphasized: enabled,
+              ),
         child: Center(
           child: busy
               ? SizedBox(
@@ -24145,10 +26899,11 @@ class _ComposerQueuedPromptDock extends StatelessWidget {
     return Container(
       key: const ValueKey<String>('composer-queued-dock'),
       padding: EdgeInsets.all(compact ? AppSpacing.sm : AppSpacing.md),
-      decoration: BoxDecoration(
-        color: surfaces.panelMuted,
-        borderRadius: BorderRadius.circular(compact ? 14 : 18),
-        border: Border.all(color: surfaces.lineSoft),
+      decoration: appSoftCardDecoration(
+        context,
+        radius: compact ? 14 : 18,
+        muted: true,
+        emphasized: true,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -24247,16 +27002,12 @@ class _ComposerQueuedPromptRow extends StatelessWidget {
     return Container(
       key: ValueKey<String>('composer-queued-item-${queuedPrompt.id}'),
       padding: EdgeInsets.all(compact ? AppSpacing.sm : AppSpacing.md),
-      decoration: BoxDecoration(
-        color: failed
-            ? colorScheme.error.withValues(alpha: 0.08)
-            : surfaces.panel,
-        borderRadius: BorderRadius.circular(compact ? 12 : 16),
-        border: Border.all(
-          color: failed
-              ? colorScheme.error.withValues(alpha: 0.4)
-              : surfaces.lineSoft,
-        ),
+      decoration: appSoftCardDecoration(
+        context,
+        radius: compact ? 12 : 16,
+        tone: failed ? AppSurfaceTone.danger : AppSurfaceTone.neutral,
+        muted: !failed,
+        selected: failed,
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -24377,66 +27128,62 @@ class _ComposerSubmitModeSheet extends StatelessWidget {
           AppSpacing.md,
           AppSpacing.lg,
         ),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: surfaces.panel,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: surfaces.lineSoft),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.lg),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  context.wp('Send this message'),
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+        child: AppGlassPanel(
+          radius: AppSpacing.dialogRadius,
+          blur: 24,
+          backgroundOpacity: theme.brightness == Brightness.dark ? 0.82 : 0.9,
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                context.wp('Send this message'),
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
                 ),
-                const SizedBox(height: AppSpacing.xxs),
-                Text(
-                  context.wp(
-                    'Default while busy: {mode}',
-                    args: <String, Object?>{'mode': defaultLabel},
-                  ),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: surfaces.muted,
-                  ),
+              ),
+              const SizedBox(height: AppSpacing.xxs),
+              Text(
+                context.wp(
+                  'Default while busy: {mode}',
+                  args: <String, Object?>{'mode': defaultLabel},
                 ),
-                const SizedBox(height: AppSpacing.md),
-                _ComposerSubmitModeTile(
-                  key: const ValueKey<String>('composer-submit-mode-queue'),
-                  title: context.wp('Queue'),
-                  subtitle: busy
-                      ? context.wp(
-                          'Keep this follow-up waiting and send it automatically when the current run finishes.',
-                        )
-                      : context.wp(
-                          'Send normally now, and keep this mode queued by default when the session is already busy.',
-                        ),
-                  icon: Icons.schedule_send_rounded,
-                  onTap: () => Navigator.of(
-                    context,
-                  ).pop(WorkspacePromptDispatchMode.queue),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: surfaces.muted,
                 ),
-                const SizedBox(height: AppSpacing.sm),
-                _ComposerSubmitModeTile(
-                  key: const ValueKey<String>('composer-submit-mode-steer'),
-                  title: context.wp('Steer'),
-                  subtitle: busy
-                      ? context.wp(
-                          'Send immediately to the running agent instead of waiting in the queue.',
-                        )
-                      : context.wp('Send immediately without queueing.'),
-                  icon: Icons.arrow_upward_rounded,
-                  onTap: () => Navigator.of(
-                    context,
-                  ).pop(WorkspacePromptDispatchMode.steer),
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              _ComposerSubmitModeTile(
+                key: const ValueKey<String>('composer-submit-mode-queue'),
+                title: context.wp('Queue'),
+                subtitle: busy
+                    ? context.wp(
+                        'Keep this follow-up waiting and send it automatically when the current run finishes.',
+                      )
+                    : context.wp(
+                        'Send normally now, and keep this mode queued by default when the session is already busy.',
+                      ),
+                icon: Icons.schedule_send_rounded,
+                onTap: () => Navigator.of(
+                  context,
+                ).pop(WorkspacePromptDispatchMode.queue),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              _ComposerSubmitModeTile(
+                key: const ValueKey<String>('composer-submit-mode-steer'),
+                title: context.wp('Steer'),
+                subtitle: busy
+                    ? context.wp(
+                        'Send immediately to the running agent instead of waiting in the queue.',
+                      )
+                    : context.wp('Send immediately without queueing.'),
+                icon: Icons.arrow_upward_rounded,
+                onTap: () => Navigator.of(
+                  context,
+                ).pop(WorkspacePromptDispatchMode.steer),
+              ),
+            ],
           ),
         ),
       ),
@@ -24469,10 +27216,11 @@ class _ComposerSubmitModeTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(18),
         child: Ink(
           padding: const EdgeInsets.all(AppSpacing.md),
-          decoration: BoxDecoration(
-            color: surfaces.panelMuted,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: surfaces.lineSoft),
+          decoration: appSoftCardDecoration(
+            context,
+            radius: 18,
+            muted: true,
+            emphasized: true,
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -24540,10 +27288,10 @@ class _ComposerSelectionPill extends StatelessWidget {
           horizontal: compact ? AppSpacing.xs : AppSpacing.sm,
           vertical: compact ? 6 : AppSpacing.xs,
         ),
-        decoration: BoxDecoration(
-          color: surfaces.panelRaised,
-          borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
-          border: Border.all(color: surfaces.lineSoft),
+        decoration: appSoftCardDecoration(
+          context,
+          radius: AppSpacing.pillRadius,
+          muted: true,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -24562,7 +27310,7 @@ class _ComposerSelectionPill extends StatelessWidget {
                         ),
               ),
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: AppSpacing.xxs),
             Icon(
               Icons.keyboard_arrow_down_rounded,
               size: 16,
@@ -24779,7 +27527,6 @@ class _SelectionSheetFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final mediaQuery = MediaQuery.of(context);
     return SafeArea(
       child: Padding(
@@ -24793,14 +27540,15 @@ class _SelectionSheetFrame extends StatelessWidget {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 560, maxHeight: 520),
             child: Material(
-              color: surfaces.panel,
-              borderRadius: BorderRadius.circular(24),
-              child: Container(
+              color: Colors.transparent,
+              child: AppGlassPanel(
+                radius: AppSpacing.dialogRadius,
+                blur: 24,
+                backgroundOpacity:
+                    Theme.of(context).brightness == Brightness.dark
+                    ? 0.82
+                    : 0.9,
                 padding: const EdgeInsets.all(AppSpacing.md),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: surfaces.lineSoft),
-                ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -24854,16 +27602,12 @@ class _SelectionTile extends StatelessWidget {
           horizontal: AppSpacing.md,
           vertical: AppSpacing.sm,
         ),
-        decoration: BoxDecoration(
-          color: selected
-              ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.14)
-              : surfaces.panelRaised,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: selected
-                ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.4)
-                : surfaces.lineSoft,
-          ),
+        decoration: appSoftCardDecoration(
+          context,
+          radius: 18,
+          tone: AppSurfaceTone.accent,
+          muted: !selected,
+          selected: selected,
         ),
         child: Row(
           children: <Widget>[
@@ -25079,7 +27823,7 @@ bool _activityPartShimmerActive(
 }) {
   if (part.type == 'tool') {
     final status = _toolStateStatus(part);
-    return status == 'pending' || status == 'running';
+    return _toolStateIsActive(status);
   }
 
   return switch (part.type) {
@@ -25111,6 +27855,9 @@ String _partText(ChatPart part) {
 
   final lines = <String>[];
   for (final entry in part.metadata.entries) {
+    if (_isStructuralPartMetadataKey(entry.key)) {
+      continue;
+    }
     final value = entry.value;
     if (value == null) {
       continue;
@@ -25120,6 +27867,21 @@ String _partText(ChatPart part) {
     }
   }
   return lines.join('\n');
+}
+
+bool _isStructuralPartMetadataKey(String key) {
+  return switch (key.trim().toLowerCase()) {
+    'id' ||
+    'messageid' ||
+    'sessionid' ||
+    'type' ||
+    'tool' ||
+    'filename' ||
+    'url' ||
+    'mime' ||
+    '_streaming' => true,
+    _ => false,
+  };
 }
 
 String _partDisplayText(BuildContext context, ChatPart part) {
@@ -25429,7 +28191,7 @@ bool _shouldRenderTimelinePart(
   }
   if (_isQuestionToolPart(part)) {
     final status = _toolStateStatus(part);
-    if (status == 'pending' || status == 'running') {
+    if (_toolStateIsActive(status)) {
       return false;
     }
   }
@@ -25572,7 +28334,7 @@ bool _isPendingContextToolPart(ChatPart part) {
     return false;
   }
   final status = _toolStateStatus(part);
-  return status == 'pending' || status == 'running';
+  return _toolStateIsActive(status);
 }
 
 String? _toolStateStatus(ChatPart part) {
@@ -25580,6 +28342,14 @@ String? _toolStateStatus(ChatPart part) {
     'state',
     'status',
   ])?.toString().trim().toLowerCase();
+}
+
+bool _toolStateIsActive(String? status) {
+  return status == 'pending' || _toolStateIsRunning(status);
+}
+
+bool _toolStateIsRunning(String? status) {
+  return status == 'running' || status == 'in_progress';
 }
 
 _ContextToolSummary _contextToolSummary(List<ChatPart> parts) {
@@ -25924,11 +28694,21 @@ String _shellToolCommand(ChatPart part) {
 }
 
 String _shellToolOutput(ChatPart part) {
-  return _stringifyShellOutput(
-    _nestedValue(part.metadata, const <String>['state', 'output']) ??
-        _nestedValue(part.metadata, const <String>['output']) ??
-        part.text,
-  );
+  for (final value in <Object?>[
+    _nestedValue(part.metadata, const <String>['state', 'output']),
+    _nestedValue(part.metadata, const <String>['state', 'metadata', 'output']),
+    _nestedValue(part.metadata, const <String>['metadata', 'output']),
+    _nestedValue(part.metadata, const <String>['output']),
+    _nestedValue(part.metadata, const <String>['state', 'metadata', 'stdout']),
+    _nestedValue(part.metadata, const <String>['metadata', 'stdout']),
+    part.text,
+  ]) {
+    final output = _stringifyShellOutput(value);
+    if (output.trim().isNotEmpty) {
+      return output;
+    }
+  }
+  return '';
 }
 
 String _stringifyShellOutput(Object? value) {
@@ -26177,6 +28957,11 @@ Color _sessionContextUsageColor(
     return surfaces.warning;
   }
   return theme.colorScheme.primary;
+}
+
+Duration _contextUsageAnimationDuration(double delta) {
+  final normalized = delta.clamp(0.0, 1.0);
+  return Duration(milliseconds: (240 + (normalized * 560)).round());
 }
 
 class _LruCache<K, V> {

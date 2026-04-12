@@ -16,6 +16,7 @@ import '../../core/persistence/stale_cache_store.dart';
 import '../../core/spec/capability_registry.dart';
 import '../../core/spec/probe_snapshot.dart';
 import '../../core/spec/raw_json_document.dart';
+import '../../design_system/app_modal.dart';
 import '../../design_system/app_spacing.dart';
 import '../../design_system/app_theme.dart';
 import '../../i18n/locale_controller.dart';
@@ -337,7 +338,7 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
   }
 
   Future<void> _openCacheSettings() async {
-    await showModalBottomSheet<void>(
+    await showAppModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       builder: (context) => CacheSettingsSheet(
@@ -417,7 +418,10 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
               child: Align(
                 alignment: Alignment.topCenter,
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(AppSpacing.lg),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.md,
+                    vertical: AppSpacing.sm,
+                  ),
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(
                       maxWidth: _contentMaxWidth,
@@ -434,7 +438,7 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: <Widget>[
                               Expanded(child: primary),
-                              const SizedBox(width: AppSpacing.lg),
+                              const SizedBox(width: AppSpacing.md),
                               SizedBox(width: _sideColumnWidth, child: side),
                             ],
                           );
@@ -443,7 +447,7 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: <Widget>[
                             primary,
-                            const SizedBox(height: AppSpacing.lg),
+                            const SizedBox(height: AppSpacing.md),
                             side,
                           ],
                         );
@@ -464,9 +468,9 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         _buildHeader(context),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AppSpacing.md),
         _buildHeroCard(context),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AppSpacing.md),
         _buildProbeResultCard(context),
       ],
     );
@@ -477,10 +481,10 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         _buildSavedProfilesCard(context),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AppSpacing.md),
         _buildRecentConnectionsCard(context),
         if (widget.flavor.enablesFixtureTools) ...<Widget>[
-          const SizedBox(height: AppSpacing.lg),
+          const SizedBox(height: AppSpacing.md),
           FutureBuilder<_FixtureDebugData>(
             future: _fixtureData,
             builder: (context, snapshot) {
@@ -491,7 +495,7 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
                     context,
                   )!.fixtureDiagnosticsSubtitle,
                   child: const Padding(
-                    padding: EdgeInsets.all(AppSpacing.lg),
+                    padding: EdgeInsets.all(AppSpacing.md),
                     child: Center(child: CircularProgressIndicator()),
                   ),
                 );
@@ -595,7 +599,7 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
+        padding: const EdgeInsets.all(AppSpacing.md),
         child: DecoratedBox(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
@@ -611,7 +615,7 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
             border: Border.all(color: surfaces.line),
           ),
           child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.lg),
+            padding: const EdgeInsets.all(AppSpacing.md),
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final stacked = constraints.maxWidth < 780;
@@ -680,7 +684,7 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
                       intro,
-                      const SizedBox(height: AppSpacing.lg),
+                      const SizedBox(height: AppSpacing.md),
                       form,
                     ],
                   );
@@ -689,7 +693,7 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Expanded(child: intro),
-                    const SizedBox(width: AppSpacing.lg),
+                    const SizedBox(width: AppSpacing.md),
                     Expanded(child: form),
                   ],
                 );
@@ -723,7 +727,7 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
               hintText: l10n.connectionProfileLabelHint,
             ),
           ),
-          const SizedBox(height: AppSpacing.md),
+          const SizedBox(height: AppSpacing.sm),
           TextFormField(
             controller: _baseUrlController,
             textInputAction: TextInputAction.next,
@@ -735,7 +739,7 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
             ),
             validator: _validateAddress,
           ),
-          const SizedBox(height: AppSpacing.md),
+          const SizedBox(height: AppSpacing.sm),
           TextFormField(
             controller: _usernameController,
             textInputAction: TextInputAction.next,
@@ -745,7 +749,7 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
               hintText: l10n.connectionUsernameHint,
             ),
           ),
-          const SizedBox(height: AppSpacing.md),
+          const SizedBox(height: AppSpacing.sm),
           TextFormField(
             controller: _passwordController,
             textInputAction: TextInputAction.done,
@@ -769,7 +773,7 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
               _runProbe();
             },
           ),
-          const SizedBox(height: AppSpacing.lg),
+          const SizedBox(height: AppSpacing.md),
           Wrap(
             spacing: AppSpacing.sm,
             runSpacing: AppSpacing.sm,
@@ -820,7 +824,7 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
         child: _latestProbe == null
             ? Padding(
                 key: const ValueKey<String>('empty-probe'),
-                padding: const EdgeInsets.all(AppSpacing.lg),
+                padding: const EdgeInsets.all(AppSpacing.md),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
@@ -840,7 +844,7 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
               )
             : Padding(
                 key: ValueKey<String>(_probeSignature),
-                padding: const EdgeInsets.all(AppSpacing.lg),
+                padding: const EdgeInsets.all(AppSpacing.md),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
@@ -888,7 +892,7 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: AppSpacing.lg),
+                    const SizedBox(height: AppSpacing.md),
                     Wrap(
                       spacing: AppSpacing.md,
                       runSpacing: AppSpacing.md,
@@ -916,7 +920,7 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
                     if (_latestProbe!
                         .missingCapabilities
                         .isNotEmpty) ...<Widget>[
-                      const SizedBox(height: AppSpacing.lg),
+                      const SizedBox(height: AppSpacing.md),
                       Text(
                         l10n.connectionMissingCapabilitiesLabel,
                         style: theme.textTheme.titleMedium,
@@ -938,7 +942,7 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
                     if (_latestProbe!
                         .discoveredExperimentalPaths
                         .isNotEmpty) ...<Widget>[
-                      const SizedBox(height: AppSpacing.lg),
+                      const SizedBox(height: AppSpacing.md),
                       Text(
                         l10n.connectionExperimentalPathsLabel,
                         style: theme.textTheme.titleMedium,
@@ -957,7 +961,7 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
                             .toList(growable: false),
                       ),
                     ],
-                    const SizedBox(height: AppSpacing.lg),
+                    const SizedBox(height: AppSpacing.md),
                     _SectionTitle(label: l10n.connectionEndpointSectionTitle),
                     const SizedBox(height: AppSpacing.sm),
                     Column(
@@ -986,7 +990,7 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
                           )
                           .toList(growable: false),
                     ),
-                    const SizedBox(height: AppSpacing.lg),
+                    const SizedBox(height: AppSpacing.md),
                     _SectionTitle(label: l10n.connectionCapabilitySectionTitle),
                     const SizedBox(height: AppSpacing.sm),
                     Wrap(
@@ -1028,7 +1032,7 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
       title: l10n.savedProfilesTitle,
       subtitle: l10n.savedProfilesSubtitle,
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
+        padding: const EdgeInsets.all(AppSpacing.md),
         child: _savedProfiles.isEmpty
             ? _EmptyPanelState(
                 title: l10n.savedProfilesEmptyTitle,
@@ -1089,7 +1093,7 @@ class _ConnectionHomeScreenState extends State<ConnectionHomeScreen> {
       title: l10n.recentConnectionsTitle,
       subtitle: l10n.recentConnectionsSubtitle,
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
+        padding: const EdgeInsets.all(AppSpacing.md),
         child: _recentConnections.isEmpty
             ? _EmptyPanelState(
                 title: l10n.recentConnectionsEmptyTitle,
@@ -1343,10 +1347,10 @@ class _PanelShell extends StatelessWidget {
         children: <Widget>[
           Padding(
             padding: const EdgeInsets.fromLTRB(
-              AppSpacing.lg,
-              AppSpacing.lg,
-              AppSpacing.lg,
               AppSpacing.md,
+              AppSpacing.md,
+              AppSpacing.md,
+              AppSpacing.sm,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1802,7 +1806,7 @@ class _FixtureDiagnosticsCard extends StatelessWidget {
       title: l10n.fixtureDiagnosticsTitle,
       subtitle: l10n.fixtureDiagnosticsSubtitle,
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
+        padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
@@ -1821,7 +1825,7 @@ class _FixtureDiagnosticsCard extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: AppSpacing.lg),
+            const SizedBox(height: AppSpacing.md),
             _FixtureCapabilityCard(
               title: l10n.fullCapabilityProbe,
               capabilities: data.fullProbe,

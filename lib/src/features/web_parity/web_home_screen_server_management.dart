@@ -1,59 +1,5 @@
 part of 'web_home_screen.dart';
 
-class _ServerPill extends StatelessWidget {
-  const _ServerPill({
-    required this.profile,
-    required this.report,
-    required this.onTap,
-  });
-
-  final ServerProfile? profile;
-  final ServerProbeReport? report;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
-    final color = switch (report?.classification) {
-      ConnectionProbeClassification.ready => surfaces.success,
-      ConnectionProbeClassification.authFailure => Theme.of(
-        context,
-      ).colorScheme.secondary,
-      ConnectionProbeClassification.unsupportedCapabilities => surfaces.warning,
-      ConnectionProbeClassification.specFetchFailure => surfaces.warning,
-      ConnectionProbeClassification.connectivityFailure => surfaces.danger,
-      null => surfaces.muted,
-    };
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.md,
-          vertical: AppSpacing.sm,
-        ),
-        decoration: BoxDecoration(
-          color: surfaces.panelRaised.withValues(alpha: 0.92),
-          borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
-          border: Border.all(color: surfaces.lineSoft),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            Text(profile?.effectiveLabel ?? context.wp('Select Server')),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _ServersSheet extends StatefulWidget {
   const _ServersSheet({required this.controller});
 
@@ -67,11 +13,11 @@ class _ServersSheetState extends State<_ServersSheet> {
   WebParityAppController get controller => widget.controller;
 
   Future<void> _openServerEditor({ServerProfile? profile}) async {
-    final draft = await showModalBottomSheet<ServerProfile>(
+    final draft = await showAppModalBottomSheet<ServerProfile>(
       context: context,
       useSafeArea: true,
       isScrollControlled: true,
-      backgroundColor: Theme.of(context).colorScheme.surface,
+      backgroundColor: Colors.transparent,
       builder: (context) => FractionallySizedBox(
         heightFactor: 0.72,
         child: _ServerEditorSheet(initialProfile: profile),
@@ -95,27 +41,59 @@ class _ServersSheetState extends State<_ServersSheet> {
   }
 
   Future<void> _confirmDelete(ServerProfile profile) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(context.wp('Delete server?')),
-        content: Text(
-          context.wp(
-            'Remove "{label}" from saved servers? This keeps the rest of your home screen intact.',
-            args: <String, Object?>{'label': profile.effectiveLabel},
+      builder: (context) {
+        final theme = Theme.of(context);
+        final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+        return AppDialogFrame(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Material(
+            color: surfaces.panelRaised,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppSpacing.dialogRadius),
+              side: BorderSide(color: surfaces.lineSoft),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    context.wp('Delete server?'),
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    context.wp(
+                      'Remove "{label}" from saved servers? This keeps the rest of your home screen intact.',
+                      args: <String, Object?>{'label': profile.effectiveLabel},
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: <Widget>[
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        child: Text(context.wp('Cancel')),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      FilledButton(
+                        onPressed: () => Navigator.of(context).pop(true),
+                        child: Text(context.wp('Delete')),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
           ),
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text(context.wp('Cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: Text(context.wp('Delete')),
-          ),
-        ],
-      ),
+        );
+      },
     );
     if (confirmed != true) {
       return;
@@ -155,70 +133,135 @@ class _ServersSheetState extends State<_ServersSheet> {
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final compactShell = MediaQuery.sizeOf(context).width < 620;
 
     return AnimatedBuilder(
       animation: controller,
       builder: (context, _) {
         final profiles = controller.profiles;
-        return Padding(
-          padding: const EdgeInsets.all(AppSpacing.lg),
+        return AppGlassPanel(
+          radius: AppSpacing.cardRadius,
+          blur: 12,
+          backgroundOpacity: 0.9,
+          borderOpacity: 0.06,
+          padding: EdgeInsets.all(compactShell ? AppSpacing.sm : AppSpacing.md),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Row(
-                children: <Widget>[
-                  Expanded(
-                    child: Text(
-                      context.wp('See Servers'),
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
+              Center(
+                child: Container(
+                  width: 44,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: surfaces.lineSoft,
+                    borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
                   ),
-                  IconButton(
-                    tooltip: context.wp('Close'),
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close_rounded),
-                  ),
-                  IconButton(
-                    tooltip: context.wp('Refresh all statuses'),
-                    onPressed: profiles.isEmpty ? null : _refreshAll,
-                    icon: const Icon(Icons.refresh_rounded),
-                  ),
-                  const SizedBox(width: AppSpacing.xs),
-                  FilledButton.icon(
-                    key: const ValueKey<String>('servers-sheet-add-button'),
-                    onPressed: _openServerEditor,
-                    icon: const Icon(Icons.add_rounded),
-                    label: Text(context.wp('Add Server')),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                context.wp(
-                  'Choose the active server, edit saved entries, reorder them, and keep connection status visible here.',
                 ),
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
               ),
-              const SizedBox(height: AppSpacing.lg),
+              SizedBox(height: compactShell ? AppSpacing.sm : AppSpacing.md),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final compact = constraints.maxWidth < 620;
+                  final titleBlock = Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        context.wp('See Servers'),
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        context.wp(
+                          'Choose the active server, edit saved entries, reorder them, and keep connection status visible here.',
+                        ),
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
+                      ),
+                    ],
+                  );
+                  final actions = Wrap(
+                    spacing: AppSpacing.sm,
+                    runSpacing: AppSpacing.sm,
+                    alignment: WrapAlignment.end,
+                    children: <Widget>[
+                      OutlinedButton.icon(
+                        onPressed: profiles.isEmpty ? null : _refreshAll,
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: Text(context.wp('Refresh')),
+                      ),
+                      Semantics(
+                        button: true,
+                        identifier: 'servers-sheet-add-button',
+                        onTap: () => _openServerEditor(),
+                        child: FilledButton.icon(
+                          key: const ValueKey<String>(
+                            'servers-sheet-add-button',
+                          ),
+                          onPressed: _openServerEditor,
+                          icon: const Icon(Icons.add_rounded),
+                          label: Text(context.wp('Add Server')),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: context.wp('Close'),
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  );
+                  if (compact) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        titleBlock,
+                        const SizedBox(height: AppSpacing.sm),
+                        actions,
+                      ],
+                    );
+                  }
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Expanded(child: titleBlock),
+                      const SizedBox(width: AppSpacing.sm),
+                      actions,
+                    ],
+                  );
+                },
+              ),
+              SizedBox(height: compactShell ? AppSpacing.sm : AppSpacing.md),
               Expanded(
                 child: profiles.isEmpty
                     ? Center(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: <Widget>[
-                            Icon(
-                              Icons.storage_rounded,
-                              size: 34,
-                              color: surfaces.muted,
+                            Container(
+                              width: 64,
+                              height: 64,
+                              decoration: BoxDecoration(
+                                color: surfaces.panelMuted.withValues(
+                                  alpha: 0.92,
+                                ),
+                                borderRadius: BorderRadius.circular(22),
+                                border: Border.all(color: surfaces.lineSoft),
+                              ),
+                              child: Icon(
+                                Icons.storage_rounded,
+                                size: 28,
+                                color: surfaces.muted,
+                              ),
                             ),
                             const SizedBox(height: AppSpacing.sm),
                             Text(
                               context.wp('No saved servers yet.'),
-                              style: Theme.of(context).textTheme.titleMedium,
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w700),
                             ),
-                            const SizedBox(height: AppSpacing.xs),
+                            const SizedBox(height: AppSpacing.xxs),
                             Text(
                               context.wp(
                                 'Add your first OpenCode server here and it will immediately be ready for project browsing.',
@@ -233,7 +276,7 @@ class _ServersSheetState extends State<_ServersSheet> {
                     : ListView.separated(
                         itemCount: profiles.length,
                         separatorBuilder: (_, _) =>
-                            const SizedBox(height: AppSpacing.sm),
+                            const SizedBox(height: AppSpacing.xs),
                         itemBuilder: (context, index) {
                           final profile = profiles[index];
                           final report = controller.reports[profile.storageKey];
@@ -287,6 +330,8 @@ class _ServerManagementCard extends StatelessWidget {
     required this.onDelete,
     required this.onMoveUp,
     required this.onMoveDown,
+    this.onOpen,
+    this.showInlineActions = true,
     this.keyNamespace = 'servers-sheet',
     this.footer,
     super.key,
@@ -304,39 +349,37 @@ class _ServerManagementCard extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback? onMoveUp;
   final VoidCallback? onMoveDown;
+  final VoidCallback? onOpen;
+  final bool showInlineActions;
   final String keyNamespace;
   final Widget? footer;
 
   @override
   Widget build(BuildContext context) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
     final meta = _serverMetaItems(context, profile, report);
+    final compactCard = MediaQuery.sizeOf(context).width < 620;
 
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onSelect,
-        borderRadius: BorderRadius.circular(AppSpacing.lg),
+        onDoubleTap: onOpen,
+        borderRadius: BorderRadius.circular(8),
         child: Ink(
-          decoration: BoxDecoration(
-            color: selected
-                ? Color.alphaBlend(
-                    Theme.of(
-                      context,
-                    ).colorScheme.primary.withValues(alpha: 0.09),
-                    surfaces.panelRaised,
-                  )
-                : surfaces.panelRaised.withValues(alpha: 0.96),
-            borderRadius: BorderRadius.circular(AppSpacing.lg),
-            border: Border.all(
-              color: selected
-                  ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.5)
-                  : surfaces.lineSoft,
-              width: selected ? 1.5 : 1,
-            ),
+          decoration: appSoftCardDecoration(
+            context,
+            radius: 8,
+            tone: AppSurfaceTone.accent,
+            muted: !selected,
+            selected: selected,
+            emphasized: selected,
           ),
           child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.md),
+            padding: EdgeInsets.all(
+              compactCard ? AppSpacing.sm : AppSpacing.md,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
@@ -357,8 +400,9 @@ class _ServerManagementCard extends StatelessWidget {
                               final compactBadges = constraints.maxWidth < 220;
                               final title = Text(
                                 profile.effectiveLabel,
-                                style: Theme.of(context).textTheme.titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.w700),
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                               );
@@ -371,7 +415,7 @@ class _ServerManagementCard extends StatelessWidget {
                                     _ServerMetaBadge(
                                       icon: Icons.check_circle_rounded,
                                       label: context.wp('Active'),
-                                      tint: Theme.of(context).colorScheme.primary,
+                                      tint: theme.colorScheme.primary,
                                     ),
                                 ],
                               );
@@ -397,8 +441,10 @@ class _ServerManagementCard extends StatelessWidget {
                           const SizedBox(height: AppSpacing.xxs),
                           Text(
                             profile.normalizedBaseUrl,
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(color: surfaces.muted),
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: surfaces.muted,
+                              height: 1.4,
+                            ),
                           ),
                         ],
                       ),
@@ -423,95 +469,75 @@ class _ServerManagementCard extends StatelessWidget {
                   const SizedBox(height: AppSpacing.sm),
                   footer!,
                 ],
-                const SizedBox(height: AppSpacing.sm),
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final compact = constraints.maxWidth < 560;
-                    final actionButtons = <Widget>[
-                      IconButton(
-                        key: ValueKey<String>(
-                          '$keyNamespace-refresh-${profile.id}',
-                        ),
-                        tooltip: context.wp('Refresh status'),
-                        onPressed: isRefreshing ? null : onRefresh,
-                        icon: isRefreshing
-                            ? const SizedBox.square(
-                                dimension: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.refresh_rounded),
-                      ),
-                      IconButton(
-                        key: ValueKey<String>(
-                          '$keyNamespace-move-up-${profile.id}',
-                        ),
-                        tooltip: context.wp('Move up'),
-                        onPressed: onMoveUp,
-                        icon: const Icon(Icons.arrow_upward_rounded),
-                      ),
-                      IconButton(
-                        key: ValueKey<String>(
-                          '$keyNamespace-move-down-${profile.id}',
-                        ),
-                        tooltip: context.wp('Move down'),
-                        onPressed: onMoveDown,
-                        icon: const Icon(Icons.arrow_downward_rounded),
-                      ),
-                      IconButton(
-                        key: ValueKey<String>(
-                          '$keyNamespace-edit-${profile.id}',
-                        ),
-                        tooltip: context.wp('Edit server'),
-                        onPressed: onEdit,
-                        icon: const Icon(Icons.edit_outlined),
-                      ),
-                      IconButton(
-                        key: ValueKey<String>(
-                          '$keyNamespace-delete-${profile.id}',
-                        ),
-                        tooltip: context.wp('Delete server'),
-                        onPressed: onDelete,
-                        icon: const Icon(Icons.delete_outline_rounded),
-                      ),
-                    ];
-                    if (compact) {
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          TextButton.icon(
-                            key: ValueKey<String>(
-                              '$keyNamespace-select-${profile.id}',
-                            ),
-                            onPressed: onSelect,
-                            icon: Icon(
-                              selected
-                                  ? Icons.check_circle_rounded
-                                  : Icons.radio_button_unchecked_rounded,
-                            ),
-                            label: Text(
-                              selected
-                                  ? context.wp('Selected')
-                                  : context.wp('Use This Server'),
-                            ),
+                if (showInlineActions) ...<Widget>[
+                  const SizedBox(height: AppSpacing.sm),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final compact = constraints.maxWidth < 560;
+                      final actionButtons = <Widget>[
+                        _ServerActionIconButton(
+                          key: ValueKey<String>(
+                            '$keyNamespace-refresh-${profile.id}',
                           ),
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: Wrap(
-                              spacing: AppSpacing.xs,
-                              children: actionButtons,
-                            ),
+                          tooltip: context.wp('Refresh status'),
+                          onPressed: isRefreshing ? null : onRefresh,
+                          icon: isRefreshing
+                              ? const SizedBox.square(
+                                  dimension: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.refresh_rounded, size: 18),
+                        ),
+                        _ServerActionIconButton(
+                          key: ValueKey<String>(
+                            '$keyNamespace-move-up-${profile.id}',
                           ),
-                        ],
-                      );
-                    }
-                    return Row(
-                      children: <Widget>[
-                        Expanded(
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: TextButton.icon(
+                          tooltip: context.wp('Move up'),
+                          onPressed: onMoveUp,
+                          icon: const Icon(
+                            Icons.arrow_upward_rounded,
+                            size: 18,
+                          ),
+                        ),
+                        _ServerActionIconButton(
+                          key: ValueKey<String>(
+                            '$keyNamespace-move-down-${profile.id}',
+                          ),
+                          tooltip: context.wp('Move down'),
+                          onPressed: onMoveDown,
+                          icon: const Icon(
+                            Icons.arrow_downward_rounded,
+                            size: 18,
+                          ),
+                        ),
+                        _ServerActionIconButton(
+                          key: ValueKey<String>(
+                            '$keyNamespace-edit-${profile.id}',
+                          ),
+                          tooltip: context.wp('Edit server'),
+                          onPressed: onEdit,
+                          icon: const Icon(Icons.edit_outlined, size: 18),
+                        ),
+                        _ServerActionIconButton(
+                          key: ValueKey<String>(
+                            '$keyNamespace-delete-${profile.id}',
+                          ),
+                          tooltip: context.wp('Delete server'),
+                          onPressed: onDelete,
+                          icon: const Icon(
+                            Icons.delete_outline_rounded,
+                            size: 18,
+                          ),
+                          destructive: true,
+                        ),
+                      ];
+                      if (compact) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            TextButton.icon(
                               key: ValueKey<String>(
                                 '$keyNamespace-select-${profile.id}',
                               ),
@@ -527,13 +553,45 @@ class _ServerManagementCard extends StatelessWidget {
                                     : context.wp('Use This Server'),
                               ),
                             ),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: Wrap(
+                                spacing: AppSpacing.xs,
+                                children: actionButtons,
+                              ),
+                            ),
+                          ],
+                        );
+                      }
+                      return Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: TextButton.icon(
+                                key: ValueKey<String>(
+                                  '$keyNamespace-select-${profile.id}',
+                                ),
+                                onPressed: onSelect,
+                                icon: Icon(
+                                  selected
+                                      ? Icons.check_circle_rounded
+                                      : Icons.radio_button_unchecked_rounded,
+                                ),
+                                label: Text(
+                                  selected
+                                      ? context.wp('Selected')
+                                      : context.wp('Use This Server'),
+                                ),
+                              ),
+                            ),
                           ),
-                        ),
-                        ...actionButtons,
-                      ],
-                    );
-                  },
-                ),
+                          ...actionButtons,
+                        ],
+                      );
+                    },
+                  ),
+                ],
               ],
             ),
           ),
@@ -558,6 +616,10 @@ class _ServerEditorSheetState extends State<_ServerEditorSheet> {
   late final TextEditingController _baseUrlController;
   late final TextEditingController _usernameController;
   late final TextEditingController _passwordController;
+  final FocusNode _labelFocusNode = FocusNode();
+  final FocusNode _urlFocusNode = FocusNode();
+  final FocusNode _usernameFocusNode = FocusNode();
+  final FocusNode _passwordFocusNode = FocusNode();
   bool _showPassword = false;
 
   @override
@@ -578,6 +640,10 @@ class _ServerEditorSheetState extends State<_ServerEditorSheet> {
     _baseUrlController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
+    _labelFocusNode.dispose();
+    _urlFocusNode.dispose();
+    _usernameFocusNode.dispose();
+    _passwordFocusNode.dispose();
     super.dispose();
   }
 
@@ -614,22 +680,40 @@ class _ServerEditorSheetState extends State<_ServerEditorSheet> {
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final editingExisting = widget.initialProfile != null;
-    return Padding(
+    final compactSheet = MediaQuery.sizeOf(context).width < 560;
+    return AppGlassPanel(
+      radius: AppSpacing.cardRadius,
+      blur: 12,
+      backgroundOpacity: 0.9,
+      borderOpacity: 0.06,
       padding: EdgeInsets.only(
-        left: AppSpacing.lg,
-        right: AppSpacing.lg,
-        top: AppSpacing.lg,
-        bottom: AppSpacing.lg + MediaQuery.of(context).viewInsets.bottom,
+        left: compactSheet ? AppSpacing.sm : AppSpacing.md,
+        right: compactSheet ? AppSpacing.sm : AppSpacing.md,
+        top: compactSheet ? AppSpacing.sm : AppSpacing.md,
+        bottom: AppSpacing.md + MediaQuery.of(context).viewInsets.bottom,
       ),
       child: Form(
         key: _formKey,
         child: ListView(
           children: <Widget>[
+            Center(
+              child: Container(
+                width: 44,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: surfaces.lineSoft,
+                  borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
             Text(
               editingExisting
                   ? context.wp('Edit Server')
                   : context.wp('Add Server'),
-              style: Theme.of(context).textTheme.titleLarge,
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: AppSpacing.xs),
             Text(
@@ -640,66 +724,170 @@ class _ServerEditorSheetState extends State<_ServerEditorSheet> {
                 context,
               ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
             ),
-            const SizedBox(height: AppSpacing.lg),
-            TextFormField(
-              key: const ValueKey<String>('servers-editor-label-field'),
-              controller: _labelController,
-              decoration: InputDecoration(
-                labelText: context.wp('Label'),
-                hintText: context.wp('Studio'),
+            SizedBox(height: compactSheet ? AppSpacing.sm : AppSpacing.md),
+            Container(
+              padding: EdgeInsets.all(
+                compactSheet ? AppSpacing.sm : AppSpacing.md,
               ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            TextFormField(
-              key: const ValueKey<String>('servers-editor-url-field'),
-              controller: _baseUrlController,
-              keyboardType: TextInputType.url,
-              decoration: InputDecoration(
-                labelText: context.wp('Server URL'),
-                hintText: context.wp('https://studio.example.com'),
+              decoration: appSoftCardDecoration(
+                context,
+                radius: AppSpacing.panelRadius,
+                muted: true,
+                emphasized: false,
               ),
-              validator: _validateAddress,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            TextFormField(
-              key: const ValueKey<String>('servers-editor-username-field'),
-              controller: _usernameController,
-              decoration: InputDecoration(
-                labelText: context.wp('Username'),
-                hintText: context.wp('Optional'),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            TextFormField(
-              key: const ValueKey<String>('servers-editor-password-field'),
-              controller: _passwordController,
-              obscureText: !_showPassword,
-              decoration: InputDecoration(
-                labelText: context.wp('Password'),
-                hintText: context.wp('Optional'),
-                suffixIcon: IconButton(
-                  onPressed: () {
-                    setState(() {
-                      _showPassword = !_showPassword;
-                    });
-                  },
-                  icon: Icon(
-                    _showPassword ? Icons.visibility_off : Icons.visibility,
+              child: Column(
+                children: <Widget>[
+                  Semantics(
+                    identifier: 'servers-editor-label-field',
+                    textField: true,
+                    onTap: () {
+                      if (!_labelFocusNode.hasFocus) {
+                        _labelFocusNode.requestFocus();
+                      }
+                    },
+                    child: TextFormField(
+                      key: const ValueKey<String>('servers-editor-label-field'),
+                      focusNode: _labelFocusNode,
+                      controller: _labelController,
+                      decoration: InputDecoration(
+                        labelText: context.wp('Label'),
+                        hintText: context.wp('Studio'),
+                      ),
+                    ),
                   ),
-                ),
+                  const SizedBox(height: AppSpacing.md),
+                  Semantics(
+                    identifier: 'servers-editor-url-field',
+                    textField: true,
+                    onTap: () {
+                      if (!_urlFocusNode.hasFocus) {
+                        _urlFocusNode.requestFocus();
+                      }
+                    },
+                    child: TextFormField(
+                      key: const ValueKey<String>('servers-editor-url-field'),
+                      focusNode: _urlFocusNode,
+                      controller: _baseUrlController,
+                      keyboardType: TextInputType.url,
+                      decoration: InputDecoration(
+                        labelText: context.wp('Server URL'),
+                        hintText: context.wp('https://studio.example.com'),
+                      ),
+                      validator: _validateAddress,
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: AppSpacing.lg),
-            Row(
-              children: <Widget>[
-                Expanded(
+            SizedBox(height: compactSheet ? AppSpacing.sm : AppSpacing.md),
+            Container(
+              padding: EdgeInsets.all(
+                compactSheet ? AppSpacing.sm : AppSpacing.md,
+              ),
+              decoration: appSoftCardDecoration(
+                context,
+                radius: AppSpacing.panelRadius,
+                muted: true,
+                emphasized: false,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    context.wp('Optional credentials'),
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.xxs),
+                  Text(
+                    context.wp(
+                      'Only add these when your server requires basic auth.',
+                    ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: surfaces.muted),
+                  ),
+                  SizedBox(
+                    height: compactSheet ? AppSpacing.sm : AppSpacing.md,
+                  ),
+                  Semantics(
+                    identifier: 'servers-editor-username-field',
+                    textField: true,
+                    onTap: () {
+                      if (!_usernameFocusNode.hasFocus) {
+                        _usernameFocusNode.requestFocus();
+                      }
+                    },
+                    child: TextFormField(
+                      key: const ValueKey<String>(
+                        'servers-editor-username-field',
+                      ),
+                      focusNode: _usernameFocusNode,
+                      controller: _usernameController,
+                      decoration: InputDecoration(
+                        labelText: context.wp('Username'),
+                        hintText: context.wp('Optional'),
+                      ),
+                    ),
+                  ),
+                  SizedBox(
+                    height: compactSheet ? AppSpacing.sm : AppSpacing.md,
+                  ),
+                  Semantics(
+                    identifier: 'servers-editor-password-field',
+                    textField: true,
+                    onTap: () {
+                      if (!_passwordFocusNode.hasFocus) {
+                        _passwordFocusNode.requestFocus();
+                      }
+                    },
+                    child: TextFormField(
+                      key: const ValueKey<String>(
+                        'servers-editor-password-field',
+                      ),
+                      focusNode: _passwordFocusNode,
+                      controller: _passwordController,
+                      obscureText: !_showPassword,
+                      decoration: InputDecoration(
+                        labelText: context.wp('Password'),
+                        hintText: context.wp('Optional'),
+                        suffixIcon: IconButton(
+                          onPressed: () {
+                            setState(() {
+                              _showPassword = !_showPassword;
+                            });
+                          },
+                          icon: Icon(
+                            _showPassword
+                                ? Icons.visibility_off
+                                : Icons.visibility,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: compactSheet ? AppSpacing.sm : AppSpacing.md),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final compact = constraints.maxWidth < 420;
+                final cancelButton = Semantics(
+                  identifier: 'servers-editor-cancel-button',
+                  button: true,
+                  onTap: () => Navigator.of(context).pop(),
                   child: OutlinedButton(
+                    key: const ValueKey<String>('servers-editor-cancel-button'),
                     onPressed: () => Navigator.of(context).pop(),
                     child: Text(context.wp('Cancel')),
                   ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
+                );
+                final saveButton = Semantics(
+                  button: true,
+                  identifier: 'servers-editor-save-button',
+                  onTap: _submit,
                   child: FilledButton.icon(
                     key: const ValueKey<String>('servers-editor-save-button'),
                     onPressed: _submit,
@@ -710,8 +898,25 @@ class _ServerEditorSheetState extends State<_ServerEditorSheet> {
                           : context.wp('Save Server'),
                     ),
                   ),
-                ),
-              ],
+                );
+                if (compact) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      saveButton,
+                      const SizedBox(height: AppSpacing.sm),
+                      cancelButton,
+                    ],
+                  );
+                }
+                return Row(
+                  children: <Widget>[
+                    Expanded(child: cancelButton),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(child: saveButton),
+                  ],
+                );
+              },
             ),
           ],
         ),
@@ -745,9 +950,9 @@ class _ServerMetaBadge extends StatelessWidget {
         vertical: AppSpacing.xxs,
       ),
       decoration: BoxDecoration(
-        color: accent.withValues(alpha: 0.14),
+        color: accent.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
-        border: Border.all(color: accent.withValues(alpha: 0.18)),
+        border: Border.all(color: accent.withValues(alpha: 0.16)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -767,6 +972,58 @@ class _ServerMetaBadge extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ServerActionIconButton extends StatelessWidget {
+  const _ServerActionIconButton({
+    required this.tooltip,
+    required this.onPressed,
+    required this.icon,
+    this.destructive = false,
+    super.key,
+  });
+
+  final String tooltip;
+  final VoidCallback? onPressed;
+  final Widget icon;
+  final bool destructive;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    final tint = destructive ? surfaces.danger : surfaces.muted;
+    final enabled = onPressed != null;
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(8),
+          child: Ink(
+            width: 40,
+            height: 40,
+            decoration: appSoftCardDecoration(
+              context,
+              radius: 8,
+              tone: destructive
+                  ? AppSurfaceTone.danger
+                  : AppSurfaceTone.neutral,
+              muted: !enabled,
+              emphasized: enabled,
+            ),
+            child: IconTheme(
+              data: IconThemeData(
+                color: enabled ? tint : surfaces.muted.withValues(alpha: 0.5),
+              ),
+              child: Center(child: icon),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -886,8 +1143,9 @@ String _statusLabel(BuildContext context, ServerProbeReport? report) {
   return switch (report?.classification) {
     ConnectionProbeClassification.ready => context.wp('Ready'),
     ConnectionProbeClassification.authFailure => context.wp('Sign In'),
-    ConnectionProbeClassification.unsupportedCapabilities =>
-      context.wp('Needs Update'),
+    ConnectionProbeClassification.unsupportedCapabilities => context.wp(
+      'Needs Update',
+    ),
     ConnectionProbeClassification.specFetchFailure => context.wp('Unavailable'),
     ConnectionProbeClassification.connectivityFailure => context.wp('Offline'),
     null => context.wp('Unknown'),

@@ -10,9 +10,11 @@ void main() {
   late HttpServer server;
   late Uri baseUri;
   late List<String> requestLog;
+  Map<String, Object?>? lastMcpAuthBody;
 
   setUp(() async {
     requestLog = <String>[];
+    lastMcpAuthBody = null;
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     baseUri = Uri.parse(
       'http://${server.address.address}:${server.port}/api?token=abc',
@@ -26,6 +28,15 @@ void main() {
       }
       final routePath = _routePath(request.uri);
       requestLog.add('${request.method} ${request.uri.path}');
+      final requestBody = await utf8.decoder.bind(request).join();
+      final decodedRequestBody = requestBody.trim().isEmpty
+          ? null
+          : jsonDecode(requestBody) as Object?;
+      if (request.method == 'POST' &&
+          routePath == '/mcp/github/auth' &&
+          decodedRequestBody is Map) {
+        lastMcpAuthBody = decodedRequestBody.cast<String, Object?>();
+      }
       Object? body;
       if (routePath == '/provider/auth') {
         body = {
@@ -66,8 +77,15 @@ void main() {
           routePath == '/provider/openai/oauth/authorize') {
         body = {'authorizationUrl': 'https://provider.example/auth'};
       }
+      if (request.method == 'POST' &&
+          routePath == '/provider/anthropic/oauth/authorize') {
+        body = {'url': 'https://legacy-provider.example/auth'};
+      }
       if (request.method == 'POST' && routePath == '/mcp/github/auth') {
         body = {'authorizationUrl': 'https://mcp.example/auth'};
+      }
+      if (request.method == 'POST' && routePath == '/mcp/docs/auth') {
+        body = {'url': 'https://legacy-mcp.example/auth'};
       }
       if (request.method == 'POST' && routePath == '/mcp/docs/connect') {
         body = true;
@@ -133,8 +151,47 @@ void main() {
       ),
       'https://mcp.example/auth',
     );
+    expect(lastMcpAuthBody, isNotNull);
+    expect(
+      lastMcpAuthBody!['redirectUri'],
+      'http://${server.address.address}:${server.port}/api/mcp/oauth/callback',
+    );
     service.dispose();
   });
+
+  test(
+    'accepts legacy auth url fields from provider and mcp endpoints',
+    () async {
+      final service = IntegrationStatusService();
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'mock',
+        baseUrl: baseUri.toString(),
+      );
+      const project = ProjectTarget(
+        directory: '/workspace/demo',
+        label: 'Demo',
+      );
+
+      expect(
+        await service.startProviderAuth(
+          profile: profile,
+          project: project,
+          providerId: 'anthropic',
+        ),
+        'https://legacy-provider.example/auth',
+      );
+      expect(
+        await service.startMcpAuth(
+          profile: profile,
+          project: project,
+          name: 'docs',
+        ),
+        'https://legacy-mcp.example/auth',
+      );
+      service.dispose();
+    },
+  );
 
   test('connects and disconnects MCP servers', () async {
     final service = IntegrationStatusService();

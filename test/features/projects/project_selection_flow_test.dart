@@ -196,6 +196,102 @@ void main() {
   });
 
   testWidgets(
+    'current workspace is hidden from the chooser list but stays pinnable and openable',
+    (tester) async {
+      _setLargeSurface(tester);
+      ProjectTarget? openedTarget;
+
+      await tester.pumpWidget(
+        _TestApp(
+          child: ProjectWorkspaceSection(
+            profile: const ServerProfile(
+              id: 'studio',
+              label: 'Studio',
+              baseUrl: 'https://studio.example.com',
+            ),
+            onOpenProject: (target) {
+              openedTarget = target;
+            },
+            projectCatalogService: _FakeProjectCatalogService(
+              catalog: _catalogWithCurrentProject(),
+            ),
+            projectStore: _FakeProjectStore(),
+            cacheStore: StaleCacheStore(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Current project'), findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('project-choice-/workspace/demo')),
+        findsNothing,
+      );
+
+      await tester.tap(find.text('Pin project'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Pinned projects'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('project-choice-/workspace/demo')),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.text('Open project'));
+      await tester.pump();
+
+      expect(openedTarget?.directory, '/workspace/demo');
+    },
+  );
+
+  testWidgets(
+    'server project selection still overrides the hidden current workspace',
+    (tester) async {
+      _setLargeSurface(tester);
+      ProjectTarget? openedTarget;
+
+      await tester.pumpWidget(
+        _TestApp(
+          child: ProjectWorkspaceSection(
+            profile: const ServerProfile(
+              id: 'studio',
+              label: 'Studio',
+              baseUrl: 'https://studio.example.com',
+            ),
+            onOpenProject: (target) {
+              openedTarget = target;
+            },
+            projectCatalogService: _FakeProjectCatalogService(
+              catalog: _catalogWithCurrentAndServerProjects(),
+            ),
+            projectStore: _FakeProjectStore(),
+            cacheStore: StaleCacheStore(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Current project'), findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('project-choice-/workspace/demo')),
+        findsNothing,
+      );
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('project-choice-/workspace/design-system'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Open project'));
+      await tester.pump();
+
+      expect(openedTarget?.directory, '/workspace/design-system');
+    },
+  );
+
+  testWidgets(
     'manual project path shows server suggestions without local browse action',
     (tester) async {
       _setLargeSurface(tester);
@@ -515,6 +611,59 @@ ProjectCatalog _catalogWithServerProject() {
         directory: '/workspace/demo',
         worktree: '/workspace/demo',
         name: 'Demo workspace',
+        vcs: 'git',
+        updatedAt: null,
+      ),
+    ],
+    pathInfo: const PathInfo(
+      home: '/home/tester',
+      state: '/state',
+      config: '/config',
+      worktree: '/workspace/demo',
+      directory: '/workspace/demo',
+    ),
+    vcsInfo: const VcsInfo(branch: 'main'),
+  );
+}
+
+ProjectCatalog _catalogWithCurrentProject() {
+  return ProjectCatalog(
+    currentProject: const ProjectSummary(
+      id: 'demo',
+      directory: '/workspace/demo',
+      worktree: '/workspace/demo',
+      name: 'Demo workspace',
+      vcs: 'git',
+      updatedAt: null,
+    ),
+    projects: const <ProjectSummary>[],
+    pathInfo: const PathInfo(
+      home: '/home/tester',
+      state: '/state',
+      config: '/config',
+      worktree: '/workspace/demo',
+      directory: '/workspace/demo',
+    ),
+    vcsInfo: const VcsInfo(branch: 'main'),
+  );
+}
+
+ProjectCatalog _catalogWithCurrentAndServerProjects() {
+  return ProjectCatalog(
+    currentProject: const ProjectSummary(
+      id: 'demo',
+      directory: '/workspace/demo',
+      worktree: '/workspace/demo',
+      name: 'Demo workspace',
+      vcs: 'git',
+      updatedAt: null,
+    ),
+    projects: const <ProjectSummary>[
+      ProjectSummary(
+        id: 'design',
+        directory: '/workspace/design-system',
+        worktree: '/workspace/design-system',
+        name: 'Design system',
         vcs: 'git',
         updatedAt: null,
       ),

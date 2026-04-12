@@ -12,6 +12,7 @@ import '../../core/network/sse_connection_monitor.dart';
 import '../../core/persistence/stale_cache_store.dart';
 import '../../core/spec/capability_registry.dart';
 import '../../core/spec/raw_json_document.dart';
+import '../../design_system/app_modal.dart';
 import '../../design_system/app_snack_bar.dart';
 import '../../design_system/app_spacing.dart';
 import '../../design_system/app_theme.dart';
@@ -99,6 +100,10 @@ Widget _fadeSlideTransition(
   );
 }
 
+bool _isCompactShellWidth(BuildContext context) {
+  return MediaQuery.sizeOf(context).width < 700;
+}
+
 class OpenCodeShellScreen extends StatefulWidget {
   const OpenCodeShellScreen({
     required this.profile,
@@ -118,6 +123,7 @@ class OpenCodeShellScreen extends StatefulWidget {
     this.integrationStatusService,
     this.eventStreamService,
     this.terminalService,
+    this.sessionActionService,
     this.pendingRequestNotificationService,
     this.pendingRequestSoundService,
     super.key,
@@ -140,6 +146,7 @@ class OpenCodeShellScreen extends StatefulWidget {
   final IntegrationStatusService? integrationStatusService;
   final EventStreamService? eventStreamService;
   final TerminalService? terminalService;
+  final SessionActionService? sessionActionService;
   final PendingRequestNotificationService? pendingRequestNotificationService;
   final PendingRequestSoundService? pendingRequestSoundService;
 
@@ -150,7 +157,8 @@ class OpenCodeShellScreen extends StatefulWidget {
 class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
   late ChatService _chatService;
   late bool _ownsChatService;
-  final SessionActionService _sessionActionService = SessionActionService();
+  late SessionActionService _sessionActionService;
+  late bool _ownsSessionActionService;
   late EventStreamService _eventStreamService;
   late bool _ownsEventStreamService;
   late FileBrowserService _fileBrowserService;
@@ -226,6 +234,9 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     _sseConnectionMonitor = _createSseConnectionMonitor();
     _ownsChatService = widget.chatService == null;
     _chatService = widget.chatService ?? ChatService();
+    _ownsSessionActionService = widget.sessionActionService == null;
+    _sessionActionService =
+        widget.sessionActionService ?? SessionActionService();
     _ownsEventStreamService = widget.eventStreamService == null;
     _eventStreamService = widget.eventStreamService ?? EventStreamService();
     _ownsTodoService = widget.todoService == null;
@@ -254,6 +265,8 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     super.didUpdateWidget(oldWidget);
     final chatServiceChanged = oldWidget.chatService != widget.chatService;
     final todoServiceChanged = oldWidget.todoService != widget.todoService;
+    final sessionActionServiceChanged =
+        oldWidget.sessionActionService != widget.sessionActionService;
     final eventStreamServiceChanged =
         oldWidget.eventStreamService != widget.eventStreamService;
     final projectStoreChanged = oldWidget.projectStore != widget.projectStore;
@@ -295,6 +308,14 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       }
       _ownsTodoService = widget.todoService == null;
       _todoService = widget.todoService ?? TodoService();
+    }
+    if (sessionActionServiceChanged) {
+      if (_ownsSessionActionService) {
+        _sessionActionService.dispose();
+      }
+      _ownsSessionActionService = widget.sessionActionService == null;
+      _sessionActionService =
+          widget.sessionActionService ?? SessionActionService();
     }
     if (eventStreamServiceChanged) {
       _retireEventStream(disconnect: true);
@@ -363,7 +384,14 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       if (!retiredEventStream) {
         _retireEventStream(disconnect: true);
       }
-      shouldRefreshShellState = true;
+      if (mounted) {
+        setState(() {
+          _clearScopeDependentState(clearSessions: true);
+          _loading = true;
+          _error = null;
+        });
+      }
+      shouldRefreshShellState = false;
     } else {
       if (reloadServicesChanged) {
         _retireLoadOperations();
@@ -393,7 +421,9 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     if (_ownsChatService) {
       _chatService.dispose();
     }
-    _sessionActionService.dispose();
+    if (_ownsSessionActionService) {
+      _sessionActionService.dispose();
+    }
     if (_ownsEventStreamService) {
       _eventStreamService.dispose();
     }
@@ -424,7 +454,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
   }
 
   SseConnectionMonitor _createSseConnectionMonitor() {
-    return SseConnectionMonitor(heartbeatTimeout: const Duration(seconds: 8));
+    return SseConnectionMonitor(heartbeatTimeout: const Duration(seconds: 30));
   }
 
   bool _isActiveBundleLoad(int requestToken, String scopeKey) {
@@ -866,7 +896,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
   }
 
   Future<void> _openCacheSettings() async {
-    await showModalBottomSheet<void>(
+    await showAppModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       builder: (context) => CacheSettingsSheet(
@@ -905,7 +935,8 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       return;
     }
     if (cached != null &&
-        cached.payloadJson.length <= ChatService.maxSessionMessageResponseBytes) {
+        cached.payloadJson.length <=
+            ChatService.maxSessionMessageResponseBytes) {
       setState(() {
         _clearScopeDependentState(clearSessions: clearStaleScopeState);
         _loading = true;
@@ -1544,6 +1575,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     _ComposerSubmissionOptions options,
   ) async {
     final trimmed = prompt.trim();
+    final compactSlashPrompt = isCompactSlashCommandPrompt(trimmed);
     if (trimmed.isEmpty) {
       return false;
     }
@@ -1557,6 +1589,11 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     try {
       var sessionId = _selectedSessionId;
       if (sessionId == null || sessionId.isEmpty) {
+        if (compactSlashPrompt) {
+          throw const SessionActionException(
+            'Select a session before compacting.',
+          );
+        }
         final created = await _chatService.createSession(
           profile: widget.profile,
           project: widget.project,
@@ -1585,42 +1622,74 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         }
       }
 
-      final reply = await _chatService.sendMessage(
-        profile: widget.profile,
-        project: widget.project,
-        sessionId: sessionId,
-        prompt: trimmed,
-        providerId: options.providerId,
-        modelId: options.modelId,
-        reasoning: options.reasoning,
-      );
-      if (!_isActivePromptSubmission(
-        requestToken,
-        scopeKey,
-        selectedSessionId: expectedSelectedSessionId,
-      )) {
-        return false;
+      if (compactSlashPrompt) {
+        await _sessionActionService.summarizeSession(
+          profile: widget.profile,
+          project: widget.project,
+          sessionId: sessionId,
+          providerId: options.providerId,
+          modelId: options.modelId,
+        );
+        if (!_isActivePromptSubmission(
+          requestToken,
+          scopeKey,
+          selectedSessionId: expectedSelectedSessionId,
+        )) {
+          return false;
+        }
+        await _loadBundle();
+        if (!_isActivePromptSubmission(
+          requestToken,
+          scopeKey,
+          selectedSessionId: expectedSelectedSessionId,
+        )) {
+          return false;
+        }
+        setState(() {
+          _selectedSessionId = sessionId;
+          _submittingPrompt = false;
+        });
+        await _persistWorkspaceHint(sessionId, _sessions, _statuses);
+        await _loadPendingRequests();
+        return true;
+      } else {
+        final reply = await _chatService.sendMessage(
+          profile: widget.profile,
+          project: widget.project,
+          sessionId: sessionId,
+          prompt: trimmed,
+          providerId: options.providerId,
+          modelId: options.modelId,
+          reasoning: options.reasoning,
+        );
+        if (!_isActivePromptSubmission(
+          requestToken,
+          scopeKey,
+          selectedSessionId: expectedSelectedSessionId,
+        )) {
+          return false;
+        }
+        final messages = await _chatService.fetchMessages(
+          profile: widget.profile,
+          project: widget.project,
+          sessionId: sessionId,
+        );
+        if (!_isActivePromptSubmission(
+          requestToken,
+          scopeKey,
+          selectedSessionId: expectedSelectedSessionId,
+        )) {
+          return false;
+        }
+        setState(() {
+          _selectedSessionId = sessionId;
+          _messages = messages.isEmpty ? <ChatMessage>[reply] : messages;
+          _submittingPrompt = false;
+        });
+        await _persistWorkspaceHint(sessionId, _sessions, _statuses);
+        await _loadPendingRequests();
+        return true;
       }
-      final messages = await _chatService.fetchMessages(
-        profile: widget.profile,
-        project: widget.project,
-        sessionId: sessionId,
-      );
-      if (!_isActivePromptSubmission(
-        requestToken,
-        scopeKey,
-        selectedSessionId: expectedSelectedSessionId,
-      )) {
-        return false;
-      }
-      setState(() {
-        _selectedSessionId = sessionId;
-        _messages = messages.isEmpty ? <ChatMessage>[reply] : messages;
-        _submittingPrompt = false;
-      });
-      await _persistWorkspaceHint(sessionId, _sessions, _statuses);
-      await _loadPendingRequests();
-      return true;
     } catch (error) {
       if (!_isActivePromptSubmission(
         requestToken,
@@ -1901,29 +1970,64 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     final session = _sessions.where((item) => item.id == sessionId).firstOrNull;
     final initialTitle = session?.title ?? '';
     final controller = TextEditingController(text: initialTitle);
-    final nextTitle = await showDialog<String>(
+    final nextTitle = await showAppDialog<String>(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          title: Text(AppLocalizations.of(context)!.shellRenameSessionTitle),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            decoration: InputDecoration(
-              hintText: AppLocalizations.of(context)!.shellSessionTitleHint,
+        final theme = Theme.of(context);
+        final surfaces = theme.extension<AppSurfaces>()!;
+        return AppDialogFrame(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Material(
+            color: surfaces.panelRaised,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppSpacing.dialogRadius),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    AppLocalizations.of(context)!.shellRenameSessionTitle,
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  TextField(
+                    controller: controller,
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      hintText: AppLocalizations.of(
+                        context,
+                      )!.shellSessionTitleHint,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: <Widget>[
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: Text(
+                          AppLocalizations.of(context)!.shellCancelAction,
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      ElevatedButton(
+                        onPressed: () =>
+                            Navigator.of(context).pop(controller.text.trim()),
+                        child: Text(
+                          AppLocalizations.of(context)!.shellSaveAction,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: Text(AppLocalizations.of(context)!.shellCancelAction),
-            ),
-            ElevatedButton(
-              onPressed: () =>
-                  Navigator.of(context).pop(controller.text.trim()),
-              child: Text(AppLocalizations.of(context)!.shellSaveAction),
-            ),
-          ],
         );
       },
     );
@@ -1992,25 +2096,55 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
   }
 
   Future<void> _summarizeSession(String sessionId) async {
-    if (_messages.isEmpty) {
-      return;
-    }
-    final info = _messages.last.info;
-    final providerId = info.providerId;
-    final modelId = info.modelId;
-    if (providerId == null || modelId == null) {
-      return;
-    }
+    final options = _summarizeSessionOptions(sessionId);
     await _runGuardedAction(() async {
       await _sessionActionService.summarizeSession(
         profile: widget.profile,
         project: widget.project,
         sessionId: sessionId,
-        providerId: providerId,
-        modelId: modelId,
+        providerId: options.providerId,
+        modelId: options.modelId,
       );
       await _loadBundle();
     });
+  }
+
+  _ComposerSubmissionOptions _summarizeSessionOptions(String sessionId) {
+    final latestInfo = _messages.isEmpty ? null : _messages.last.info;
+    if (latestInfo != null && latestInfo.sessionId == sessionId) {
+      final providerId = latestInfo.providerId?.trim();
+      final modelId = latestInfo.modelId?.trim();
+      if (providerId != null &&
+          providerId.isNotEmpty &&
+          modelId != null &&
+          modelId.isNotEmpty) {
+        return _ComposerSubmissionOptions(
+          providerId: providerId,
+          modelId: modelId,
+        );
+      }
+    }
+    return _defaultSummarizeSessionOptions();
+  }
+
+  _ComposerSubmissionOptions _defaultSummarizeSessionOptions() {
+    final modelOptions = _composerModelOptions(_configSnapshot);
+    final defaultModelKey = _defaultComposerModelKey(
+      _configSnapshot,
+      modelOptions,
+    );
+    if (defaultModelKey == null || defaultModelKey.isEmpty) {
+      return const _ComposerSubmissionOptions();
+    }
+    for (final option in modelOptions) {
+      if (option.key == defaultModelKey) {
+        return _ComposerSubmissionOptions(
+          providerId: option.providerId,
+          modelId: option.modelId,
+        );
+      }
+    }
+    return const _ComposerSubmissionOptions();
   }
 
   Future<void> _connectEvents() async {
@@ -2027,7 +2161,8 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         }
         final now = DateTime.now();
         _sseConnectionMonitor.recordFrame(now);
-        if (event.type == 'server.connected') {
+        if (event.type == 'server.connected' ||
+            event.type == 'server.heartbeat') {
           _sseConnectionMonitor.recordHeartbeat(now);
         }
         var nextStatuses = _statuses;
@@ -2060,6 +2195,12 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
             );
           case 'message.part.updated':
             nextMessages = applyMessagePartUpdatedEvent(
+              _messages,
+              event.properties,
+              selectedSessionId: _selectedSessionId,
+            );
+          case 'message.part.delta':
+            nextMessages = applyMessagePartDeltaEvent(
               _messages,
               event.properties,
               selectedSessionId: _selectedSessionId,
@@ -2145,6 +2286,14 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     );
     if (!_isActiveEventStreamConnection(connectionToken, scopeKey)) {
       return;
+    }
+    final now = DateTime.now();
+    _sseConnectionMonitor.recordFrame(now);
+    final nextHealth = _sseConnectionMonitor.healthAt(now);
+    if (_eventStreamHealth != nextHealth) {
+      setState(() {
+        _eventStreamHealth = nextHealth;
+      });
     }
     _eventHealthTimer = Timer.periodic(const Duration(seconds: 2), (_) {
       if (!_isActiveEventStreamConnection(connectionToken, scopeKey)) {
@@ -3211,13 +3360,13 @@ class _TabletPortraitShell extends StatelessWidget {
                   Scaffold.of(innerContext).openDrawer(),
             ),
           ),
-          const SizedBox(height: AppSpacing.lg),
+          const SizedBox(height: AppSpacing.sm),
           _ShellPrimaryDestinationStrip(
             compact: true,
             selectedDestination: primaryDestination,
             onSelectDestination: onSelectPrimaryDestination,
           ),
-          const SizedBox(height: AppSpacing.lg),
+          const SizedBox(height: AppSpacing.sm),
           Expanded(
             child: AnimatedSwitcher(
               duration: _motionMedium,
@@ -3491,13 +3640,13 @@ class _MobileShell extends StatelessWidget {
                   Scaffold.of(innerContext).openDrawer(),
             ),
           ),
-          const SizedBox(height: AppSpacing.xs),
+          const SizedBox(height: AppSpacing.xxs),
           _ShellPrimaryDestinationStrip(
             compact: true,
             selectedDestination: primaryDestination,
             onSelectDestination: onSelectPrimaryDestination,
           ),
-          const SizedBox(height: AppSpacing.xs),
+          const SizedBox(height: AppSpacing.xxs),
           Expanded(
             child: AnimatedSwitcher(
               duration: _motionMedium,
@@ -3680,7 +3829,7 @@ class _ShellScaffold extends StatelessWidget {
           ),
           SafeArea(
             child: Padding(
-              padding: EdgeInsets.all(compact ? AppSpacing.md : AppSpacing.lg),
+              padding: EdgeInsets.all(compact ? AppSpacing.sm : AppSpacing.lg),
               child: child,
             ),
           ),
@@ -3751,6 +3900,7 @@ class _ShellPrimaryDestinationStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final compact = _isCompactShellWidth(context);
     return DecoratedBox(
       decoration: BoxDecoration(
         color: surfaces.panelRaised.withValues(alpha: 0.72),
@@ -3758,10 +3908,10 @@ class _ShellPrimaryDestinationStrip extends StatelessWidget {
         border: Border.all(color: surfaces.lineSoft),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.sm),
+        padding: EdgeInsets.all(compact ? AppSpacing.xs : AppSpacing.sm),
         child: Wrap(
-          spacing: AppSpacing.sm,
-          runSpacing: AppSpacing.sm,
+          spacing: compact ? AppSpacing.xs : AppSpacing.sm,
+          runSpacing: compact ? AppSpacing.xs : AppSpacing.sm,
           children: _ShellPrimaryDestination.values
               .map(
                 (destination) => _ShellPrimaryDestinationButton(
@@ -3797,6 +3947,7 @@ class _ShellPrimaryDestinationButton extends StatelessWidget {
     final surfaces = theme.extension<AppSurfaces>()!;
     final l10n = AppLocalizations.of(context)!;
     final label = _shellPrimaryDestinationLabel(l10n, destination);
+    final compact = _isCompactShellWidth(context);
     final fill = selected
         ? Color.alphaBlend(
             theme.colorScheme.primary.withValues(alpha: 0.14),
@@ -3824,9 +3975,9 @@ class _ShellPrimaryDestinationButton extends StatelessWidget {
             border: Border.all(color: border),
           ),
           child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md,
-              vertical: AppSpacing.sm,
+            padding: EdgeInsets.symmetric(
+              horizontal: compact ? AppSpacing.sm : AppSpacing.md,
+              vertical: compact ? AppSpacing.xs : AppSpacing.sm,
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -3899,6 +4050,7 @@ class _ProjectSwitcherPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final projects = _projectOptions(project, availableProjects);
+    final compactSpacing = compact;
     return _PanelCard(
       tone: _PanelTone.subtle,
       eyebrow: l10n.shellWorkspaceEyebrow,
@@ -3908,10 +4060,10 @@ class _ProjectSwitcherPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Text(project.label, style: Theme.of(context).textTheme.headlineSmall),
-          const SizedBox(height: AppSpacing.md),
+          SizedBox(height: compactSpacing ? AppSpacing.sm : AppSpacing.md),
           Wrap(
-            spacing: AppSpacing.sm,
-            runSpacing: AppSpacing.sm,
+            spacing: compactSpacing ? AppSpacing.xs : AppSpacing.sm,
+            runSpacing: compactSpacing ? AppSpacing.xs : AppSpacing.sm,
             children: <Widget>[
               _InfoChip(
                 label: project.branch ?? l10n.shellUnknownLabel,
@@ -3930,9 +4082,10 @@ class _ProjectSwitcherPanel extends StatelessWidget {
                 ),
             ],
           ),
-          const SizedBox(height: AppSpacing.md),
+          SizedBox(height: compactSpacing ? AppSpacing.sm : AppSpacing.md),
           for (var index = 0; index < projects.length; index += 1) ...<Widget>[
-            if (index > 0) const SizedBox(height: AppSpacing.sm),
+            if (index > 0)
+              SizedBox(height: compactSpacing ? AppSpacing.xs : AppSpacing.sm),
             _ProjectTile(
               project: projects[index],
               selected: projects[index].directory == project.directory,
@@ -3942,7 +4095,7 @@ class _ProjectSwitcherPanel extends StatelessWidget {
             ),
           ],
           if (projectPanelError != null) ...<Widget>[
-            const SizedBox(height: AppSpacing.md),
+            SizedBox(height: compactSpacing ? AppSpacing.sm : AppSpacing.md),
             Text(
               l10n.projectCatalogUnavailableBody,
               style: Theme.of(context).textTheme.bodySmall,
@@ -3950,7 +4103,7 @@ class _ProjectSwitcherPanel extends StatelessWidget {
           ],
           if (projectPanelError != null &&
               onReloadProjects != null) ...<Widget>[
-            const SizedBox(height: AppSpacing.md),
+            SizedBox(height: compactSpacing ? AppSpacing.sm : AppSpacing.md),
             Align(
               alignment: Alignment.centerLeft,
               child: OutlinedButton.icon(
@@ -3961,7 +4114,7 @@ class _ProjectSwitcherPanel extends StatelessWidget {
             ),
           ],
           if (onExit != null) ...<Widget>[
-            SizedBox(height: compact ? AppSpacing.md : AppSpacing.lg),
+            SizedBox(height: compactSpacing ? AppSpacing.sm : AppSpacing.lg),
             Semantics(
               label: l10n.homeBackToServersAction,
               button: true,
@@ -3993,6 +4146,7 @@ class _ProjectTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
+    final compact = _isCompactShellWidth(context);
     final fill = selected
         ? Color.alphaBlend(
             theme.colorScheme.primary.withValues(alpha: 0.12),
@@ -4018,7 +4172,10 @@ class _ProjectTile extends StatelessWidget {
             borderRadius: BorderRadius.circular(AppSpacing.md),
             border: Border.all(color: border),
           ),
-          padding: const EdgeInsets.all(AppSpacing.md),
+          padding: EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: compact ? AppSpacing.sm : AppSpacing.md,
+          ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
@@ -4110,7 +4267,7 @@ class _WorkspaceDrawer extends StatelessWidget {
         decoration: BoxDecoration(color: surfaces.background),
         child: SafeArea(
           child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.md),
+            padding: const EdgeInsets.all(AppSpacing.sm),
             child: _CompactSessionsPanel(
               compact: true,
               project: project,
@@ -4260,8 +4417,8 @@ class _CompactSessionsPanel extends StatelessWidget {
                             final depth = orderedSessions[session.id] ?? 0;
                             return Padding(
                               padding: EdgeInsets.only(
-                                left: depth * AppSpacing.sm,
-                                bottom: AppSpacing.sm,
+                                left: depth * AppSpacing.xs,
+                                bottom: AppSpacing.xs,
                               ),
                               child: _SessionTile(
                                 title: session.title,
@@ -4278,7 +4435,7 @@ class _CompactSessionsPanel extends StatelessWidget {
                           })
                           .toList(growable: false)),
                 if (selectedSessionId != null) ...<Widget>[
-                  SizedBox(height: compact ? AppSpacing.md : AppSpacing.lg),
+                  SizedBox(height: compact ? AppSpacing.sm : AppSpacing.lg),
                   Text(
                     l10n.shellActionsTitle,
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
@@ -4627,6 +4784,7 @@ class _LeftRail extends StatelessWidget {
     final l10n = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
+    final compact = _isCompactShellWidth(context);
     final orderedSessions = _buildSessionTree(sessions);
     final activeSessions = statuses.values.where(
       (status) => status.type == 'busy',
@@ -4676,8 +4834,8 @@ class _LeftRail extends StatelessWidget {
                   final depth = orderedSessions[session.id] ?? 0;
                   return Padding(
                     padding: EdgeInsets.only(
-                      left: depth * AppSpacing.sm,
-                      bottom: AppSpacing.sm,
+                      left: depth * AppSpacing.xs,
+                      bottom: AppSpacing.xs,
                     ),
                     child: _SessionTile(
                       title: session.title,
@@ -4761,7 +4919,7 @@ class _LeftRail extends StatelessWidget {
             padding: EdgeInsets.zero,
             children: <Widget>[
               projectPanel,
-              const SizedBox(height: AppSpacing.lg),
+              SizedBox(height: compact ? AppSpacing.sm : AppSpacing.lg),
               _PanelCard(
                 tone: _PanelTone.subtle,
                 eyebrow: l10n.shellSessionsEyebrow,
@@ -4773,7 +4931,7 @@ class _LeftRail extends StatelessWidget {
                 ),
               ),
               if (actionsPanel != null) ...<Widget>[
-                const SizedBox(height: AppSpacing.lg),
+                SizedBox(height: compact ? AppSpacing.sm : AppSpacing.lg),
                 actionsPanel,
               ],
             ],
@@ -4783,7 +4941,7 @@ class _LeftRail extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             projectPanel,
-            const SizedBox(height: AppSpacing.lg),
+            SizedBox(height: compact ? AppSpacing.sm : AppSpacing.lg),
             Expanded(
               child: _PanelCard(
                 tone: _PanelTone.subtle,
@@ -4798,7 +4956,7 @@ class _LeftRail extends StatelessWidget {
               ),
             ),
             if (actionsPanel != null) ...<Widget>[
-              const SizedBox(height: AppSpacing.lg),
+              SizedBox(height: compact ? AppSpacing.sm : AppSpacing.lg),
               actionsPanel,
             ],
           ],
@@ -5016,6 +5174,9 @@ class _ChatCanvasState extends State<_ChatCanvas> {
   bool _shouldStickToBottom = true;
   bool _manualScrollInProgress = false;
   bool _deferredAutoScrollToBottom = false;
+  bool _deferredAutoScrollFlushScheduled = false;
+  VoidCallback? _deferredAutoScrollIdleListener;
+  ScrollPosition? _deferredAutoScrollIdlePosition;
   double _lastKnownOffset = 0;
   int _programmaticScrollDepth = 0;
 
@@ -5065,6 +5226,7 @@ class _ChatCanvasState extends State<_ChatCanvas> {
 
   @override
   void dispose() {
+    _clearDeferredAutoScrollIdleListener();
     _scrollController
       ..removeListener(_handleScroll)
       ..dispose();
@@ -5076,7 +5238,9 @@ class _ChatCanvasState extends State<_ChatCanvas> {
     if (position == null) {
       return;
     }
-    _lastKnownOffset = position.pixels;
+    _lastKnownOffset = position.pixels
+        .clamp(position.minScrollExtent, position.maxScrollExtent)
+        .toDouble();
     _shouldStickToBottom = _isNearBottom();
   }
 
@@ -5115,12 +5279,12 @@ class _ChatCanvasState extends State<_ChatCanvas> {
     }
     if (notification is ScrollStartNotification &&
         notification.dragDetails != null) {
-      _manualScrollInProgress = true;
+      _markManualScrollInteraction();
       return false;
     }
     if (notification is ScrollUpdateNotification &&
         notification.dragDetails != null) {
-      _manualScrollInProgress = true;
+      _markManualScrollInteraction();
       return false;
     }
     if (notification is UserScrollNotification &&
@@ -5136,14 +5300,88 @@ class _ChatCanvasState extends State<_ChatCanvas> {
     return false;
   }
 
+  void _markManualScrollInteraction() {
+    _manualScrollInProgress = true;
+    _deferredAutoScrollToBottom = false;
+    _clearDeferredAutoScrollIdleListener();
+  }
+
   void _flushDeferredAutoScroll() {
     if (!_deferredAutoScrollToBottom ||
         _manualScrollInProgress ||
         !_shouldStickToBottom) {
       return;
     }
+    if (!_scrollController.hasClients) {
+      return;
+    }
+    final position = _scrollController.position;
+    if (!position.hasContentDimensions) {
+      return;
+    }
+    if (position.outOfRange) {
+      _scheduleDeferredAutoScrollFlush(waitForScrollIdle: true);
+      return;
+    }
     _deferredAutoScrollToBottom = false;
     _scheduleScrollToBottom(animated: true);
+  }
+
+  void _scheduleDeferredAutoScrollFlush({bool waitForScrollIdle = false}) {
+    if (_deferredAutoScrollFlushScheduled || !_deferredAutoScrollToBottom) {
+      return;
+    }
+    if (waitForScrollIdle && _scrollController.hasClients) {
+      final position = _scrollController.position;
+      if (position.outOfRange) {
+        _scheduleDeferredAutoScrollAfterIdle(position);
+        return;
+      }
+    }
+    _clearDeferredAutoScrollIdleListener();
+    _deferredAutoScrollFlushScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _deferredAutoScrollFlushScheduled = false;
+      if (!mounted) {
+        return;
+      }
+      _flushDeferredAutoScroll();
+    });
+  }
+
+  void _scheduleDeferredAutoScrollAfterIdle(ScrollPosition position) {
+    if (!position.isScrollingNotifier.value) {
+      return;
+    }
+    _clearDeferredAutoScrollIdleListener();
+    _deferredAutoScrollFlushScheduled = true;
+    late final VoidCallback listener;
+    listener = () {
+      if (position.isScrollingNotifier.value) {
+        return;
+      }
+      if (_deferredAutoScrollIdleListener == listener) {
+        _clearDeferredAutoScrollIdleListener();
+      }
+      if (!mounted) {
+        return;
+      }
+      _scheduleDeferredAutoScrollFlush(waitForScrollIdle: true);
+    };
+    _deferredAutoScrollIdleListener = listener;
+    _deferredAutoScrollIdlePosition = position;
+    position.isScrollingNotifier.addListener(listener);
+  }
+
+  void _clearDeferredAutoScrollIdleListener() {
+    final listener = _deferredAutoScrollIdleListener;
+    final position = _deferredAutoScrollIdlePosition;
+    if (listener != null && position != null) {
+      position.isScrollingNotifier.removeListener(listener);
+    }
+    _deferredAutoScrollIdleListener = null;
+    _deferredAutoScrollIdlePosition = null;
+    _deferredAutoScrollFlushScheduled = false;
   }
 
   void _scheduleScrollToBottom({bool animated = false}) {
@@ -5159,7 +5397,12 @@ class _ChatCanvasState extends State<_ChatCanvas> {
       if (!target.isFinite) {
         return;
       }
-      if ((position.pixels - target).abs() <= 1) {
+      if (position.pixels >= target - 1) {
+        return;
+      }
+      if (position.outOfRange) {
+        _deferredAutoScrollToBottom = true;
+        _scheduleDeferredAutoScrollFlush(waitForScrollIdle: true);
         return;
       }
       _programmaticScrollDepth += 1;
@@ -5175,6 +5418,9 @@ class _ChatCanvasState extends State<_ChatCanvas> {
       }
       final position = _activeScrollPosition();
       if (position == null) {
+        return;
+      }
+      if (position.outOfRange) {
         return;
       }
       final target = _lastKnownOffset
@@ -5292,6 +5538,7 @@ class _ChatCanvasState extends State<_ChatCanvas> {
                       child: _MessageBubble(
                         title: l10n.shellConnectionIssueTitle,
                         body: widget.error!,
+                        dense: widget.compact,
                       ),
                     )
                   : Column(
@@ -5385,16 +5632,17 @@ class _ChatCanvasState extends State<_ChatCanvas> {
           child: ListView(
             key: const ValueKey<String>('chat-message-list'),
             controller: _scrollController,
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.md,
-              AppSpacing.xl,
-              AppSpacing.md,
-              AppSpacing.lg,
+            padding: EdgeInsets.fromLTRB(
+              widget.compact ? AppSpacing.sm : AppSpacing.md,
+              widget.compact ? AppSpacing.sm : AppSpacing.md,
+              widget.compact ? AppSpacing.sm : AppSpacing.md,
+              widget.compact ? AppSpacing.sm : AppSpacing.md,
             ),
             children: <Widget>[
               _MessageBubble(
                 title: l10n.shellAssistantMessageTitle,
                 body: l10n.shellAssistantMessageBody,
+                dense: widget.compact,
                 accent: true,
               ),
             ],
@@ -5409,11 +5657,11 @@ class _ChatCanvasState extends State<_ChatCanvas> {
         child: ListView(
           key: const ValueKey<String>('chat-message-list'),
           controller: _scrollController,
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.md,
-            AppSpacing.md,
-            AppSpacing.md,
-            AppSpacing.lg,
+          padding: EdgeInsets.fromLTRB(
+            widget.compact ? AppSpacing.sm : AppSpacing.md,
+            widget.compact ? AppSpacing.sm : AppSpacing.md,
+            widget.compact ? AppSpacing.sm : AppSpacing.md,
+            widget.compact ? AppSpacing.sm : AppSpacing.md,
           ),
           // The shell already keeps the visible chat window in memory.
           // Using eager children here gives desktop scrollbars stable extents.
@@ -5429,7 +5677,9 @@ class _ChatCanvasState extends State<_ChatCanvas> {
     final children = <Widget>[];
     for (var index = 0; index < parts.length; index += 1) {
       if (index > 0) {
-        children.add(const SizedBox(height: AppSpacing.md));
+        children.add(
+          SizedBox(height: widget.compact ? AppSpacing.sm : AppSpacing.md),
+        );
       }
       final item = parts[index];
       children.add(ChatPartView(message: item.message, part: item.part));
@@ -5625,8 +5875,8 @@ class _ShellTopBar extends StatelessWidget {
       title: project.label,
       subtitle: project.directory,
       trailing: Wrap(
-        spacing: AppSpacing.sm,
-        runSpacing: AppSpacing.sm,
+        spacing: compact ? AppSpacing.xs : AppSpacing.sm,
+        runSpacing: compact ? AppSpacing.xs : AppSpacing.sm,
         alignment: WrapAlignment.end,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: <Widget>[
@@ -5657,8 +5907,8 @@ class _ShellTopBar extends StatelessWidget {
         ],
       ),
       child: Wrap(
-        spacing: AppSpacing.sm,
-        runSpacing: AppSpacing.sm,
+        spacing: compact ? AppSpacing.xs : AppSpacing.sm,
+        runSpacing: compact ? AppSpacing.xs : AppSpacing.sm,
         children: <Widget>[
           _InfoChip(label: l10n.shellOpenCodeRemote, icon: Icons.waves_rounded),
           _InfoChip(
@@ -5696,6 +5946,7 @@ class _PanelCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final compact = _isCompactShellWidth(context);
     final topColor = switch (tone) {
       _PanelTone.primary => Color.alphaBlend(
         theme.colorScheme.primary.withValues(alpha: 0.08),
@@ -5737,7 +5988,7 @@ class _PanelCard extends StatelessWidget {
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
+        padding: EdgeInsets.all(compact ? AppSpacing.sm : AppSpacing.lg),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
@@ -5781,12 +6032,12 @@ class _PanelCard extends StatelessWidget {
                   ),
                 ),
                 if (trailing != null) ...<Widget>[
-                  const SizedBox(width: AppSpacing.md),
+                  SizedBox(width: compact ? AppSpacing.sm : AppSpacing.md),
                   Flexible(child: trailing!),
                 ],
               ],
             ),
-            const SizedBox(height: AppSpacing.md),
+            SizedBox(height: compact ? AppSpacing.sm : AppSpacing.md),
             if (fillChild) Expanded(child: child) else child,
           ],
         ),
@@ -6096,6 +6347,7 @@ class _UtilitySection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final compact = _isCompactShellWidth(context);
     return DecoratedBox(
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -6110,7 +6362,7 @@ class _UtilitySection extends StatelessWidget {
         border: Border.all(color: surfaces.lineSoft),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
+        padding: EdgeInsets.all(compact ? AppSpacing.sm : AppSpacing.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
@@ -6128,7 +6380,7 @@ class _UtilitySection extends StatelessWidget {
                     child: Icon(icon, size: 16, color: surfaces.accentSoft),
                   ),
                 ),
-                const SizedBox(width: AppSpacing.sm),
+                SizedBox(width: compact ? AppSpacing.xs : AppSpacing.sm),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -6148,12 +6400,12 @@ class _UtilitySection extends StatelessWidget {
                   ),
                 ),
                 if (trailing != null) ...<Widget>[
-                  const SizedBox(width: AppSpacing.sm),
+                  SizedBox(width: compact ? AppSpacing.xs : AppSpacing.sm),
                   trailing!,
                 ],
               ],
             ),
-            const SizedBox(height: AppSpacing.md),
+            SizedBox(height: compact ? AppSpacing.sm : AppSpacing.md),
             child,
           ],
         ),
@@ -6187,6 +6439,7 @@ class _UtilityListRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
+    final compact = _isCompactShellWidth(context);
     final highlighted = selected || emphasis;
     final fill = highlighted
         ? Color.alphaBlend(
@@ -6209,16 +6462,16 @@ class _UtilityListRow extends StatelessWidget {
           border: Border.all(color: border),
         ),
         child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md,
-            vertical: AppSpacing.sm,
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? AppSpacing.sm : AppSpacing.md,
+            vertical: compact ? AppSpacing.xs : AppSpacing.sm,
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               if (leading != null) ...<Widget>[
                 leading!,
-                const SizedBox(width: AppSpacing.sm),
+                SizedBox(width: compact ? AppSpacing.xs : AppSpacing.sm),
               ] else if (icon != null) ...<Widget>[
                 DecoratedBox(
                   decoration: BoxDecoration(
@@ -6238,7 +6491,7 @@ class _UtilityListRow extends StatelessWidget {
                     ),
                   ),
                 ),
-                const SizedBox(width: AppSpacing.sm),
+                SizedBox(width: compact ? AppSpacing.xs : AppSpacing.sm),
               ],
               Expanded(
                 child: Column(
@@ -6261,7 +6514,7 @@ class _UtilityListRow extends StatelessWidget {
                 ),
               ),
               if (trailing != null) ...<Widget>[
-                const SizedBox(width: AppSpacing.sm),
+                SizedBox(width: compact ? AppSpacing.xs : AppSpacing.sm),
                 trailing!,
               ],
             ],
@@ -6504,20 +6757,24 @@ class _PendingRequestsPanel extends StatelessWidget {
                 title: permission.permission,
                 subtitle: permission.patterns.join(', '),
                 icon: Icons.lock_open_outlined,
-                child: Wrap(
-                  spacing: AppSpacing.xs,
-                  runSpacing: AppSpacing.xs,
-                  children: <Widget>[
-                    TextButton(
-                      onPressed: () => onReplyPermission(permission.id, 'once'),
-                      child: Text(l10n.shellAllowOnceAction),
-                    ),
-                    TextButton(
-                      onPressed: () =>
-                          onReplyPermission(permission.id, 'reject'),
-                      child: Text(l10n.shellRejectAction),
-                    ),
-                  ],
+                child: Padding(
+                  padding: const EdgeInsets.only(top: AppSpacing.xs),
+                  child: Wrap(
+                    spacing: AppSpacing.xs,
+                    runSpacing: AppSpacing.xs,
+                    children: <Widget>[
+                      TextButton(
+                        onPressed: () =>
+                            onReplyPermission(permission.id, 'once'),
+                        child: Text(l10n.shellAllowOnceAction),
+                      ),
+                      TextButton(
+                        onPressed: () =>
+                            onReplyPermission(permission.id, 'reject'),
+                        child: Text(l10n.shellRejectAction),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -6528,25 +6785,28 @@ class _PendingRequestsPanel extends StatelessWidget {
                 title: question.questions.first.header,
                 subtitle: question.questions.first.question,
                 icon: Icons.help_outline_rounded,
-                child: Wrap(
-                  spacing: AppSpacing.xs,
-                  runSpacing: AppSpacing.xs,
-                  children: <Widget>[
-                    TextButton(
-                      onPressed: question.questions.first.options.isEmpty
-                          ? null
-                          : () => onReplyQuestion(question.id, <List<String>>[
-                              <String>[
-                                question.questions.first.options.first.label,
-                              ],
-                            ]),
-                      child: Text(l10n.shellAnswerAction),
-                    ),
-                    TextButton(
-                      onPressed: () => onRejectQuestion(question.id),
-                      child: Text(l10n.shellRejectAction),
-                    ),
-                  ],
+                child: Padding(
+                  padding: const EdgeInsets.only(top: AppSpacing.xs),
+                  child: Wrap(
+                    spacing: AppSpacing.xs,
+                    runSpacing: AppSpacing.xs,
+                    children: <Widget>[
+                      TextButton(
+                        onPressed: question.questions.first.options.isEmpty
+                            ? null
+                            : () => onReplyQuestion(question.id, <List<String>>[
+                                <String>[
+                                  question.questions.first.options.first.label,
+                                ],
+                              ]),
+                        child: Text(l10n.shellAnswerAction),
+                      ),
+                      TextButton(
+                        onPressed: () => onRejectQuestion(question.id),
+                        child: Text(l10n.shellRejectAction),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -6890,7 +7150,13 @@ class _ConfigPreviewPanelState extends State<_ConfigPreviewPanel> {
               controller: _controller,
               maxLines: 8,
               onChanged: (_) => setState(() {}),
-              decoration: const InputDecoration(isDense: true),
+              decoration: const InputDecoration(
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: AppSpacing.md,
+                  vertical: AppSpacing.sm,
+                ),
+              ),
             ),
             const SizedBox(height: AppSpacing.sm),
             if (!preview.isValid) ...<Widget>[
@@ -7021,11 +7287,13 @@ class _MessageBubble extends StatelessWidget {
   const _MessageBubble({
     required this.title,
     required this.body,
+    this.dense = false,
     this.accent = false,
   });
 
   final String title;
   final String body;
+  final bool dense;
   final bool accent;
 
   @override
@@ -7053,7 +7321,7 @@ class _MessageBubble extends StatelessWidget {
         ),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
+        padding: EdgeInsets.all(dense ? AppSpacing.md : AppSpacing.lg),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
@@ -7201,7 +7469,7 @@ class _ComposerCardState extends State<_ComposerCard> {
         ],
       ),
       child: Padding(
-        padding: EdgeInsets.all(widget.compact ? AppSpacing.md : AppSpacing.lg),
+        padding: EdgeInsets.all(widget.compact ? AppSpacing.sm : AppSpacing.lg),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
@@ -7239,6 +7507,10 @@ class _ComposerCardState extends State<_ComposerCard> {
                 decoration: InputDecoration(
                   isDense: true,
                   hintText: widget.label,
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: widget.compact ? AppSpacing.sm : AppSpacing.md,
+                    vertical: widget.compact ? AppSpacing.xs : AppSpacing.sm,
+                  ),
                 ),
               ),
             ),
@@ -7248,7 +7520,7 @@ class _ComposerCardState extends State<_ComposerCard> {
               runSpacing: AppSpacing.sm,
               children: <Widget>[
                 SizedBox(
-                  width: widget.compact ? 220 : 240,
+                  width: widget.compact ? 180 : 240,
                   child: DropdownButtonFormField<String?>(
                     key: const ValueKey<String>('composer-model-select'),
                     initialValue: _selectedModelKey,
@@ -7256,6 +7528,14 @@ class _ComposerCardState extends State<_ComposerCard> {
                     decoration: InputDecoration(
                       isDense: true,
                       labelText: l10n.shellComposerModelLabel,
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: widget.compact
+                            ? AppSpacing.sm
+                            : AppSpacing.md,
+                        vertical: widget.compact
+                            ? AppSpacing.xs
+                            : AppSpacing.sm,
+                      ),
                     ),
                     items: <DropdownMenuItem<String?>>[
                       DropdownMenuItem<String?>(
@@ -7288,7 +7568,7 @@ class _ComposerCardState extends State<_ComposerCard> {
                   ),
                 ),
                 SizedBox(
-                  width: widget.compact ? 180 : 200,
+                  width: widget.compact ? 148 : 200,
                   child: DropdownButtonFormField<String?>(
                     key: const ValueKey<String>('composer-reasoning-select'),
                     initialValue: _selectedReasoning,
@@ -7296,6 +7576,14 @@ class _ComposerCardState extends State<_ComposerCard> {
                     decoration: InputDecoration(
                       isDense: true,
                       labelText: l10n.shellComposerThinkingLabel,
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: widget.compact
+                            ? AppSpacing.sm
+                            : AppSpacing.md,
+                        vertical: widget.compact
+                            ? AppSpacing.xs
+                            : AppSpacing.sm,
+                      ),
                     ),
                     items: reasoningOptions
                         .map(
@@ -7377,7 +7665,10 @@ class _InfoChip extends StatelessWidget {
         border: Border.all(color: border),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.xs,
+          vertical: AppSpacing.xxs,
+        ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[

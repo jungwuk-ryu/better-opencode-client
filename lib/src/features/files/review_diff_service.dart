@@ -126,12 +126,14 @@ class ReviewSessionDiffBundle {
               ),
               diff: FileDiffSummary(
                 path: diff.file,
-                content: buildReviewUnifiedDiff(
-                  path: diff.file,
-                  status: diff.status ?? 'modified',
-                  before: diff.before,
-                  after: diff.after,
-                ),
+                content: diff.patch?.trim().isNotEmpty == true
+                    ? diff.patch!.trimRight()
+                    : buildReviewUnifiedDiff(
+                        path: diff.file,
+                        status: diff.status ?? 'modified',
+                        before: diff.before,
+                        after: diff.after,
+                      ),
               ),
             ),
           )
@@ -448,6 +450,7 @@ class _ReviewSnapshotDiff {
     required this.file,
     required this.before,
     required this.after,
+    required this.patch,
     required this.additions,
     required this.deletions,
     required this.status,
@@ -456,6 +459,7 @@ class _ReviewSnapshotDiff {
   final String file;
   final String before;
   final String after;
+  final String? patch;
   final int additions;
   final int deletions;
   final String? status;
@@ -465,11 +469,20 @@ class _ReviewSnapshotDiff {
       file: (json['file'] as String?) ?? '',
       before: (json['before'] as String?) ?? '',
       after: (json['after'] as String?) ?? '',
+      patch: _decodePatch(json['patch']),
       additions: (json['additions'] as num?)?.toInt() ?? 0,
       deletions: (json['deletions'] as num?)?.toInt() ?? 0,
       status: json['status'] as String?,
     );
   }
+}
+
+String? _decodePatch(Object? value) {
+  if (value is! String) {
+    return null;
+  }
+  final normalized = value.trimRight();
+  return normalized.isEmpty ? null : normalized;
 }
 
 enum _ReviewDiffOpKind { equal, delete, insert }

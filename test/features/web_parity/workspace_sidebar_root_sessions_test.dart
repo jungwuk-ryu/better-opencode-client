@@ -70,9 +70,10 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
 
-    expect(find.text('Demo'), findsOneWidget);
+    expect(find.text('Demo'), findsAtLeastNWidgets(1));
     expect(find.text('/workspace/demo'), findsAtLeastNWidgets(1));
-    expect(find.text('New session'), findsOneWidget);
+    expect(find.text('New thread'), findsOneWidget);
+    expect(find.text('New session'), findsNothing);
     expect(
       find.byKey(
         const ValueKey<String>('workspace-sidebar-project-menu-button'),
@@ -97,6 +98,105 @@ void main() {
       find.byKey(const ValueKey<String>('sidebar-session-shimmer-ses_1')),
       findsOneWidget,
     );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('sidebar-session-shimmer-ses_1')),
+        matching: find.byType(ShaderMask),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('desktop sidebar omits window control dots', (tester) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _SidebarWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    const trafficLightColors = <Color>[
+      Color(0xFFFF5F57),
+      Color(0xFFFEBB2E),
+      Color(0xFF28C840),
+    ];
+    final trafficLightDots = find.byWidgetPredicate((widget) {
+      if (widget is! Container) {
+        return false;
+      }
+      final decoration = widget.decoration;
+      return decoration is BoxDecoration &&
+          decoration.shape == BoxShape.circle &&
+          trafficLightColors.any((color) => color == decoration.color);
+    });
+    expect(trafficLightDots, findsNothing);
+  });
+
+  testWidgets('sidebar empty state uses thread terminology', (tester) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _EmptySidebarWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute('/workspace/demo'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(find.text('New thread'), findsOneWidget);
+    expect(find.text('Start a new thread to begin.'), findsOneWidget);
+    expect(find.text('New session'), findsNothing);
+    expect(find.text('Start a new session to begin.'), findsNothing);
   });
 
   testWidgets('sidebar shows a hover preview for recent session prompts', (
@@ -151,6 +251,7 @@ void main() {
     await mouse.moveTo(tester.getCenter(targetRow));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 220));
+    await tester.pump();
 
     expect(controllerInstance.hoverPrefetchCalls, 1);
     expect(
@@ -166,15 +267,242 @@ void main() {
       findsOneWidget,
     );
 
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>(
-          'sidebar-session-hover-message-ses_2-msg_hover_newer',
+    final promptButton = find.byKey(
+      const ValueKey<String>(
+        'sidebar-session-hover-message-ses_2-msg_hover_newer',
+      ),
+    );
+    await mouse.moveTo(tester.getCenter(promptButton));
+    await tester.pump(const Duration(milliseconds: 80));
+
+    expect(promptButton, findsOneWidget);
+
+    await tester.tap(promptButton);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    expect(controllerInstance.selectSessionCalls, contains('ses_2'));
+    expect(find.text('Another root session'), findsAtLeastNWidgets(1));
+  });
+
+  testWidgets('sidebar hover preview loads older history before focusing', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    late _SidebarHoverPreviewWorkspaceController controllerInstance;
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            controllerInstance = _SidebarHoverPreviewWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+            return controllerInstance;
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
         ),
+        platform: TargetPlatform.macOS,
       ),
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 220));
+
+    final targetRow = find.byKey(
+      const ValueKey<String>('workspace-session-entry-ses_2-0'),
+    );
+    expect(targetRow, findsOneWidget);
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer();
+    await mouse.moveTo(tester.getCenter(targetRow));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+    await tester.pump();
+
+    final promptButton = find.byKey(
+      const ValueKey<String>(
+        'sidebar-session-hover-message-ses_2-msg_hover_older',
+      ),
+    );
+    expect(promptButton, findsOneWidget);
+
+    await mouse.moveTo(tester.getCenter(promptButton));
+    await tester.pump(const Duration(milliseconds: 80));
+    await tester.tap(promptButton);
+
+    for (var index = 0; index < 8; index += 1) {
+      await tester.pump(const Duration(milliseconds: 120));
+    }
+
+    expect(controllerInstance.selectSessionCalls, contains('ses_2'));
+    expect(controllerInstance.historyLoadCalls, 1);
+    expect(find.textContaining('Loaded older hover prompt'), findsOneWidget);
+  });
+
+  testWidgets('sidebar hover preview tolerates older history load failure', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    late _SidebarHoverPreviewWorkspaceController controllerInstance;
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            controllerInstance = _SidebarHoverPreviewWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+              failHistoryLoad: true,
+            );
+            return controllerInstance;
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+        platform: TargetPlatform.macOS,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    final targetRow = find.byKey(
+      const ValueKey<String>('workspace-session-entry-ses_2-0'),
+    );
+    expect(targetRow, findsOneWidget);
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer();
+    await mouse.moveTo(tester.getCenter(targetRow));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+    await tester.pump();
+
+    final promptButton = find.byKey(
+      const ValueKey<String>(
+        'sidebar-session-hover-message-ses_2-msg_hover_older',
+      ),
+    );
+    expect(promptButton, findsOneWidget);
+
+    await mouse.moveTo(tester.getCenter(promptButton));
+    await tester.pump(const Duration(milliseconds: 80));
+    await tester.tap(promptButton);
+
+    for (var index = 0; index < 8; index += 1) {
+      await tester.pump(const Duration(milliseconds: 120));
+    }
+
+    expect(controllerInstance.selectSessionCalls, contains('ses_2'));
+    expect(controllerInstance.historyLoadCalls, 1);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('sidebar hover preview does not displace or block threads', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    late _SidebarHoverPreviewWorkspaceController controllerInstance;
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            controllerInstance = _SidebarHoverPreviewWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+            return controllerInstance;
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+        platform: TargetPlatform.macOS,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    final firstRow = find.byKey(
+      const ValueKey<String>('workspace-session-entry-ses_1-0'),
+    );
+    final secondRow = find.byKey(
+      const ValueKey<String>('workspace-session-entry-ses_2-0'),
+    );
+    expect(firstRow, findsOneWidget);
+    expect(secondRow, findsOneWidget);
+
+    final secondRowTopBeforeHover = tester.getTopLeft(secondRow).dy;
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer();
+    await mouse.moveTo(tester.getCenter(firstRow));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+    await tester.pump();
+
+    expect(controllerInstance.hoverPrefetchCalls, 1);
+    expect(
+      find.byKey(const ValueKey<String>('sidebar-session-hover-preview-ses_1')),
+      findsOneWidget,
+    );
+    expect(tester.getTopLeft(secondRow).dy, secondRowTopBeforeHover);
+
+    await tester.tapAt(tester.getCenter(secondRow));
+    await tester.pump();
 
     expect(controllerInstance.selectSessionCalls, contains('ses_2'));
     expect(find.text('Another root session'), findsAtLeastNWidgets(1));
@@ -221,7 +549,7 @@ void main() {
     expect(
       find.byKey(
         const ValueKey<String>(
-          'workspace-project-notification-badge-/workspace/demo',
+          'workspace-project-notification-badge-/workspace/lab',
         ),
       ),
       findsOneWidget,
@@ -291,6 +619,12 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
 
     expect(find.byIcon(Icons.help_outline_rounded), findsNothing);
+    expect(find.text('Workspace tools'), findsNothing);
+    expect(find.text('Settings, themes, shortcuts'), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('workspace-sidebar-settings-button')),
+      findsOneWidget,
+    );
 
     await tester.tap(
       find.byKey(const ValueKey<String>('workspace-sidebar-settings-button')),
@@ -307,13 +641,26 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Workspace Settings'), findsOneWidget);
-    expect(find.text('Shell'), findsOneWidget);
+    expect(find.text('Session loading'), findsOneWidget);
     expect(find.text('Manage Servers'), findsOneWidget);
     expect(find.text('Ready'), findsOneWidget);
     expect(
       find.byKey(const ValueKey<String>('workspace-session-entry-ses_child-1')),
       findsNothing,
     );
+
+    final settingsListView = find
+        .descendant(
+          of: find.byKey(const ValueKey<String>('workspace-settings-sheet')),
+          matching: find.byType(ListView),
+        )
+        .first;
+    await tester.dragUntilVisible(
+      find.byKey(const ValueKey<String>('workspace-settings-shell-toggle')),
+      settingsListView,
+      const Offset(0, -160),
+    );
+    await tester.pump();
 
     final shellDisplaySegments = find.descendant(
       of: find.byKey(const ValueKey<String>('workspace-settings-shell-toggle')),
@@ -329,6 +676,15 @@ void main() {
     await tester.pump();
 
     expect(appController.shellToolDisplayMode, ShellToolDisplayMode.collapsed);
+
+    await tester.dragUntilVisible(
+      find.byKey(
+        const ValueKey<String>('workspace-settings-code-highlight-toggle'),
+      ),
+      settingsListView,
+      const Offset(0, 160),
+    );
+    await tester.pump();
 
     final highlightToggle = find.descendant(
       of: find.byKey(
@@ -349,13 +705,6 @@ void main() {
           find.byKey(const ValueKey<String>('workspace-desktop-sidebar-pane')),
         )
         .width;
-
-    final settingsListView = find
-        .descendant(
-          of: find.byKey(const ValueKey<String>('workspace-settings-sheet')),
-          matching: find.byType(ListView),
-        )
-        .first;
 
     await tester.dragUntilVisible(
       find.byKey(
@@ -486,9 +835,13 @@ void main() {
       const Locale('ko'),
     );
 
-    await tester.tap(
-      find.descendant(of: languageRow, matching: find.text('日本語')),
+    final japaneseLanguageOption = find.descendant(
+      of: languageRow,
+      matching: find.text('日本語'),
     );
+    await tester.ensureVisible(japaneseLanguageOption);
+    await tester.pump();
+    await tester.tap(japaneseLanguageOption);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 220));
 
@@ -499,9 +852,13 @@ void main() {
       const Locale('ja'),
     );
 
-    await tester.tap(
-      find.descendant(of: languageRow, matching: find.text('中文')),
+    final chineseLanguageOption = find.descendant(
+      of: languageRow,
+      matching: find.text('中文'),
     );
+    await tester.ensureVisible(chineseLanguageOption);
+    await tester.pump();
+    await tester.tap(chineseLanguageOption);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 220));
 
@@ -587,14 +944,24 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 220));
 
+    expect(
+      find.byKey(const ValueKey<String>('workspace-settings-sheet')),
+      findsOneWidget,
+    );
+    final settingsListViewAfterReleaseNotes = find
+        .descendant(
+          of: find.byKey(const ValueKey<String>('workspace-settings-sheet')),
+          matching: find.byType(ListView),
+        )
+        .first;
     await tester.dragUntilVisible(
       find.byKey(
         const ValueKey<String>(
           'workspace-settings-sidebar-child-sessions-toggle',
         ),
       ),
-      settingsListView,
-      const Offset(0, -200),
+      settingsListViewAfterReleaseNotes,
+      const Offset(0, 220),
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 180));
@@ -616,7 +983,7 @@ void main() {
     await tester.dragUntilVisible(
       find.byKey(const ValueKey<String>('workspace-settings-theme-row')),
       settingsListView,
-      const Offset(0, 220),
+      const Offset(0, -220),
     );
     await tester.pump();
 
@@ -644,6 +1011,174 @@ void main() {
     await tester.pump(const Duration(milliseconds: 220));
 
     expect(appController.themePreset, AppThemePreset.amoled);
+  });
+
+  testWidgets('workspace settings light theme uses clean glass surfaces', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    tester.binding.platformDispatcher.localesTestValue = const <Locale>[
+      Locale('en', 'US'),
+    ];
+    addTearDown(tester.binding.platformDispatcher.clearLocalesTestValue);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      report: _readyReport,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _SidebarWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+        brightness: Brightness.light,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('workspace-sidebar-settings-button')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 240));
+
+    final cardSurface = tester.widget<Container>(
+      find.byKey(
+        const ValueKey<String>('workspace-settings-server-card-surface'),
+      ),
+    );
+    final cardDecoration = cardSurface.decoration! as BoxDecoration;
+    expect(cardDecoration.boxShadow ?? const <BoxShadow>[], isEmpty);
+    expect(cardDecoration.color!.a, greaterThan(0.5));
+    expect(cardDecoration.color!.a, lessThan(1));
+
+    final settingsListView = find.descendant(
+      of: find.byKey(const ValueKey<String>('workspace-settings-sheet')),
+      matching: find.byType(ListView),
+    );
+    await tester.dragUntilVisible(
+      find.byKey(const ValueKey<String>('workspace-settings-shell-toggle')),
+      settingsListView,
+      const Offset(0, -220),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final shellInsetDecorations = tester
+        .widgetList<Container>(
+          find.descendant(
+            of: find.byKey(
+              const ValueKey<String>('workspace-settings-shell-toggle'),
+            ),
+            matching: find.byType(Container),
+          ),
+        )
+        .map((container) => container.decoration)
+        .whereType<BoxDecoration>();
+    expect(
+      shellInsetDecorations.any((decoration) {
+        final radius = decoration.borderRadius?.resolve(TextDirection.ltr);
+        return radius?.topLeft.x == 18 &&
+            (decoration.boxShadow ?? const <BoxShadow>[]).isEmpty &&
+            decoration.color != null &&
+            decoration.color!.a > 0.5 &&
+            decoration.color!.a < 1;
+      }),
+      isTrue,
+    );
+
+    final sheetSurface = tester.widget<Container>(
+      find.byKey(const ValueKey<String>('workspace-settings-sheet')),
+    );
+    final sheetDecoration = sheetSurface.decoration! as BoxDecoration;
+    expect(sheetDecoration.color!.a, greaterThan(cardDecoration.color!.a));
+  });
+
+  testWidgets('workspace settings sheet dismisses when tapping the backdrop', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    tester.binding.platformDispatcher.localesTestValue = const <Locale>[
+      Locale('en', 'US'),
+    ];
+    addTearDown(tester.binding.platformDispatcher.clearLocalesTestValue);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      report: _readyReport,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _SidebarWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    final localeController = LocaleController();
+    addTearDown(appController.dispose);
+    addTearDown(localeController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+        localeController: localeController,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('workspace-sidebar-settings-button')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 240));
+
+    expect(
+      find.byKey(const ValueKey<String>('workspace-settings-sheet')),
+      findsOneWidget,
+    );
+
+    await tester.tapAt(const Offset(40, 40));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 240));
+
+    expect(
+      find.byKey(const ValueKey<String>('workspace-settings-sheet')),
+      findsNothing,
+    );
   });
 
   testWidgets(
@@ -696,10 +1231,17 @@ void main() {
       await tester.pump(const Duration(milliseconds: 240));
 
       await tester.tap(
-        find.byKey(const ValueKey<String>('workspace-sidebar-settings-button')),
+        find
+            .byKey(const ValueKey<String>('workspace-sidebar-settings-button'))
+            .hitTestable(),
       );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 240));
+
+      expect(
+        find.byKey(const ValueKey<String>('workspace-settings-sheet')),
+        findsOneWidget,
+      );
 
       final settingsListView = find
           .descendant(
@@ -707,17 +1249,23 @@ void main() {
             matching: find.byType(ListView),
           )
           .first;
-      await tester.dragUntilVisible(
-        find.byKey(const ValueKey<String>('workspace-settings-language-row')),
-        settingsListView,
-        const Offset(0, -160),
-      );
-      await tester.pump();
-
-      final languageRow = find.byKey(
+      final languageRowFinder = find.byKey(
         const ValueKey<String>('workspace-settings-language-row'),
       );
+      for (
+        var attempts = 0;
+        attempts < 80 && languageRowFinder.evaluate().isEmpty;
+        attempts += 1
+      ) {
+        await tester.drag(settingsListView, const Offset(0, -160));
+        await tester.pump();
+      }
+      await tester.pump();
+
+      final languageRow = languageRowFinder;
       expect(languageRow, findsOneWidget);
+      await tester.ensureVisible(languageRow);
+      await tester.pump();
       expect(
         find.descendant(
           of: languageRow,
@@ -1072,19 +1620,19 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 220));
 
-    final demoTile = find.byKey(
-      const ValueKey<String>('workspace-project-/workspace/demo'),
+    final labTile = find.byKey(
+      const ValueKey<String>('workspace-project-/workspace/lab'),
     );
     Finder demoImage() =>
-        find.descendant(of: demoTile, matching: find.byType(Image));
+        find.descendant(of: labTile, matching: find.byType(Image));
 
     expect(demoImage(), findsNothing);
 
-    final demoProject = controllerInstance.availableProjects.firstWhere(
-      (project) => project.directory == '/workspace/demo',
+    final labProject = controllerInstance.availableProjects.firstWhere(
+      (project) => project.directory == '/workspace/lab',
     );
     controllerInstance.applyProjectTargetUpdate(
-      demoProject.copyWith(
+      labProject.copyWith(
         icon: const ProjectIconInfo(
           url: demoIconDataUrl,
           override: demoIconDataUrl,
@@ -1099,7 +1647,7 @@ void main() {
     final initialProvider = tester.widget<Image>(demoImage()).image;
 
     controllerInstance.applyProjectTargetUpdate(
-      demoProject.copyWith(
+      labProject.copyWith(
         branch: 'release',
         icon: const ProjectIconInfo(
           url: demoIconDataUrl,
@@ -1114,7 +1662,7 @@ void main() {
     expect(tester.widget<Image>(demoImage()).image, same(initialProvider));
 
     controllerInstance.applyProjectTargetUpdate(
-      demoProject.copyWith(icon: const ProjectIconInfo(color: 'mint')),
+      labProject.copyWith(icon: const ProjectIconInfo(color: 'mint')),
     );
     await tester.pump();
 
@@ -1159,11 +1707,13 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 220));
 
-    expect(find.byTooltip('Demo'), findsOneWidget);
+    expect(find.byTooltip('Demo'), findsNothing);
     expect(find.byTooltip('Lab'), findsOneWidget);
   });
 
-  testWidgets('project rail icons can be dragged to reorder', (tester) async {
+  testWidgets('project reorder handles can be dragged to reorder', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1600, 1000);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -1193,7 +1743,7 @@ void main() {
       _WorkspaceRouteHarness(
         controller: appController,
         initialRoute: buildWorkspaceRoute(
-          '/workspace/demo',
+          '/workspace/other',
           sessionId: 'ses_1',
         ),
       ),
@@ -1212,17 +1762,15 @@ void main() {
       lessThan(tester.getTopLeft(labTile).dy),
     );
 
-    expect(
-      find.byKey(
-        const ValueKey<String>(
-          'workspace-project-reorder-handle-/workspace/demo',
-        ),
+    final demoHandle = find.byKey(
+      const ValueKey<String>(
+        'workspace-project-reorder-handle-/workspace/demo',
       ),
-      findsNothing,
     );
-    expect(find.byIcon(Icons.drag_indicator_rounded), findsNothing);
+    expect(demoHandle, findsOneWidget);
+    expect(find.byIcon(Icons.drag_indicator_rounded), findsAtLeastNWidgets(2));
 
-    await tester.drag(demoTile, const Offset(0, 140));
+    await tester.drag(demoHandle, const Offset(0, 140));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 420));
 
@@ -1282,22 +1830,20 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 240));
 
-    final demoTile = find.byKey(
-      const ValueKey<String>('workspace-project-/workspace/demo'),
-    );
     final addProjectButton = find.byKey(
       const ValueKey<String>('workspace-sidebar-add-project-button'),
     );
+    final settingsButton = find.byKey(
+      const ValueKey<String>('workspace-sidebar-settings-button'),
+    );
 
-    expect(demoTile, findsOneWidget);
     expect(addProjectButton, findsOneWidget);
-    expect(tester.getTopLeft(demoTile).dy, greaterThanOrEqualTo(36));
-    expect(tester.getBottomRight(addProjectButton).dy, lessThanOrEqualTo(824));
+    expect(settingsButton, findsOneWidget);
+    expect(tester.getTopLeft(addProjectButton).dy, greaterThanOrEqualTo(36));
+    expect(tester.getBottomRight(settingsButton).dy, lessThanOrEqualTo(824));
   });
 
-  testWidgets('compact project rail uses a delayed reorder start', (
-    tester,
-  ) async {
+  testWidgets('compact drawer uses most of the viewport width', (tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -1308,17 +1854,15 @@ void main() {
       label: 'Mock',
       baseUrl: 'http://localhost:3000',
     );
-    late _EditableSidebarWorkspaceController controllerInstance;
     final appController = _StaticAppController(
       profile: profile,
       workspaceControllerFactory:
           ({required profile, required directory, initialSessionId}) {
-            controllerInstance = _EditableSidebarWorkspaceController(
+            return _SidebarWorkspaceController(
               profile: profile,
               directory: directory,
               initialSessionId: initialSessionId,
             );
-            return controllerInstance;
           },
     );
     addTearDown(appController.dispose);
@@ -1339,37 +1883,195 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 240));
 
-    final demoTile = find.byKey(
-      const ValueKey<String>('workspace-project-/workspace/demo'),
+    expect(tester.getSize(find.byType(Drawer)).width, closeTo(378, 0.1));
+  });
+
+  testWidgets('compact drawer puts threads ahead of workspace details', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
     );
-    final labTile = find.byKey(
-      const ValueKey<String>('workspace-project-/workspace/lab'),
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _SidebarWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
     );
-    expect(demoTile, findsOneWidget);
-    expect(labTile, findsOneWidget);
-    expect(
-      find.byWidgetPredicate(
-        (widget) => widget is ReorderableDelayedDragStartListener,
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
       ),
-      findsAtLeastNWidgets(2),
     );
-
-    final quickGesture = await tester.startGesture(
-      tester.getCenter(demoTile),
-      kind: PointerDeviceKind.touch,
-    );
-    await quickGesture.moveTo(tester.getCenter(labTile));
-    await quickGesture.up();
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 420));
+    await tester.pump(const Duration(milliseconds: 220));
 
+    await tester.tap(find.byIcon(Icons.menu_rounded).first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 240));
+
+    final drawer = find.byType(Drawer);
+    final threadsLabel = find.descendant(
+      of: drawer,
+      matching: find.text('Threads'),
+    );
+    final workspaceLabel = find.descendant(
+      of: drawer,
+      matching: find.text('Workspace'),
+    );
+
+    expect(threadsLabel, findsOneWidget);
+    expect(workspaceLabel, findsOneWidget);
     expect(
-      controllerInstance.availableProjects
-          .map((project) => project.directory)
-          .toList(growable: false),
-      const <String>['/workspace/demo', '/workspace/lab'],
+      tester.getTopLeft(threadsLabel).dy,
+      lessThan(tester.getTopLeft(workspaceLabel).dy),
     );
   });
+
+  testWidgets(
+    'compact drawer uses the project name instead of a generic label',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              return _SidebarWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+            },
+      );
+      addTearDown(appController.dispose);
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          initialRoute: buildWorkspaceRoute(
+            '/workspace/other',
+            sessionId: 'ses_1',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 220));
+
+      await tester.tap(find.byIcon(Icons.menu_rounded).first);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 240));
+
+      expect(find.text('Demo'), findsAtLeastNWidgets(1));
+      expect(find.text('Current project'), findsNothing);
+      expect(find.text('현재 프로젝트'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'compact project rail keeps tile drags from reordering projects',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      late _EditableSidebarWorkspaceController controllerInstance;
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              controllerInstance = _EditableSidebarWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+              return controllerInstance;
+            },
+      );
+      addTearDown(appController.dispose);
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          initialRoute: buildWorkspaceRoute(
+            '/workspace/other',
+            sessionId: 'ses_1',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 220));
+
+      await tester.tap(find.byIcon(Icons.menu_rounded).first);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 240));
+
+      final demoTile = find.byKey(
+        const ValueKey<String>('workspace-project-/workspace/demo'),
+      );
+      final labTile = find.byKey(
+        const ValueKey<String>('workspace-project-/workspace/lab'),
+      );
+      expect(demoTile, findsOneWidget);
+      expect(labTile, findsOneWidget);
+      expect(
+        find.byKey(
+          const ValueKey<String>(
+            'workspace-project-reorder-handle-/workspace/demo',
+          ),
+        ),
+        findsOneWidget,
+      );
+
+      final quickGesture = await tester.startGesture(
+        tester.getCenter(demoTile),
+        kind: PointerDeviceKind.touch,
+      );
+      await quickGesture.moveTo(tester.getCenter(labTile));
+      await quickGesture.up();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 420));
+
+      expect(
+        controllerInstance.availableProjects
+            .map((project) => project.directory)
+            .toList(growable: false),
+        const <String>['/workspace/demo', '/workspace/lab'],
+      );
+    },
+  );
 }
 
 class _WorkspaceRouteHarness extends StatelessWidget {
@@ -1379,6 +2081,7 @@ class _WorkspaceRouteHarness extends StatelessWidget {
     this.projectCatalogService,
     this.platform = TargetPlatform.macOS,
     this.localeController,
+    this.brightness = Brightness.dark,
   });
 
   final WebParityAppController controller;
@@ -1386,6 +2089,7 @@ class _WorkspaceRouteHarness extends StatelessWidget {
   final ProjectCatalogService? projectCatalogService;
   final TargetPlatform platform;
   final LocaleController? localeController;
+  final Brightness brightness;
 
   @override
   Widget build(BuildContext context) {
@@ -1398,7 +2102,11 @@ class _WorkspaceRouteHarness extends StatelessWidget {
         animation: animation,
         builder: (context, child) {
           Widget app = MaterialApp(
-            theme: controller.themeData.copyWith(platform: platform),
+            theme:
+                (brightness == Brightness.light
+                        ? controller.lightThemeData
+                        : controller.darkThemeData)
+                    .copyWith(platform: platform),
             locale: localeController?.locale,
             supportedLocales: AppLocalizations.supportedLocales,
             localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -1640,18 +2348,68 @@ class _SidebarWorkspaceController extends WorkspaceController {
   }
 }
 
+class _EmptySidebarWorkspaceController extends _SidebarWorkspaceController {
+  _EmptySidebarWorkspaceController({
+    required super.profile,
+    required super.directory,
+    super.initialSessionId,
+  });
+
+  @override
+  List<SessionSummary> get sessions => const <SessionSummary>[];
+
+  @override
+  SessionSummary? get selectedSession => null;
+
+  @override
+  Future<void> load() async {
+    _loading = false;
+    _selectedSessionId = null;
+    notifyListeners();
+  }
+}
+
 class _SidebarHoverPreviewWorkspaceController
     extends _SidebarWorkspaceController {
   _SidebarHoverPreviewWorkspaceController({
     required super.profile,
     required super.directory,
     super.initialSessionId,
+    this.failHistoryLoad = false,
   });
 
+  final bool failHistoryLoad;
   int hoverPrefetchCalls = 0;
+  int historyLoadCalls = 0;
   final List<String> selectSessionCalls = <String>[];
   Map<String, WorkspaceSessionHoverPreviewState> _previewBySessionId =
       const <String, WorkspaceSessionHoverPreviewState>{};
+  final Map<String, bool> _historyMoreBySessionId = <String, bool>{
+    'ses_2': true,
+  };
+  late final Map<String, List<ChatMessage>> _messagesBySessionId =
+      <String, List<ChatMessage>>{
+        'ses_1': <ChatMessage>[
+          _sidebarTestMessage(
+            id: 'msg_ses_1',
+            sessionId: 'ses_1',
+            text: 'Root session current prompt',
+          ),
+        ],
+        'ses_2': <ChatMessage>[
+          for (var index = 0; index < 79; index += 1)
+            _sidebarTestMessage(
+              id: 'msg_hover_loaded_$index',
+              sessionId: 'ses_2',
+              text: 'Already loaded hover prompt $index',
+            ),
+          _sidebarTestMessage(
+            id: 'msg_hover_newer',
+            sessionId: 'ses_2',
+            text: 'Fix the flaky iOS snapshot test',
+          ),
+        ],
+      };
 
   @override
   bool get loading => _loading;
@@ -1666,6 +2424,11 @@ class _SidebarHoverPreviewWorkspaceController
       return null;
     }
     return sessions.firstWhere((session) => session.id == selectedSessionId);
+  }
+
+  @override
+  List<ChatMessage> get messages {
+    return _messagesBySessionId[_selectedSessionId] ?? const <ChatMessage>[];
   }
 
   @override
@@ -1687,6 +2450,47 @@ class _SidebarHoverPreviewWorkspaceController
   }
 
   @override
+  WorkspaceSessionTimelineState timelineStateForSession(String? sessionId) {
+    final normalized = sessionId?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return const WorkspaceSessionTimelineState.empty();
+    }
+    final messages = _messagesBySessionId[normalized] ?? const <ChatMessage>[];
+    return WorkspaceSessionTimelineState(
+      sessionId: normalized,
+      messages: messages,
+      orderedMessages: messages,
+      loading: false,
+      showingCachedMessages: false,
+      historyMore: _historyMoreBySessionId[normalized] ?? false,
+      historyLoading: false,
+    );
+  }
+
+  @override
+  Future<void> loadMoreTimelineSessionHistory(String? sessionId) async {
+    final normalized = sessionId?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return;
+    }
+    historyLoadCalls += 1;
+    if (failHistoryLoad) {
+      notifyListeners();
+      throw StateError('Failed to load older hover prompt.');
+    }
+    _historyMoreBySessionId[normalized] = false;
+    _messagesBySessionId[normalized] = <ChatMessage>[
+      _sidebarTestMessage(
+        id: 'msg_hover_older',
+        sessionId: normalized,
+        text: 'Loaded older hover prompt',
+      ),
+      ...?_messagesBySessionId[normalized],
+    ];
+    notifyListeners();
+  }
+
+  @override
   WorkspaceSessionHoverPreviewState sessionHoverPreviewForSession(
     String? sessionId,
   ) {
@@ -1701,7 +2505,7 @@ class _SidebarHoverPreviewWorkspaceController
       return;
     }
     hoverPrefetchCalls += 1;
-    if (normalized != 'ses_2') {
+    if (normalized != 'ses_1' && normalized != 'ses_2') {
       return;
     }
     _previewBySessionId = <String, WorkspaceSessionHoverPreviewState>{
@@ -1724,6 +2528,17 @@ class _SidebarHoverPreviewWorkspaceController
   }
 }
 
+ChatMessage _sidebarTestMessage({
+  required String id,
+  required String sessionId,
+  required String text,
+}) {
+  return ChatMessage(
+    info: ChatMessageInfo(id: id, role: 'user', sessionId: sessionId),
+    parts: <ChatPart>[ChatPart(id: 'part_$id', type: 'text', text: text)],
+  );
+}
+
 class _SidebarNotificationWorkspaceController
     extends _SidebarWorkspaceController {
   _SidebarNotificationWorkspaceController({
@@ -1731,6 +2546,22 @@ class _SidebarNotificationWorkspaceController
     required super.directory,
     super.initialSessionId,
   });
+
+  static const ProjectTarget _notifiedProject = ProjectTarget(
+    id: 'project-lab',
+    directory: '/workspace/lab',
+    label: 'Lab',
+    name: 'Lab',
+    source: 'server',
+    vcs: 'git',
+    branch: 'develop',
+  );
+
+  @override
+  List<ProjectTarget> get availableProjects => <ProjectTarget>[
+    _SidebarWorkspaceController._projectTarget,
+    _notifiedProject,
+  ];
 
   @override
   WorkspaceSidebarNotificationState sessionNotificationForSession(
@@ -1747,7 +2578,7 @@ class _SidebarNotificationWorkspaceController
     String? directory,
   ) {
     return switch (directory) {
-      '/workspace/demo' => const WorkspaceSidebarNotificationState(
+      '/workspace/lab' => const WorkspaceSidebarNotificationState(
         unseenCount: 2,
         hasError: true,
       ),
@@ -1785,7 +2616,14 @@ class _EditableSidebarWorkspaceController extends _SidebarWorkspaceController {
   ];
 
   @override
-  ProjectTarget? get project => _projects.first;
+  ProjectTarget? get project {
+    for (final project in _projects) {
+      if (project.directory == directory) {
+        return project;
+      }
+    }
+    return null;
+  }
 
   @override
   List<ProjectTarget> get availableProjects => _projects;

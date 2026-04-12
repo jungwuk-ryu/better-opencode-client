@@ -411,7 +411,7 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
+        padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
@@ -430,10 +430,10 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
               const SizedBox(height: AppSpacing.md),
               _buildChooserOverview(context, l10n),
             ],
-            const SizedBox(height: AppSpacing.lg),
+            const SizedBox(height: AppSpacing.md),
             if (_loading)
               const Padding(
-                padding: EdgeInsets.all(AppSpacing.lg),
+                padding: EdgeInsets.all(AppSpacing.md),
                 child: Center(child: CircularProgressIndicator()),
               )
             else
@@ -463,7 +463,7 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: <Widget>[
                               chooser,
-                              const SizedBox(height: AppSpacing.lg),
+                              const SizedBox(height: AppSpacing.md),
                               preview,
                             ],
                           );
@@ -472,7 +472,7 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: <Widget>[
                             Expanded(flex: 6, child: chooser),
-                            const SizedBox(width: AppSpacing.lg),
+                            const SizedBox(width: AppSpacing.md),
                             Expanded(flex: 4, child: preview),
                           ],
                         );
@@ -490,15 +490,6 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
   Widget _buildChooser(BuildContext context, AppLocalizations l10n) {
     final catalog = _catalog;
     final pinnedProjects = _filterTargets(_pinnedProjects(catalog));
-    final currentProjectTarget = catalog?.currentProject == null
-        ? null
-        : _toTarget(
-            catalog!.currentProject!,
-            source: 'current',
-            branch: catalog.vcsInfo?.branch,
-          );
-    final showCurrentProject =
-        currentProjectTarget != null && _matchesProject(currentProjectTarget);
     final serverProjects = _filterTargets(
       catalog?.projects.map(
             (project) => _toTarget(
@@ -513,7 +504,6 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
     final hasFilter = _projectQuery.trim().isNotEmpty;
     final hasMatches =
         pinnedProjects.isNotEmpty ||
-        showCurrentProject ||
         serverProjects.isNotEmpty ||
         recentProjects.isNotEmpty;
 
@@ -581,29 +571,6 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
                     ),
                   )
                   .toList(growable: false),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.md),
-        ],
-        if (showCurrentProject) ...<Widget>[
-          _Section(
-            title: l10n.currentProjectTitle,
-            subtitle: l10n.currentProjectSubtitle,
-            child: _ProjectChoiceTile(
-              target: currentProjectTarget,
-              selected:
-                  _selectedTarget?.directory == currentProjectTarget.directory,
-              pinned: _pinnedProjectDirectories.contains(
-                currentProjectTarget.directory,
-              ),
-              pinTooltip:
-                  _pinnedProjectDirectories.contains(
-                    currentProjectTarget.directory,
-                  )
-                  ? l10n.projectUnpinAction
-                  : l10n.projectPinAction,
-              onPinToggle: () => _togglePinnedProject(currentProjectTarget),
-              onTap: () => _selectTarget(currentProjectTarget),
             ),
           ),
           const SizedBox(height: AppSpacing.md),
@@ -721,6 +688,8 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
   Widget _buildPreview(BuildContext context, AppLocalizations l10n) {
     final target = _selectedTarget;
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final isPinned =
+        target != null && _pinnedProjectDirectories.contains(target.directory);
     return _Section(
       title: l10n.projectPreviewTitle,
       subtitle: l10n.projectPreviewSubtitle,
@@ -821,10 +790,29 @@ class _ProjectWorkspaceSectionState extends State<ProjectWorkspaceSection> {
                   ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
                 ),
                 const SizedBox(height: AppSpacing.md),
-                ElevatedButton.icon(
-                  onPressed: () => _openTarget(target),
-                  icon: const Icon(Icons.arrow_forward_rounded),
-                  label: Text(l10n.projectOpenAction),
+                Wrap(
+                  spacing: AppSpacing.sm,
+                  runSpacing: AppSpacing.sm,
+                  children: <Widget>[
+                    OutlinedButton.icon(
+                      onPressed: () => _togglePinnedProject(target),
+                      icon: Icon(
+                        isPinned
+                            ? Icons.push_pin_rounded
+                            : Icons.push_pin_outlined,
+                      ),
+                      label: Text(
+                        isPinned
+                            ? l10n.projectUnpinAction
+                            : l10n.projectPinAction,
+                      ),
+                    ),
+                    ElevatedButton.icon(
+                      onPressed: () => _openTarget(target),
+                      icon: const Icon(Icons.arrow_forward_rounded),
+                      label: Text(l10n.projectOpenAction),
+                    ),
+                  ],
                 ),
               ],
             ),

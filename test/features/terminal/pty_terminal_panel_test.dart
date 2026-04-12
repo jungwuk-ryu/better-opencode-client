@@ -168,6 +168,42 @@ void main() {
   );
 
   testWidgets(
+    'mobile keyboard backspace sends terminal delete sequence',
+    (tester) async {
+      final service = _FakePtyService();
+      addTearDown(service.dispose);
+
+      await tester.pumpWidget(
+        _PtyPanelHarness(
+          profile: profile,
+          service: service,
+          sessions: sessions.take(1).toList(growable: false),
+          initialActiveSessionId: 'pty_1',
+          width: 390,
+          height: 420,
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(find.byType(TerminalView));
+      await tester.pump(const Duration(milliseconds: 350));
+
+      expect(tester.testTextInput.hasAnyClients, isTrue);
+
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: ' ',
+          selection: TextSelection.collapsed(offset: 1),
+        ),
+      );
+      await tester.pump();
+
+      expect(service.sentMessages('pty_1'), contains('\u007f'));
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
+  testWidgets(
     'mobile special key palette sends terminal key output',
     (tester) async {
       final service = _FakePtyService();

@@ -161,7 +161,9 @@ void main() {
         find.byKey(const ValueKey<String>('home-server-card-server')),
         findsOneWidget,
       );
-      await tester.tap(find.widgetWithText(ActionChip, 'Demo'));
+      await tester.tap(
+        find.byKey(const ValueKey<String>('home-server-resume-button-server')),
+      );
       await tester.pumpAndSettle();
 
       expect(
@@ -232,7 +234,7 @@ void main() {
       expect(find.text('Ready'), findsWidgets);
       expect(find.text('Sign In'), findsWidgets);
 
-      await tester.tap(find.widgetWithText(OutlinedButton, 'See Servers'));
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Manage'));
       await tester.pumpAndSettle();
 
       expect(
@@ -250,7 +252,7 @@ void main() {
       expect(
         find.descendant(
           of: find.byKey(const ValueKey<String>('servers-sheet-card-alpha')),
-          matching: find.text('v1.2.3'),
+          matching: find.text('v9.9.9'),
         ),
         findsOneWidget,
       );
@@ -270,6 +272,147 @@ void main() {
       );
     },
   );
+
+  testWidgets(
+    'compact home keeps server management inline without duplicate sheet shortcuts',
+    (tester) async {
+      _setCompactSurface(tester);
+      final alpha = ServerProfile(
+        id: 'alpha',
+        label: 'Alpha',
+        baseUrl: 'https://alpha.example.com',
+      );
+      final beta = ServerProfile(
+        id: 'beta',
+        label: 'Beta',
+        baseUrl: 'https://beta.example.com',
+      );
+      final controller = _MutableHomeAppController(
+        profiles: <ServerProfile>[alpha, beta],
+        selected: alpha,
+        reports: <String, ServerProbeReport>{
+          alpha.storageKey: _probeReport(alpha, version: '1.2.3'),
+          beta.storageKey: _probeReport(
+            beta,
+            version: '0.9.0',
+            classification: ConnectionProbeClassification.authFailure,
+          ),
+        },
+      );
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(
+        AppScope(
+          controller: controller,
+          child: MaterialApp(
+            theme: AppTheme.dark(),
+            home: WebParityHomeScreen(
+              flavor: AppFlavor.debug,
+              localeController: LocaleController(),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.widgetWithText(OutlinedButton, 'See Servers'), findsNothing);
+      expect(find.byTooltip('Manage'), findsOneWidget);
+      expect(find.byType(ListView), findsOneWidget);
+      expect(find.byType(SingleChildScrollView), findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('home-server-card-alpha')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('home-server-card-beta')),
+        findsOneWidget,
+      );
+
+      final connectButton = find.byKey(
+        const ValueKey<String>('home-server-resume-button-alpha'),
+      );
+      final detailsButton = find.byKey(
+        const ValueKey<String>('home-server-details-button-alpha'),
+      );
+      final moreButton = find.byKey(
+        const ValueKey<String>('home-server-more-button-alpha'),
+      );
+
+      expect(connectButton, findsOneWidget);
+      expect(detailsButton, findsOneWidget);
+      expect(moreButton, findsOneWidget);
+      expect(find.widgetWithText(FilledButton, 'Connect'), findsOneWidget);
+
+      final connectRect = tester.getRect(connectButton);
+      final detailsRect = tester.getRect(detailsButton);
+      final moreRect = tester.getRect(moreButton);
+
+      expect(detailsRect.top, moreOrLessEquals(connectRect.top));
+      expect(moreRect.top, moreOrLessEquals(connectRect.top));
+      expect(detailsRect.height, moreOrLessEquals(connectRect.height));
+      expect(moreRect.height, moreOrLessEquals(connectRect.height));
+    },
+  );
+
+  testWidgets('very compact home stacks actions without misaligning the menu', (
+    tester,
+  ) async {
+    await applyResponsiveTestViewport(tester, const Size(319, 568));
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'alpha',
+      label: 'Alpha',
+      baseUrl: 'https://alpha.example.com',
+    );
+    final controller = _MutableHomeAppController(
+      profiles: <ServerProfile>[profile],
+      selected: profile,
+      reports: <String, ServerProbeReport>{
+        profile.storageKey: _probeReport(profile, version: '1.2.3'),
+      },
+    );
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      AppScope(
+        controller: controller,
+        child: MaterialApp(
+          theme: AppTheme.dark(),
+          home: WebParityHomeScreen(
+            flavor: AppFlavor.debug,
+            localeController: LocaleController(),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final connectButton = find.byKey(
+      const ValueKey<String>('home-server-resume-button-alpha'),
+    );
+    final detailsButton = find.byKey(
+      const ValueKey<String>('home-server-details-button-alpha'),
+    );
+    final moreButton = find.byKey(
+      const ValueKey<String>('home-server-more-button-alpha'),
+    );
+
+    expect(connectButton, findsOneWidget);
+    expect(detailsButton, findsOneWidget);
+    expect(moreButton, findsOneWidget);
+
+    final connectRect = tester.getRect(connectButton);
+    final detailsRect = tester.getRect(detailsButton);
+    final moreRect = tester.getRect(moreButton);
+
+    expect(detailsRect.top, greaterThan(connectRect.top));
+    expect(moreRect.top, moreOrLessEquals(detailsRect.top));
+    expect(moreRect.height, moreOrLessEquals(detailsRect.height));
+    expect(connectRect.width, greaterThan(detailsRect.width));
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('home localizes server actions for japanese and chinese', (
     tester,
@@ -315,23 +458,13 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.widgetWithText(OutlinedButton, testCase.copy['See Servers']!),
-        findsOneWidget,
-        reason: testCase.mode.name,
-      );
-      expect(
         find.text(testCase.copy['Ready']!),
         findsWidgets,
         reason: testCase.mode.name,
       );
 
-      await tester.tap(
-        find.widgetWithText(OutlinedButton, testCase.copy['See Servers']!),
-      );
-      await tester.pumpAndSettle();
-
       expect(
-        find.byKey(const ValueKey<String>('servers-sheet-add-button')),
+        find.byKey(const ValueKey<String>('home-add-server-button')),
         findsOneWidget,
         reason: testCase.mode.name,
       );
@@ -386,7 +519,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithText(OutlinedButton, 'See Servers'));
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Manage'));
     await tester.pumpAndSettle();
 
     await tester.tap(
@@ -585,6 +718,9 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Details'));
+      await tester.pumpAndSettle();
+
       expect(
         find.byKey(const ValueKey<String>('home-pane-card-pane_main')),
         findsOneWidget,
@@ -614,6 +750,159 @@ void main() {
       expect(find.widgetWithText(ActionChip, 'Ops'), findsOneWidget);
     },
   );
+
+  testWidgets(
+    'compact home detail gives server actions a stable full-width row',
+    (tester) async {
+      _setCompactSurface(tester);
+      final profile = ServerProfile(
+        id: 'alpha',
+        label: 'Alpha',
+        baseUrl: 'https://alpha.example.com',
+      );
+      final controller = _MutableHomeAppController(
+        profiles: <ServerProfile>[profile],
+        selected: profile,
+        reports: <String, ServerProbeReport>{
+          profile.storageKey: _probeReport(profile, version: '1.2.3'),
+        },
+        workspacePaneLayouts: <String, WorkspacePaneLayoutSnapshot>{
+          profile.storageKey: const WorkspacePaneLayoutSnapshot(
+            activePaneId: 'pane_main',
+            panes: <WorkspacePaneLayoutPane>[
+              WorkspacePaneLayoutPane(
+                id: 'pane_main',
+                directory: '/workspace/demo',
+              ),
+            ],
+          ),
+        },
+      );
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(
+        AppScope(
+          controller: controller,
+          child: MaterialApp(
+            theme: AppTheme.dark(),
+            home: WebParityHomeScreen(
+              flavor: AppFlavor.debug,
+              localeController: LocaleController(),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('home-server-details-button-alpha')),
+      );
+      await tester.pumpAndSettle();
+
+      final resumeButton = find.byKey(
+        const ValueKey<String>('home-server-detail-resume-button-alpha'),
+      );
+      final editButton = find.byKey(
+        const ValueKey<String>('home-server-detail-edit-button-alpha'),
+      );
+      final copyButton = find.byKey(
+        const ValueKey<String>('home-server-detail-copy-link-button-alpha'),
+      );
+
+      expect(resumeButton, findsOneWidget);
+      expect(editButton, findsOneWidget);
+      expect(copyButton, findsOneWidget);
+
+      final resumeRect = tester.getRect(resumeButton);
+      final editRect = tester.getRect(editButton);
+      final copyRect = tester.getRect(copyButton);
+
+      expect(resumeRect.width, greaterThan(300));
+      expect(editRect.top, greaterThan(resumeRect.bottom));
+      expect(copyRect.top, moreOrLessEquals(editRect.top));
+      expect(editRect.left, moreOrLessEquals(resumeRect.left));
+      expect(copyRect.right, moreOrLessEquals(resumeRect.right));
+      expect(copyRect.left, greaterThan(editRect.right));
+      expect(editRect.width, moreOrLessEquals(copyRect.width));
+      expect(resumeRect.width, greaterThan(editRect.width));
+    },
+  );
+
+  testWidgets('wide home detail keeps server actions aligned', (tester) async {
+    _setLargeSurface(tester);
+    final profile = ServerProfile(
+      id: 'alpha',
+      label: 'Alpha',
+      baseUrl: 'https://alpha.example.com',
+    );
+    final controller = _MutableHomeAppController(
+      profiles: <ServerProfile>[profile],
+      selected: profile,
+      reports: <String, ServerProbeReport>{
+        profile.storageKey: _probeReport(profile, version: '1.2.3'),
+      },
+      workspacePaneLayouts: <String, WorkspacePaneLayoutSnapshot>{
+        profile.storageKey: const WorkspacePaneLayoutSnapshot(
+          activePaneId: 'pane_main',
+          panes: <WorkspacePaneLayoutPane>[
+            WorkspacePaneLayoutPane(
+              id: 'pane_main',
+              directory: '/workspace/demo',
+            ),
+          ],
+        ),
+      },
+    );
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      AppScope(
+        controller: controller,
+        child: MaterialApp(
+          theme: AppTheme.dark(),
+          home: WebParityHomeScreen(
+            flavor: AppFlavor.debug,
+            localeController: LocaleController(),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('home-server-details-button-alpha')),
+    );
+    await tester.pumpAndSettle();
+
+    final resumeButton = find.byKey(
+      const ValueKey<String>('home-server-detail-resume-button-alpha'),
+    );
+    final editButton = find.byKey(
+      const ValueKey<String>('home-server-detail-edit-button-alpha'),
+    );
+    final copyButton = find.byKey(
+      const ValueKey<String>('home-server-detail-copy-link-button-alpha'),
+    );
+
+    expect(resumeButton, findsOneWidget);
+    expect(editButton, findsOneWidget);
+    expect(copyButton, findsOneWidget);
+
+    final resumeRect = tester.getRect(resumeButton);
+    final editRect = tester.getRect(editButton);
+    final copyRect = tester.getRect(copyButton);
+
+    expect(editRect.top, greaterThan(resumeRect.bottom));
+    expect(copyRect.top, moreOrLessEquals(editRect.top));
+    expect(copyRect.left, greaterThan(editRect.right));
+    if (resumeRect.width > 320) {
+      expect(editRect.left, moreOrLessEquals(resumeRect.left));
+      expect(copyRect.right, moreOrLessEquals(resumeRect.right));
+      expect(editRect.width, moreOrLessEquals(copyRect.width));
+    } else {
+      expect(resumeRect.right, moreOrLessEquals(copyRect.right));
+    }
+  });
 
   testWidgets(
     'resume workspace restores the active pane for the selected server',
@@ -837,9 +1126,16 @@ class _MutableHomeAppController extends WebParityAppController {
 
   @override
   Future<void> refreshProbe(ServerProfile profile) async {
+    final previousClassification =
+        _reports[profile.storageKey]?.classification ??
+        ConnectionProbeClassification.ready;
     _reports = <String, ServerProbeReport>{
       ..._reports,
-      profile.storageKey: _probeReport(profile, version: '9.9.9'),
+      profile.storageKey: _probeReport(
+        profile,
+        version: '9.9.9',
+        classification: previousClassification,
+      ),
     };
     notifyListeners();
   }
@@ -962,6 +1258,13 @@ class _RecordingNavigatorObserver extends NavigatorObserver {
 
 void _setLargeSurface(WidgetTester tester) {
   tester.view.physicalSize = const Size(1440, 2200);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+}
+
+void _setCompactSurface(WidgetTester tester) {
+  tester.view.physicalSize = const Size(390, 844);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);

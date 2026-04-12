@@ -7,7 +7,7 @@ import 'package:better_opencode_client/src/features/settings/integration_status_
 Future<void> main(List<String> args) async {
   if (args.length < 2) {
     throw ArgumentError(
-      'Usage: dart run tool/manual/start_auth_flows.dart <server-url> <directory>',
+      'Usage: dart run tool/manual/start_auth_flows.dart <server-url> <directory> [mcp-redirect-uri]',
     );
   }
 
@@ -28,6 +28,7 @@ Future<void> main(List<String> args) async {
     profile: profile,
     project: project,
     name: 'github',
+    redirectUri: args.length > 2 ? args[2] : null,
   );
   service.dispose();
 

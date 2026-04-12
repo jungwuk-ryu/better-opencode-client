@@ -11,6 +11,7 @@ import 'package:better_opencode_client/src/core/connection/connection_models.dar
 import 'package:better_opencode_client/src/core/spec/raw_json_document.dart';
 import 'package:better_opencode_client/src/design_system/app_theme.dart';
 import 'package:better_opencode_client/src/features/chat/chat_models.dart';
+import 'package:better_opencode_client/src/features/chat/session_context_insights.dart';
 import 'package:better_opencode_client/src/features/projects/project_models.dart';
 import 'package:better_opencode_client/src/features/settings/config_service.dart';
 import 'package:better_opencode_client/src/features/terminal/pty_models.dart';
@@ -94,59 +95,120 @@ void main() {
     },
   );
 
-  testWidgets(
-    'session header shows the title, busy state, and context usage ring',
-    (tester) async {
-      tester.view.physicalSize = const Size(1480, 960);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
+  testWidgets('session header shimmers the busy title without a busy badge', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1480, 960);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
 
-      final profile = ServerProfile(
-        id: 'server',
-        label: 'Mock',
-        baseUrl: 'http://localhost:3000',
-      );
-      final appController = _StaticAppController(
-        profile: profile,
-        workspaceControllerFactory:
-            ({required profile, required directory, initialSessionId}) {
-              return _HeaderWorkspaceController(
-                profile: profile,
-                directory: directory,
-                initialSessionId: initialSessionId,
-              );
-            },
-      );
-      addTearDown(appController.dispose);
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _HeaderWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
 
-      await tester.pumpWidget(
-        _WorkspaceRouteHarness(
-          controller: appController,
-          initialRoute: buildWorkspaceRoute(
-            '/workspace/demo',
-            sessionId: 'ses_1',
-          ),
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
         ),
-      );
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 80));
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 80));
 
-      expect(
-        find.byKey(const ValueKey<String>('session-header-title-ses_1')),
-        findsOneWidget,
-      );
-      expect(find.text('Busy'), findsOneWidget);
-      expect(
-        find.byKey(const ValueKey<String>('session-header-context-ring-ses_1')),
-        findsOneWidget,
-      );
-      expect(
-        find.byTooltip('5% of context window used (51,945 / 1,050,000 tokens)'),
-        findsOneWidget,
-      );
-    },
-  );
+    expect(
+      find.byKey(const ValueKey<String>('session-header-title-ses_1')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('session-header-title-ses_1')),
+        matching: find.byType(ShaderMask),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Busy'), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('session-header-context-ring-ses_1')),
+      findsOneWidget,
+    );
+    expect(
+      find.byTooltip('5% of context window used (51,945 / 1,050,000 tokens)'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('session header context ring updates smoothly with new usage', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1480, 960);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    late _HeaderWorkspaceController controller;
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            controller = _HeaderWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+            return controller;
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    controller.updateContextUsagePercent(82);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 420));
+
+    expect(
+      find.byKey(const ValueKey<String>('session-header-context-ring-ses_1')),
+      findsOneWidget,
+    );
+    expect(
+      find.byTooltip('82% of context window used (861,000 / 1,050,000 tokens)'),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('desktop context ring opens the context panel', (tester) async {
     tester.view.physicalSize = const Size(1480, 960);
@@ -190,7 +252,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 220));
 
-    expect(find.text('Context Limit'), findsOneWidget);
+    expect(find.text('Context overview'), findsOneWidget);
     expect(
       find.byKey(const ValueKey<String>('workspace-side-tab-context-button')),
       findsOneWidget,
@@ -241,7 +303,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 220));
 
-    expect(find.text('Context Limit'), findsOneWidget);
+    expect(find.text('Context overview'), findsOneWidget);
   });
 
   testWidgets(
@@ -481,14 +543,14 @@ void main() {
 
     await tester.enterText(
       find.descendant(
-        of: find.byType(AlertDialog),
+        of: find.byKey(const ValueKey<String>('rename-session-dialog')),
         matching: find.byType(TextField),
       ),
       'Renamed header session',
     );
     await tester.tap(
       find.descendant(
-        of: find.byType(AlertDialog),
+        of: find.byKey(const ValueKey<String>('rename-session-dialog')),
         matching: find.widgetWithText(FilledButton, 'Save'),
       ),
     );
@@ -552,7 +614,7 @@ void main() {
     expect(find.text('Delete Session'), findsAtLeastNWidgets(1));
     await tester.tap(
       find.descendant(
-        of: find.byType(AlertDialog),
+        of: find.byKey(const ValueKey<String>('delete-session-dialog')),
         matching: find.widgetWithText(FilledButton, 'Delete'),
       ),
     );
@@ -669,6 +731,136 @@ void main() {
       );
     },
   );
+
+  testWidgets('command palette dismisses when tapping the backdrop', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1480, 960);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _HeaderWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('workspace-command-palette-button')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    expect(
+      find.byKey(const ValueKey<String>('workspace-command-palette-sheet')),
+      findsOneWidget,
+    );
+
+    await tester.tapAt(const Offset(32, 32));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    expect(
+      find.byKey(const ValueKey<String>('workspace-command-palette-sheet')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('rename session dialog dismisses when tapping the backdrop', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1480, 960);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    late _ActionWorkspaceController controllerInstance;
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            controllerInstance = _ActionWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+            return controllerInstance;
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('session-header-overflow-menu-button')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    final renameItem = tester.widget<InkWell>(
+      find.byKey(
+        const ValueKey<String>('session-header-overflow-menu-item-rename'),
+      ),
+    );
+    renameItem.onTap?.call();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    expect(
+      find.byKey(const ValueKey<String>('rename-session-dialog')),
+      findsOneWidget,
+    );
+
+    await tester.tapAt(const Offset(32, 32));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    expect(
+      find.byKey(const ValueKey<String>('rename-session-dialog')),
+      findsNothing,
+    );
+    expect(controllerInstance.renameCount, 0);
+  });
 
   testWidgets(
     'session header chat search reveals older matches and navigates between them',
@@ -1134,6 +1326,10 @@ class _HeaderWorkspaceController extends WorkspaceController {
   ];
 
   bool _actionLoading = true;
+  SessionContextMetrics _sessionContextMetrics = _buildContextMetrics(
+    usagePercent: 5,
+    totalTokens: 51945,
+  );
 
   @override
   bool get loading => _actionLoading;
@@ -1164,9 +1360,42 @@ class _HeaderWorkspaceController extends WorkspaceController {
   ConfigSnapshot? get configSnapshot => _snapshot;
 
   @override
+  SessionContextMetrics get sessionContextMetrics => _sessionContextMetrics;
+
+  @override
   Future<void> load() async {
     _actionLoading = false;
     notifyListeners();
+  }
+
+  void updateContextUsagePercent(int usagePercent) {
+    _sessionContextMetrics = _buildContextMetrics(
+      usagePercent: usagePercent,
+      totalTokens: ((1050000 * usagePercent) / 100).round(),
+    );
+    notifyListeners();
+  }
+
+  static SessionContextMetrics _buildContextMetrics({
+    required int usagePercent,
+    required int totalTokens,
+  }) {
+    return SessionContextMetrics(
+      totalCost: 0,
+      context: SessionContextSnapshot(
+        message: _messages.last,
+        providerLabel: 'OpenAI',
+        modelLabel: 'GPT-5.4',
+        inputTokens: _messages.last.info.inputTokens ?? 0,
+        outputTokens: _messages.last.info.outputTokens ?? 0,
+        reasoningTokens: _messages.last.info.reasoningTokens ?? 0,
+        cacheReadTokens: _messages.last.info.cacheReadTokens ?? 0,
+        cacheWriteTokens: _messages.last.info.cacheWriteTokens ?? 0,
+        totalTokens: totalTokens,
+        usagePercent: usagePercent,
+        contextLimit: 1050000,
+      ),
+    );
   }
 }
 

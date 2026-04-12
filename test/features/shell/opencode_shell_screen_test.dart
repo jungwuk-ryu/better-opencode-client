@@ -11,6 +11,7 @@ import 'package:better_opencode_client/src/design_system/app_theme.dart';
 import 'package:better_opencode_client/src/features/chat/chat_models.dart';
 import 'package:better_opencode_client/src/features/chat/prompt_attachment_models.dart';
 import 'package:better_opencode_client/src/features/chat/chat_service.dart';
+import 'package:better_opencode_client/src/features/chat/session_action_service.dart';
 import 'package:better_opencode_client/src/core/spec/probe_snapshot.dart';
 import 'package:better_opencode_client/src/features/files/file_browser_service.dart';
 import 'package:better_opencode_client/src/features/files/file_models.dart';
@@ -147,6 +148,7 @@ void main() {
     IntegrationStatusService? integrationStatusService,
     EventStreamService? eventStreamService,
     TerminalService? terminalService,
+    SessionActionService? sessionActionService,
     PendingRequestNotificationService? pendingRequestNotificationService,
     PendingRequestSoundService? pendingRequestSoundService,
   }) async {
@@ -170,6 +172,7 @@ void main() {
         integrationStatusService: integrationStatusService,
         eventStreamService: eventStreamService,
         terminalService: terminalService,
+        sessionActionService: sessionActionService,
         pendingRequestNotificationService: pendingRequestNotificationService,
         pendingRequestSoundService: pendingRequestSoundService,
       ),
@@ -243,6 +246,369 @@ void main() {
     expect(find.text('Conversation'), findsOneWidget);
     expect(find.text('Back to servers'), findsOneWidget);
   });
+
+  testWidgets(
+    'shell summarize action sends compact requests for empty sessions',
+    (tester) async {
+      final sessionActionService = _RecordingSessionActionService();
+      final chatService = _ControlledChatService(
+        bundlesByScopeKey: <String, ChatSessionBundle>{
+          _scopeKeyFor(profile, project): ChatSessionBundle(
+            sessions: <SessionSummary>[
+              _testSession(
+                'session-1',
+                'First session',
+                directory: project.directory,
+              ),
+            ],
+            statuses: const <String, SessionStatusSummary>{
+              'session-1': SessionStatusSummary(type: 'idle'),
+            },
+            messages: const <ChatMessage>[],
+            selectedSessionId: 'session-1',
+          ),
+        },
+      );
+
+      await pumpShellWithCapabilities(
+        tester,
+        size: const Size(1440, 1600),
+        capabilitiesToUse: capabilities,
+        chatService: chatService,
+        todoService: _RecordingTodoService(),
+        fileBrowserService: _ControlledFileBrowserService.empty(),
+        requestService: _ControlledRequestService.empty(),
+        configService: _ControlledConfigService.empty(),
+        integrationStatusService: _ControlledIntegrationStatusService.empty(),
+        sessionActionService: sessionActionService,
+      );
+
+      await tester.tap(find.text('Sessions').first);
+      await _pumpShellFrames(tester);
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Summarize').first);
+      await _pumpShellFrames(tester);
+
+      expect(sessionActionService.summarizeCalls, 1);
+      expect(sessionActionService.lastSummarizedSessionId, 'session-1');
+      expect(sessionActionService.lastSummarizedProviderId, isNull);
+      expect(sessionActionService.lastSummarizedModelId, isNull);
+    },
+  );
+
+  testWidgets(
+    'shell composer routes exact /compact prompts through session compaction',
+    (tester) async {
+      final sessionActionService = _RecordingSessionActionService();
+      final configService = _ControlledConfigService(
+        snapshotsByScopeKey: <String, ConfigSnapshot>{
+          _scopeKeyFor(profile, project): _configSnapshotWithModelChoices(),
+        },
+      );
+      final chatService = _ControlledChatService(
+        bundlesByScopeKey: <String, ChatSessionBundle>{
+          _scopeKeyFor(profile, project): ChatSessionBundle(
+            sessions: <SessionSummary>[
+              _testSession(
+                'session-1',
+                'First session',
+                directory: project.directory,
+              ),
+            ],
+            statuses: const <String, SessionStatusSummary>{
+              'session-1': SessionStatusSummary(type: 'idle'),
+            },
+            messages: const <ChatMessage>[],
+            selectedSessionId: 'session-1',
+          ),
+        },
+      );
+
+      await pumpShellWithCapabilities(
+        tester,
+        size: const Size(1440, 1600),
+        capabilitiesToUse: capabilities,
+        chatService: chatService,
+        todoService: _RecordingTodoService(),
+        fileBrowserService: _ControlledFileBrowserService.empty(),
+        requestService: _ControlledRequestService.empty(),
+        configService: configService,
+        integrationStatusService: _ControlledIntegrationStatusService.empty(),
+        sessionActionService: sessionActionService,
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('composer-model-select')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('anthropic / claude-sonnet-4.5').last);
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField).first, '/compact');
+      await tester.tap(find.text('Send'));
+      await _pumpShellFrames(tester);
+
+      expect(sessionActionService.summarizeCalls, 1);
+      expect(sessionActionService.lastSummarizedSessionId, 'session-1');
+      expect(sessionActionService.lastSummarizedProviderId, 'anthropic');
+      expect(sessionActionService.lastSummarizedModelId, 'claude-sonnet-4.5');
+      expect(chatService.sentPrompts, isEmpty);
+    },
+  );
+
+  testWidgets('shell renders compaction parts as timeline dividers', (
+    tester,
+  ) async {
+    final chatService = _ControlledChatService(
+      bundlesByScopeKey: <String, ChatSessionBundle>{
+        _scopeKeyFor(profile, project): ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _testSession(
+              'session-1',
+              'First session',
+              directory: project.directory,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{
+            'session-1': SessionStatusSummary(type: 'idle'),
+          },
+          messages: const <ChatMessage>[
+            ChatMessage(
+              info: ChatMessageInfo(
+                id: 'assistant-compaction-message',
+                role: 'assistant',
+                sessionId: 'session-1',
+              ),
+              parts: <ChatPart>[
+                ChatPart(id: 'compaction-part', type: 'compaction'),
+              ],
+            ),
+          ],
+          selectedSessionId: 'session-1',
+        ),
+      },
+    );
+
+    await pumpShellWithCapabilities(
+      tester,
+      size: const Size(1440, 1600),
+      capabilitiesToUse: capabilities,
+      chatService: chatService,
+      todoService: _RecordingTodoService(),
+      fileBrowserService: _ControlledFileBrowserService.empty(),
+      requestService: _ControlledRequestService.empty(),
+      configService: _ControlledConfigService.empty(),
+      integrationStatusService: _ControlledIntegrationStatusService.empty(),
+    );
+
+    expect(
+      find.byKey(
+        const ValueKey<String>('chat-part-compaction-compaction-part'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Session compacted'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('chat-part-activity-compaction-part')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(
+        const ValueKey<String>('chat-part-bubble-assistant-compaction-message'),
+      ),
+      findsNothing,
+    );
+  });
+
+  testWidgets(
+    'shell composer refuses exact /compact prompts without an existing session',
+    (tester) async {
+      final sessionActionService = _RecordingSessionActionService();
+      final chatService = _ControlledChatService(
+        bundlesByScopeKey: <String, ChatSessionBundle>{
+          _scopeKeyFor(profile, project): const ChatSessionBundle(
+            sessions: <SessionSummary>[],
+            statuses: <String, SessionStatusSummary>{},
+            messages: <ChatMessage>[],
+            selectedSessionId: null,
+          ),
+        },
+      );
+
+      await pumpShellWithCapabilities(
+        tester,
+        size: const Size(1440, 1600),
+        capabilitiesToUse: capabilities,
+        chatService: chatService,
+        todoService: _RecordingTodoService(),
+        fileBrowserService: _ControlledFileBrowserService.empty(),
+        requestService: _ControlledRequestService.empty(),
+        configService: _ControlledConfigService.empty(),
+        integrationStatusService: _ControlledIntegrationStatusService.empty(),
+        sessionActionService: sessionActionService,
+      );
+
+      await tester.enterText(find.byType(TextField).first, '/compact');
+      await tester.tap(find.widgetWithIcon(ElevatedButton, Icons.send_rounded));
+      await _pumpShellFrames(tester);
+
+      expect(chatService.createSessionCalls, 0);
+      expect(sessionActionService.summarizeCalls, 0);
+      expect(find.text('Select a session before compacting.'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'shell summarize action ignores stale transcript models during session switches',
+    (tester) async {
+      final secondSessionGate = Completer<void>();
+      addTearDown(() {
+        if (!secondSessionGate.isCompleted) {
+          secondSessionGate.complete();
+        }
+      });
+      final sessionActionService = _RecordingSessionActionService();
+      final chatService = _ControlledChatService(
+        bundlesByScopeKey: <String, ChatSessionBundle>{
+          _scopeKeyFor(profile, project): ChatSessionBundle(
+            sessions: <SessionSummary>[
+              _testSession(
+                'session-1',
+                'First session',
+                directory: project.directory,
+              ),
+              _testSession(
+                'session-2',
+                'Second session',
+                directory: project.directory,
+              ),
+            ],
+            statuses: const <String, SessionStatusSummary>{
+              'session-1': SessionStatusSummary(type: 'idle'),
+              'session-2': SessionStatusSummary(type: 'idle'),
+            },
+            messages: <ChatMessage>[
+              ChatMessage(
+                info: ChatMessageInfo(
+                  id: 'msg-session-1',
+                  role: 'assistant',
+                  sessionId: 'session-1',
+                  providerId: 'openai',
+                  modelId: 'gpt-5',
+                ),
+                parts: <ChatPart>[
+                  ChatPart(
+                    id: 'part-session-1',
+                    type: 'text',
+                    text: 'Existing summary',
+                  ),
+                ],
+              ),
+            ],
+            selectedSessionId: 'session-1',
+          ),
+        },
+        messagesBySessionId: const <String, List<ChatMessage>>{
+          'session-2': <ChatMessage>[],
+        },
+        messageGateBySessionId: <String, Completer<void>>{
+          'session-2': secondSessionGate,
+        },
+      );
+
+      await pumpShellWithCapabilities(
+        tester,
+        size: const Size(1440, 1600),
+        capabilitiesToUse: capabilities,
+        chatService: chatService,
+        todoService: _RecordingTodoService(),
+        fileBrowserService: _ControlledFileBrowserService.empty(),
+        requestService: _ControlledRequestService.empty(),
+        configService: _ControlledConfigService.empty(),
+        integrationStatusService: _ControlledIntegrationStatusService.empty(),
+        sessionActionService: sessionActionService,
+      );
+
+      await tester.tap(find.text('Sessions').first);
+      await _pumpShellFrames(tester);
+      await tester.tap(find.text('Second session').first);
+      await tester.pump();
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Summarize').first);
+      await _pumpShellFrames(tester);
+
+      expect(sessionActionService.summarizeCalls, 1);
+      expect(sessionActionService.lastSummarizedSessionId, 'session-2');
+      expect(sessionActionService.lastSummarizedProviderId, isNull);
+      expect(sessionActionService.lastSummarizedModelId, isNull);
+
+      secondSessionGate.complete();
+      await _pumpShellFrames(tester);
+    },
+  );
+
+  testWidgets(
+    'shell summarize action preserves loaded session model metadata for compatibility',
+    (tester) async {
+      final sessionActionService = _RecordingSessionActionService();
+      final chatService = _ControlledChatService(
+        bundlesByScopeKey: <String, ChatSessionBundle>{
+          _scopeKeyFor(profile, project): ChatSessionBundle(
+            sessions: <SessionSummary>[
+              _testSession(
+                'session-1',
+                'First session',
+                directory: project.directory,
+              ),
+            ],
+            statuses: const <String, SessionStatusSummary>{
+              'session-1': SessionStatusSummary(type: 'idle'),
+            },
+            messages: <ChatMessage>[
+              ChatMessage(
+                info: ChatMessageInfo(
+                  id: 'msg-session-1',
+                  role: 'assistant',
+                  sessionId: 'session-1',
+                  providerId: 'openai',
+                  modelId: 'gpt-5',
+                ),
+                parts: <ChatPart>[
+                  ChatPart(
+                    id: 'part-session-1',
+                    type: 'text',
+                    text: 'Existing summary',
+                  ),
+                ],
+              ),
+            ],
+            selectedSessionId: 'session-1',
+          ),
+        },
+      );
+
+      await pumpShellWithCapabilities(
+        tester,
+        size: const Size(1440, 1600),
+        capabilitiesToUse: capabilities,
+        chatService: chatService,
+        todoService: _RecordingTodoService(),
+        fileBrowserService: _ControlledFileBrowserService.empty(),
+        requestService: _ControlledRequestService.empty(),
+        configService: _ControlledConfigService.empty(),
+        integrationStatusService: _ControlledIntegrationStatusService.empty(),
+        sessionActionService: sessionActionService,
+      );
+
+      await tester.tap(find.text('Sessions').first);
+      await _pumpShellFrames(tester);
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Summarize').first);
+      await _pumpShellFrames(tester);
+
+      expect(sessionActionService.summarizeCalls, 1);
+      expect(sessionActionService.lastSummarizedSessionId, 'session-1');
+      expect(sessionActionService.lastSummarizedProviderId, 'openai');
+      expect(sessionActionService.lastSummarizedModelId, 'gpt-5');
+    },
+  );
 
   testWidgets(
     'shell sends an OS notification when a question request arrives',
@@ -378,6 +744,70 @@ void main() {
 
     expect(soundService.playedKeys, hasLength(1));
     expect(soundService.playedKeys.single, contains('permission:per_1'));
+  });
+
+  testWidgets('idle event streams do not trigger periodic session reloads', (
+    tester,
+  ) async {
+    final eventStreamService = _ControlledEventStreamService();
+    final chatService = _ControlledChatService(
+      bundlesByScopeKey: <String, ChatSessionBundle>{
+        _scopeKeyFor(profile, project): ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _testSession(
+              'demo-session',
+              'Demo session',
+              directory: project.directory,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{
+            'demo-session': SessionStatusSummary(type: 'idle'),
+          },
+          messages: <ChatMessage>[
+            _testMessage('demo-session', text: 'Demo message'),
+          ],
+          selectedSessionId: 'demo-session',
+        ),
+      },
+    );
+
+    await pumpShellWithCapabilities(
+      tester,
+      size: const Size(1440, 1600),
+      capabilitiesToUse: eventCapabilities,
+      chatService: chatService,
+      todoService: _RecordingTodoService(),
+      fileBrowserService: _ControlledFileBrowserService.empty(),
+      requestService: _ControlledRequestService.empty(),
+      configService: _ControlledConfigService.empty(),
+      integrationStatusService: _ControlledIntegrationStatusService.empty(),
+      terminalService: _ControlledTerminalService(),
+      eventStreamService: eventStreamService,
+    );
+
+    expect(
+      eventStreamService.connectedScopeKeys,
+      contains(_scopeKeyFor(profile, project)),
+    );
+    expect(
+      chatService.fetchBundleCountByScopeKey[_scopeKeyFor(profile, project)],
+      1,
+    );
+    expect(find.text('Demo message'), findsAtLeastNWidgets(1));
+
+    await tester.pump(const Duration(seconds: 12));
+    await tester.pump();
+
+    expect(eventStreamService.disconnectCount, 0);
+    expect(
+      chatService.fetchBundleCountByScopeKey[_scopeKeyFor(profile, project)],
+      1,
+    );
+    expect(find.text('Demo message'), findsAtLeastNWidgets(1));
+    expect(
+      find.byKey(const ValueKey<String>('chat-loading-demo-session')),
+      findsNothing,
+    );
   });
 
   testWidgets('mobile shell opens a drawer with project and session picks', (
@@ -1038,8 +1468,8 @@ void main() {
       secondEventStreamService.connectedScopeKeys,
       contains(_scopeKeyFor(profile, project)),
     );
-    expect(find.text('Connected'), findsNothing);
-    expect(find.text('Stale'), findsAtLeastNWidgets(1));
+    expect(find.text('Connected'), findsAtLeastNWidgets(1));
+    expect(find.text('Stale'), findsNothing);
 
     firstEventStreamService.emitToScope(
       profile,
@@ -2075,7 +2505,7 @@ void main() {
     expect(find.text('Demo message'), findsAtLeastNWidgets(1));
     expect(find.text('Demo todo'), findsAtLeastNWidgets(1));
     expect(find.text('lib/demo.dart'), findsAtLeastNWidgets(1));
-    expect(find.text('demo.permission'), findsNothing);
+    expect(find.text('demo.permission'), findsOneWidget);
 
     await tester.pumpWidget(
       _buildShell(
@@ -2099,6 +2529,7 @@ void main() {
     expect(find.text('Demo todo'), findsNothing);
     expect(find.text('lib/demo.dart'), findsNothing);
     expect(find.text('demo.permission'), findsNothing);
+    expect(find.text('other.permission'), findsNothing);
 
     otherBundleGate.complete();
     await _pumpShellFrames(tester);
@@ -2110,6 +2541,7 @@ void main() {
     expect(find.text('Other todo'), findsAtLeastNWidgets(1));
     expect(find.text('lib/other.dart'), findsAtLeastNWidgets(1));
     expect(find.text('demo.permission'), findsNothing);
+    expect(find.text('other.permission'), findsOneWidget);
     expect(find.text('Demo message'), findsNothing);
   });
 
@@ -2624,7 +3056,10 @@ void main() {
     secondSessionMessagesGate.complete();
     await _pumpShellFrames(tester);
 
-    expect(chatService.selectedMessagesSessionIds, isNot(contains('session-2')));
+    expect(
+      chatService.selectedMessagesSessionIds,
+      isNot(contains('session-2')),
+    );
     expect(todoService.fetchCountBySessionId['session-2'] ?? 0, 0);
     expect(find.text('Other message'), findsAtLeastNWidgets(1));
     expect(find.text('Second message'), findsNothing);
@@ -2647,6 +3082,7 @@ Widget _buildShell({
   IntegrationStatusService? integrationStatusService,
   EventStreamService? eventStreamService,
   TerminalService? terminalService,
+  SessionActionService? sessionActionService,
   PendingRequestNotificationService? pendingRequestNotificationService,
   PendingRequestSoundService? pendingRequestSoundService,
 }) {
@@ -2669,6 +3105,7 @@ Widget _buildShell({
       integrationStatusService: integrationStatusService,
       eventStreamService: eventStreamService,
       terminalService: terminalService,
+      sessionActionService: sessionActionService,
       pendingRequestNotificationService: pendingRequestNotificationService,
       pendingRequestSoundService: pendingRequestSoundService,
     ),
@@ -3139,6 +3576,7 @@ class _ControlledIntegrationStatusService extends IntegrationStatusService {
     required ServerProfile profile,
     required ProjectTarget project,
     required String name,
+    String? redirectUri,
   }) async {
     final scopeKey = _scopeKeyFor(profile, project);
     _completeIfPending(mcpAuthStartedByScopeKey[scopeKey]);
@@ -3331,6 +3769,7 @@ class _ControlledChatService extends ChatService {
         })
       >[];
   final Map<String, int> fetchBundleCountByScopeKey = <String, int>{};
+  int createSessionCalls = 0;
 
   @override
   Future<SessionSummary> createSession({
@@ -3338,6 +3777,7 @@ class _ControlledChatService extends ChatService {
     required ProjectTarget project,
     String? title,
   }) async {
+    createSessionCalls += 1;
     final scopeKey = _scopeKeyFor(profile, project);
     final gate = createSessionGateByScopeKey[scopeKey];
     if (gate != null) {
@@ -3425,6 +3865,29 @@ class _ControlledChatService extends ChatService {
     }
     return replyByScopeSessionKey[scopeSessionKey] ??
         _testMessage(sessionId, text: prompt);
+  }
+}
+
+class _RecordingSessionActionService extends SessionActionService {
+  int summarizeCalls = 0;
+  String? lastSummarizedSessionId;
+  String? lastSummarizedProviderId;
+  String? lastSummarizedModelId;
+
+  @override
+  Future<bool> summarizeSession({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String sessionId,
+    String? providerId,
+    String? modelId,
+    bool auto = false,
+  }) async {
+    summarizeCalls += 1;
+    lastSummarizedSessionId = sessionId;
+    lastSummarizedProviderId = providerId;
+    lastSummarizedModelId = modelId;
+    return true;
   }
 }
 

@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <rect width="1600" height="900" fill="#fff7f1"/>
+  <rect x="60" y="60" width="1480" height="780" rx="36" fill="#fffdf9" stroke="#e0c1a0" stroke-width="4"/>
+  <text x="100" y="125" font-family="Arial, sans-serif" font-size="38" font-weight="700" fill="#102a43">Phase 3 Storyboard: Mobile Operations</text>
+  <text x="100" y="165" font-family="Arial, sans-serif" font-size="20" fill="#52606d">Project Actions, inbox triage, voice input, quick attach, and one-hand action density.</text>
+
+  <rect x="100" y="230" width="330" height="500" rx="28" fill="#fff" stroke="#ecdcc8" stroke-width="3"/>
+  <text x="130" y="285" font-family="Arial, sans-serif" font-size="26" font-weight="700" fill="#1f2933">Project Actions</text>
+  <text x="130" y="332" font-family="Arial, sans-serif" font-size="21" fill="#334e68">Commands, links, runtime,</text>
+  <text x="130" y="368" font-family="Arial, sans-serif" font-size="21" fill="#334e68">port presets, and repo entry</text>
+  <text x="130" y="404" font-family="Arial, sans-serif" font-size="21" fill="#334e68">are grouped in one sheet.</text>
+
+  <rect x="500" y="230" width="330" height="500" rx="28" fill="#fff" stroke="#ecdcc8" stroke-width="3"/>
+  <text x="530" y="285" font-family="Arial, sans-serif" font-size="26" font-weight="700" fill="#1f2933">Inbox Triage</text>
+  <text x="530" y="332" font-family="Arial, sans-serif" font-size="21" fill="#334e68">Questions, approvals, and</text>
+  <text x="530" y="368" font-family="Arial, sans-serif" font-size="21" fill="#334e68">unread events collect into a</text>
+  <text x="530" y="404" font-family="Arial, sans-serif" font-size="21" fill="#334e68">single mobile queue.</text>
+
+  <rect x="900" y="230" width="330" height="500" rx="28" fill="#fff" stroke="#ecdcc8" stroke-width="3"/>
+  <text x="930" y="285" font-family="Arial, sans-serif" font-size="26" font-weight="700" fill="#1f2933">Input Helpers</text>
+  <text x="930" y="332" font-family="Arial, sans-serif" font-size="21" fill="#334e68">Voice dictation and quick</text>
+  <text x="930" y="368" font-family="Arial, sans-serif" font-size="21" fill="#334e68">attachments reduce typing</text>
+  <text x="930" y="404" font-family="Arial, sans-serif" font-size="21" fill="#334e68">when you are on the move.</text>
+
+  <rect x="1300" y="230" width="180" height="500" rx="28" fill="#fff" stroke="#ecdcc8" stroke-width="3"/>
+  <text x="1330" y="285" font-family="Arial, sans-serif" font-size="24" font-weight="700" fill="#1f2933">One-Hand</text>
+  <text x="1330" y="330" font-family="Arial, sans-serif" font-size="20" fill="#334e68">Toolbar chips,</text>
+  <text x="1330" y="364" font-family="Arial, sans-serif" font-size="20" fill="#334e68">overflow entry</text>
+  <text x="1330" y="398" font-family="Arial, sans-serif" font-size="20" fill="#334e68">points, and</text>
+  <text x="1330" y="432" font-family="Arial, sans-serif" font-size="20" fill="#334e68">slash commands</text>
+  <text x="1330" y="466" font-family="Arial, sans-serif" font-size="20" fill="#334e68">keep repeated</text>
+  <text x="1330" y="500" font-family="Arial, sans-serif" font-size="20" fill="#334e68">actions nearby.</text>
+</svg>

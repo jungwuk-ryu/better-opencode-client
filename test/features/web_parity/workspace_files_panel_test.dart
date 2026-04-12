@@ -154,85 +154,151 @@ void main() {
     expect(find.text('main.dart'), findsNothing);
   });
 
-  testWidgets(
-    'markdown previews can switch between source and rendered modes',
-    (tester) async {
-      tester.view.physicalSize = const Size(1600, 1000);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
+  testWidgets('markdown previews can switch between source and preview modes', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
 
-      final createdControllers = <_FilesWorkspaceController>[];
-      final profile = ServerProfile(
-        id: 'server',
-        label: 'Mock',
-        baseUrl: 'http://localhost:3000',
-      );
-      final appController = _StaticAppController(
-        profile: profile,
-        workspaceControllerFactory:
-            ({required profile, required directory, initialSessionId}) {
-              final controller = _FilesWorkspaceController(
-                profile: profile,
-                directory: directory,
-                initialSessionId: initialSessionId,
-              );
-              createdControllers.add(controller);
-              return controller;
-            },
-      );
-      addTearDown(appController.dispose);
+    final createdControllers = <_FilesWorkspaceController>[];
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            final controller = _FilesWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+            createdControllers.add(controller);
+            return controller;
+          },
+    );
+    addTearDown(appController.dispose);
 
-      await tester.pumpWidget(
-        _WorkspaceRouteHarness(
-          controller: appController,
-          initialRoute: buildWorkspaceRoute(
-            '/workspace/demo',
-            sessionId: 'ses_1',
-          ),
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
         ),
-      );
-      await tester.pumpAndSettle();
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      await tester.tap(find.text('README.md').first);
-      await tester.pumpAndSettle();
+    await tester.tap(find.text('README.md').first);
+    await tester.pumpAndSettle();
 
-      expect(
-        find.byKey(
+    expect(
+      find.byKey(const ValueKey<String>('files-preview-markdown-mode-toggle')),
+      findsOneWidget,
+    );
+    expect(find.text('# README preview'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('files-preview-markdown-content')),
+      findsNothing,
+    );
+
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(
           const ValueKey<String>('files-preview-markdown-mode-toggle'),
         ),
-        findsOneWidget,
-      );
-      expect(find.text('# README preview'), findsOneWidget);
-      expect(
-        find.byKey(const ValueKey<String>('files-preview-markdown-content')),
-        findsNothing,
-      );
+        matching: find.text('Preview'),
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Rendered'));
-      await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('files-preview-markdown-content')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('files-preview-content')),
+      findsNothing,
+    );
+    expect(find.text('# README preview'), findsNothing);
+    expect(find.text('README preview'), findsOneWidget);
 
-      expect(
-        find.byKey(const ValueKey<String>('files-preview-markdown-content')),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(const ValueKey<String>('files-preview-content')),
-        findsNothing,
-      );
-      expect(find.text('# README preview'), findsNothing);
-      expect(find.text('README preview'), findsOneWidget);
+    await tester.tap(find.text('Source'));
+    await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Source'));
-      await tester.pumpAndSettle();
+    expect(find.text('# README preview'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('files-preview-markdown-content')),
+      findsNothing,
+    );
+  });
 
-      expect(find.text('# README preview'), findsOneWidget);
-      expect(
-        find.byKey(const ValueKey<String>('files-preview-markdown-content')),
-        findsNothing,
-      );
-    },
-  );
+  testWidgets('files preview can open in a full-screen page', (tester) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final createdControllers = <_FilesWorkspaceController>[];
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            final controller = _FilesWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+            createdControllers.add(controller);
+            return controller;
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('README.md').first);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('files-preview-fullscreen-button')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('files-preview-fullscreen-button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('fullscreen-file-preview-page')),
+      findsOneWidget,
+    );
+    expect(find.text('File Preview'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('files-preview-markdown-mode-toggle')),
+      findsOneWidget,
+    );
+  });
 
   testWidgets('files panel preview can be resized by dragging the handle', (
     tester,
@@ -814,6 +880,73 @@ void main() {
 
     final resizedHeight = tester.getSize(panelFinder).height;
     expect(resizedHeight, greaterThan(initialHeight));
+  });
+
+  testWidgets('review diff can open in a full-screen page', (tester) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final createdControllers = <_FilesWorkspaceController>[];
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            final controller = _FilesWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+            createdControllers.add(controller);
+            return controller;
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    createdControllers.single.setSideTab(WorkspaceSideTab.review);
+    await tester.pumpAndSettle();
+    await createdControllers.single.selectReviewFile('README.md');
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('review-preview-fullscreen-button')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('review-preview-fullscreen-button')),
+    );
+    await tester.pumpAndSettle();
+
+    final fullscreenPage = find.byKey(
+      const ValueKey<String>('fullscreen-review-preview-page'),
+    );
+    expect(fullscreenPage, findsOneWidget);
+    expect(find.text('Diff Preview'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: fullscreenPage,
+        matching: find.byKey(const ValueKey<String>('review-diff-surface')),
+      ),
+      findsOneWidget,
+    );
   });
 }
 

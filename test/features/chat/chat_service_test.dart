@@ -442,6 +442,76 @@ void main() {
     expect(didQueue, isTrue);
     service.dispose();
   });
+
+  test(
+    'reads variant from nested model payloads when top-level variant is absent',
+    () async {
+      final nestedVariantServer = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      final nestedVariantBaseUri = Uri.parse(
+        'http://${nestedVariantServer.address.address}:${nestedVariantServer.port}/api?token=abc',
+      );
+      nestedVariantServer.listen((request) async {
+        if (!_hasExpectedBaseContext(request.uri) ||
+            request.uri.queryParameters['directory'] != '/workspace/demo') {
+          request.response.statusCode = 400;
+          await request.response.close();
+          return;
+        }
+        final routePath = _routePath(request.uri);
+        Object? body;
+        if (routePath == '/session/ses_nested/message') {
+          body = [
+            {
+              'info': {
+                'id': 'msg_nested',
+                'role': 'user',
+                'model': {
+                  'providerID': 'openai',
+                  'modelID': 'gpt-5.4',
+                  'variant': 'high',
+                },
+              },
+              'parts': [
+                {'id': 'prt_nested', 'type': 'text', 'text': 'hello'},
+              ],
+            },
+          ];
+        }
+        if (body == null) {
+          request.response.statusCode = 404;
+        } else {
+          request.response.headers.contentType = ContentType.json;
+          request.response.add(utf8.encode(jsonEncode(body)));
+        }
+        await request.response.close();
+      });
+      addTearDown(() async {
+        await nestedVariantServer.close(force: true);
+      });
+
+      final service = ChatService();
+      final messages = await service.fetchMessages(
+        profile: ServerProfile(
+          id: 'server',
+          label: 'mock',
+          baseUrl: nestedVariantBaseUri.toString(),
+        ),
+        project: const ProjectTarget(
+          directory: '/workspace/demo',
+          label: 'Demo',
+        ),
+        sessionId: 'ses_nested',
+      );
+
+      expect(messages.single.info.providerId, 'openai');
+      expect(messages.single.info.modelId, 'gpt-5.4');
+      expect(messages.single.info.variant, 'high');
+      service.dispose();
+    },
+  );
 }
 
 bool _hasExpectedBaseContext(Uri uri) {

@@ -31,12 +31,12 @@ void main() {
     expect(status, LaunchConnectionStatus.offline);
   });
 
-  test('maps spec fetch failures to incompatible status', () {
+  test('maps spec fetch failures to spec-fetch-failure status', () {
     final status = mapLaunchConnectionStatus(
       _report(ConnectionProbeClassification.specFetchFailure),
     );
 
-    expect(status, LaunchConnectionStatus.incompatible);
+    expect(status, LaunchConnectionStatus.specFetchFailure);
   });
 
   test('maps unsupported capabilities to incompatible status', () {

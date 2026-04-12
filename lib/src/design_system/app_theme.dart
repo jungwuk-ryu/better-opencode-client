@@ -365,12 +365,28 @@ final class AppTheme {
     final isDark = brightness == Brightness.dark;
     final background = tone.background;
     final text = tone.text;
-    final panel = _mix(background, text, isDark ? 0.050 : 0.040);
-    final panelRaised = _mix(background, text, isDark ? 0.082 : 0.070);
-    final panelMuted = _mix(background, text, isDark ? 0.036 : 0.028);
-    final panelEmphasis = _mix(background, text, isDark ? 0.116 : 0.100);
-    final line = _mix(background, text, isDark ? 0.200 : 0.160);
-    final lineSoft = _mix(background, text, isDark ? 0.125 : 0.100);
+    final panel = _mix(
+      background,
+      isDark ? const Color(0xFF050607) : const Color(0xFF1B1D1F),
+      isDark ? 0.10 : 0.04,
+    );
+    final panelRaised = _mix(
+      background,
+      isDark ? const Color(0xFF0A0B0D) : const Color(0xFF23262A),
+      isDark ? 0.15 : 0.06,
+    );
+    final panelMuted = _mix(
+      background,
+      isDark ? const Color(0xFF0E1012) : const Color(0xFF202327),
+      isDark ? 0.05 : 0.03,
+    );
+    final panelEmphasis = _mix(
+      background,
+      isDark ? const Color(0xFF111316) : const Color(0xFF2A2E33),
+      isDark ? 0.20 : 0.10,
+    );
+    final line = _mix(background, text, isDark ? 0.18 : 0.14);
+    final lineSoft = _mix(background, text, isDark ? 0.10 : 0.08);
     final accent = tone.primary;
     final accentSoft = tone.accent;
     final muted = tone.muted;
@@ -381,73 +397,73 @@ final class AppTheme {
     final baseTypography = isDark
         ? Typography.whiteMountainView
         : Typography.blackMountainView;
-    final textTheme = GoogleFonts.ibmPlexSansTextTheme(baseTypography)
+    final textTheme = GoogleFonts.plusJakartaSansTextTheme(baseTypography)
         .apply(bodyColor: text, displayColor: text)
         .copyWith(
-          headlineMedium: GoogleFonts.ibmPlexSans(
+          headlineMedium: GoogleFonts.plusJakartaSans(
             fontSize: 34,
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.9,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -1.0,
             height: 1.05,
             color: text,
           ),
-          headlineSmall: GoogleFonts.ibmPlexSans(
+          headlineSmall: GoogleFonts.plusJakartaSans(
             fontSize: 28,
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.7,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.8,
             height: 1.1,
             color: text,
           ),
-          titleLarge: GoogleFonts.ibmPlexSans(
+          titleLarge: GoogleFonts.plusJakartaSans(
             fontSize: 20,
             fontWeight: FontWeight.w700,
             letterSpacing: -0.35,
             height: 1.15,
             color: text,
           ),
-          titleMedium: GoogleFonts.ibmPlexSans(
+          titleMedium: GoogleFonts.plusJakartaSans(
             fontSize: 16,
             fontWeight: FontWeight.w600,
             letterSpacing: -0.15,
             height: 1.2,
             color: text,
           ),
-          titleSmall: GoogleFonts.ibmPlexSans(
+          titleSmall: GoogleFonts.plusJakartaSans(
             fontSize: 14,
             fontWeight: FontWeight.w600,
             letterSpacing: -0.1,
             height: 1.25,
             color: text,
           ),
-          bodyLarge: GoogleFonts.ibmPlexSans(
+          bodyLarge: GoogleFonts.plusJakartaSans(
             fontSize: 15,
             fontWeight: FontWeight.w500,
             height: 1.55,
             color: text,
           ),
-          bodyMedium: GoogleFonts.ibmPlexSans(
+          bodyMedium: GoogleFonts.plusJakartaSans(
             fontSize: 14,
             fontWeight: FontWeight.w500,
             height: 1.5,
             color: text,
           ),
-          bodySmall: GoogleFonts.ibmPlexSans(
+          bodySmall: GoogleFonts.plusJakartaSans(
             fontSize: 12,
             fontWeight: FontWeight.w500,
             height: 1.45,
             color: muted,
           ),
-          labelLarge: GoogleFonts.ibmPlexSans(
+          labelLarge: GoogleFonts.plusJakartaSans(
             fontSize: 13,
             fontWeight: FontWeight.w700,
             letterSpacing: 0.25,
             height: 1.2,
             color: text,
           ),
-          labelMedium: GoogleFonts.ibmPlexSans(
-            fontSize: 11,
+          labelMedium: GoogleFonts.plusJakartaSans(
+            fontSize: 12,
             fontWeight: FontWeight.w700,
-            letterSpacing: 0.4,
+            letterSpacing: 0.2,
             height: 1.2,
             color: muted,
           ),
@@ -471,15 +487,21 @@ final class AppTheme {
             error: danger,
           );
 
+    final scaffoldBackground = _mix(
+      background,
+      Colors.black,
+      isDark ? 0.16 : 0.06,
+    );
+
     return ThemeData(
       useMaterial3: true,
       brightness: brightness,
-      scaffoldBackgroundColor: background,
-      canvasColor: background,
+      scaffoldBackgroundColor: scaffoldBackground,
+      canvasColor: scaffoldBackground,
       colorScheme: colorScheme,
       textTheme: textTheme,
       cardTheme: CardThemeData(
-        color: panelRaised.withValues(alpha: isDark ? 0.84 : 0.96),
+        color: panelRaised.withValues(alpha: isDark ? 0.98 : 1),
         elevation: 0,
         shadowColor: Colors.transparent,
         margin: EdgeInsets.zero,
@@ -490,15 +512,15 @@ final class AppTheme {
       ),
       dividerColor: lineSoft,
       chipTheme: ChipThemeData(
-        backgroundColor: panelMuted.withValues(alpha: isDark ? 0.96 : 1),
+        backgroundColor: panel.withValues(alpha: isDark ? 0.98 : 1),
         disabledColor: panelMuted,
-        selectedColor: accent.withValues(alpha: isDark ? 0.16 : 0.14),
-        secondarySelectedColor: accent.withValues(alpha: isDark ? 0.16 : 0.14),
+        selectedColor: accent.withValues(alpha: isDark ? 0.10 : 0.08),
+        secondarySelectedColor: accent.withValues(alpha: isDark ? 0.10 : 0.08),
         labelStyle: textTheme.labelMedium?.copyWith(color: text),
         side: BorderSide(color: lineSoft),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppSpacing.md),
+          borderRadius: BorderRadius.circular(AppSpacing.formFieldRadius),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
@@ -507,7 +529,18 @@ final class AppTheme {
           foregroundColor: _onColor(accent),
           elevation: 0,
           shadowColor: Colors.transparent,
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+          textStyle: textTheme.labelLarge,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppSpacing.formFieldRadius),
+          ),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: accent,
+          foregroundColor: _onColor(accent),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
           textStyle: textTheme.labelLarge,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppSpacing.formFieldRadius),
@@ -517,9 +550,9 @@ final class AppTheme {
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: text,
-          backgroundColor: panelMuted.withValues(alpha: isDark ? 0.4 : 0.9),
+          backgroundColor: panel.withValues(alpha: isDark ? 0.72 : 0.86),
           side: BorderSide(color: lineSoft),
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
           textStyle: textTheme.labelLarge,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppSpacing.formFieldRadius),
@@ -534,7 +567,7 @@ final class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: panelMuted.withValues(alpha: isDark ? 0.88 : 0.98),
+        fillColor: panel.withValues(alpha: isDark ? 0.98 : 1),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppSpacing.formFieldRadius),
           borderSide: BorderSide(color: lineSoft),
@@ -545,7 +578,10 @@ final class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppSpacing.formFieldRadius),
-          borderSide: BorderSide(color: accent),
+          borderSide: BorderSide(
+            color: accent.withValues(alpha: 0.9),
+            width: 1.2,
+          ),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppSpacing.formFieldRadius),
@@ -556,20 +592,20 @@ final class AppTheme {
           borderSide: BorderSide(color: danger),
         ),
         contentPadding: const EdgeInsets.symmetric(
-          horizontal: 18,
-          vertical: 16,
+          horizontal: 14,
+          vertical: 13,
         ),
         labelStyle: textTheme.bodyMedium?.copyWith(color: muted),
         hintStyle: textTheme.bodyMedium?.copyWith(color: muted),
       ),
       listTileTheme: ListTileThemeData(
-        tileColor: panelMuted.withValues(alpha: isDark ? 0.68 : 0.96),
+        tileColor: panel.withValues(alpha: isDark ? 0.9 : 0.98),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppSpacing.md),
+          borderRadius: BorderRadius.circular(AppSpacing.panelRadius),
           side: BorderSide(color: lineSoft),
         ),
         iconColor: accentSoft,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
@@ -599,6 +635,40 @@ final class AppTheme {
         elevation: 0,
         titleTextStyle: textTheme.titleLarge?.copyWith(
           fontWeight: FontWeight.w700,
+        ),
+      ),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: panelRaised.withValues(alpha: isDark ? 0.985 : 1),
+        surfaceTintColor: Colors.transparent,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(AppSpacing.sheetRadius),
+          ),
+        ),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: panelRaised.withValues(alpha: isDark ? 0.985 : 1),
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppSpacing.dialogRadius),
+          side: BorderSide(color: lineSoft),
+        ),
+        titleTextStyle: textTheme.titleLarge?.copyWith(
+          fontWeight: FontWeight.w700,
+        ),
+        contentTextStyle: textTheme.bodyMedium?.copyWith(color: text),
+      ),
+      iconButtonTheme: IconButtonThemeData(
+        style: IconButton.styleFrom(
+          foregroundColor: text,
+          backgroundColor: panel.withValues(alpha: isDark ? 0.78 : 0.92),
+          hoverColor: panelRaised.withValues(alpha: isDark ? 0.96 : 1),
+          highlightColor: accent.withValues(alpha: 0.05),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(color: lineSoft),
+          ),
+          padding: const EdgeInsets.all(8),
         ),
       ),
       extensions: <ThemeExtension<dynamic>>[

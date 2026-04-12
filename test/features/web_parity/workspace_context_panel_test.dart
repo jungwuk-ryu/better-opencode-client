@@ -32,15 +32,16 @@ void main() {
       label: 'Mock',
       baseUrl: 'http://localhost:3000',
     );
+    final contextController = _ContextWorkspaceController(
+      profile: profile,
+      directory: '/workspace/demo',
+      initialSessionId: 'ses_1',
+    );
     final appController = _StaticAppController(
       profile: profile,
       workspaceControllerFactory:
           ({required profile, required directory, initialSessionId}) {
-            return _ContextWorkspaceController(
-              profile: profile,
-              directory: directory,
-              initialSessionId: initialSessionId,
-            );
+            return contextController;
           },
     );
     addTearDown(appController.dispose);
@@ -56,8 +57,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Context Limit'), findsOneWidget);
-    expect(find.text('1,050,000'), findsOneWidget);
+    expect(find.text('Context Limit'), findsWidgets);
+    expect(find.text('1,050,000'), findsWidgets);
     expect(find.text('Context Breakdown'), findsOneWidget);
     expect(
       find.byKey(const ValueKey<String>('context-breakdown-bar')),
@@ -90,6 +91,12 @@ void main() {
       ),
       findsOneWidget,
     );
+    expect(
+      find.byKey(
+        const ValueKey<String>('context-raw-message-content-msg_assistant_1'),
+      ),
+      findsNothing,
+    );
     await tester.tap(
       find.byKey(
         const PageStorageKey<String>(
@@ -116,6 +123,92 @@ void main() {
     expect(find.textContaining('"openai"'), findsOneWidget);
     expect(find.textContaining('"parts"'), findsOneWidget);
   });
+
+  testWidgets(
+    'context raw message expansion survives prepends and refreshes stale payloads',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final contextController = _ContextWorkspaceController(
+        profile: profile,
+        directory: '/workspace/demo',
+        initialSessionId: 'ses_1',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              return contextController;
+            },
+      );
+      addTearDown(appController.dispose);
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          initialRoute: buildWorkspaceRoute(
+            '/workspace/demo',
+            sessionId: 'ses_1',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.dragUntilVisible(
+        find.text('Raw messages'),
+        find.byKey(const PageStorageKey<String>('web-parity-context-panel')),
+        const Offset(0, -300),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(
+          const PageStorageKey<String>(
+            'context-raw-message-expansion-msg_assistant_1',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('"output"'), findsOneWidget);
+      expect(find.textContaining('"clean"'), findsOneWidget);
+
+      contextController.prependMessage(
+        ChatMessage(
+          info: ChatMessageInfo(
+            id: 'msg_user_0',
+            role: 'user',
+            createdAt: DateTime.fromMillisecondsSinceEpoch(1774453790000),
+          ),
+          parts: const <ChatPart>[
+            ChatPart(id: 'part_user_0', type: 'text', text: 'older context'),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(
+          const ValueKey<String>('context-raw-message-content-msg_assistant_1'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('"clean"'), findsOneWidget);
+
+      contextController.updateAssistantToolOutput('dirty');
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('"dirty"'), findsOneWidget);
+    },
+  );
 }
 
 class _WorkspaceRouteHarness extends StatelessWidget {
@@ -212,7 +305,7 @@ class _ContextWorkspaceController extends WorkspaceController {
     }),
   );
 
-  static final List<ChatMessage> _messages = <ChatMessage>[
+  static final List<ChatMessage> _initialMessages = <ChatMessage>[
     ChatMessage(
       info: ChatMessageInfo(
         id: 'msg_user_1',
@@ -260,6 +353,7 @@ class _ContextWorkspaceController extends WorkspaceController {
   ];
 
   bool _loading = true;
+  late List<ChatMessage> _messageList = List<ChatMessage>.of(_initialMessages);
 
   @override
   bool get loading => _loading;
@@ -280,7 +374,7 @@ class _ContextWorkspaceController extends WorkspaceController {
   SessionSummary? get selectedSession => _session;
 
   @override
-  List<ChatMessage> get messages => _messages;
+  List<ChatMessage> get messages => _messageList;
 
   @override
   WorkspaceSideTab get sideTab => WorkspaceSideTab.context;
@@ -294,6 +388,40 @@ class _ContextWorkspaceController extends WorkspaceController {
   @override
   Future<void> load() async {
     _loading = false;
+    notifyListeners();
+  }
+
+  void prependMessage(ChatMessage message) {
+    _messageList = <ChatMessage>[message, ..._messageList];
+    notifyListeners();
+  }
+
+  void updateAssistantToolOutput(String output) {
+    _messageList = _messageList
+        .map((message) {
+          if (message.info.id != 'msg_assistant_1') {
+            return message;
+          }
+          return message.copyWith(
+            parts: message.parts
+                .map((part) {
+                  if (part.id != 'part_assistant_tool') {
+                    return part;
+                  }
+                  return part.copyWith(
+                    metadata: <String, Object?>{
+                      'state': <String, Object?>{
+                        'status': 'completed',
+                        'input': <String, Object?>{'query': 'git status'},
+                        'output': output,
+                      },
+                    },
+                  );
+                })
+                .toList(growable: false),
+          );
+        })
+        .toList(growable: false);
     notifyListeners();
   }
 }

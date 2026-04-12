@@ -6,6 +6,7 @@ enum LaunchConnectionStatus {
   ready,
   signInRequired,
   offline,
+  specFetchFailure,
   incompatible,
 }
 
