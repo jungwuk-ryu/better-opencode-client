@@ -730,6 +730,55 @@ void main() {
     },
   );
 
+  testWidgets('assistant text replies are selectable', (tester) async {
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      initialShellToolPartsExpanded: true,
+      initialTimelineProgressDetailsVisible: false,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _OptimisticTimelineWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+              messages: _ordinaryAssistantReplyMessages,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(
+      find.byKey(
+        const ValueKey<String>('timeline-selectable-text-part_assistant_plain'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.ancestor(
+        of: find.text('I can check the branch list next.'),
+        matching: find.byType(SelectionArea),
+      ),
+      findsWidgets,
+    );
+  });
+
   testWidgets(
     'desktop user message actions survive rapid hover toggles without duplicate keys',
     (tester) async {

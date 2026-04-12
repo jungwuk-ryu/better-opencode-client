@@ -23730,13 +23730,16 @@ class _TimelinePart extends StatelessWidget {
       if (body.trim().isEmpty) {
         return const SizedBox.shrink();
       }
-      return _StreamingTextPart(
-        key: ValueKey<String>('timeline-streaming-text-${part.id}'),
-        partId: part.id,
-        text: body,
-        animate: _shouldAnimateStreamingText(part, textStreamingActive),
-        searchTerms: searchTerms,
-        searchActive: searchActive,
+      return SelectionArea(
+        key: ValueKey<String>('timeline-selectable-text-${part.id}'),
+        child: _StreamingTextPart(
+          key: ValueKey<String>('timeline-streaming-text-${part.id}'),
+          partId: part.id,
+          text: body,
+          animate: _shouldAnimateStreamingText(part, textStreamingActive),
+          searchTerms: searchTerms,
+          searchActive: searchActive,
+        ),
       );
     }
     if (part.type == 'compaction') {
