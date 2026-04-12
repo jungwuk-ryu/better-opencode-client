@@ -24316,11 +24316,13 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
   static const int _expandedLogVisibleLines = 5;
   static const double _expandedLogFontSize = 13;
   static const double _expandedLogLineHeight = 1.5;
+  static const double _expandedLogFadeHeight = 28;
 
   Timer? _copiedTimer;
   late final ScrollController _logScrollController = ScrollController();
   late bool _expanded = _desiredExpanded(widget.displayMode, widget.running);
   bool _copied = false;
+  bool _logScrolledPastTop = false;
 
   static bool _desiredExpanded(ShellToolDisplayMode mode, bool running) {
     return switch (mode) {
@@ -24372,13 +24374,16 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
   @override
   void initState() {
     super.initState();
+    _logScrollController.addListener(_handleLogScroll);
     _scheduleScrollToLatest();
   }
 
   @override
   void dispose() {
     _copiedTimer?.cancel();
-    _logScrollController.dispose();
+    _logScrollController
+      ..removeListener(_handleLogScroll)
+      ..dispose();
     super.dispose();
   }
 
@@ -24413,6 +24418,7 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
         _logScrollController.jumpTo(
           _logScrollController.position.maxScrollExtent,
         );
+        _syncLogFadeVisibility();
       });
       return;
     }
@@ -24423,6 +24429,28 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
       _logScrollController.jumpTo(
         _logScrollController.position.maxScrollExtent,
       );
+      _syncLogFadeVisibility();
+    });
+  }
+
+  void _handleLogScroll() {
+    _syncLogFadeVisibility();
+  }
+
+  void _syncLogFadeVisibility() {
+    if (!_logScrollController.hasClients) {
+      return;
+    }
+    final next = _logScrollController.offset > 0.5;
+    if (next == _logScrolledPastTop) {
+      return;
+    }
+    if (!mounted) {
+      _logScrolledPastTop = next;
+      return;
+    }
+    setState(() {
+      _logScrolledPastTop = next;
     });
   }
 
@@ -24631,9 +24659,10 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
                       'timeline-shell-expanded-${widget.partId}',
                     ),
                     width: double.infinity,
-                    margin: const EdgeInsets.only(
+                    margin: EdgeInsets.only(
                       left: AppSpacing.sm,
                       right: AppSpacing.sm,
+                      top: showCollapsedBody ? AppSpacing.xs : 0,
                       bottom: AppSpacing.xs,
                     ),
                     decoration: BoxDecoration(
@@ -24650,33 +24679,77 @@ class _ShellTimelinePartState extends State<_ShellTimelinePart> {
                           'timeline-shell-log-viewport-${widget.partId}',
                         ),
                         height: _expandedLogViewportHeight,
-                        child: SingleChildScrollView(
-                          key: ValueKey<String>(
-                            'timeline-shell-log-scroll-${widget.partId}',
-                          ),
-                          controller: _logScrollController,
-                          padding: _timelineShellBodyPadding(widget.compact),
-                          child: SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: Text.rich(
-                              TextSpan(
-                                style: monoStyle,
-                                children: _buildSearchHighlightedTextSpans(
-                                  text: output,
-                                  style: monoStyle,
-                                  terms: widget.searchTerms,
-                                  highlightColor: _searchTextHighlightColor(
-                                    context,
-                                    active: widget.searchActive,
-                                    code: true,
+                        child: Stack(
+                          children: <Widget>[
+                            Positioned.fill(
+                              child: SingleChildScrollView(
+                                key: ValueKey<String>(
+                                  'timeline-shell-log-scroll-${widget.partId}',
+                                ),
+                                controller: _logScrollController,
+                                padding: _timelineShellBodyPadding(
+                                  widget.compact,
+                                ),
+                                child: SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: SelectionArea(
+                                    key: ValueKey<String>(
+                                      'timeline-shell-output-selection-${widget.partId}',
+                                    ),
+                                    child: Text.rich(
+                                      TextSpan(
+                                        style: monoStyle,
+                                        children:
+                                            _buildSearchHighlightedTextSpans(
+                                              text: output,
+                                              style: monoStyle,
+                                              terms: widget.searchTerms,
+                                              highlightColor:
+                                                  _searchTextHighlightColor(
+                                                    context,
+                                                    active: widget.searchActive,
+                                                    code: true,
+                                                  ),
+                                            ),
+                                      ),
+                                      key: ValueKey<String>(
+                                        'timeline-shell-body-${widget.partId}',
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),
-                              key: ValueKey<String>(
-                                'timeline-shell-body-${widget.partId}',
+                            ),
+                            IgnorePointer(
+                              child: AnimatedOpacity(
+                                duration: const Duration(milliseconds: 150),
+                                curve: Curves.easeOutCubic,
+                                opacity: _logScrolledPastTop ? 1 : 0,
+                                child: Align(
+                                  alignment: Alignment.topCenter,
+                                  child: Container(
+                                    key: ValueKey<String>(
+                                      'timeline-shell-log-top-fade-${widget.partId}',
+                                    ),
+                                    height: _expandedLogFadeHeight,
+                                    decoration: BoxDecoration(
+                                      borderRadius: const BorderRadius.vertical(
+                                        top: Radius.circular(16),
+                                      ),
+                                      gradient: LinearGradient(
+                                        begin: Alignment.topCenter,
+                                        end: Alignment.bottomCenter,
+                                        colors: <Color>[
+                                          surfaces.panel,
+                                          surfaces.panel.withValues(alpha: 0),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
+                          ],
                         ),
                       ),
                     ),

@@ -8,6 +8,7 @@ import 'package:better_opencode_client/src/app/app_routes.dart';
 import 'package:better_opencode_client/src/app/app_scope.dart';
 import 'package:better_opencode_client/src/core/connection/connection_models.dart';
 import 'package:better_opencode_client/src/core/spec/raw_json_document.dart';
+import 'package:better_opencode_client/src/design_system/app_spacing.dart';
 import 'package:better_opencode_client/src/design_system/app_theme.dart';
 import 'package:better_opencode_client/src/features/chat/chat_models.dart';
 import 'package:better_opencode_client/src/features/projects/project_models.dart';
@@ -1272,6 +1273,41 @@ void main() {
       );
       expect(viewportFinder, findsOneWidget);
       expect(tester.getSize(viewportFinder).height, inInclusiveRange(115, 130));
+      expect(
+        find.byKey(
+          const ValueKey<String>('timeline-shell-output-selection-part_tool'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>('timeline-shell-log-top-fade-part_tool'),
+        ),
+        findsOneWidget,
+      );
+
+      final outputContainer = tester.widget<Container>(
+        find.byKey(const ValueKey<String>('timeline-shell-expanded-part_tool')),
+      );
+      expect(outputContainer.margin, isA<EdgeInsets>());
+      expect((outputContainer.margin! as EdgeInsets).top, AppSpacing.xs);
+
+      AnimatedOpacity fadeOpacity() {
+        return tester.widget<AnimatedOpacity>(
+          find
+              .ancestor(
+                of: find.byKey(
+                  const ValueKey<String>(
+                    'timeline-shell-log-top-fade-part_tool',
+                  ),
+                ),
+                matching: find.byType(AnimatedOpacity),
+              )
+              .first,
+        );
+      }
+
+      expect(fadeOpacity().opacity, 0);
 
       controllerInstance.updateShell(
         status: 'running',
@@ -1294,6 +1330,7 @@ void main() {
         firstController.offset,
         closeTo(firstController.position.maxScrollExtent, 0.1),
       );
+      expect(fadeOpacity().opacity, 1);
 
       controllerInstance.updateShell(
         status: 'running',
