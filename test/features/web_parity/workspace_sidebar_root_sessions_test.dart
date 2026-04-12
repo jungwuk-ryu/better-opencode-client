@@ -588,13 +588,26 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Workspace Settings'), findsOneWidget);
-    expect(find.text('Shell'), findsOneWidget);
+    expect(find.text('Session loading'), findsOneWidget);
     expect(find.text('Manage Servers'), findsOneWidget);
     expect(find.text('Ready'), findsOneWidget);
     expect(
       find.byKey(const ValueKey<String>('workspace-session-entry-ses_child-1')),
       findsNothing,
     );
+
+    final settingsListView = find
+        .descendant(
+          of: find.byKey(const ValueKey<String>('workspace-settings-sheet')),
+          matching: find.byType(ListView),
+        )
+        .first;
+    await tester.dragUntilVisible(
+      find.byKey(const ValueKey<String>('workspace-settings-shell-toggle')),
+      settingsListView,
+      const Offset(0, -160),
+    );
+    await tester.pump();
 
     final shellDisplaySegments = find.descendant(
       of: find.byKey(const ValueKey<String>('workspace-settings-shell-toggle')),
@@ -610,6 +623,15 @@ void main() {
     await tester.pump();
 
     expect(appController.shellToolDisplayMode, ShellToolDisplayMode.collapsed);
+
+    await tester.dragUntilVisible(
+      find.byKey(
+        const ValueKey<String>('workspace-settings-code-highlight-toggle'),
+      ),
+      settingsListView,
+      const Offset(0, 160),
+    );
+    await tester.pump();
 
     final highlightToggle = find.descendant(
       of: find.byKey(
@@ -630,13 +652,6 @@ void main() {
           find.byKey(const ValueKey<String>('workspace-desktop-sidebar-pane')),
         )
         .width;
-
-    final settingsListView = find
-        .descendant(
-          of: find.byKey(const ValueKey<String>('workspace-settings-sheet')),
-          matching: find.byType(ListView),
-        )
-        .first;
 
     await tester.dragUntilVisible(
       find.byKey(
@@ -767,9 +782,13 @@ void main() {
       const Locale('ko'),
     );
 
-    await tester.tap(
-      find.descendant(of: languageRow, matching: find.text('日本語')),
+    final japaneseLanguageOption = find.descendant(
+      of: languageRow,
+      matching: find.text('日本語'),
     );
+    await tester.ensureVisible(japaneseLanguageOption);
+    await tester.pump();
+    await tester.tap(japaneseLanguageOption);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 220));
 
@@ -780,9 +799,13 @@ void main() {
       const Locale('ja'),
     );
 
-    await tester.tap(
-      find.descendant(of: languageRow, matching: find.text('中文')),
+    final chineseLanguageOption = find.descendant(
+      of: languageRow,
+      matching: find.text('中文'),
     );
+    await tester.ensureVisible(chineseLanguageOption);
+    await tester.pump();
+    await tester.tap(chineseLanguageOption);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 220));
 
@@ -868,14 +891,24 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 220));
 
+    expect(
+      find.byKey(const ValueKey<String>('workspace-settings-sheet')),
+      findsOneWidget,
+    );
+    final settingsListViewAfterReleaseNotes = find
+        .descendant(
+          of: find.byKey(const ValueKey<String>('workspace-settings-sheet')),
+          matching: find.byType(ListView),
+        )
+        .first;
     await tester.dragUntilVisible(
       find.byKey(
         const ValueKey<String>(
           'workspace-settings-sidebar-child-sessions-toggle',
         ),
       ),
-      settingsListView,
-      const Offset(0, -200),
+      settingsListViewAfterReleaseNotes,
+      const Offset(0, 220),
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 180));
@@ -897,7 +930,7 @@ void main() {
     await tester.dragUntilVisible(
       find.byKey(const ValueKey<String>('workspace-settings-theme-row')),
       settingsListView,
-      const Offset(0, 220),
+      const Offset(0, -220),
     );
     await tester.pump();
 
@@ -986,6 +1019,17 @@ void main() {
     expect(cardDecoration.boxShadow ?? const <BoxShadow>[], isEmpty);
     expect(cardDecoration.color!.a, greaterThan(0.5));
     expect(cardDecoration.color!.a, lessThan(1));
+
+    final settingsListView = find.descendant(
+      of: find.byKey(const ValueKey<String>('workspace-settings-sheet')),
+      matching: find.byType(ListView),
+    );
+    await tester.dragUntilVisible(
+      find.byKey(const ValueKey<String>('workspace-settings-shell-toggle')),
+      settingsListView,
+      const Offset(0, -220),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
 
     final shellInsetDecorations = tester
         .widgetList<Container>(
@@ -1134,10 +1178,17 @@ void main() {
       await tester.pump(const Duration(milliseconds: 240));
 
       await tester.tap(
-        find.byKey(const ValueKey<String>('workspace-sidebar-settings-button')),
+        find
+            .byKey(const ValueKey<String>('workspace-sidebar-settings-button'))
+            .hitTestable(),
       );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 240));
+
+      expect(
+        find.byKey(const ValueKey<String>('workspace-settings-sheet')),
+        findsOneWidget,
+      );
 
       final settingsListView = find
           .descendant(
@@ -1145,17 +1196,23 @@ void main() {
             matching: find.byType(ListView),
           )
           .first;
-      await tester.dragUntilVisible(
-        find.byKey(const ValueKey<String>('workspace-settings-language-row')),
-        settingsListView,
-        const Offset(0, -160),
-      );
-      await tester.pump();
-
-      final languageRow = find.byKey(
+      final languageRowFinder = find.byKey(
         const ValueKey<String>('workspace-settings-language-row'),
       );
+      for (
+        var attempts = 0;
+        attempts < 80 && languageRowFinder.evaluate().isEmpty;
+        attempts += 1
+      ) {
+        await tester.drag(settingsListView, const Offset(0, -160));
+        await tester.pump();
+      }
+      await tester.pump();
+
+      final languageRow = languageRowFinder;
       expect(languageRow, findsOneWidget);
+      await tester.ensureVisible(languageRow);
+      await tester.pump();
       expect(
         find.descendant(
           of: languageRow,

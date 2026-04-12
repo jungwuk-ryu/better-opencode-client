@@ -1491,6 +1491,82 @@ void main() {
     expect(find.text('OpenCode-style desktop shortcuts'), findsOneWidget);
   });
 
+  testWidgets('workspace settings sections follow the workflow order', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _RecordingWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    final navigatorKey = GlobalKey<NavigatorState>();
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        navigatorKey: navigatorKey,
+        initialRoute: '/',
+      ),
+    );
+    navigatorKey.currentState!.pushNamed(
+      buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+    );
+    await tester.pumpAndSettle();
+
+    await _sendShortcut(tester, <LogicalKeyboardKey>[
+      _platformModKey(),
+      LogicalKeyboardKey.comma,
+    ]);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 260));
+
+    final settingsListView = find.descendant(
+      of: find.byKey(const ValueKey<String>('workspace-settings-sheet')),
+      matching: find.byType(ListView),
+    );
+    final expectedSectionKeys = <String>[
+      'workspace-settings-section-server',
+      'workspace-settings-section-session-loading',
+      'workspace-settings-section-timeline',
+      'workspace-settings-section-shell',
+      'workspace-settings-section-composer',
+      'workspace-settings-section-permissions',
+      'workspace-settings-section-sidebar',
+      'workspace-settings-section-appearance',
+      'workspace-settings-section-keyboard',
+      'workspace-settings-section-whats-new',
+    ];
+    for (final sectionKey in expectedSectionKeys) {
+      final sectionFinder = find.byKey(ValueKey<String>(sectionKey));
+      await tester.dragUntilVisible(
+        sectionFinder,
+        settingsListView,
+        const Offset(0, -260),
+        maxIteration: 40,
+      );
+      await tester.pumpAndSettle();
+      expect(sectionFinder, findsOneWidget);
+    }
+  });
+
   testWidgets(
     'command palette opens from the keyboard shortcut and runs commands',
     (tester) async {

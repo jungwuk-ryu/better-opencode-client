@@ -8814,6 +8814,9 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                               ),
                               children: <Widget>[
                                 _WorkspaceSettingsSection(
+                                  key: const ValueKey<String>(
+                                    'workspace-settings-section-server',
+                                  ),
                                   title: context.wp('Server'),
                                   child: _WorkspaceSettingsCard(
                                     surfaceKey: const ValueKey<String>(
@@ -8931,29 +8934,55 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                 ),
                                 SizedBox(height: sectionGap),
                                 _WorkspaceSettingsSection(
-                                  title: context.wp('Shell'),
+                                  key: const ValueKey<String>(
+                                    'workspace-settings-section-session-loading',
+                                  ),
+                                  title: context.wp('Session loading'),
                                   child: _WorkspaceSettingsCard(
-                                    child:
-                                        _WorkspaceSettingsShellDisplayModeRow(
+                                    child: Column(
+                                      children: <Widget>[
+                                        _WorkspaceSettingsSessionHistoryPageSizeRow(
                                           key: const ValueKey<String>(
-                                            'workspace-settings-shell-toggle',
+                                            'workspace-settings-session-history-page-size-row',
                                           ),
                                           value: widget
                                               .appController
-                                              .shellToolDisplayMode,
+                                              .sessionHistoryPageSize,
                                           onChanged: (value) {
                                             unawaited(
                                               widget.appController
-                                                  .setShellToolDisplayMode(
+                                                  .setSessionHistoryPageSize(
                                                     value,
                                                   ),
                                             );
                                           },
                                         ),
+                                        const SizedBox(height: AppSpacing.sm),
+                                        _WorkspaceSettingsOversizedSessionBehaviorRow(
+                                          key: const ValueKey<String>(
+                                            'workspace-settings-oversized-session-behavior-row',
+                                          ),
+                                          value: widget
+                                              .appController
+                                              .oversizedSessionBehavior,
+                                          onChanged: (value) {
+                                            unawaited(
+                                              widget.appController
+                                                  .setOversizedSessionBehavior(
+                                                    value,
+                                                  ),
+                                            );
+                                          },
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                                 SizedBox(height: sectionGap),
                                 _WorkspaceSettingsSection(
+                                  key: const ValueKey<String>(
+                                    'workspace-settings-section-timeline',
+                                  ),
                                   title: context.wp('Timeline'),
                                   child: _WorkspaceSettingsCard(
                                     child: Column(
@@ -9009,49 +9038,35 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                 ),
                                 SizedBox(height: sectionGap),
                                 _WorkspaceSettingsSection(
-                                  title: context.wp('Session loading'),
+                                  key: const ValueKey<String>(
+                                    'workspace-settings-section-shell',
+                                  ),
+                                  title: context.wp('Shell'),
                                   child: _WorkspaceSettingsCard(
-                                    child: Column(
-                                      children: <Widget>[
-                                        _WorkspaceSettingsSessionHistoryPageSizeRow(
+                                    child:
+                                        _WorkspaceSettingsShellDisplayModeRow(
                                           key: const ValueKey<String>(
-                                            'workspace-settings-session-history-page-size-row',
+                                            'workspace-settings-shell-toggle',
                                           ),
                                           value: widget
                                               .appController
-                                              .sessionHistoryPageSize,
+                                              .shellToolDisplayMode,
                                           onChanged: (value) {
                                             unawaited(
                                               widget.appController
-                                                  .setSessionHistoryPageSize(
+                                                  .setShellToolDisplayMode(
                                                     value,
                                                   ),
                                             );
                                           },
                                         ),
-                                        const SizedBox(height: AppSpacing.sm),
-                                        _WorkspaceSettingsOversizedSessionBehaviorRow(
-                                          key: const ValueKey<String>(
-                                            'workspace-settings-oversized-session-behavior-row',
-                                          ),
-                                          value: widget
-                                              .appController
-                                              .oversizedSessionBehavior,
-                                          onChanged: (value) {
-                                            unawaited(
-                                              widget.appController
-                                                  .setOversizedSessionBehavior(
-                                                    value,
-                                                  ),
-                                            );
-                                          },
-                                        ),
-                                      ],
-                                    ),
                                   ),
                                 ),
                                 SizedBox(height: sectionGap),
                                 _WorkspaceSettingsSection(
+                                  key: const ValueKey<String>(
+                                    'workspace-settings-section-composer',
+                                  ),
                                   title: context.wp('Composer'),
                                   child: _WorkspaceSettingsCard(
                                     child: Column(
@@ -9093,6 +9108,9 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                 ),
                                 SizedBox(height: sectionGap),
                                 _WorkspaceSettingsSection(
+                                  key: const ValueKey<String>(
+                                    'workspace-settings-section-permissions',
+                                  ),
                                   title: context.wp('Permissions'),
                                   child: _WorkspaceSettingsCard(
                                     key: const ValueKey<String>(
@@ -9162,6 +9180,40 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                 ),
                                 SizedBox(height: sectionGap),
                                 _WorkspaceSettingsSection(
+                                  key: const ValueKey<String>(
+                                    'workspace-settings-section-sidebar',
+                                  ),
+                                  title: context.wp('Sidebar'),
+                                  child: _WorkspaceSettingsCard(
+                                    child: _WorkspaceSettingsToggleRow(
+                                      key: const ValueKey<String>(
+                                        'workspace-settings-sidebar-child-sessions-toggle',
+                                      ),
+                                      title: context.wp(
+                                        'Show sub-sessions in sidebar',
+                                      ),
+                                      subtitle: context.wp(
+                                        'Display nested agent sessions under their root session in the session list.',
+                                      ),
+                                      value: widget
+                                          .appController
+                                          .sidebarChildSessionsVisible,
+                                      onChanged: (value) {
+                                        unawaited(
+                                          widget.appController
+                                              .setSidebarChildSessionsVisible(
+                                                value,
+                                              ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(height: sectionGap),
+                                _WorkspaceSettingsSection(
+                                  key: const ValueKey<String>(
+                                    'workspace-settings-section-appearance',
+                                  ),
                                   title: context.wp('Appearance'),
                                   child: _WorkspaceSettingsCard(
                                     child: Column(
@@ -9259,6 +9311,18 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                 ),
                                 SizedBox(height: sectionGap),
                                 _WorkspaceSettingsSection(
+                                  key: const ValueKey<String>(
+                                    'workspace-settings-section-keyboard',
+                                  ),
+                                  title: context.wp('Keyboard'),
+                                  child:
+                                      const _WorkspaceKeyboardShortcutsCard(),
+                                ),
+                                SizedBox(height: sectionGap),
+                                _WorkspaceSettingsSection(
+                                  key: const ValueKey<String>(
+                                    'workspace-settings-section-whats-new',
+                                  ),
                                   title: context.wp("What's New"),
                                   child: _WorkspaceSettingsCard(
                                     child: Column(
@@ -9375,40 +9439,6 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                                           ),
                                         ),
                                       ],
-                                    ),
-                                  ),
-                                ),
-                                SizedBox(height: sectionGap),
-                                _WorkspaceSettingsSection(
-                                  title: context.wp('Keyboard'),
-                                  child:
-                                      const _WorkspaceKeyboardShortcutsCard(),
-                                ),
-                                SizedBox(height: sectionGap),
-                                _WorkspaceSettingsSection(
-                                  title: context.wp('Sidebar'),
-                                  child: _WorkspaceSettingsCard(
-                                    child: _WorkspaceSettingsToggleRow(
-                                      key: const ValueKey<String>(
-                                        'workspace-settings-sidebar-child-sessions-toggle',
-                                      ),
-                                      title: context.wp(
-                                        'Show sub-sessions in sidebar',
-                                      ),
-                                      subtitle: context.wp(
-                                        'Display nested agent sessions under their root session in the session list.',
-                                      ),
-                                      value: widget
-                                          .appController
-                                          .sidebarChildSessionsVisible,
-                                      onChanged: (value) {
-                                        unawaited(
-                                          widget.appController
-                                              .setSidebarChildSessionsVisible(
-                                                value,
-                                              ),
-                                        );
-                                      },
                                     ),
                                   ),
                                 ),
@@ -9562,7 +9592,11 @@ BoxDecoration _workspaceSettingsInsetDecoration(
 }
 
 class _WorkspaceSettingsSection extends StatelessWidget {
-  const _WorkspaceSettingsSection({required this.title, required this.child});
+  const _WorkspaceSettingsSection({
+    required this.title,
+    required this.child,
+    super.key,
+  });
 
   final String title;
   final Widget child;
