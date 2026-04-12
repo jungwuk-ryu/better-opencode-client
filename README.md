@@ -1,5 +1,9 @@
 # Better OpenCode Client (BOC)
 
+<p align="center">
+  <img src="assets/readme/app-icon.png" alt="BOC app icon" width="112">
+</p>
+
 Remote OpenCode, without being glued to your desk.
 
 BOC is a cross-platform Flutter client for using OpenCode remotely from iOS, Android, macOS, and Windows. It is designed around compatibility with OpenCode `1.4.3` and focuses on the work you actually need when you are away from your main workstation: connect to a server, resume a workspace, follow sessions, answer requests, inspect context, and run the occasional shell command.
