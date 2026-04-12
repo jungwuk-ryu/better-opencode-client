@@ -5,6 +5,7 @@ import 'package:better_opencode_client/l10n/app_localizations.dart';
 
 import '../../design_system/app_spacing.dart';
 import '../../design_system/app_theme.dart';
+import '../../i18n/web_parity_localizations.dart';
 import 'chat_models.dart';
 
 typedef _ChatPartRenderer =
@@ -71,9 +72,15 @@ class ChatPartView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context)!;
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    if (part.type == 'compaction') {
+      return _CompactionDivider(
+        key: ValueKey<String>('chat-part-compaction-${part.id}'),
+        label: context.wp('Session compacted'),
+      );
+    }
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
     final rendered =
         _chatPartRenderers[part.type]?.call(l10n, message, part) ??
         _RenderedChatPart(
@@ -187,6 +194,41 @@ class ChatPartView extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _CompactionDivider extends StatelessWidget {
+  const _CompactionDivider({required this.label, super.key});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = theme.extension<AppSurfaces>()!;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Divider(color: surfaces.lineSoft, thickness: 1, height: 1),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+            child: Text(
+              label,
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: surfaces.muted,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Divider(color: surfaces.lineSoft, thickness: 1, height: 1),
+          ),
+        ],
+      ),
     );
   }
 }

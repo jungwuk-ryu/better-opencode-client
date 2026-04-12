@@ -355,6 +355,70 @@ void main() {
     },
   );
 
+  testWidgets('shell renders compaction parts as timeline dividers', (
+    tester,
+  ) async {
+    final chatService = _ControlledChatService(
+      bundlesByScopeKey: <String, ChatSessionBundle>{
+        _scopeKeyFor(profile, project): ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _testSession(
+              'session-1',
+              'First session',
+              directory: project.directory,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{
+            'session-1': SessionStatusSummary(type: 'idle'),
+          },
+          messages: const <ChatMessage>[
+            ChatMessage(
+              info: ChatMessageInfo(
+                id: 'assistant-compaction-message',
+                role: 'assistant',
+                sessionId: 'session-1',
+              ),
+              parts: <ChatPart>[
+                ChatPart(id: 'compaction-part', type: 'compaction'),
+              ],
+            ),
+          ],
+          selectedSessionId: 'session-1',
+        ),
+      },
+    );
+
+    await pumpShellWithCapabilities(
+      tester,
+      size: const Size(1440, 1600),
+      capabilitiesToUse: capabilities,
+      chatService: chatService,
+      todoService: _RecordingTodoService(),
+      fileBrowserService: _ControlledFileBrowserService.empty(),
+      requestService: _ControlledRequestService.empty(),
+      configService: _ControlledConfigService.empty(),
+      integrationStatusService: _ControlledIntegrationStatusService.empty(),
+    );
+
+    expect(
+      find.byKey(
+        const ValueKey<String>('chat-part-compaction-compaction-part'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Session compacted'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('chat-part-activity-compaction-part')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(
+        const ValueKey<String>('chat-part-bubble-assistant-compaction-message'),
+      ),
+      findsNothing,
+    );
+  });
+
   testWidgets(
     'shell composer refuses exact /compact prompts without an existing session',
     (tester) async {
