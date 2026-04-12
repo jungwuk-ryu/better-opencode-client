@@ -228,10 +228,14 @@ void main() {
       workspaceController: workspaceController,
     );
     addTearDown(appController.dispose);
+    final navigatorKey = GlobalKey<NavigatorState>();
+    final observer = _RecordingNavigatorObserver();
 
     await tester.pumpWidget(
       _WorkspaceRouteHarness(
         controller: appController,
+        navigatorKey: navigatorKey,
+        navigatorObservers: <NavigatorObserver>[observer],
         initialRoute: buildWorkspaceRoute(
           '/workspace/demo',
           sessionId: 'ses_1',
@@ -253,9 +257,14 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
-    expect(workspaceController.createEmptySessionCalls, 1);
+    expect(workspaceController.createEmptySessionCalls, 0);
     expect(workspaceController.submitPromptCalls, 0);
-    expect(find.text('Fresh session'), findsAtLeastNWidgets(1));
+    expect(workspaceController.selectedSessionId, isNull);
+    expect(
+      observer.lastRouteName,
+      buildWorkspaceRoute('/workspace/demo', sessionId: null),
+    );
+    expect(find.text('Fresh session'), findsNothing);
   });
 
   testWidgets(
@@ -901,16 +910,22 @@ class _WorkspaceRouteHarness extends StatelessWidget {
   const _WorkspaceRouteHarness({
     required this.controller,
     required this.initialRoute,
+    this.navigatorKey,
+    this.navigatorObservers = const <NavigatorObserver>[],
   });
 
   final WebParityAppController controller;
   final String initialRoute;
+  final GlobalKey<NavigatorState>? navigatorKey;
+  final List<NavigatorObserver> navigatorObservers;
 
   @override
   Widget build(BuildContext context) {
     return AppScope(
       controller: controller,
       child: MaterialApp(
+        navigatorKey: navigatorKey,
+        navigatorObservers: navigatorObservers,
         theme: AppTheme.dark(),
         initialRoute: initialRoute,
         onGenerateRoute: (settings) {
@@ -933,6 +948,22 @@ class _WorkspaceRouteHarness extends StatelessWidget {
         },
       ),
     );
+  }
+}
+
+class _RecordingNavigatorObserver extends NavigatorObserver {
+  String? lastRouteName;
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    lastRouteName = route.settings.name;
+    super.didPush(route, previousRoute);
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    lastRouteName = newRoute?.settings.name;
+    super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
   }
 }
 
@@ -993,13 +1024,16 @@ class _SlashWorkspaceController extends WorkspaceController {
   );
 
   bool _loading = true;
-  SessionSummary _selectedSession = SessionSummary(
-    id: 'ses_1',
-    directory: '/workspace/demo',
-    title: 'Existing session',
-    version: '1',
-    updatedAt: DateTime.fromMillisecondsSinceEpoch(1710000001000),
-  );
+  final List<SessionSummary> _sessions = <SessionSummary>[
+    SessionSummary(
+      id: 'ses_1',
+      directory: '/workspace/demo',
+      title: 'Existing session',
+      version: '1',
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(1710000001000),
+    ),
+  ];
+  String? _selectedSessionId = 'ses_1';
   int createEmptySessionCalls = 0;
   int submitPromptCalls = 0;
   int summarizeSelectedSessionCalls = 0;
@@ -1017,24 +1051,36 @@ class _SlashWorkspaceController extends WorkspaceController {
   ];
 
   @override
-  List<SessionSummary> get sessions => <SessionSummary>[_selectedSession];
+  List<SessionSummary> get sessions =>
+      List<SessionSummary>.unmodifiable(_sessions);
 
   @override
-  List<SessionSummary> get visibleSessions => <SessionSummary>[
-    _selectedSession,
-  ];
+  List<SessionSummary> get visibleSessions =>
+      List<SessionSummary>.unmodifiable(_sessions);
 
   @override
   Map<String, SessionStatusSummary> get statuses =>
       <String, SessionStatusSummary>{
-        _selectedSession.id: const SessionStatusSummary(type: 'idle'),
+        for (final session in _sessions)
+          session.id: const SessionStatusSummary(type: 'idle'),
       };
 
   @override
-  String? get selectedSessionId => _selectedSession.id;
+  String? get selectedSessionId => _selectedSessionId;
 
   @override
-  SessionSummary? get selectedSession => _selectedSession;
+  SessionSummary? get selectedSession {
+    final selectedSessionId = _selectedSessionId;
+    if (selectedSessionId == null) {
+      return null;
+    }
+    for (final session in _sessions) {
+      if (session.id == selectedSessionId) {
+        return session;
+      }
+    }
+    return null;
+  }
 
   @override
   List<ChatMessage> get messages => const <ChatMessage>[];
@@ -1074,6 +1120,15 @@ class _SlashWorkspaceController extends WorkspaceController {
   }
 
   @override
+  Future<void> selectSession(String? sessionId) async {
+    final normalized = sessionId?.trim();
+    _selectedSessionId = normalized == null || normalized.isEmpty
+        ? null
+        : normalized;
+    notifyListeners();
+  }
+
+  @override
   Future<String?> submitPrompt(
     String prompt, {
     List<PromptAttachment> attachments = const <PromptAttachment>[],
@@ -1087,15 +1142,17 @@ class _SlashWorkspaceController extends WorkspaceController {
   @override
   Future<SessionSummary?> createEmptySession({String? title}) async {
     createEmptySessionCalls += 1;
-    _selectedSession = SessionSummary(
+    final created = SessionSummary(
       id: 'ses_new',
       directory: '/workspace/demo',
       title: 'Fresh session',
       version: '1',
       updatedAt: DateTime.fromMillisecondsSinceEpoch(1710000002000),
     );
+    _sessions.insert(0, created);
+    _selectedSessionId = created.id;
     notifyListeners();
-    return _selectedSession;
+    return created;
   }
 
   @override

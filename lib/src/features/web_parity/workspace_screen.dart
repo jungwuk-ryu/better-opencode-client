@@ -24,6 +24,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../app/app_controller.dart';
 import '../../app/app_release_notes_dialog.dart';
+import '../../app/app_routes.dart';
 import '../../app/app_scope.dart';
 import '../../core/connection/connection_models.dart';
 import '../../core/network/opencode_server_probe.dart';
@@ -414,12 +415,38 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen>
     );
   }
 
+  String _newSessionDraftComposerScopeKey({
+    required String directory,
+    required String paneId,
+  }) {
+    return '${_composerScopeKey(directory: directory, sessionId: null)}::pane:$paneId';
+  }
+
+  String _composerScopeKeyForController(WorkspaceController controller) {
+    final sessionId = controller.selectedSessionId;
+    if (sessionId == null || sessionId.trim().isEmpty) {
+      final paneId = _activeDesktopSessionPaneId;
+      if (paneId != null && paneId.isNotEmpty) {
+        return _newSessionDraftComposerScopeKey(
+          directory: controller.directory,
+          paneId: paneId,
+        );
+      }
+    }
+    return _composerScopeKey(
+      directory: controller.directory,
+      sessionId: sessionId,
+    );
+  }
+
   String _resolvedActiveComposerScopeKey(WorkspaceController? controller) {
     return _activeComposerScopeKey ??
-        _composerScopeKey(
-          directory: controller?.directory ?? _activeDirectory,
-          sessionId: controller?.selectedSessionId ?? _activeRouteSessionId,
-        );
+        (controller == null
+            ? _composerScopeKey(
+                directory: _activeDirectory,
+                sessionId: _activeRouteSessionId,
+              )
+            : _composerScopeKeyForController(controller));
   }
 
   bool _isActiveComposerScope(String scopeKey) {
@@ -577,9 +604,16 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen>
   }
 
   String _composerScopeKeyForPane(_WorkspacePaneViewModel paneViewModel) {
+    final sessionId = paneViewModel.pane.sessionId;
+    if (sessionId == null || sessionId.trim().isEmpty) {
+      return _newSessionDraftComposerScopeKey(
+        directory: paneViewModel.pane.directory,
+        paneId: paneViewModel.pane.id,
+      );
+    }
     return _composerScopeKey(
       directory: paneViewModel.pane.directory,
-      sessionId: paneViewModel.pane.sessionId,
+      sessionId: sessionId,
     );
   }
 
@@ -925,11 +959,36 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen>
     unawaited(_restorePersistedComposerHistory(scopeKey));
   }
 
-  void _syncComposerScopeForController(WorkspaceController controller) {
-    final scopeKey = _composerScopeKey(
-      directory: controller.directory,
-      sessionId: controller.selectedSessionId,
+  void _activateBlankComposerScope(String scopeKey) {
+    if (_activeComposerScopeKey != scopeKey) {
+      _persistActiveComposerScope();
+    }
+    _disposeInactiveComposerController(scopeKey);
+    _activeComposerScopeKey = scopeKey;
+    _composerAttachments = const <PromptAttachment>[];
+    _promptSubmitEpoch = 0;
+    _recentSubmittedPromptDraft = null;
+    _bumpComposerDraftRevision(scopeKey);
+    _queueComposerDraftPersist(scopeKey, '');
+    _setComposerHistoryForScope(scopeKey, const <String>[]);
+    unawaited(_persistComposerHistoryForScope(scopeKey));
+    _updateComposerScopeState(
+      scopeKey,
+      draft: '',
+      attachments: const <PromptAttachment>[],
+      submittedDraftEpoch: 0,
+      recentSubmittedDraft: null,
+      persistDraft: false,
     );
+    _promptController.value = const TextEditingValue(
+      text: '',
+      selection: TextSelection.collapsed(offset: 0),
+      composing: TextRange.empty,
+    );
+  }
+
+  void _syncComposerScopeForController(WorkspaceController controller) {
+    final scopeKey = _composerScopeKeyForController(controller);
     _activateComposerScope(scopeKey);
   }
 
@@ -1085,10 +1144,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen>
       return;
     }
     final paneLayoutChanged = _commitSelectedSessionToActivePane(controller);
-    final scopeKey = _composerScopeKey(
-      directory: controller.directory,
-      sessionId: controller.selectedSessionId,
-    );
+    final scopeKey = _composerScopeKeyForController(controller);
     if (scopeKey == _activeComposerScopeKey) {
       if (paneLayoutChanged) {
         unawaited(_persistDesktopSessionPaneLayout());
@@ -1118,6 +1174,14 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen>
       action: action,
       replaceCurrent: replaceCurrent,
     );
+  }
+
+  void _replaceWorkspaceRoute({required String directory, String? sessionId}) {
+    final routeName = buildWorkspaceRoute(directory, sessionId: sessionId);
+    if (ModalRoute.of(context)?.settings.name == routeName) {
+      return;
+    }
+    Navigator.of(context).pushReplacementNamed(routeName);
   }
 
   int _nextSessionPaneSequenceFor(Iterable<_WorkspaceSessionPaneSpec> panes) {
@@ -1687,6 +1751,11 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen>
     _activeDirectory = directory;
     _activeRouteSessionId = routeSessionId;
     _syncComposerScopeForController(nextController);
+    if (routeSessionId == null) {
+      _requestPromptComposerFocusForScope(
+        _composerScopeKeyForController(nextController),
+      );
+    }
 
     if (profileChanged || resetPaneDeck) {
       _compactPane = _CompactWorkspacePane.session;
@@ -2741,7 +2810,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen>
         await _createPtySession();
         return;
       case 'session.new':
-        await _createNewSession(controller);
+        await _startNewSessionDraft(controller);
         return;
       case 'session.share':
         if (controller.selectedSession?.shareUrl?.trim().isNotEmpty == true) {
@@ -3022,7 +3091,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen>
         description: context.wp('Create a fresh chat session in this project.'),
         shortcut: 'mod+shift+s',
         onSelected: () async {
-          await _createNewSession(controller);
+          await _startNewSessionDraft(controller);
         },
       ),
       _WorkspaceCommandPaletteCommand(
@@ -3676,7 +3745,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen>
       mod: true,
       shift: true,
     )) {
-      unawaited(_createNewSession(controller));
+      unawaited(_startNewSessionDraft(controller));
       return KeyEventResult.handled;
     }
     if (_matchesWorkspaceShortcut(
@@ -5132,7 +5201,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen>
     if (!mounted || controller == null) {
       return;
     }
-    await _createNewSession(controller);
+    await _startNewSessionDraft(controller);
   }
 
   Future<void> _selectSideTabForPane(
@@ -5330,12 +5399,23 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen>
     );
 
     try {
-      await controller.submitPrompt(
+      final previousSessionId = controller.selectedSessionId;
+      final submittedSessionId = await controller.submitPrompt(
         draft,
         attachments: attachments,
         mode: effectiveMode,
       );
       await _appendComposerHistoryEntry(scopeKey, draft);
+      final createdSessionId = submittedSessionId?.trim();
+      if (mounted &&
+          (previousSessionId == null || previousSessionId.isEmpty) &&
+          createdSessionId != null &&
+          createdSessionId.isNotEmpty) {
+        _replaceWorkspaceRoute(
+          directory: controller.directory,
+          sessionId: createdSessionId,
+        );
+      }
     } catch (error) {
       if (!mounted) {
         return;
@@ -5626,17 +5706,26 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen>
     }
   }
 
-  Future<void> _createNewSession(WorkspaceController controller) async {
+  Future<void> _startNewSessionDraft(WorkspaceController controller) async {
     _preserveSelectedSessionIfVisibleElsewhere(controller);
     try {
-      await controller.createEmptySession();
+      await controller.selectSession(null);
+      if (!mounted) {
+        return;
+      }
+      final scopeKey = _composerScopeKeyForController(controller);
+      setState(() {
+        _activateBlankComposerScope(scopeKey);
+        _requestPromptComposerFocusForScope(scopeKey);
+      });
+      _replaceWorkspaceRoute(directory: controller.directory);
     } catch (error) {
       if (!mounted) {
         return;
       }
       _showSnackBar(
         context.wp(
-          'Failed to create session: {error}',
+          'Failed to start a new session: {error}',
           args: <String, Object?>{'error': error},
         ),
         tone: AppSnackBarTone.danger,
@@ -6439,7 +6528,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen>
                         onAddProject: () {
                           unawaited(_openProjectPickerShortcut());
                         },
-                        onNewSession: () => _createNewSession(controller),
+                        onNewSession: () => _startNewSessionDraft(controller),
                         onOpenSettings: () => _openWorkspaceSettingsSheet(
                           appController,
                           controller,
@@ -6512,7 +6601,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen>
                     onAddProject: () {
                       unawaited(_openProjectPickerShortcut());
                     },
-                    onNewSession: () => _createNewSession(controller),
+                    onNewSession: () => _startNewSessionDraft(controller),
                     onOpenSettings: () =>
                         _openWorkspaceSettingsSheet(appController, controller),
                   );
@@ -6703,6 +6792,8 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen>
                                       activeWorkspaceLoading:
                                           controller.loading,
                                       activeWorkspaceError: controller.error,
+                                      activeComposerScopeKey:
+                                          activeComposerScopeKey,
                                       sidePanelVisible: desktopSidePanelVisible,
                                       sidePanelWidth:
                                           resolvedDesktopWidths.sidePanelWidth,
@@ -6795,7 +6886,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen>
                                       onInterruptPrompt:
                                           _interruptSelectedSession,
                                       onCreateSession: () =>
-                                          _createNewSession(controller),
+                                          _startNewSessionDraft(controller),
                                       onOpenSession: (sessionId) {
                                         unawaited(
                                           _selectSessionInPlace(
@@ -15096,6 +15187,7 @@ class _WorkspaceBody extends StatelessWidget {
     required this.activePaneId,
     required this.activeWorkspaceLoading,
     required this.activeWorkspaceError,
+    required this.activeComposerScopeKey,
     required this.sidePanelVisible,
     required this.sidePanelWidth,
     required this.submittingPrompt,
@@ -15163,6 +15255,7 @@ class _WorkspaceBody extends StatelessWidget {
   final String? activePaneId;
   final bool activeWorkspaceLoading;
   final String? activeWorkspaceError;
+  final String activeComposerScopeKey;
   final bool sidePanelVisible;
   final double sidePanelWidth;
   final bool submittingPrompt;
@@ -15342,8 +15435,7 @@ class _WorkspaceBody extends StatelessWidget {
                 _PromptComposer(
                   controller: promptController,
                   compact: compact,
-                  scopeKey:
-                      '${controller.directory}::${controller.selectedSessionId ?? 'new'}',
+                  scopeKey: activeComposerScopeKey,
                   focusRequestToken: promptFocusRequestToken,
                   submitting: submittingPrompt,
                   busyFollowupMode: busyFollowupMode,
@@ -20057,6 +20149,14 @@ class _PromptComposerState extends State<_PromptComposer> {
     _focusNode.addListener(_handleComposerFocusChanged);
     widget.controller.addListener(_handleComposerChanged);
     _scheduleSlashCommandsOverlaySync();
+    if (widget.focusRequestToken > 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          return;
+        }
+        _focusNode.requestFocus();
+      });
+    }
   }
 
   @override

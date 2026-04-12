@@ -291,14 +291,14 @@ void main() {
   );
 
   testWidgets(
-    'new session button creates a fresh session without replacing the page',
+    'new session button opens a draft and first prompt creates the session',
     (tester) async {
       tester.view.physicalSize = const Size(1600, 1000);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
-      final createdControllers = <_RecordingWorkspaceController>[];
+      final createdControllers = <_DraftSubmittingWorkspaceController>[];
       final profile = ServerProfile(
         id: 'server',
         label: 'Mock',
@@ -308,7 +308,7 @@ void main() {
         profile: profile,
         workspaceControllerFactory:
             ({required profile, required directory, initialSessionId}) {
-              final controller = _RecordingWorkspaceController(
+              final controller = _DraftSubmittingWorkspaceController(
                 profile: profile,
                 directory: directory,
                 initialSessionId: initialSessionId,
@@ -344,9 +344,43 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(createdControllers.single.createEmptySessionCalls, 1);
+      expect(createdControllers.single.createEmptySessionCalls, 0);
+      expect(createdControllers.single.selectSessionCalls, <String?>[null]);
+      expect(createdControllers.single.selectedSessionId, isNull);
+      expect(
+        observer.lastRouteName,
+        buildWorkspaceRoute('/workspace/demo', sessionId: null),
+      );
+      expect(observer.lastRouteName, isNot(initialRouteName));
+      expect(find.text('Fresh session'), findsNothing);
+      expect(find.text('hello from one'), findsNothing);
+      expect(
+        tester
+            .widget<EditableText>(find.byType(EditableText))
+            .focusNode
+            .hasFocus,
+        isTrue,
+      );
+
+      final composerFinder = find.byKey(
+        const ValueKey<String>('composer-text-field'),
+      );
+      await tester.enterText(composerFinder, 'Start this session');
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('composer-submit-button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(createdControllers.single.submittedPrompts, <String>[
+        'Start this session',
+      ]);
+      expect(createdControllers.single.createEmptySessionCalls, 0);
       expect(createdControllers.single.selectedSessionId, 'ses_new');
-      expect(observer.lastRouteName, initialRouteName);
+      expect(
+        observer.lastRouteName,
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_new'),
+      );
       expect(find.text('Fresh session'), findsAtLeastNWidgets(1));
     },
   );
@@ -2005,6 +2039,7 @@ void main() {
       find.byKey(const ValueKey<String>('composer-text-field')),
       '/mcp',
     );
+    await tester.pump();
     await tester.pump();
 
     expect(
@@ -4638,6 +4673,41 @@ class _RecordingWorkspaceController extends WorkspaceController {
         ),
       ],
     };
+  }
+}
+
+class _DraftSubmittingWorkspaceController
+    extends _RecordingWorkspaceController {
+  _DraftSubmittingWorkspaceController({
+    required super.profile,
+    required super.directory,
+    super.initialSessionId,
+  });
+
+  final List<String> submittedPrompts = <String>[];
+
+  @override
+  Future<String?> submitPrompt(
+    String prompt, {
+    List<PromptAttachment> attachments = const <PromptAttachment>[],
+    WorkspacePromptDispatchMode? mode,
+  }) async {
+    submittedPrompts.add(prompt.trim());
+    if (_selectedSessionId == null) {
+      final created = SessionSummary(
+        id: directory == '/workspace/lab' ? 'ses_lab_new' : 'ses_new',
+        directory: directory,
+        title: 'Fresh session',
+        version: '1',
+        updatedAt: DateTime.fromMillisecondsSinceEpoch(1710000003000),
+      );
+      _sessions = <SessionSummary>[created, ..._sessions];
+      _selectedSessionId = created.id;
+      _messages = const <ChatMessage>[];
+      notifyListeners();
+      return created.id;
+    }
+    return _selectedSessionId;
   }
 }
 
