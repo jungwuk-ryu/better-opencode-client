@@ -151,6 +151,7 @@ void main() {
     await mouse.moveTo(tester.getCenter(targetRow));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 220));
+    await tester.pump();
 
     expect(controllerInstance.hoverPrefetchCalls, 1);
     expect(
@@ -166,15 +167,93 @@ void main() {
       findsOneWidget,
     );
 
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>(
-          'sidebar-session-hover-message-ses_2-msg_hover_newer',
+    final promptButton = find.byKey(
+      const ValueKey<String>(
+        'sidebar-session-hover-message-ses_2-msg_hover_newer',
+      ),
+    );
+    await mouse.moveTo(tester.getCenter(promptButton));
+    await tester.pump(const Duration(milliseconds: 80));
+
+    expect(promptButton, findsOneWidget);
+
+    await tester.tap(promptButton);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    expect(controllerInstance.selectSessionCalls, contains('ses_2'));
+    expect(find.text('Another root session'), findsAtLeastNWidgets(1));
+  });
+
+  testWidgets('sidebar hover preview does not displace or block threads', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    late _SidebarHoverPreviewWorkspaceController controllerInstance;
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            controllerInstance = _SidebarHoverPreviewWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+            return controllerInstance;
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
         ),
+        platform: TargetPlatform.macOS,
       ),
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 220));
+
+    final firstRow = find.byKey(
+      const ValueKey<String>('workspace-session-entry-ses_1-0'),
+    );
+    final secondRow = find.byKey(
+      const ValueKey<String>('workspace-session-entry-ses_2-0'),
+    );
+    expect(firstRow, findsOneWidget);
+    expect(secondRow, findsOneWidget);
+
+    final secondRowTopBeforeHover = tester.getTopLeft(secondRow).dy;
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer();
+    await mouse.moveTo(tester.getCenter(firstRow));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+    await tester.pump();
+
+    expect(controllerInstance.hoverPrefetchCalls, 1);
+    expect(
+      find.byKey(const ValueKey<String>('sidebar-session-hover-preview-ses_1')),
+      findsOneWidget,
+    );
+    expect(tester.getTopLeft(secondRow).dy, secondRowTopBeforeHover);
+
+    await tester.tapAt(tester.getCenter(secondRow));
+    await tester.pump();
 
     expect(controllerInstance.selectSessionCalls, contains('ses_2'));
     expect(find.text('Another root session'), findsAtLeastNWidgets(1));
@@ -1928,7 +2007,7 @@ class _SidebarHoverPreviewWorkspaceController
       return;
     }
     hoverPrefetchCalls += 1;
-    if (normalized != 'ses_2') {
+    if (normalized != 'ses_1' && normalized != 'ses_2') {
       return;
     }
     _previewBySessionId = <String, WorkspaceSessionHoverPreviewState>{

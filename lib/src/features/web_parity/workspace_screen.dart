@@ -13721,17 +13721,46 @@ class _SidebarSessionTreeRow extends StatefulWidget {
 }
 
 class _SidebarSessionTreeRowState extends State<_SidebarSessionTreeRow> {
+  static const double _hoverPreviewGap = AppSpacing.xs;
+  static const double _hoverPreviewMinWidth = 220.0;
+  static const double _hoverPreviewPreferredWidth = 300.0;
+  static const Duration _hoverPreviewCloseDelay = Duration(milliseconds: 160);
+
   Timer? _hoverPrefetchTimer;
+  Timer? _hoverPreviewCloseTimer;
+  final LayerLink _hoverPreviewLayerLink = LayerLink();
+  OverlayEntry? _hoverPreviewOverlayEntry;
   bool _hovering = false;
+  bool _hoverPreviewOverlayHovered = false;
+  bool _hoverPreviewOverlaySyncScheduled = false;
 
   @override
   void dispose() {
     _hoverPrefetchTimer?.cancel();
+    _hoverPreviewCloseTimer?.cancel();
+    _removeHoverPreviewOverlay();
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant _SidebarSessionTreeRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _scheduleHoverPreviewOverlaySync();
+  }
+
+  bool get _hoverPreviewVisible {
+    return widget.hoverPreviewEnabled &&
+        (_hovering || _hoverPreviewOverlayHovered) &&
+        (widget.hoverPreviewState.loading ||
+            widget.hoverPreviewState.hasContent);
   }
 
   void _handleHoverChanged(bool hovering) {
     if (!widget.hoverPreviewEnabled) {
+      _hoverPrefetchTimer?.cancel();
+      _hoverPreviewCloseTimer?.cancel();
+      _hoverPreviewOverlayHovered = false;
+      _removeHoverPreviewOverlay();
       return;
     }
     if (!hovering) {
@@ -13741,20 +13770,151 @@ class _SidebarSessionTreeRowState extends State<_SidebarSessionTreeRow> {
           _hovering = false;
         });
       }
+      _scheduleHoverPreviewClose();
       return;
     }
     _hoverPrefetchTimer?.cancel();
+    _hoverPreviewCloseTimer?.cancel();
     if (!_hovering) {
       setState(() {
         _hovering = true;
       });
     }
+    _scheduleHoverPreviewOverlaySync();
     _hoverPrefetchTimer = Timer(const Duration(milliseconds: 180), () {
       if (!mounted || !_hovering) {
         return;
       }
       widget.onHoverPreviewRequested();
     });
+  }
+
+  void _handleHoverPreviewOverlayChanged(bool hovering) {
+    if (_hoverPreviewOverlayHovered == hovering) {
+      if (hovering) {
+        _hoverPreviewCloseTimer?.cancel();
+      }
+      return;
+    }
+    setState(() {
+      _hoverPreviewOverlayHovered = hovering;
+    });
+    if (hovering) {
+      _hoverPreviewCloseTimer?.cancel();
+      _syncHoverPreviewOverlay();
+    } else {
+      _scheduleHoverPreviewClose();
+    }
+  }
+
+  void _scheduleHoverPreviewClose() {
+    _hoverPreviewCloseTimer?.cancel();
+    _hoverPreviewCloseTimer = Timer(_hoverPreviewCloseDelay, () {
+      if (!mounted || _hovering || _hoverPreviewOverlayHovered) {
+        return;
+      }
+      _removeHoverPreviewOverlay();
+    });
+  }
+
+  void _scheduleHoverPreviewOverlaySync() {
+    if (_hoverPreviewOverlaySyncScheduled) {
+      return;
+    }
+    _hoverPreviewOverlaySyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _hoverPreviewOverlaySyncScheduled = false;
+      if (!mounted) {
+        return;
+      }
+      _syncHoverPreviewOverlay();
+    });
+  }
+
+  void _syncHoverPreviewOverlay() {
+    if (!_hoverPreviewVisible) {
+      _removeHoverPreviewOverlay();
+      return;
+    }
+    final existingEntry = _hoverPreviewOverlayEntry;
+    if (existingEntry != null) {
+      existingEntry.markNeedsBuild();
+      return;
+    }
+    _hoverPreviewOverlayEntry = OverlayEntry(
+      builder: _buildHoverPreviewOverlay,
+    );
+    Overlay.of(context, rootOverlay: true).insert(_hoverPreviewOverlayEntry!);
+  }
+
+  void _removeHoverPreviewOverlay() {
+    _hoverPreviewCloseTimer?.cancel();
+    _hoverPreviewCloseTimer = null;
+    _hoverPreviewOverlayEntry?.remove();
+    _hoverPreviewOverlayEntry = null;
+  }
+
+  Widget _buildHoverPreviewOverlay(BuildContext overlayContext) {
+    final geometry = _hoverPreviewGeometry(overlayContext);
+    return Positioned.fill(
+      child: CompositedTransformFollower(
+        link: _hoverPreviewLayerLink,
+        showWhenUnlinked: false,
+        targetAnchor: Alignment.topLeft,
+        followerAnchor: Alignment.topLeft,
+        offset: Offset(geometry.offsetX, 0),
+        child: Align(
+          alignment: Alignment.topLeft,
+          child: MouseRegion(
+            onEnter: (_) => _handleHoverPreviewOverlayChanged(true),
+            onExit: (_) => _handleHoverPreviewOverlayChanged(false),
+            child: SizedBox(
+              width: geometry.width,
+              child: _SidebarSessionHoverPreviewPanel(
+                session: widget.entry.session,
+                state: widget.hoverPreviewState,
+                onFocusMessage: widget.onFocusPreviewMessage,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  ({double offsetX, double width}) _hoverPreviewGeometry(
+    BuildContext overlayContext,
+  ) {
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      return (offsetX: _hoverPreviewGap, width: _hoverPreviewPreferredWidth);
+    }
+
+    final overlayWidth = MediaQuery.sizeOf(overlayContext).width;
+    final rowTopLeft = renderObject.localToGlobal(Offset.zero);
+    final rowWidth = renderObject.size.width;
+    final availableRight =
+        overlayWidth - rowTopLeft.dx - rowWidth - _hoverPreviewGap;
+    if (availableRight >= _hoverPreviewMinWidth) {
+      return (
+        offsetX: rowWidth + _hoverPreviewGap,
+        width: math.min(_hoverPreviewPreferredWidth, availableRight),
+      );
+    }
+
+    final availableLeft = rowTopLeft.dx - _hoverPreviewGap;
+    if (availableLeft >= _hoverPreviewMinWidth) {
+      final width = math.min(_hoverPreviewPreferredWidth, availableLeft);
+      return (offsetX: -width - _hoverPreviewGap, width: width);
+    }
+
+    return (offsetX: rowWidth + _hoverPreviewGap, width: _hoverPreviewMinWidth);
+  }
+
+  double _sessionRowIndent(BuildContext context) {
+    final compactLayout =
+        MediaQuery.sizeOf(context).width < AppSpacing.wideLayoutBreakpoint;
+    return widget.entry.depth * (compactLayout ? 12.0 : 18.0);
   }
 
   @override
@@ -13768,131 +13928,101 @@ class _SidebarSessionTreeRowState extends State<_SidebarSessionTreeRow> {
         : widget.entry.session.title.trim();
     final active = widget.entry.active;
     final isRoot = widget.entry.depth == 0;
-    final indent = widget.entry.depth * (compactLayout ? 12.0 : 18.0);
-    final previewVisible =
-        widget.hoverPreviewEnabled &&
-        _hovering &&
-        (widget.hoverPreviewState.loading ||
-            widget.hoverPreviewState.hasContent);
+    final indent = _sessionRowIndent(context);
 
     return MouseRegion(
       onEnter: (_) => _handleHoverChanged(true),
       onExit: (_) => _handleHoverChanged(false),
-      child: Padding(
-        padding: EdgeInsets.only(left: indent),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(compactLayout ? 12 : 14),
-                onTap: widget.onTap,
-                child: Ink(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: compactLayout ? AppSpacing.xs : AppSpacing.sm,
-                    vertical: compactLayout ? AppSpacing.xs : AppSpacing.sm,
-                  ),
-                  decoration: BoxDecoration(
-                    color: widget.selected
-                        ? theme.colorScheme.primary.withValues(alpha: 0.12)
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(
-                      compactLayout ? 12 : 14,
-                    ),
-                  ),
-                  child: Row(
-                    children: <Widget>[
-                      SizedBox(
-                        width: compactLayout ? 18 : 22,
-                        child: Center(
-                          child: isRoot
-                              ? (widget.project != null
-                                    ? _ProjectAvatar(
-                                        project: widget.project!,
-                                        size: compactLayout ? 14 : 16,
-                                        fontSize: compactLayout ? 9 : 10,
-                                        rounded: 5,
-                                      )
-                                    : Container(
-                                        width: 6,
-                                        height: 6,
-                                        decoration: BoxDecoration(
-                                          color: theme.colorScheme.primary,
-                                          shape: BoxShape.circle,
-                                        ),
-                                      ))
-                              : Container(
-                                  width: compactLayout ? 8 : 10,
-                                  height: 2,
-                                  decoration: BoxDecoration(
-                                    color: surfaces.muted,
-                                    borderRadius: BorderRadius.circular(999),
-                                  ),
+      child: CompositedTransformTarget(
+        link: _hoverPreviewLayerLink,
+        child: Padding(
+          padding: EdgeInsets.only(left: indent),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(compactLayout ? 12 : 14),
+              onTap: widget.onTap,
+              child: Ink(
+                padding: EdgeInsets.symmetric(
+                  horizontal: compactLayout ? AppSpacing.xs : AppSpacing.sm,
+                  vertical: compactLayout ? AppSpacing.xs : AppSpacing.sm,
+                ),
+                decoration: BoxDecoration(
+                  color: widget.selected
+                      ? theme.colorScheme.primary.withValues(alpha: 0.12)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(compactLayout ? 12 : 14),
+                ),
+                child: Row(
+                  children: <Widget>[
+                    SizedBox(
+                      width: compactLayout ? 18 : 22,
+                      child: Center(
+                        child: isRoot
+                            ? (widget.project != null
+                                  ? _ProjectAvatar(
+                                      project: widget.project!,
+                                      size: compactLayout ? 14 : 16,
+                                      fontSize: compactLayout ? 9 : 10,
+                                      rounded: 5,
+                                    )
+                                  : Container(
+                                      width: 6,
+                                      height: 6,
+                                      decoration: BoxDecoration(
+                                        color: theme.colorScheme.primary,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ))
+                            : Container(
+                                width: compactLayout ? 8 : 10,
+                                height: 2,
+                                decoration: BoxDecoration(
+                                  color: surfaces.muted,
+                                  borderRadius: BorderRadius.circular(999),
                                 ),
+                              ),
+                      ),
+                    ),
+                    SizedBox(
+                      width: compactLayout ? AppSpacing.xs : AppSpacing.sm,
+                    ),
+                    Expanded(
+                      child: _ShimmeringRichText(
+                        key: ValueKey<String>(
+                          'sidebar-session-shimmer-${widget.entry.session.id}',
+                        ),
+                        active: active,
+                        text: TextSpan(
+                          text: title,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: isRoot
+                                ? FontWeight.w600
+                                : FontWeight.w500,
+                            color: widget.selected
+                                ? theme.colorScheme.onSurface
+                                : theme.colorScheme.onSurface.withValues(
+                                    alpha: isRoot ? 0.96 : 0.9,
+                                  ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ),
-                      SizedBox(
-                        width: compactLayout ? AppSpacing.xs : AppSpacing.sm,
-                      ),
-                      Expanded(
-                        child: _ShimmeringRichText(
-                          key: ValueKey<String>(
-                            'sidebar-session-shimmer-${widget.entry.session.id}',
-                          ),
-                          active: active,
-                          text: TextSpan(
-                            text: title,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              fontWeight: isRoot
-                                  ? FontWeight.w600
-                                  : FontWeight.w500,
-                              color: widget.selected
-                                  ? theme.colorScheme.onSurface
-                                  : theme.colorScheme.onSurface.withValues(
-                                      alpha: isRoot ? 0.96 : 0.9,
-                                    ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
+                    ),
+                    if (widget.notificationState.visible) ...<Widget>[
+                      const SizedBox(width: AppSpacing.xs),
+                      _WorkspaceSidebarNotificationBadge(
+                        key: ValueKey<String>(
+                          'workspace-session-notification-badge-${widget.entry.session.id}',
                         ),
+                        state: widget.notificationState,
                       ),
-                      if (widget.notificationState.visible) ...<Widget>[
-                        const SizedBox(width: AppSpacing.xs),
-                        _WorkspaceSidebarNotificationBadge(
-                          key: ValueKey<String>(
-                            'workspace-session-notification-badge-${widget.entry.session.id}',
-                          ),
-                          state: widget.notificationState,
-                        ),
-                      ],
                     ],
-                  ),
+                  ],
                 ),
               ),
             ),
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 180),
-              switchInCurve: Curves.easeOutCubic,
-              switchOutCurve: Curves.easeInCubic,
-              child: !previewVisible
-                  ? const SizedBox.shrink()
-                  : Padding(
-                      key: ValueKey<String>(
-                        'sidebar-session-hover-preview-wrap-${widget.entry.session.id}',
-                      ),
-                      padding: const EdgeInsets.only(
-                        left: 30,
-                        top: AppSpacing.xxs,
-                      ),
-                      child: _SidebarSessionHoverPreviewPanel(
-                        session: widget.entry.session,
-                        state: widget.hoverPreviewState,
-                        onFocusMessage: widget.onFocusPreviewMessage,
-                      ),
-                    ),
-            ),
-          ],
+          ),
         ),
       ),
     );
