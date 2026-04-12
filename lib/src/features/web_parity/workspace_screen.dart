@@ -13151,13 +13151,6 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
                 label: context.wp('Open project'),
                 onTap: widget.onAddProject,
               ),
-              SizedBox(height: microGap),
-              _WorkspaceSidebarNavButton(
-                icon: Icons.extension_rounded,
-                label: context.wp('Workspace tools'),
-                onTap: widget.onOpenSettings,
-                secondaryLabel: context.wp('Settings, themes, shortcuts'),
-              ),
               SizedBox(height: sectionGap),
               if (compactLayout) ...threadSection else ...workspaceSection,
               SizedBox(height: sectionGap),

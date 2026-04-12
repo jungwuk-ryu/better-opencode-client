@@ -291,6 +291,12 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
 
     expect(find.byIcon(Icons.help_outline_rounded), findsNothing);
+    expect(find.text('Workspace tools'), findsNothing);
+    expect(find.text('Settings, themes, shortcuts'), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('workspace-sidebar-settings-button')),
+      findsOneWidget,
+    );
 
     await tester.tap(
       find.byKey(const ValueKey<String>('workspace-sidebar-settings-button')),
