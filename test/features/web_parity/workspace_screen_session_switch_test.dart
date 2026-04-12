@@ -3377,6 +3377,89 @@ void main() {
   );
 
   testWidgets(
+    'ios bottom bounce settles after streamed updates near the latest message',
+    (tester) async {
+      tester.view.physicalSize = const Size(430, 932);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final createdControllers = <_StreamingWorkspaceController>[];
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              final controller = _StreamingWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+              createdControllers.add(controller);
+              return controller;
+            },
+      );
+      addTearDown(appController.dispose);
+
+      final navigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          navigatorKey: navigatorKey,
+          initialRoute: '/',
+          platform: TargetPlatform.iOS,
+        ),
+      );
+      navigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+      );
+      await tester.pumpAndSettle();
+
+      final controller = createdControllers.single;
+      final listFinder = _messageTimelineListFinder();
+      final scrollController = tester.widget<ListView>(listFinder).controller!;
+      expect(
+        scrollController.position.pixels,
+        closeTo(scrollController.position.maxScrollExtent, 96),
+      );
+
+      final listRect = tester.getRect(listFinder);
+      final gesture = await tester.startGesture(
+        listRect.bottomCenter - const Offset(0, 12),
+      );
+      await gesture.moveBy(const Offset(0, -220));
+      await tester.pump();
+
+      controller.extendLastAssistantMessage(
+        '\n${List<String>.filled(120, 'streamed output line').join('\n')}',
+      );
+      await tester.pump();
+      await gesture.up();
+      await tester.pump();
+      for (
+        var frame = 0;
+        frame < 160 && tester.binding.hasScheduledFrame;
+        frame++
+      ) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+
+      expect(tester.binding.hasScheduledFrame, isFalse);
+      expect(scrollController.position.outOfRange, isFalse);
+      expect(
+        scrollController.position.pixels,
+        closeTo(scrollController.position.maxScrollExtent, 96),
+      );
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
+  testWidgets(
     'timeline lands at the bottom when opening a long existing session',
     (tester) async {
       tester.view.physicalSize = const Size(1600, 1000);

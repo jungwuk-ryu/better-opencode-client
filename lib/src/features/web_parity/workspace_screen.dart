@@ -17832,6 +17832,8 @@ class _MessageTimelineState extends State<_MessageTimeline> {
   final Map<String, GlobalKey> _messageItemKeys = <String, GlobalKey>{};
   bool _manualScrollInProgress = false;
   bool _deferredAutoScrollToBottom = false;
+  bool _deferredAutoScrollAnchoredToBottom = false;
+  bool _deferredAutoScrollFlushScheduled = false;
   int _programmaticScrollDepth = 0;
 
   List<ChatMessage> get _visibleMessages => widget.messages.sublist(
@@ -18059,6 +18061,11 @@ class _MessageTimelineState extends State<_MessageTimeline> {
 
   Future<void> _handleScroll() async {
     _updateJumpToLatestVisibility();
+    if (_deferredAutoScrollToBottom &&
+        !_manualScrollInProgress &&
+        _programmaticScrollDepth == 0) {
+      _flushDeferredAutoScroll();
+    }
     if (_loadingOlder || widget.historyLoading || !_hasMoreHistory) {
       return;
     }
@@ -18119,11 +18126,33 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     }
   }
 
+  void _deferAutoScrollToBottom({bool anchored = true}) {
+    _deferredAutoScrollToBottom = true;
+    _deferredAutoScrollAnchoredToBottom =
+        _deferredAutoScrollAnchoredToBottom || anchored;
+  }
+
+  void _scheduleDeferredAutoScrollFlush() {
+    if (_deferredAutoScrollFlushScheduled || !_deferredAutoScrollToBottom) {
+      return;
+    }
+    _deferredAutoScrollFlushScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _deferredAutoScrollFlushScheduled = false;
+      if (!mounted) {
+        return;
+      }
+      _flushDeferredAutoScroll();
+    });
+  }
+
   void _flushDeferredAutoScroll() {
     if (!_deferredAutoScrollToBottom || _manualScrollInProgress) {
       return;
     }
+    final anchoredToBottom = _deferredAutoScrollAnchoredToBottom;
     _deferredAutoScrollToBottom = false;
+    _deferredAutoScrollAnchoredToBottom = false;
     if (!_scrollController.hasClients) {
       return;
     }
@@ -18131,8 +18160,13 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     if (!position.hasContentDimensions) {
       return;
     }
+    if (position.outOfRange) {
+      _deferAutoScrollToBottom(anchored: anchoredToBottom);
+      _scheduleDeferredAutoScrollFlush();
+      return;
+    }
     final nearBottomNow = _positionNearBottom(position);
-    if (!(_wasNearBottom || nearBottomNow || _bottomLockScopeKey != null)) {
+    if (!(anchoredToBottom || nearBottomNow || _bottomLockScopeKey != null)) {
       _updateJumpToLatestVisibility();
       return;
     }
@@ -18140,7 +18174,8 @@ class _MessageTimelineState extends State<_MessageTimeline> {
       _scheduleBottomLock();
       return;
     }
-    _jumpToBottomIfPossible(animate: true);
+    _beginBottomLock(widget.storageScopeKey);
+    _jumpToBottomIfPossible();
   }
 
   void _scheduleLoadOlderCheck() {
@@ -18291,6 +18326,11 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     if (!position.hasContentDimensions) {
       return;
     }
+    if (position.outOfRange) {
+      _deferAutoScrollToBottom();
+      _scheduleDeferredAutoScrollFlush();
+      return;
+    }
     final target = position.maxScrollExtent;
     if ((target - position.pixels).abs() <= 1) {
       _wasNearBottom = true;
@@ -18376,7 +18416,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
         return;
       }
       if (_manualScrollInProgress) {
-        _deferredAutoScrollToBottom = true;
+        _deferAutoScrollToBottom();
         return;
       }
       if (!_scrollController.hasClients) {
@@ -18389,6 +18429,11 @@ class _MessageTimelineState extends State<_MessageTimeline> {
       }
       final position = _scrollController.position;
       if (!position.hasContentDimensions) {
+        _scheduleBottomLock();
+        return;
+      }
+      if (position.outOfRange) {
+        _deferAutoScrollToBottom();
         _scheduleBottomLock();
         return;
       }
@@ -18422,7 +18467,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
         return;
       }
       if (_manualScrollInProgress) {
-        _deferredAutoScrollToBottom = true;
+        _deferAutoScrollToBottom();
         return;
       }
       final position = _scrollController.position;
@@ -18482,7 +18527,10 @@ class _MessageTimelineState extends State<_MessageTimeline> {
 
     if (shouldFollowTimeline) {
       if (_manualScrollInProgress) {
-        _deferredAutoScrollToBottom = true;
+        _deferAutoScrollToBottom();
+      } else if (position.outOfRange) {
+        _deferAutoScrollToBottom();
+        _scheduleDeferredAutoScrollFlush();
       } else {
         final target = position.maxScrollExtent;
         if ((target - position.pixels).abs() <= 1) {
