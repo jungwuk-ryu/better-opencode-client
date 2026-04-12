@@ -182,8 +182,9 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 250));
 
-      expect(workspaceController.summarizeSelectedSessionCalls, 1);
-      expect(workspaceController.submitPromptCalls, 0);
+      expect(workspaceController.submitPromptCalls, 1);
+      expect(workspaceController.lastSubmittedPrompt, '/compact');
+      expect(workspaceController.summarizeSelectedSessionCalls, 0);
     },
   );
 
@@ -879,6 +880,7 @@ class _SlashWorkspaceController extends WorkspaceController {
   int createEmptySessionCalls = 0;
   int submitPromptCalls = 0;
   int summarizeSelectedSessionCalls = 0;
+  String? lastSubmittedPrompt;
 
   @override
   bool get loading => _loading;
@@ -955,6 +957,7 @@ class _SlashWorkspaceController extends WorkspaceController {
     WorkspacePromptDispatchMode? mode,
   }) async {
     submitPromptCalls += 1;
+    lastSubmittedPrompt = prompt;
     return selectedSessionId;
   }
 

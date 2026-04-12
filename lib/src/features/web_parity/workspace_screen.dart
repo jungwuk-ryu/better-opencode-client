@@ -20279,6 +20279,10 @@ class _PromptComposerState extends State<_PromptComposer> {
     }
     final builtin = _exactBuiltinSlashCommand;
     if (builtin != null) {
+      if (builtin.action == _ComposerBuiltinSlashAction.compactSession) {
+        await widget.onSubmit(mode);
+        return;
+      }
       await _selectSlashCommand(builtin);
       return;
     }

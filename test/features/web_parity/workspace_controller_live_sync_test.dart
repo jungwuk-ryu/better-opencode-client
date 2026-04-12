@@ -1752,6 +1752,7 @@ void main() {
           modelId: 'claude-sonnet-4.5',
         ),
       ];
+      var fetchMessagesCalls = 0;
       final chatService = _FakeChatService(
         bundle: ChatSessionBundle(
           sessions: <SessionSummary>[
@@ -1773,7 +1774,10 @@ void main() {
               required ServerProfile profile,
               required ProjectTarget project,
               required String sessionId,
-            }) async => sessionMessages,
+            }) async {
+              fetchMessagesCalls += 1;
+              return sessionMessages;
+            },
       );
       final controller = _buildController(
         profile: profile,
@@ -1788,6 +1792,7 @@ void main() {
       await controller.load();
 
       expect(controller.selectedModel?.key, 'openai/gpt-4.1');
+      fetchMessagesCalls = 0;
       await controller.summarizeSelectedSession();
 
       expect(sessionActionService.summarizeCalls, 1);
@@ -1795,6 +1800,75 @@ void main() {
       expect(sessionActionService.lastSummarizedProviderId, 'openai');
       expect(sessionActionService.lastSummarizedModelId, 'gpt-4.1');
       expect(controller.actionNotice, 'Session compaction requested.');
+      await _waitFor(() => fetchMessagesCalls > 0);
+    },
+  );
+
+  test(
+    'controller refreshes the selected timeline when upstream reports compaction completed',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      var fetchMessagesCalls = 0;
+      final compactedMessages = <ChatMessage>[
+        _message(
+          id: 'msg_compaction',
+          sessionId: 'ses_1',
+          text: 'Session compacted',
+          createdAt: 1710000006000,
+          role: 'user',
+          providerId: 'openai',
+          modelId: 'gpt-4.1',
+        ),
+      ];
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_1',
+              title: 'Initial session',
+              createdAt: 1710000001000,
+              updatedAt: 1710000005000,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{
+            'ses_1': SessionStatusSummary(type: 'idle'),
+          },
+          messages: const <ChatMessage>[],
+          selectedSessionId: 'ses_1',
+        ),
+        fetchMessagesHandler:
+            ({
+              required ServerProfile profile,
+              required ProjectTarget project,
+              required String sessionId,
+            }) async {
+              fetchMessagesCalls += 1;
+              return compactedMessages;
+            },
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+      fetchMessagesCalls = 0;
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'session.compacted',
+          properties: <String, Object?>{'sessionID': 'ses_1'},
+        ),
+      );
+
+      await _waitFor(() => fetchMessagesCalls > 0);
+      expect(controller.messages, hasLength(1));
+      expect(controller.messages.single.info.id, 'msg_compaction');
     },
   );
 
@@ -2083,6 +2157,81 @@ void main() {
       expect(sessionActionService.lastSummarizedModelId, 'claude-sonnet-4.5');
       expect(sendMessageCalls, 0);
       expect(controller.actionNotice, 'Session compaction requested.');
+    },
+  );
+
+  test(
+    'controller treats exact /compact with attachments as compaction',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final sessionActionService = _RecordingSessionActionService();
+      var sendMessageCalls = 0;
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_1',
+              title: 'Initial session',
+              createdAt: 1710000001000,
+              updatedAt: 1710000005000,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{
+            'ses_1': SessionStatusSummary(type: 'idle'),
+          },
+          messages: const <ChatMessage>[],
+          selectedSessionId: 'ses_1',
+        ),
+        sendMessageHandler:
+            ({
+              required ServerProfile profile,
+              required ProjectTarget project,
+              required String sessionId,
+              required String prompt,
+              List<PromptAttachment> attachments = const <PromptAttachment>[],
+              String? agent,
+              String? providerId,
+              String? modelId,
+              String? variant,
+              String? reasoning,
+            }) async {
+              sendMessageCalls += 1;
+              return ChatMessage(
+                info: ChatMessageInfo(
+                  id: 'msg_stub',
+                  role: 'assistant',
+                  sessionId: sessionId,
+                ),
+                parts: const <ChatPart>[],
+              );
+            },
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+        sessionActionService: sessionActionService,
+        configService: _FakeConfigService(snapshot: _composerConfigSnapshot()),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+      await controller.submitPrompt(
+        '/compact',
+        attachments: const <PromptAttachment>[
+          PromptAttachment(
+            id: 'att_1',
+            filename: 'notes.txt',
+            mime: 'text/plain',
+            url: 'data:text/plain;base64,bm90ZXM=',
+          ),
+        ],
+      );
+
+      expect(sessionActionService.summarizeCalls, 1);
+      expect(sessionActionService.lastSummarizedSessionId, 'ses_1');
+      expect(sendMessageCalls, 0);
     },
   );
 

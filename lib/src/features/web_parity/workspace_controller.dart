@@ -2874,8 +2874,7 @@ class WorkspaceController extends ChangeNotifier {
     WorkspacePromptDispatchMode? mode,
   }) async {
     final trimmed = prompt.trim();
-    final compactSlashPrompt =
-        attachments.isEmpty && isCompactSlashCommandPrompt(trimmed);
+    final compactSlashPrompt = isCompactSlashCommandPrompt(trimmed);
     final project = _project;
     final selectedAgent = this.selectedAgent;
     final selectedModel = this.selectedModel;
@@ -3186,8 +3185,7 @@ class WorkspaceController extends ChangeNotifier {
     required String? reasoning,
     bool preferAsync = false,
   }) async {
-    final compactSlashPrompt =
-        attachments.isEmpty && isCompactSlashCommandPrompt(prompt);
+    final compactSlashPrompt = isCompactSlashCommandPrompt(prompt);
     final compactionModelSelection = compactSlashPrompt
         ? _resolveSessionCompactionModelSelection(sessionId)
         : null;
@@ -3744,14 +3742,21 @@ class WorkspaceController extends ChangeNotifier {
     final compactionModelSelection = _resolveSessionCompactionModelSelection(
       sessionId,
     );
-    await _sessionActionService.summarizeSession(
-      profile: profile,
-      project: project,
-      sessionId: sessionId,
-      providerId: compactionModelSelection.providerId,
-      modelId: compactionModelSelection.modelId,
-    );
+    _markSessionBusy(sessionId);
+    try {
+      await _sessionActionService.summarizeSession(
+        profile: profile,
+        project: project,
+        sessionId: sessionId,
+        providerId: compactionModelSelection.providerId,
+        modelId: compactionModelSelection.modelId,
+      );
+    } catch (_) {
+      _schedulePromptRefresh(project: project, sessionId: sessionId);
+      rethrow;
+    }
     _actionNotice = 'Session compaction requested.';
+    _schedulePromptRefresh(project: project, sessionId: sessionId);
     _notify();
   }
 
@@ -5557,6 +5562,13 @@ class WorkspaceController extends ChangeNotifier {
       _maybeFlushQueuedPrompts(
         sessionId: event.properties['sessionID']?.toString(),
       );
+    } else if (type == 'session.compacted') {
+      final sessionId = event.properties['sessionID']?.toString().trim();
+      final project = _project;
+      if (project == null || sessionId == null || sessionId.isEmpty) {
+        return;
+      }
+      _schedulePromptRefresh(project: project, sessionId: sessionId);
     } else if (type == 'session.error') {
       final session = _sessionById(event.properties['sessionID']?.toString());
       if (session != null) {
