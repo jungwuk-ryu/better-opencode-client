@@ -47,6 +47,7 @@ flutter:
   generate: true
   uses-material-design: true
   assets:
+    - web/icons/Icon-192.png
     - assets/audio/
     - assets/fixtures/probes/
     - assets/fixtures/config/

@@ -1,60 +1,5 @@
 part of 'web_home_screen.dart';
 
-class _ServerPill extends StatelessWidget {
-  const _ServerPill({required this.profile, required this.report, this.onTap});
-
-  final ServerProfile? profile;
-  final ServerProbeReport? report;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
-    final color = switch (report?.classification) {
-      ConnectionProbeClassification.ready => surfaces.success,
-      ConnectionProbeClassification.authFailure => Theme.of(
-        context,
-      ).colorScheme.secondary,
-      ConnectionProbeClassification.unsupportedCapabilities => surfaces.warning,
-      ConnectionProbeClassification.specFetchFailure => surfaces.warning,
-      ConnectionProbeClassification.connectivityFailure => surfaces.danger,
-      null => surfaces.muted,
-    };
-    final child = Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.sm,
-      ),
-      decoration: appSoftCardDecoration(
-        context,
-        radius: AppSpacing.pillRadius,
-        muted: true,
-        emphasized: false,
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Text(profile?.effectiveLabel ?? context.wp('Select Server')),
-        ],
-      ),
-    );
-    if (onTap == null) {
-      return child;
-    }
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(AppSpacing.pillRadius),
-      child: child,
-    );
-  }
-}
-
 class _ServersSheet extends StatefulWidget {
   const _ServersSheet({required this.controller});
 
@@ -247,11 +192,18 @@ class _ServersSheetState extends State<_ServersSheet> {
                         icon: const Icon(Icons.refresh_rounded),
                         label: Text(context.wp('Refresh')),
                       ),
-                      FilledButton.icon(
-                        key: const ValueKey<String>('servers-sheet-add-button'),
-                        onPressed: _openServerEditor,
-                        icon: const Icon(Icons.add_rounded),
-                        label: Text(context.wp('Add Server')),
+                      Semantics(
+                        button: true,
+                        identifier: 'servers-sheet-add-button',
+                        onTap: () => _openServerEditor(),
+                        child: FilledButton.icon(
+                          key: const ValueKey<String>(
+                            'servers-sheet-add-button',
+                          ),
+                          onPressed: _openServerEditor,
+                          icon: const Icon(Icons.add_rounded),
+                          label: Text(context.wp('Add Server')),
+                        ),
                       ),
                       IconButton(
                         tooltip: context.wp('Close'),
@@ -378,6 +330,8 @@ class _ServerManagementCard extends StatelessWidget {
     required this.onDelete,
     required this.onMoveUp,
     required this.onMoveDown,
+    this.onOpen,
+    this.showInlineActions = true,
     this.keyNamespace = 'servers-sheet',
     this.footer,
     super.key,
@@ -395,6 +349,8 @@ class _ServerManagementCard extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback? onMoveUp;
   final VoidCallback? onMoveDown;
+  final VoidCallback? onOpen;
+  final bool showInlineActions;
   final String keyNamespace;
   final Widget? footer;
 
@@ -409,11 +365,12 @@ class _ServerManagementCard extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onSelect,
-        borderRadius: BorderRadius.circular(AppSpacing.lg),
+        onDoubleTap: onOpen,
+        borderRadius: BorderRadius.circular(8),
         child: Ink(
           decoration: appSoftCardDecoration(
             context,
-            radius: AppSpacing.lg,
+            radius: 8,
             tone: AppSurfaceTone.accent,
             muted: !selected,
             selected: selected,
@@ -512,102 +469,75 @@ class _ServerManagementCard extends StatelessWidget {
                   const SizedBox(height: AppSpacing.sm),
                   footer!,
                 ],
-                const SizedBox(height: AppSpacing.sm),
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final compact = constraints.maxWidth < 560;
-                    final actionButtons = <Widget>[
-                      _ServerActionIconButton(
-                        key: ValueKey<String>(
-                          '$keyNamespace-refresh-${profile.id}',
-                        ),
-                        tooltip: context.wp('Refresh status'),
-                        onPressed: isRefreshing ? null : onRefresh,
-                        icon: isRefreshing
-                            ? const SizedBox.square(
-                                dimension: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.refresh_rounded, size: 18),
-                      ),
-                      _ServerActionIconButton(
-                        key: ValueKey<String>(
-                          '$keyNamespace-move-up-${profile.id}',
-                        ),
-                        tooltip: context.wp('Move up'),
-                        onPressed: onMoveUp,
-                        icon: const Icon(Icons.arrow_upward_rounded, size: 18),
-                      ),
-                      _ServerActionIconButton(
-                        key: ValueKey<String>(
-                          '$keyNamespace-move-down-${profile.id}',
-                        ),
-                        tooltip: context.wp('Move down'),
-                        onPressed: onMoveDown,
-                        icon: const Icon(
-                          Icons.arrow_downward_rounded,
-                          size: 18,
-                        ),
-                      ),
-                      _ServerActionIconButton(
-                        key: ValueKey<String>(
-                          '$keyNamespace-edit-${profile.id}',
-                        ),
-                        tooltip: context.wp('Edit server'),
-                        onPressed: onEdit,
-                        icon: const Icon(Icons.edit_outlined, size: 18),
-                      ),
-                      _ServerActionIconButton(
-                        key: ValueKey<String>(
-                          '$keyNamespace-delete-${profile.id}',
-                        ),
-                        tooltip: context.wp('Delete server'),
-                        onPressed: onDelete,
-                        icon: const Icon(
-                          Icons.delete_outline_rounded,
-                          size: 18,
-                        ),
-                        destructive: true,
-                      ),
-                    ];
-                    if (compact) {
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          TextButton.icon(
-                            key: ValueKey<String>(
-                              '$keyNamespace-select-${profile.id}',
-                            ),
-                            onPressed: onSelect,
-                            icon: Icon(
-                              selected
-                                  ? Icons.check_circle_rounded
-                                  : Icons.radio_button_unchecked_rounded,
-                            ),
-                            label: Text(
-                              selected
-                                  ? context.wp('Selected')
-                                  : context.wp('Use This Server'),
-                            ),
+                if (showInlineActions) ...<Widget>[
+                  const SizedBox(height: AppSpacing.sm),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final compact = constraints.maxWidth < 560;
+                      final actionButtons = <Widget>[
+                        _ServerActionIconButton(
+                          key: ValueKey<String>(
+                            '$keyNamespace-refresh-${profile.id}',
                           ),
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: Wrap(
-                              spacing: AppSpacing.xs,
-                              children: actionButtons,
-                            ),
+                          tooltip: context.wp('Refresh status'),
+                          onPressed: isRefreshing ? null : onRefresh,
+                          icon: isRefreshing
+                              ? const SizedBox.square(
+                                  dimension: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.refresh_rounded, size: 18),
+                        ),
+                        _ServerActionIconButton(
+                          key: ValueKey<String>(
+                            '$keyNamespace-move-up-${profile.id}',
                           ),
-                        ],
-                      );
-                    }
-                    return Row(
-                      children: <Widget>[
-                        Expanded(
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: TextButton.icon(
+                          tooltip: context.wp('Move up'),
+                          onPressed: onMoveUp,
+                          icon: const Icon(
+                            Icons.arrow_upward_rounded,
+                            size: 18,
+                          ),
+                        ),
+                        _ServerActionIconButton(
+                          key: ValueKey<String>(
+                            '$keyNamespace-move-down-${profile.id}',
+                          ),
+                          tooltip: context.wp('Move down'),
+                          onPressed: onMoveDown,
+                          icon: const Icon(
+                            Icons.arrow_downward_rounded,
+                            size: 18,
+                          ),
+                        ),
+                        _ServerActionIconButton(
+                          key: ValueKey<String>(
+                            '$keyNamespace-edit-${profile.id}',
+                          ),
+                          tooltip: context.wp('Edit server'),
+                          onPressed: onEdit,
+                          icon: const Icon(Icons.edit_outlined, size: 18),
+                        ),
+                        _ServerActionIconButton(
+                          key: ValueKey<String>(
+                            '$keyNamespace-delete-${profile.id}',
+                          ),
+                          tooltip: context.wp('Delete server'),
+                          onPressed: onDelete,
+                          icon: const Icon(
+                            Icons.delete_outline_rounded,
+                            size: 18,
+                          ),
+                          destructive: true,
+                        ),
+                      ];
+                      if (compact) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            TextButton.icon(
                               key: ValueKey<String>(
                                 '$keyNamespace-select-${profile.id}',
                               ),
@@ -623,13 +553,45 @@ class _ServerManagementCard extends StatelessWidget {
                                     : context.wp('Use This Server'),
                               ),
                             ),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: Wrap(
+                                spacing: AppSpacing.xs,
+                                children: actionButtons,
+                              ),
+                            ),
+                          ],
+                        );
+                      }
+                      return Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: TextButton.icon(
+                                key: ValueKey<String>(
+                                  '$keyNamespace-select-${profile.id}',
+                                ),
+                                onPressed: onSelect,
+                                icon: Icon(
+                                  selected
+                                      ? Icons.check_circle_rounded
+                                      : Icons.radio_button_unchecked_rounded,
+                                ),
+                                label: Text(
+                                  selected
+                                      ? context.wp('Selected')
+                                      : context.wp('Use This Server'),
+                                ),
+                              ),
+                            ),
                           ),
-                        ),
-                        ...actionButtons,
-                      ],
-                    );
-                  },
-                ),
+                          ...actionButtons,
+                        ],
+                      );
+                    },
+                  ),
+                ],
               ],
             ),
           ),
@@ -654,6 +616,10 @@ class _ServerEditorSheetState extends State<_ServerEditorSheet> {
   late final TextEditingController _baseUrlController;
   late final TextEditingController _usernameController;
   late final TextEditingController _passwordController;
+  final FocusNode _labelFocusNode = FocusNode();
+  final FocusNode _urlFocusNode = FocusNode();
+  final FocusNode _usernameFocusNode = FocusNode();
+  final FocusNode _passwordFocusNode = FocusNode();
   bool _showPassword = false;
 
   @override
@@ -674,6 +640,10 @@ class _ServerEditorSheetState extends State<_ServerEditorSheet> {
     _baseUrlController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
+    _labelFocusNode.dispose();
+    _urlFocusNode.dispose();
+    _usernameFocusNode.dispose();
+    _passwordFocusNode.dispose();
     super.dispose();
   }
 
@@ -767,24 +737,44 @@ class _ServerEditorSheetState extends State<_ServerEditorSheet> {
               ),
               child: Column(
                 children: <Widget>[
-                  TextFormField(
-                    key: const ValueKey<String>('servers-editor-label-field'),
-                    controller: _labelController,
-                    decoration: InputDecoration(
-                      labelText: context.wp('Label'),
-                      hintText: context.wp('Studio'),
+                  Semantics(
+                    identifier: 'servers-editor-label-field',
+                    textField: true,
+                    onTap: () {
+                      if (!_labelFocusNode.hasFocus) {
+                        _labelFocusNode.requestFocus();
+                      }
+                    },
+                    child: TextFormField(
+                      key: const ValueKey<String>('servers-editor-label-field'),
+                      focusNode: _labelFocusNode,
+                      controller: _labelController,
+                      decoration: InputDecoration(
+                        labelText: context.wp('Label'),
+                        hintText: context.wp('Studio'),
+                      ),
                     ),
                   ),
                   const SizedBox(height: AppSpacing.md),
-                  TextFormField(
-                    key: const ValueKey<String>('servers-editor-url-field'),
-                    controller: _baseUrlController,
-                    keyboardType: TextInputType.url,
-                    decoration: InputDecoration(
-                      labelText: context.wp('Server URL'),
-                      hintText: context.wp('https://studio.example.com'),
+                  Semantics(
+                    identifier: 'servers-editor-url-field',
+                    textField: true,
+                    onTap: () {
+                      if (!_urlFocusNode.hasFocus) {
+                        _urlFocusNode.requestFocus();
+                      }
+                    },
+                    child: TextFormField(
+                      key: const ValueKey<String>('servers-editor-url-field'),
+                      focusNode: _urlFocusNode,
+                      controller: _baseUrlController,
+                      keyboardType: TextInputType.url,
+                      decoration: InputDecoration(
+                        labelText: context.wp('Server URL'),
+                        hintText: context.wp('https://studio.example.com'),
+                      ),
+                      validator: _validateAddress,
                     ),
-                    validator: _validateAddress,
                   ),
                 ],
               ),
@@ -821,38 +811,58 @@ class _ServerEditorSheetState extends State<_ServerEditorSheet> {
                   SizedBox(
                     height: compactSheet ? AppSpacing.sm : AppSpacing.md,
                   ),
-                  TextFormField(
-                    key: const ValueKey<String>(
-                      'servers-editor-username-field',
-                    ),
-                    controller: _usernameController,
-                    decoration: InputDecoration(
-                      labelText: context.wp('Username'),
-                      hintText: context.wp('Optional'),
+                  Semantics(
+                    identifier: 'servers-editor-username-field',
+                    textField: true,
+                    onTap: () {
+                      if (!_usernameFocusNode.hasFocus) {
+                        _usernameFocusNode.requestFocus();
+                      }
+                    },
+                    child: TextFormField(
+                      key: const ValueKey<String>(
+                        'servers-editor-username-field',
+                      ),
+                      focusNode: _usernameFocusNode,
+                      controller: _usernameController,
+                      decoration: InputDecoration(
+                        labelText: context.wp('Username'),
+                        hintText: context.wp('Optional'),
+                      ),
                     ),
                   ),
                   SizedBox(
                     height: compactSheet ? AppSpacing.sm : AppSpacing.md,
                   ),
-                  TextFormField(
-                    key: const ValueKey<String>(
-                      'servers-editor-password-field',
-                    ),
-                    controller: _passwordController,
-                    obscureText: !_showPassword,
-                    decoration: InputDecoration(
-                      labelText: context.wp('Password'),
-                      hintText: context.wp('Optional'),
-                      suffixIcon: IconButton(
-                        onPressed: () {
-                          setState(() {
-                            _showPassword = !_showPassword;
-                          });
-                        },
-                        icon: Icon(
-                          _showPassword
-                              ? Icons.visibility_off
-                              : Icons.visibility,
+                  Semantics(
+                    identifier: 'servers-editor-password-field',
+                    textField: true,
+                    onTap: () {
+                      if (!_passwordFocusNode.hasFocus) {
+                        _passwordFocusNode.requestFocus();
+                      }
+                    },
+                    child: TextFormField(
+                      key: const ValueKey<String>(
+                        'servers-editor-password-field',
+                      ),
+                      focusNode: _passwordFocusNode,
+                      controller: _passwordController,
+                      obscureText: !_showPassword,
+                      decoration: InputDecoration(
+                        labelText: context.wp('Password'),
+                        hintText: context.wp('Optional'),
+                        suffixIcon: IconButton(
+                          onPressed: () {
+                            setState(() {
+                              _showPassword = !_showPassword;
+                            });
+                          },
+                          icon: Icon(
+                            _showPassword
+                                ? Icons.visibility_off
+                                : Icons.visibility,
+                          ),
                         ),
                       ),
                     ),
@@ -864,18 +874,29 @@ class _ServerEditorSheetState extends State<_ServerEditorSheet> {
             LayoutBuilder(
               builder: (context, constraints) {
                 final compact = constraints.maxWidth < 420;
-                final cancelButton = OutlinedButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: Text(context.wp('Cancel')),
+                final cancelButton = Semantics(
+                  identifier: 'servers-editor-cancel-button',
+                  button: true,
+                  onTap: () => Navigator.of(context).pop(),
+                  child: OutlinedButton(
+                    key: const ValueKey<String>('servers-editor-cancel-button'),
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: Text(context.wp('Cancel')),
+                  ),
                 );
-                final saveButton = FilledButton.icon(
-                  key: const ValueKey<String>('servers-editor-save-button'),
-                  onPressed: _submit,
-                  icon: const Icon(Icons.save_outlined),
-                  label: Text(
-                    editingExisting
-                        ? context.wp('Save Changes')
-                        : context.wp('Save Server'),
+                final saveButton = Semantics(
+                  button: true,
+                  identifier: 'servers-editor-save-button',
+                  onTap: _submit,
+                  child: FilledButton.icon(
+                    key: const ValueKey<String>('servers-editor-save-button'),
+                    onPressed: _submit,
+                    icon: const Icon(Icons.save_outlined),
+                    label: Text(
+                      editingExisting
+                          ? context.wp('Save Changes')
+                          : context.wp('Save Server'),
+                    ),
                   ),
                 );
                 if (compact) {
@@ -982,13 +1003,13 @@ class _ServerActionIconButton extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: onPressed,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(8),
           child: Ink(
             width: 40,
             height: 40,
             decoration: appSoftCardDecoration(
               context,
-              radius: 14,
+              radius: 8,
               tone: destructive
                   ? AppSurfaceTone.danger
                   : AppSurfaceTone.neutral,

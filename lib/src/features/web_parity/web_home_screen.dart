@@ -47,7 +47,10 @@ class WebParityHomeScreen extends StatefulWidget {
   State<WebParityHomeScreen> createState() => _WebParityHomeScreenState();
 }
 
-class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
+class _WebParityHomeScreenState extends State<WebParityHomeScreen>
+    with WidgetsBindingObserver {
+  static const Duration _serverStatusRefreshInterval = Duration(seconds: 30);
+
   late final ProjectStore _projectStore = widget.projectStore ?? ProjectStore();
   final Map<String, ProjectTarget> _lastWorkspaceByServerStorageKey =
       <String, ProjectTarget>{};
@@ -61,6 +64,110 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
   String _inFlightWorkspaceStateSignature = '';
   int _workspaceStateSyncRevision = 0;
   final Set<String> _handledConnectionImportPayloads = <String>{};
+  Timer? _serverStatusRefreshTimer;
+  bool _serverStatusRefreshInFlight = false;
+  String _serverStatusRefreshRosterSignature = '';
+  int _homeTransientRouteDepth = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed || !mounted) {
+      return;
+    }
+    _scheduleServerStatusRefresh(AppScope.of(context));
+  }
+
+  void _ensureServerStatusPolling(WebParityAppController controller) {
+    if (controller.loading) {
+      return;
+    }
+    final rosterSignature = controller.profiles
+        .map((profile) => profile.storageKey)
+        .join('|');
+    if (_serverStatusRefreshRosterSignature != rosterSignature) {
+      _serverStatusRefreshRosterSignature = rosterSignature;
+      _scheduleServerStatusRefresh(controller);
+    }
+    _serverStatusRefreshTimer ??= Timer.periodic(_serverStatusRefreshInterval, (
+      _,
+    ) {
+      if (!mounted || !_allowsServerStatusRefresh) {
+        return;
+      }
+      unawaited(_refreshSavedServerStatuses(AppScope.of(context)));
+    });
+  }
+
+  void _scheduleServerStatusRefresh(WebParityAppController controller) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          controller != AppScope.of(context) ||
+          !_allowsServerStatusRefresh) {
+        return;
+      }
+      unawaited(_refreshSavedServerStatuses(controller));
+    });
+  }
+
+  bool get _allowsServerStatusRefresh {
+    final route = ModalRoute.of(context);
+    if (route == null || route.isCurrent) {
+      return true;
+    }
+    return route.isActive && _homeTransientRouteDepth > 0;
+  }
+
+  Future<T?> _trackHomeTransientRoute<T>(
+    Future<T?> Function() openRoute,
+  ) async {
+    _homeTransientRouteDepth += 1;
+    try {
+      return await openRoute();
+    } finally {
+      _homeTransientRouteDepth -= 1;
+    }
+  }
+
+  Future<bool> _refreshSavedServerStatuses(
+    WebParityAppController controller,
+  ) async {
+    if (controller.loading ||
+        _serverStatusRefreshInFlight ||
+        !_allowsServerStatusRefresh) {
+      return false;
+    }
+    final profiles = controller.profiles.toList(growable: false);
+    if (profiles.isEmpty) {
+      return false;
+    }
+    _serverStatusRefreshInFlight = true;
+    try {
+      await Future.wait(profiles.map(controller.refreshProbe));
+      return true;
+    } finally {
+      _serverStatusRefreshInFlight = false;
+    }
+  }
+
+  Future<void> _manualRefreshSavedServerStatuses(
+    WebParityAppController controller,
+  ) async {
+    final refreshed = await _refreshSavedServerStatuses(controller);
+    if (!mounted || !refreshed) {
+      return;
+    }
+    showAppSnackBar(
+      context,
+      message: context.wp('Refreshed saved server status.'),
+      tone: AppSnackBarTone.info,
+    );
+  }
 
   void _scheduleConnectionImportPromptIfNeeded(
     WebParityAppController controller,
@@ -100,16 +207,18 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
     ConnectionImportRouteData routeData,
   ) async {
     final existingProfile = _existingProfileForImport(controller, routeData);
-    final confirmed = await showAppModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => FractionallySizedBox(
-        heightFactor: 0.74,
-        child: ConnectionProfileImportSheet(
-          routeData: routeData,
-          existingProfile: existingProfile,
+    final confirmed = await _trackHomeTransientRoute<bool>(
+      () => showAppModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) => FractionallySizedBox(
+          heightFactor: 0.74,
+          child: ConnectionProfileImportSheet(
+            routeData: routeData,
+            existingProfile: existingProfile,
+          ),
         ),
       ),
     );
@@ -240,16 +349,18 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
       return;
     }
 
-    final target = await showAppModalBottomSheet<ProjectTarget>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => FractionallySizedBox(
-        heightFactor: 0.82,
-        child: ProjectPickerSheet(
-          profile: profile,
-          projectCatalogService: widget.projectCatalogService,
+    final target = await _trackHomeTransientRoute<ProjectTarget>(
+      () => showAppModalBottomSheet<ProjectTarget>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) => FractionallySizedBox(
+          heightFactor: 0.82,
+          child: ProjectPickerSheet(
+            profile: profile,
+            projectCatalogService: widget.projectCatalogService,
+          ),
         ),
       ),
     );
@@ -562,14 +673,16 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
     WebParityAppController controller, {
     ServerProfile? profile,
   }) async {
-    final draft = await showAppModalBottomSheet<ServerProfile>(
-      context: context,
-      useSafeArea: true,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => FractionallySizedBox(
-        heightFactor: 0.72,
-        child: _ServerEditorSheet(initialProfile: profile),
+    final draft = await _trackHomeTransientRoute<ServerProfile>(
+      () => showAppModalBottomSheet<ServerProfile>(
+        context: context,
+        useSafeArea: true,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) => FractionallySizedBox(
+          heightFactor: 0.72,
+          child: _ServerEditorSheet(initialProfile: profile),
+        ),
       ),
     );
     if (draft == null) {
@@ -593,59 +706,63 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
     WebParityAppController controller,
     ServerProfile profile,
   ) async {
-    final confirmed = await showAppDialog<bool>(
-      context: context,
-      builder: (context) {
-        final theme = Theme.of(context);
-        final surfaces = Theme.of(context).extension<AppSurfaces>()!;
-        return AppDialogFrame(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: Material(
-            color: surfaces.panelRaised,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppSpacing.dialogRadius),
-              side: BorderSide(color: surfaces.lineSoft),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(AppSpacing.lg),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    context.wp('Delete server?'),
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  Text(
-                    context.wp(
-                      'Remove "{label}" from saved servers? This keeps the rest of your home screen intact.',
-                      args: <String, Object?>{'label': profile.effectiveLabel},
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.lg),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: <Widget>[
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pop(false),
-                        child: Text(context.wp('Cancel')),
+    final confirmed = await _trackHomeTransientRoute<bool>(
+      () => showAppDialog<bool>(
+        context: context,
+        builder: (context) {
+          final theme = Theme.of(context);
+          final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+          return AppDialogFrame(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Material(
+              color: surfaces.panelRaised,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppSpacing.dialogRadius),
+                side: BorderSide(color: surfaces.lineSoft),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.lg),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      context.wp('Delete server?'),
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
                       ),
-                      const SizedBox(width: AppSpacing.sm),
-                      FilledButton(
-                        onPressed: () => Navigator.of(context).pop(true),
-                        child: Text(context.wp('Delete')),
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(
+                      context.wp(
+                        'Remove "{label}" from saved servers? This keeps the rest of your home screen intact.',
+                        args: <String, Object?>{
+                          'label': profile.effectiveLabel,
+                        },
                       ),
-                    ],
-                  ),
-                ],
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: <Widget>[
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(false),
+                          child: Text(context.wp('Cancel')),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        FilledButton(
+                          onPressed: () => Navigator.of(context).pop(true),
+                          child: Text(context.wp('Delete')),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
     if (confirmed != true) {
       return;
@@ -665,14 +782,61 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
   }
 
   Future<void> _openServers(WebParityAppController controller) async {
-    await showAppModalBottomSheet<void>(
-      context: context,
-      useSafeArea: true,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => FractionallySizedBox(
-        heightFactor: 0.84,
-        child: _ServersSheet(controller: controller),
+    await _trackHomeTransientRoute<void>(
+      () => showAppModalBottomSheet<void>(
+        context: context,
+        useSafeArea: true,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) => FractionallySizedBox(
+          heightFactor: 0.84,
+          child: _ServersSheet(controller: controller),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openServerDetails(
+    WebParityAppController controller,
+    ServerProfile profile,
+  ) async {
+    await _trackHomeTransientRoute<void>(
+      () => showAppModalBottomSheet<void>(
+        context: context,
+        useSafeArea: true,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (sheetContext) => FractionallySizedBox(
+          heightFactor: 0.84,
+          child: _HomeServerDetailPanel(
+            embeddedInPage: false,
+            profile: profile,
+            report: controller.reports[profile.storageKey],
+            summary: _serverSummaryForProfile(controller, profile),
+            activityLoading: _isServerActivityLoading(controller, profile),
+            runningSessions: _runningSessionsForProfile(controller, profile),
+            paneSnapshots: _paneSnapshotsForProfile(controller, profile),
+            projectTargets: _projectTargetsForProfile(controller, profile),
+            onResumeWorkspace: () {
+              Navigator.of(sheetContext).pop();
+              unawaited(_resumeWorkspace(controller, profile));
+            },
+            onEditServer: () {
+              Navigator.of(sheetContext).pop();
+              unawaited(_openServerEditor(controller, profile: profile));
+            },
+            onCopyConnectLink: () =>
+                unawaited(_copyConnectionImportLink(profile)),
+            onOpenProjectPicker: () {
+              Navigator.of(sheetContext).pop();
+              unawaited(_openProjectPicker(controller, profile));
+            },
+            onOpenProject: (target) {
+              Navigator.of(sheetContext).pop();
+              unawaited(_openRecentProject(controller, profile, target));
+            },
+          ),
+        ),
       ),
     );
   }
@@ -971,6 +1135,8 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _serverStatusRefreshTimer?.cancel();
     for (final entry in _observedWorkspaceControllerListeners.entries) {
       entry.key.removeListener(entry.value);
     }
@@ -989,194 +1155,70 @@ class _WebParityHomeScreenState extends State<WebParityHomeScreen> {
       builder: (context, _) {
         _scheduleConnectionImportPromptIfNeeded(controller);
         _scheduleWorkspaceStateSyncIfNeeded(controller);
+        _ensureServerStatusPolling(controller);
         final selectedProfile = controller.selectedProfile;
-        final selectedReport = controller.selectedReport;
-        final selectedSummary = selectedProfile == null
-            ? null
-            : _serverSummaryForProfile(controller, selectedProfile);
-        final selectedRunningSessions = selectedProfile == null
-            ? const <_HomeRunningSession>[]
-            : _runningSessionsForProfile(controller, selectedProfile);
-        final selectedPaneSnapshots = selectedProfile == null
-            ? const <_HomePaneSnapshot>[]
-            : _paneSnapshotsForProfile(controller, selectedProfile);
-        final selectedProjectTargets = selectedProfile == null
-            ? const <ProjectTarget>[]
-            : _projectTargetsForProfile(controller, selectedProfile);
         return Scaffold(
           backgroundColor: surfaces.background,
-          body: Stack(
-            children: <Widget>[
-              const SizedBox.expand(),
-              IgnorePointer(
-                child: Stack(
-                  children: <Widget>[
-                    Positioned(
-                      top: -88,
-                      left: -48,
-                      child: _HomeAmbientOrb(
-                        size: 240,
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.primary.withValues(alpha: 0.08),
-                      ),
-                    ),
-                    Positioned(
-                      top: 132,
-                      right: -60,
-                      child: _HomeAmbientOrb(
-                        size: 200,
-                        color: surfaces.accentSoft.withValues(alpha: 0.09),
-                      ),
-                    ),
-                  ],
-                ),
+          body: SafeArea(
+            child: Padding(
+              padding: EdgeInsets.all(
+                MediaQuery.sizeOf(context).width < 600
+                    ? AppSpacing.sm
+                    : AppSpacing.md,
               ),
-              SafeArea(
-                child: Padding(
-                  padding: EdgeInsets.all(
-                    MediaQuery.sizeOf(context).width < 600
-                        ? AppSpacing.sm
-                        : AppSpacing.md,
-                  ),
-                  child: controller.loading
-                      ? const Center(child: CircularProgressIndicator())
-                      : Center(
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 1440),
-                            child: LayoutBuilder(
-                              builder: (context, constraints) {
-                                final wide = constraints.maxWidth >= 1180;
-                                final compactHome =
-                                    constraints.maxWidth < 600 ||
-                                    constraints.maxHeight < 820;
-                                final serverListPanel = _HomeServerListPanel(
-                                  embeddedInPage: compactHome,
-                                  profiles: controller.profiles,
-                                  selectedProfile: selectedProfile,
-                                  reports: controller.reports,
-                                  isRefreshingProfile:
-                                      controller.isRefreshingProfile,
-                                  summaryForProfile: (profile) =>
-                                      _serverSummaryForProfile(
-                                        controller,
-                                        profile,
-                                      ),
-                                  onSelectProfile: controller.selectProfile,
-                                  onOpenServers: () => _openServers(controller),
-                                  onAddServer: () =>
-                                      _openServerEditor(controller),
-                                  onRefreshProfile: controller.refreshProbe,
-                                  onEditProfile: (profile) => _openServerEditor(
-                                    controller,
-                                    profile: profile,
-                                  ),
-                                  onDeleteProfile: (profile) =>
-                                      _confirmDeleteServer(controller, profile),
-                                  onMoveProfile: controller.moveProfile,
-                                );
-                                final detailPanel = _HomeServerDetailPanel(
-                                  embeddedInPage: compactHome,
-                                  profile: selectedProfile,
-                                  report: selectedReport,
-                                  summary: selectedSummary,
-                                  activityLoading: selectedProfile == null
-                                      ? false
-                                      : _isServerActivityLoading(
-                                          controller,
-                                          selectedProfile,
-                                        ),
-                                  runningSessions: selectedRunningSessions,
-                                  paneSnapshots: selectedPaneSnapshots,
-                                  projectTargets: selectedProjectTargets,
-                                  onResumeWorkspace: selectedProfile == null
-                                      ? null
-                                      : () => _resumeWorkspace(
-                                          controller,
-                                          selectedProfile,
-                                        ),
-                                  onEditServer: selectedProfile == null
-                                      ? null
-                                      : () => _openServerEditor(
-                                          controller,
-                                          profile: selectedProfile,
-                                        ),
-                                  onCopyConnectLink: selectedProfile == null
-                                      ? null
-                                      : () => _copyConnectionImportLink(
-                                          selectedProfile,
-                                        ),
-                                  onOpenProjectPicker: selectedProfile == null
-                                      ? null
-                                      : () => _openProjectPicker(
-                                          controller,
-                                          selectedProfile,
-                                        ),
-                                  onOpenProject: selectedProfile == null
-                                      ? null
-                                      : (target) => _openRecentProject(
-                                          controller,
-                                          selectedProfile,
-                                          target,
-                                        ),
-                                );
-                                final headerSection = _HomeHeroHeader(
-                                  profile: selectedProfile,
-                                  report: selectedReport,
-                                  onOpenServers: () => _openServers(controller),
-                                  showServersShortcut: !compactHome,
-                                );
-                                final contentSection = wide
-                                    ? Row(
-                                        children: <Widget>[
-                                          Flexible(
-                                            flex: 4,
-                                            child: serverListPanel,
-                                          ),
-                                          const SizedBox(width: AppSpacing.sm),
-                                          Flexible(flex: 6, child: detailPanel),
-                                        ],
-                                      )
-                                    : Column(
-                                        children: <Widget>[
-                                          Expanded(
-                                            flex: 4,
-                                            child: serverListPanel,
-                                          ),
-                                          const SizedBox(height: AppSpacing.sm),
-                                          Expanded(flex: 6, child: detailPanel),
-                                        ],
-                                      );
-                                if (compactHome) {
-                                  return SingleChildScrollView(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: <Widget>[
-                                        headerSection,
-                                        const SizedBox(height: AppSpacing.sm),
-                                        serverListPanel,
-                                        const SizedBox(height: AppSpacing.sm),
-                                        detailPanel,
-                                      ],
-                                    ),
-                                  );
-                                }
-                                return Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: <Widget>[
-                                    headerSection,
-                                    const SizedBox(height: AppSpacing.sm),
-                                    Expanded(child: contentSection),
-                                  ],
-                                );
-                              },
+              child: controller.loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 1120),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            _HomeHeroHeader(
+                              profiles: controller.profiles,
+                              reports: controller.reports,
+                              anyRefreshing: controller.profiles.any(
+                                (profile) =>
+                                    controller.isRefreshingProfile(profile),
+                              ),
+                              onOpenServers: () => _openServers(controller),
+                              onAddServer: () => _openServerEditor(controller),
+                              onRefreshAll: () =>
+                                  _manualRefreshSavedServerStatuses(controller),
                             ),
-                          ),
+                            const SizedBox(height: AppSpacing.sm),
+                            Expanded(
+                              child: _HomeServerListPanel(
+                                profiles: controller.profiles,
+                                selectedProfile: selectedProfile,
+                                reports: controller.reports,
+                                isRefreshingProfile:
+                                    controller.isRefreshingProfile,
+                                summaryForProfile: (profile) =>
+                                    _serverSummaryForProfile(
+                                      controller,
+                                      profile,
+                                    ),
+                                onSelectProfile: controller.selectProfile,
+                                onResumeProfile: (profile) =>
+                                    _resumeWorkspace(controller, profile),
+                                onShowProfileDetails: (profile) =>
+                                    _openServerDetails(controller, profile),
+                                onRefreshProfile: controller.refreshProbe,
+                                onEditProfile: (profile) => _openServerEditor(
+                                  controller,
+                                  profile: profile,
+                                ),
+                                onDeleteProfile: (profile) =>
+                                    _confirmDeleteServer(controller, profile),
+                                onMoveProfile: controller.moveProfile,
+                              ),
+                            ),
+                          ],
                         ),
-                ),
-              ),
-            ],
+                      ),
+                    ),
+            ),
           ),
         );
       },
@@ -1250,201 +1292,246 @@ class _HomePaneSnapshot {
   final bool active;
 }
 
-class _HomeAmbientOrb extends StatelessWidget {
-  const _HomeAmbientOrb({required this.size, required this.color});
-
-  final double size;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: RadialGradient(
-          colors: <Color>[
-            color,
-            color.withValues(alpha: 0.04),
-            Colors.transparent,
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _HomeHeroHeader extends StatelessWidget {
   const _HomeHeroHeader({
-    required this.profile,
-    required this.report,
+    required this.profiles,
+    required this.reports,
+    required this.anyRefreshing,
     required this.onOpenServers,
-    required this.showServersShortcut,
+    required this.onAddServer,
+    required this.onRefreshAll,
   });
 
-  final ServerProfile? profile;
-  final ServerProbeReport? report;
+  final List<ServerProfile> profiles;
+  final Map<String, ServerProbeReport> reports;
+  final bool anyRefreshing;
   final VoidCallback onOpenServers;
-  final bool showServersShortcut;
+  final Future<void> Function() onAddServer;
+  final Future<void> Function() onRefreshAll;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
-
-    return AppGlassPanel(
-      radius: AppSpacing.cardRadius,
-      blur: 12,
-      backgroundOpacity: 0.9,
-      borderOpacity: 0.06,
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final compact = constraints.maxWidth < 760;
-            final description = Text(
-              context.wp(
-                'Choose a server, inspect its current status, and jump back into the exact workspace layout you were using last.',
-              ),
-              style: theme.textTheme.bodyLarge?.copyWith(
-                color: surfaces.muted,
-                height: 1.45,
-              ),
-            );
-            final actions = Wrap(
-              spacing: AppSpacing.sm,
-              runSpacing: AppSpacing.sm,
-              alignment: WrapAlignment.end,
-              children: <Widget>[
-                _ServerPill(
-                  profile: profile,
-                  report: report,
-                  onTap: showServersShortcut ? onOpenServers : null,
+    final onlineCount = profiles
+        .where(
+          (profile) =>
+              reports[profile.storageKey]?.classification ==
+              ConnectionProbeClassification.ready,
+        )
+        .length;
+    final checkedAt = _latestCheckedAt(profiles, reports);
+    final summary = profiles.isEmpty
+        ? context.wp('No saved servers')
+        : checkedAt == null
+        ? context.wp(
+            '{serverCount} servers · {onlineCount} online',
+            args: <String, Object?>{
+              'serverCount': profiles.length,
+              'onlineCount': onlineCount,
+            },
+          )
+        : context.wp(
+            '{serverCount} servers · {onlineCount} online · last checked {time}',
+            args: <String, Object?>{
+              'serverCount': profiles.length,
+              'onlineCount': onlineCount,
+              'time': MaterialLocalizations.of(
+                context,
+              ).formatTimeOfDay(TimeOfDay.fromDateTime(checkedAt)),
+            },
+          );
+    final brand = Row(
+      children: <Widget>[
+        Container(
+          width: 44,
+          height: 44,
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: surfaces.lineSoft),
+          ),
+          child: Image.asset(
+            'web/icons/Icon-192.png',
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) =>
+                Icon(Icons.terminal_rounded, color: theme.colorScheme.primary),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        Flexible(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                context.wp('BOC Remote'),
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
                 ),
-                if (showServersShortcut)
-                  OutlinedButton.icon(
-                    onPressed: onOpenServers,
-                    icon: const Icon(Icons.storage_rounded),
-                    label: Text(context.wp('See Servers')),
-                  ),
-              ],
-            );
-            if (compact) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.sm,
-                      vertical: AppSpacing.xxs,
-                    ),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(
-                        AppSpacing.pillRadius,
-                      ),
-                    ),
-                    child: Text(
-                      context.wp('Entry'),
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        color: theme.colorScheme.primary,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  Text(
-                    context.wp('Servers'),
-                    style: theme.textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  description,
-                  const SizedBox(height: AppSpacing.sm),
-                  actions,
-                ],
-              );
-            }
-            return Row(
+              ),
+              const SizedBox(height: AppSpacing.xxs),
+              Text(
+                summary,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: surfaces.muted,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+    Widget actions({required bool compact}) {
+      if (compact) {
+        return Wrap(
+          spacing: AppSpacing.xs,
+          runSpacing: AppSpacing.xs,
+          children: <Widget>[
+            IconButton(
+              tooltip: context.wp('Refresh'),
+              onPressed: profiles.isEmpty || anyRefreshing
+                  ? null
+                  : () => unawaited(onRefreshAll()),
+              icon: anyRefreshing
+                  ? const SizedBox.square(
+                      dimension: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh_rounded),
+            ),
+            IconButton(
+              tooltip: context.wp('Manage'),
+              onPressed: onOpenServers,
+              icon: const Icon(Icons.tune_rounded),
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            Semantics(
+              identifier: 'home-add-server-button',
+              label: 'Add Server',
+              button: true,
+              onTap: () => unawaited(onAddServer()),
+              child: FilledButton.icon(
+                key: const ValueKey<String>('home-add-server-button'),
+                onPressed: () => unawaited(onAddServer()),
+                icon: const Icon(Icons.add_rounded),
+                label: Text(context.wp('Add Server')),
+              ),
+            ),
+          ],
+        );
+      }
+      return Wrap(
+        spacing: AppSpacing.sm,
+        runSpacing: AppSpacing.sm,
+        alignment: WrapAlignment.end,
+        children: <Widget>[
+          OutlinedButton.icon(
+            onPressed: profiles.isEmpty || anyRefreshing
+                ? null
+                : () => unawaited(onRefreshAll()),
+            icon: anyRefreshing
+                ? const SizedBox.square(
+                    dimension: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh_rounded),
+            label: Text(context.wp('Refresh')),
+          ),
+          OutlinedButton.icon(
+            onPressed: onOpenServers,
+            icon: const Icon(Icons.tune_rounded),
+            label: Text(context.wp('Manage')),
+          ),
+          Semantics(
+            identifier: 'home-add-server-button',
+            label: 'Add Server',
+            button: true,
+            onTap: () => unawaited(onAddServer()),
+            child: FilledButton.icon(
+              key: const ValueKey<String>('home-add-server-button'),
+              onPressed: () => unawaited(onAddServer()),
+              icon: const Icon(Icons.add_rounded),
+              label: Text(context.wp('Add Server')),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.xs,
+        vertical: AppSpacing.sm,
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth < 900) {
+            return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.sm,
-                          vertical: AppSpacing.xxs,
-                        ),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.primary.withValues(
-                            alpha: 0.1,
-                          ),
-                          borderRadius: BorderRadius.circular(
-                            AppSpacing.pillRadius,
-                          ),
-                        ),
-                        child: Text(
-                          context.wp('Entry'),
-                          style: theme.textTheme.labelLarge?.copyWith(
-                            color: theme.colorScheme.primary,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.sm),
-                      Text(
-                        context.wp('Servers'),
-                        style: theme.textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.xs),
-                      description,
-                    ],
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.md),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 340),
-                  child: actions,
-                ),
+                brand,
+                const SizedBox(height: AppSpacing.sm),
+                actions(compact: true),
               ],
             );
-          },
-        ),
+          }
+          return Row(
+            children: <Widget>[
+              Expanded(child: brand),
+              const SizedBox(width: AppSpacing.md),
+              Flexible(child: actions(compact: false)),
+            ],
+          );
+        },
       ),
     );
   }
 }
 
+DateTime? _latestCheckedAt(
+  List<ServerProfile> profiles,
+  Map<String, ServerProbeReport> reports,
+) {
+  DateTime? latest;
+  for (final profile in profiles) {
+    final checkedAt = reports[profile.storageKey]?.checkedAt;
+    if (checkedAt == null) {
+      continue;
+    }
+    if (latest == null || checkedAt.isAfter(latest)) {
+      latest = checkedAt;
+    }
+  }
+  return latest;
+}
+
 class _HomeServerListPanel extends StatelessWidget {
   const _HomeServerListPanel({
-    required this.embeddedInPage,
     required this.profiles,
     required this.selectedProfile,
     required this.reports,
     required this.isRefreshingProfile,
     required this.summaryForProfile,
     required this.onSelectProfile,
-    required this.onOpenServers,
-    required this.onAddServer,
+    required this.onResumeProfile,
+    required this.onShowProfileDetails,
     required this.onRefreshProfile,
     required this.onEditProfile,
     required this.onDeleteProfile,
     required this.onMoveProfile,
   });
 
-  final bool embeddedInPage;
   final List<ServerProfile> profiles;
   final ServerProfile? selectedProfile;
   final Map<String, ServerProbeReport> reports;
   final bool Function(ServerProfile profile) isRefreshingProfile;
   final _HomeServerSummary Function(ServerProfile profile) summaryForProfile;
   final Future<void> Function(ServerProfile profile) onSelectProfile;
-  final VoidCallback onOpenServers;
-  final Future<void> Function() onAddServer;
+  final Future<void> Function(ServerProfile profile) onResumeProfile;
+  final Future<void> Function(ServerProfile profile) onShowProfileDetails;
   final Future<void> Function(ServerProfile profile) onRefreshProfile;
   final Future<void> Function(ServerProfile profile) onEditProfile;
   final Future<void> Function(ServerProfile profile) onDeleteProfile;
@@ -1455,247 +1542,335 @@ class _HomeServerListPanel extends StatelessWidget {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     return LayoutBuilder(
       builder: (context, panelConstraints) {
-        final compressed = panelConstraints.maxHeight < 340;
+        final compact = panelConstraints.maxWidth < 620;
+        final selected = selectedProfile == null
+            ? null
+            : profiles.cast<ServerProfile?>().firstWhere(
+                (profile) => profile?.id == selectedProfile!.id,
+                orElse: () => selectedProfile,
+              );
         return _HomeSectionCard(
-          padding: EdgeInsets.all(compressed ? AppSpacing.sm : AppSpacing.md),
+          padding: EdgeInsets.all(compact ? AppSpacing.sm : AppSpacing.md),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final compactHeader =
-                      constraints.maxWidth < 420 || compressed;
-                  final titleBlock = Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(
-                        context.wp('Servers'),
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
+              Text(
+                context.wp('Servers'),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: AppSpacing.xxs),
+              Text(
+                context.wp(
+                  'Pick a server first, then use the fixed actions below.',
+                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              if (profiles.isEmpty)
+                Expanded(
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Container(
+                          width: 64,
+                          height: 64,
+                          decoration: BoxDecoration(
+                            color: surfaces.panelMuted.withValues(alpha: 0.92),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(
+                            Icons.storage_rounded,
+                            color: surfaces.muted,
+                            size: 28,
+                          ),
                         ),
-                      ),
-                      if (!compressed) ...<Widget>[
-                        const SizedBox(height: AppSpacing.xxs),
+                        const SizedBox(height: AppSpacing.md),
+                        Text(
+                          context.wp('No saved servers yet.'),
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: AppSpacing.xs),
                         Text(
                           context.wp(
-                            'Saved servers stay visible here, with status and workspace summaries attached.',
+                            'Add your first server and it will start checking status automatically.',
                           ),
                           style: Theme.of(context).textTheme.bodyMedium
                               ?.copyWith(color: surfaces.muted),
+                          textAlign: TextAlign.center,
                         ),
                       ],
-                    ],
-                  );
-                  final actions = Wrap(
-                    spacing: AppSpacing.sm,
-                    runSpacing: AppSpacing.sm,
-                    children: <Widget>[
-                      if (!embeddedInPage)
-                        OutlinedButton.icon(
-                          onPressed: onOpenServers,
-                          icon: const Icon(Icons.tune_rounded),
-                          label: Text(context.wp('Manage')),
-                        ),
-                      FilledButton.icon(
-                        key: const ValueKey<String>('home-add-server-button'),
-                        onPressed: () => unawaited(onAddServer()),
-                        icon: const Icon(Icons.add_rounded),
-                        label: Text(context.wp('Add Server')),
-                      ),
-                    ],
-                  );
-                  if (compactHeader) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        titleBlock,
-                        SizedBox(
-                          height: compressed ? AppSpacing.xs : AppSpacing.sm,
-                        ),
-                        actions,
-                      ],
-                    );
-                  }
-                  return Row(
-                    children: <Widget>[
-                      Expanded(child: titleBlock),
-                      const SizedBox(width: AppSpacing.sm),
-                      actions,
-                    ],
-                  );
-                },
-              ),
-              SizedBox(height: compressed ? AppSpacing.sm : AppSpacing.md),
-              if (profiles.isEmpty)
-                embeddedInPage
-                    ? Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: <Widget>[
-                            Container(
-                              width: 64,
-                              height: 64,
-                              decoration: BoxDecoration(
-                                color: surfaces.panelMuted.withValues(
-                                  alpha: 0.92,
-                                ),
-                                borderRadius: BorderRadius.circular(22),
-                              ),
-                              child: Icon(
-                                Icons.storage_rounded,
-                                color: surfaces.muted,
-                                size: 28,
-                              ),
-                            ),
-                            const SizedBox(height: AppSpacing.md),
-                            Text(
-                              context.wp('No saved servers yet.'),
-                              style: Theme.of(context).textTheme.titleMedium
-                                  ?.copyWith(fontWeight: FontWeight.w700),
-                            ),
-                            const SizedBox(height: AppSpacing.xs),
-                            Text(
-                              context.wp(
-                                'Add your first server to start tracking its workspace.',
-                              ),
-                              style: Theme.of(context).textTheme.bodyMedium
-                                  ?.copyWith(color: surfaces.muted),
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
-                        ),
-                      )
-                    : Expanded(
-                        child: Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: <Widget>[
-                              Container(
-                                width: 64,
-                                height: 64,
-                                decoration: BoxDecoration(
-                                  color: surfaces.panelMuted.withValues(
-                                    alpha: 0.92,
-                                  ),
-                                  borderRadius: BorderRadius.circular(22),
-                                ),
-                                child: Icon(
-                                  Icons.storage_rounded,
-                                  color: surfaces.muted,
-                                  size: 28,
-                                ),
-                              ),
-                              const SizedBox(height: AppSpacing.md),
-                              Text(
-                                context.wp('No saved servers yet.'),
-                                style: Theme.of(context).textTheme.titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.w700),
-                              ),
-                              const SizedBox(height: AppSpacing.xs),
-                              Text(
-                                context.wp(
-                                  'Add your first server to start tracking its workspace.',
-                                ),
-                                style: Theme.of(context).textTheme.bodyMedium
-                                    ?.copyWith(color: surfaces.muted),
-                                textAlign: TextAlign.center,
-                              ),
-                            ],
-                          ),
-                        ),
-                      )
+                    ),
+                  ),
+                )
               else
-                embeddedInPage
-                    ? Column(
-                        children: List<Widget>.generate(profiles.length, (
-                          index,
-                        ) {
-                          final profile = profiles[index];
-                          final selected = selectedProfile?.id == profile.id;
-                          return Padding(
-                            padding: EdgeInsets.only(
-                              bottom: index == profiles.length - 1
-                                  ? 0
-                                  : AppSpacing.xs,
-                            ),
-                            child: _ServerManagementCard(
-                              key: ValueKey<String>(
-                                'home-server-card-${profile.id}',
-                              ),
-                              keyNamespace: 'home-server',
-                              profile: profile,
-                              report: reports[profile.storageKey],
-                              selected: selected,
-                              isRefreshing: isRefreshingProfile(profile),
-                              canMoveUp: index > 0,
-                              canMoveDown: index < profiles.length - 1,
-                              footer: _HomeServerCardFooter(
+                Expanded(
+                  child: ListView.separated(
+                    itemCount: profiles.length,
+                    separatorBuilder: (_, _) =>
+                        const SizedBox(height: AppSpacing.xs),
+                    itemBuilder: (context, index) {
+                      final profile = profiles[index];
+                      final profileSelected = selectedProfile?.id == profile.id;
+                      return _ServerManagementCard(
+                        key: ValueKey<String>('home-server-card-${profile.id}'),
+                        keyNamespace: 'home-server',
+                        profile: profile,
+                        report: reports[profile.storageKey],
+                        selected: profileSelected,
+                        isRefreshing: isRefreshingProfile(profile),
+                        canMoveUp: index > 0,
+                        canMoveDown: index < profiles.length - 1,
+                        showInlineActions: false,
+                        footer: profileSelected
+                            ? _HomeServerCardFooter(
                                 summary: summaryForProfile(profile),
-                              ),
-                              onSelect: () =>
-                                  unawaited(onSelectProfile(profile)),
-                              onRefresh: () =>
-                                  unawaited(onRefreshProfile(profile)),
-                              onEdit: () => unawaited(onEditProfile(profile)),
-                              onDelete: () =>
-                                  unawaited(onDeleteProfile(profile)),
-                              onMoveUp: index > 0
-                                  ? () =>
-                                        unawaited(onMoveProfile(profile.id, -1))
-                                  : null,
-                              onMoveDown: index < profiles.length - 1
-                                  ? () =>
-                                        unawaited(onMoveProfile(profile.id, 1))
-                                  : null,
-                            ),
-                          );
-                        }),
-                      )
-                    : Expanded(
-                        child: ListView.separated(
-                          itemCount: profiles.length,
-                          separatorBuilder: (_, _) =>
-                              const SizedBox(height: AppSpacing.xs),
-                          itemBuilder: (context, index) {
-                            final profile = profiles[index];
-                            final selected = selectedProfile?.id == profile.id;
-                            return _ServerManagementCard(
-                              key: ValueKey<String>(
-                                'home-server-card-${profile.id}',
-                              ),
-                              keyNamespace: 'home-server',
-                              profile: profile,
-                              report: reports[profile.storageKey],
-                              selected: selected,
-                              isRefreshing: isRefreshingProfile(profile),
-                              canMoveUp: index > 0,
-                              canMoveDown: index < profiles.length - 1,
-                              footer: _HomeServerCardFooter(
-                                summary: summaryForProfile(profile),
-                              ),
-                              onSelect: () =>
-                                  unawaited(onSelectProfile(profile)),
-                              onRefresh: () =>
-                                  unawaited(onRefreshProfile(profile)),
-                              onEdit: () => unawaited(onEditProfile(profile)),
-                              onDelete: () =>
-                                  unawaited(onDeleteProfile(profile)),
-                              onMoveUp: index > 0
-                                  ? () =>
-                                        unawaited(onMoveProfile(profile.id, -1))
-                                  : null,
-                              onMoveDown: index < profiles.length - 1
-                                  ? () =>
-                                        unawaited(onMoveProfile(profile.id, 1))
-                                  : null,
-                            );
-                          },
-                        ),
-                      ),
+                              )
+                            : null,
+                        onSelect: () => unawaited(onSelectProfile(profile)),
+                        onOpen: () => unawaited(onResumeProfile(profile)),
+                        onRefresh: () => unawaited(onRefreshProfile(profile)),
+                        onEdit: () => unawaited(onEditProfile(profile)),
+                        onDelete: () => unawaited(onDeleteProfile(profile)),
+                        onMoveUp: index > 0
+                            ? () => unawaited(onMoveProfile(profile.id, -1))
+                            : null,
+                        onMoveDown: index < profiles.length - 1
+                            ? () => unawaited(onMoveProfile(profile.id, 1))
+                            : null,
+                      );
+                    },
+                  ),
+                ),
+              const SizedBox(height: AppSpacing.sm),
+              _HomeServerActionBar(
+                profile: selected,
+                report: selected == null ? null : reports[selected.storageKey],
+                isRefreshing: selected == null
+                    ? false
+                    : isRefreshingProfile(selected),
+                onConnect: selected == null
+                    ? null
+                    : () => unawaited(onResumeProfile(selected)),
+                onRefresh: selected == null
+                    ? null
+                    : () => unawaited(onRefreshProfile(selected)),
+                onDetails: selected == null
+                    ? null
+                    : () => unawaited(onShowProfileDetails(selected)),
+                onEdit: selected == null
+                    ? null
+                    : () => unawaited(onEditProfile(selected)),
+                onDelete: selected == null
+                    ? null
+                    : () => unawaited(onDeleteProfile(selected)),
+              ),
             ],
           ),
         );
       },
+    );
+  }
+}
+
+class _HomeServerActionBar extends StatelessWidget {
+  const _HomeServerActionBar({
+    required this.profile,
+    required this.report,
+    required this.isRefreshing,
+    required this.onConnect,
+    required this.onRefresh,
+    required this.onDetails,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  final ServerProfile? profile;
+  final ServerProbeReport? report;
+  final bool isRefreshing;
+  final VoidCallback? onConnect;
+  final VoidCallback? onRefresh;
+  final VoidCallback? onDetails;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final profile = this.profile;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: surfaces.panelMuted.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: surfaces.lineSoft),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 900;
+          final title = profile == null
+              ? Text(
+                  context.wp('Select a server to connect or manage it.'),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(color: surfaces.muted),
+                )
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    _StatusDot(report: report, busy: isRefreshing),
+                    const SizedBox(width: AppSpacing.sm),
+                    Flexible(
+                      child: Text(
+                        profile.effectiveLabel,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                );
+          final actionButtons = <Widget>[
+            FilledButton.icon(
+              key: profile == null
+                  ? null
+                  : ValueKey<String>('home-server-resume-button-${profile.id}'),
+              onPressed: onConnect,
+              icon: const Icon(Icons.play_arrow_rounded),
+              label: Text(context.wp('Connect')),
+            ),
+            OutlinedButton.icon(
+              onPressed: isRefreshing ? null : onRefresh,
+              icon: isRefreshing
+                  ? const SizedBox.square(
+                      dimension: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh_rounded),
+              label: Text(context.wp('Refresh')),
+            ),
+            OutlinedButton.icon(
+              onPressed: onDetails,
+              icon: const Icon(Icons.info_outline_rounded),
+              label: Text(context.wp('Details')),
+            ),
+            OutlinedButton.icon(
+              onPressed: onEdit,
+              icon: const Icon(Icons.edit_outlined),
+              label: Text(context.wp('Edit')),
+            ),
+            OutlinedButton.icon(
+              onPressed: onDelete,
+              icon: const Icon(Icons.delete_outline_rounded),
+              label: Text(context.wp('Delete')),
+              style: OutlinedButton.styleFrom(foregroundColor: surfaces.danger),
+            ),
+          ];
+          final actions = Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
+            alignment: WrapAlignment.end,
+            children: actionButtons,
+          );
+          final compactActions = Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
+            children: <Widget>[
+              actionButtons[0],
+              actionButtons[2],
+              PopupMenuButton<String>(
+                enabled: profile != null,
+                tooltip: context.wp('More'),
+                onSelected: (value) {
+                  switch (value) {
+                    case 'refresh':
+                      if (!isRefreshing) {
+                        onRefresh?.call();
+                      }
+                      break;
+                    case 'edit':
+                      onEdit?.call();
+                      break;
+                    case 'delete':
+                      onDelete?.call();
+                      break;
+                  }
+                },
+                itemBuilder: (context) => <PopupMenuEntry<String>>[
+                  PopupMenuItem<String>(
+                    value: 'refresh',
+                    enabled: onRefresh != null && !isRefreshing,
+                    child: Text(context.wp('Refresh')),
+                  ),
+                  PopupMenuItem<String>(
+                    value: 'edit',
+                    enabled: onEdit != null,
+                    child: Text(context.wp('Edit')),
+                  ),
+                  PopupMenuItem<String>(
+                    value: 'delete',
+                    enabled: onDelete != null,
+                    child: Text(context.wp('Delete')),
+                  ),
+                ],
+                child: _HomeMoreActionButton(enabled: profile != null),
+              ),
+            ],
+          );
+          if (compact) {
+            return compactActions;
+          }
+          return Row(
+            children: <Widget>[
+              Expanded(child: title),
+              const SizedBox(width: AppSpacing.md),
+              actions,
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _HomeMoreActionButton extends StatelessWidget {
+  const _HomeMoreActionButton({required this.enabled});
+
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
+    final foreground = enabled ? colorScheme.primary : surfaces.muted;
+    return Container(
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: surfaces.lineSoft),
+        color: surfaces.panelMuted.withValues(alpha: enabled ? 0.44 : 0.24),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(Icons.more_horiz_rounded, color: foreground),
+          const SizedBox(width: AppSpacing.xs),
+          Text(
+            context.wp('More'),
+            style: Theme.of(
+              context,
+            ).textTheme.labelLarge?.copyWith(color: foreground),
+          ),
+        ],
+      ),
     );
   }
 }

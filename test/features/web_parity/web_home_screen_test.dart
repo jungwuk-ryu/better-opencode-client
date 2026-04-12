@@ -161,7 +161,9 @@ void main() {
         find.byKey(const ValueKey<String>('home-server-card-server')),
         findsOneWidget,
       );
-      await tester.tap(find.widgetWithText(ActionChip, 'Demo'));
+      await tester.tap(
+        find.byKey(const ValueKey<String>('home-server-resume-button-server')),
+      );
       await tester.pumpAndSettle();
 
       expect(
@@ -232,7 +234,7 @@ void main() {
       expect(find.text('Ready'), findsWidgets);
       expect(find.text('Sign In'), findsWidgets);
 
-      await tester.tap(find.widgetWithText(OutlinedButton, 'See Servers'));
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Manage'));
       await tester.pumpAndSettle();
 
       expect(
@@ -250,7 +252,7 @@ void main() {
       expect(
         find.descendant(
           of: find.byKey(const ValueKey<String>('servers-sheet-card-alpha')),
-          matching: find.text('v1.2.3'),
+          matching: find.text('v9.9.9'),
         ),
         findsOneWidget,
       );
@@ -314,9 +316,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.widgetWithText(OutlinedButton, 'See Servers'), findsNothing);
-      expect(find.widgetWithText(OutlinedButton, 'Manage'), findsNothing);
-      expect(find.byType(ListView), findsNothing);
-      expect(find.byType(SingleChildScrollView), findsOneWidget);
+      expect(find.byTooltip('Manage'), findsOneWidget);
+      expect(find.byType(ListView), findsOneWidget);
+      expect(find.byType(SingleChildScrollView), findsNothing);
       expect(
         find.byKey(const ValueKey<String>('home-server-card-alpha')),
         findsOneWidget,
@@ -326,18 +328,7 @@ void main() {
         findsOneWidget,
       );
 
-      await tester.ensureVisible(
-        find.byKey(const ValueKey<String>('home-server-card-beta')),
-      );
-      await tester.tap(
-        find.byKey(const ValueKey<String>('home-server-card-beta')),
-      );
-      await tester.pumpAndSettle();
-
-      expect(
-        find.byKey(const ValueKey<String>('home-server-resume-button-beta')),
-        findsOneWidget,
-      );
+      expect(find.widgetWithText(FilledButton, 'Connect'), findsOneWidget);
     },
   );
 
@@ -385,23 +376,13 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.widgetWithText(OutlinedButton, testCase.copy['See Servers']!),
-        findsOneWidget,
-        reason: testCase.mode.name,
-      );
-      expect(
         find.text(testCase.copy['Ready']!),
         findsWidgets,
         reason: testCase.mode.name,
       );
 
-      await tester.tap(
-        find.widgetWithText(OutlinedButton, testCase.copy['See Servers']!),
-      );
-      await tester.pumpAndSettle();
-
       expect(
-        find.byKey(const ValueKey<String>('servers-sheet-add-button')),
+        find.byKey(const ValueKey<String>('home-add-server-button')),
         findsOneWidget,
         reason: testCase.mode.name,
       );
@@ -456,7 +437,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithText(OutlinedButton, 'See Servers'));
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Manage'));
     await tester.pumpAndSettle();
 
     await tester.tap(
@@ -653,6 +634,9 @@ void main() {
           ),
         ),
       );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Details'));
       await tester.pumpAndSettle();
 
       expect(
@@ -907,9 +891,16 @@ class _MutableHomeAppController extends WebParityAppController {
 
   @override
   Future<void> refreshProbe(ServerProfile profile) async {
+    final previousClassification =
+        _reports[profile.storageKey]?.classification ??
+        ConnectionProbeClassification.ready;
     _reports = <String, ServerProbeReport>{
       ..._reports,
-      profile.storageKey: _probeReport(profile, version: '9.9.9'),
+      profile.storageKey: _probeReport(
+        profile,
+        version: '9.9.9',
+        classification: previousClassification,
+      ),
     };
     notifyListeners();
   }
