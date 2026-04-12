@@ -12875,8 +12875,12 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
     return List<ProjectTarget>.unmodifiable(next);
   }
 
-  Future<void> _handleProjectReorder(int oldIndex, int newIndex) async {
-    if (_orderedProjects.length < 2) {
+  Future<void> _handleProjectReorder(
+    int oldIndex,
+    int newIndex,
+    List<ProjectTarget> visibleProjects,
+  ) async {
+    if (visibleProjects.length < 2) {
       return;
     }
     if (oldIndex < newIndex) {
@@ -12884,14 +12888,27 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
     }
     if (oldIndex == newIndex ||
         oldIndex < 0 ||
-        oldIndex >= _orderedProjects.length ||
+        oldIndex >= visibleProjects.length ||
         newIndex < 0 ||
-        newIndex >= _orderedProjects.length) {
+        newIndex >= visibleProjects.length) {
       return;
     }
-    final next = List<ProjectTarget>.of(_orderedProjects);
-    final moved = next.removeAt(oldIndex);
-    next.insert(newIndex, moved);
+    final reorderedVisibleProjects = List<ProjectTarget>.of(visibleProjects);
+    final moved = reorderedVisibleProjects.removeAt(oldIndex);
+    reorderedVisibleProjects.insert(newIndex, moved);
+    final reorderedVisibleDirectories = reorderedVisibleProjects
+        .map((project) => project.directory)
+        .toSet();
+    var visibleProjectIndex = 0;
+    final next = <ProjectTarget>[];
+    for (final project in _orderedProjects) {
+      if (reorderedVisibleDirectories.contains(project.directory)) {
+        next.add(reorderedVisibleProjects[visibleProjectIndex]);
+        visibleProjectIndex += 1;
+        continue;
+      }
+      next.add(project);
+    }
     setState(() {
       _orderedProjects = List<ProjectTarget>.unmodifiable(next);
     });
@@ -12915,6 +12932,9 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
     final sectionGap = density.inset(AppSpacing.md, min: AppSpacing.sm);
     final microGap = density.inset(AppSpacing.sm, min: AppSpacing.xs);
     final projects = _orderedProjects;
+    final visibleProjects = projects
+        .where((project) => project.directory != widget.currentDirectory)
+        .toList(growable: false);
     final currentProject =
         widget.project ??
         _projectForDirectory(projects, widget.currentDirectory);
@@ -12936,19 +12956,19 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
       selectedSessionId: widget.currentSessionId,
       includeNested: widget.showSubsessions,
     );
-    final projectListHeight = projects.isEmpty
+    final projectListHeight = visibleProjects.isEmpty
         ? 0.0
         : math.min(
             compactLayout ? 152.0 : 220.0,
-            projects.length * (compactLayout ? 54.0 : 62.0),
+            visibleProjects.length * (compactLayout ? 54.0 : 62.0),
           );
     final workspaceSection = <Widget>[
       _WorkspaceSidebarSectionLabel(
         label: context.wp('Workspace'),
-        trailing: projects.isEmpty
+        trailing: visibleProjects.isEmpty
             ? null
             : Text(
-                '${projects.length}',
+                '${visibleProjects.length}',
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: surfaces.muted,
                   fontWeight: FontWeight.w700,
@@ -13018,7 +13038,7 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
           ],
         ),
       ),
-      if (projects.isNotEmpty) ...<Widget>[
+      if (visibleProjects.isNotEmpty) ...<Widget>[
         SizedBox(height: panelPadding),
         SizedBox(
           height: projectListHeight,
@@ -13028,9 +13048,10 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
             ),
             buildDefaultDragHandles: false,
             padding: EdgeInsets.zero,
-            itemCount: projects.length,
-            onReorder: (oldIndex, newIndex) =>
-                unawaited(_handleProjectReorder(oldIndex, newIndex)),
+            itemCount: visibleProjects.length,
+            onReorder: (oldIndex, newIndex) => unawaited(
+              _handleProjectReorder(oldIndex, newIndex, visibleProjects),
+            ),
             proxyDecorator: (child, index, animation) {
               final curved = CurvedAnimation(
                 parent: animation,
@@ -13045,9 +13066,9 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
               );
             },
             itemBuilder: (context, index) {
-              final project = projects[index];
+              final project = visibleProjects[index];
               final selected = project.directory == widget.currentDirectory;
-              final reorderHandle = projects.length > 1
+              final reorderHandle = visibleProjects.length > 1
                   ? ReorderableDragStartListener(
                       index: index,
                       child: _ProjectReorderHandle(
@@ -13074,7 +13095,7 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
                   'workspace-project-item-${project.directory}',
                 ),
                 padding: EdgeInsets.only(
-                  bottom: index == projects.length - 1 ? 0 : microGap,
+                  bottom: index == visibleProjects.length - 1 ? 0 : microGap,
                 ),
                 child: tile,
               );

@@ -3209,6 +3209,133 @@ void main() {
     },
   );
 
+  testWidgets('sidebar hides the active workspace from the workspace list', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _RecordingWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    final navigatorKey = GlobalKey<NavigatorState>();
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        navigatorKey: navigatorKey,
+        initialRoute: '/',
+      ),
+    );
+    navigatorKey.currentState!.pushNamed(
+      buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(
+        const ValueKey<String>('workspace-sidebar-project-menu-button'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('workspace-project-/workspace/demo')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('workspace-project-/workspace/lab')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('sidebar reorder preserves the hidden active workspace slot', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _RecordingProjectReorderAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _ThreeProjectWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    final navigatorKey = GlobalKey<NavigatorState>();
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        navigatorKey: navigatorKey,
+        initialRoute: '/',
+      ),
+    );
+    navigatorKey.currentState!.pushNamed(
+      buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('workspace-project-/workspace/demo')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('workspace-project-/workspace/lab')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('workspace-project-/workspace/api')),
+      findsOneWidget,
+    );
+
+    await tester.drag(
+      find.byKey(
+        const ValueKey<String>(
+          'workspace-project-reorder-handle-/workspace/lab',
+        ),
+      ),
+      const Offset(0, 140),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 420));
+
+    expect(appController.lastOrderedProjectDirectories, <String>[
+      '/workspace/demo',
+      '/workspace/api',
+      '/workspace/lab',
+    ]);
+  });
+
   testWidgets(
     'desktop layout keeps existing pane state when switching the active pane to another project',
     (tester) async {
@@ -4213,6 +4340,25 @@ class _StaticAppController extends WebParityAppController {
   }
 }
 
+class _RecordingProjectReorderAppController extends _StaticAppController {
+  _RecordingProjectReorderAppController({
+    required super.profile,
+    required super.workspaceControllerFactory,
+  });
+
+  List<String> lastOrderedProjectDirectories = const <String>[];
+
+  @override
+  Future<void> reorderProjects({
+    required ServerProfile profile,
+    required List<ProjectTarget> orderedProjects,
+  }) async {
+    lastOrderedProjectDirectories = List<String>.unmodifiable(
+      orderedProjects.map((project) => project.directory),
+    );
+  }
+}
+
 class _RecordingWorkspaceController extends WorkspaceController {
   _RecordingWorkspaceController({
     required super.profile,
@@ -4875,6 +5021,38 @@ class _CompletedTodoWorkspaceController extends _RecordingWorkspaceController {
   void emitUnchangedUpdate() {
     notifyListeners();
   }
+}
+
+class _ThreeProjectWorkspaceController extends _RecordingWorkspaceController {
+  _ThreeProjectWorkspaceController({
+    required super.profile,
+    required super.directory,
+    super.initialSessionId,
+  });
+
+  static const ProjectTarget _apiProject = ProjectTarget(
+    directory: '/workspace/api',
+    label: 'API',
+    source: 'server',
+    vcs: 'git',
+    branch: 'main',
+  );
+
+  static const List<ProjectTarget> _availableProjects = <ProjectTarget>[
+    _RecordingWorkspaceController._demoProject,
+    _RecordingWorkspaceController._labProject,
+    _apiProject,
+  ];
+
+  @override
+  ProjectTarget? get project => switch (directory) {
+    '/workspace/lab' => _RecordingWorkspaceController._labProject,
+    '/workspace/api' => _apiProject,
+    _ => _RecordingWorkspaceController._demoProject,
+  };
+
+  @override
+  List<ProjectTarget> get availableProjects => _availableProjects;
 }
 
 class _DelayedRecordingWorkspaceController
