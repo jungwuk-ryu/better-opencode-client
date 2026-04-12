@@ -1492,9 +1492,7 @@ class _ReviewPanelState extends State<_ReviewPanel> {
                                                   crossAxisAlignment:
                                                       CrossAxisAlignment.end,
                                                   children: <Widget>[
-                                                    if (fullscreenButton !=
-                                                        null)
-                                                      fullscreenButton,
+                                                    ?fullscreenButton,
                                                     modeToggle,
                                                   ],
                                                 )

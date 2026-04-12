@@ -6,11 +6,7 @@ import 'dart:ui' as ui;
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart'
-    show
-        DelayedMultiDragGestureRecognizer,
-        DragStartBehavior,
-        MultiDragGestureRecognizer;
+import 'package:flutter/gestures.dart' show DragStartBehavior;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
@@ -3371,7 +3367,6 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen>
     }
 
     for (final project in controller.availableProjects) {
-      final isCurrentProject = project.directory == _currentDirectory;
       commands.add(
         _WorkspaceCommandPaletteCommand(
           id: 'project.open.${project.directory}',
@@ -12507,9 +12502,9 @@ class _SessionContextUsageRingState extends State<_SessionContextUsageRing>
   void didChangeDependencies() {
     super.didChangeDependencies();
     final resolvedColor = _resolvedUsageColor();
-    if (_targetColor.value == resolvedColor.value &&
-        (_colorAnimation.value?.value ?? _targetColor.value) ==
-            resolvedColor.value) {
+    if (_targetColor.toARGB32() == resolvedColor.toARGB32() &&
+        (_colorAnimation.value?.toARGB32() ?? _targetColor.toARGB32()) ==
+            resolvedColor.toARGB32()) {
       return;
     }
     _targetColor = resolvedColor;
@@ -12524,7 +12519,7 @@ class _SessionContextUsageRingState extends State<_SessionContextUsageRing>
     final currentValue = _progressAnimation.value;
     final currentColor = _colorAnimation.value ?? _targetColor;
     final valueDelta = (nextValue - currentValue).abs();
-    final colorChanged = currentColor.value != nextColor.value;
+    final colorChanged = currentColor.toARGB32() != nextColor.toARGB32();
     if (valueDelta < 0.0001 && !colorChanged) {
       return;
     }
