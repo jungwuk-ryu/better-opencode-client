@@ -262,6 +262,61 @@ void main() {
   );
 
   test(
+    'controller treats server connected as a bootstrap event without resyncing',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_1',
+              title: 'Initial session',
+              createdAt: 1710000001000,
+              updatedAt: 1710000005000,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{
+            'ses_1': SessionStatusSummary(type: 'idle'),
+          },
+          messages: const <ChatMessage>[],
+          selectedSessionId: 'ses_1',
+        ),
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+      expect(eventStreamService.connectCallCount, 1);
+      expect(chatService.fetchBundleCalls, 1);
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'server.connected',
+          properties: <String, Object?>{},
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(controller.recoveringEventStream, isFalse);
+      expect(controller.eventStreamRecoveryError, isNull);
+      expect(eventStreamService.connectCallCount, 1);
+      expect(chatService.fetchBundleCalls, 1);
+      expect(
+        eventStreamService.activeSubscriptionCountForScope(profile, project),
+        1,
+      );
+      expect(controller.selectedSessionId, 'ses_1');
+    },
+  );
+
+  test(
     'controller reloads sessions, messages, and pending requests after a stream resync request',
     () async {
       final eventStreamService = _ControlledEventStreamService();
@@ -4658,6 +4713,7 @@ class _FakeChatService extends ChatService {
 
   ChatSessionBundle bundle;
   int createSessionCalls = 0;
+  int fetchBundleCalls = 0;
   final Future<List<ChatMessage>> Function({
     required ServerProfile profile,
     required ProjectTarget project,
@@ -4706,6 +4762,7 @@ class _FakeChatService extends ChatService {
     required ProjectTarget project,
     bool includeSelectedSessionMessages = true,
   }) async {
+    fetchBundleCalls += 1;
     return bundle;
   }
 

@@ -5533,7 +5533,7 @@ class WorkspaceController extends ChangeNotifier {
       return;
     }
     final type = event.type;
-    if (type == 'stream.resync_required' || type == 'server.connected') {
+    if (type == 'stream.resync_required') {
       unawaited(resyncLiveState());
       return;
     }
