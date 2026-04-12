@@ -97,6 +97,13 @@ void main() {
       find.byKey(const ValueKey<String>('sidebar-session-shimmer-ses_1')),
       findsOneWidget,
     );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('sidebar-session-shimmer-ses_1')),
+        matching: find.byType(ShaderMask),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('sidebar shows a hover preview for recent session prompts', (

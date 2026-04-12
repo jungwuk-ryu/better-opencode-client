@@ -7399,16 +7399,12 @@ class _WorkspaceTopBar extends StatelessWidget {
                                 ),
                               ),
                               child: _SessionIdentity(
-                                compact: true,
                                 title: title,
                                 titleKey: ValueKey<String>(
                                   'session-header-title-${session?.id ?? 'new'}',
                                 ),
                                 titleStyle: titleStyle,
                                 busy: busy,
-                                busyKey: ValueKey<String>(
-                                  'session-header-busy-${session?.id ?? 'new'}',
-                                ),
                               ),
                             ),
                           ),
@@ -7505,16 +7501,12 @@ class _WorkspaceTopBar extends StatelessWidget {
                         SizedBox(width: density.inset(AppSpacing.sm, min: 6)),
                         Expanded(
                           child: _SessionIdentity(
-                            compact: false,
                             title: title,
                             titleKey: ValueKey<String>(
                               'session-header-title-${session?.id ?? 'new'}',
                             ),
                             titleStyle: titleStyle,
                             busy: busy,
-                            busyKey: ValueKey<String>(
-                              'session-header-busy-${session?.id ?? 'new'}',
-                            ),
                           ),
                         ),
                         if (session != null)
@@ -12324,24 +12316,19 @@ class _WorkspaceSettingsStatusChip extends StatelessWidget {
 
 class _SessionIdentity extends StatelessWidget {
   const _SessionIdentity({
-    required this.compact,
     required this.title,
     required this.titleKey,
     required this.titleStyle,
     required this.busy,
-    required this.busyKey,
   });
 
-  final bool compact;
   final String title;
   final Key titleKey;
   final TextStyle? titleStyle;
   final bool busy;
-  final Key busyKey;
 
   @override
   Widget build(BuildContext context) {
-    final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     return Row(
       children: <Widget>[
         Expanded(
@@ -12354,72 +12341,6 @@ class _SessionIdentity extends StatelessWidget {
                 active: busy,
                 text: TextSpan(text: title, style: titleStyle),
               ),
-              if (busy)
-                Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final primary = Theme.of(context).colorScheme.primary;
-                      final maxWidth = constraints.maxWidth.isFinite
-                          ? constraints.maxWidth
-                          : double.infinity;
-                      if (maxWidth <= 14) {
-                        final dotSize = maxWidth.clamp(4.0, 8.0);
-                        return Align(
-                          alignment: Alignment.centerLeft,
-                          child: Container(
-                            key: busyKey,
-                            width: dotSize,
-                            height: dotSize,
-                            decoration: BoxDecoration(
-                              color: primary,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                        );
-                      }
-                      final showLabel = !compact && maxWidth >= 56;
-                      return Container(
-                        key: busyKey,
-                        padding: EdgeInsets.symmetric(
-                          horizontal: showLabel ? AppSpacing.xs : 4,
-                          vertical: showLabel ? 3 : 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: primary.withValues(alpha: 0.14),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: primary.withValues(alpha: 0.22),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: <Widget>[
-                            Container(
-                              width: 6,
-                              height: 6,
-                              decoration: BoxDecoration(
-                                color: primary,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            if (showLabel) ...<Widget>[
-                              const SizedBox(width: AppSpacing.xxs),
-                              Text(
-                                'Busy',
-                                style: Theme.of(context).textTheme.labelMedium
-                                    ?.copyWith(
-                                      color: surfaces.accentSoft,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ),
             ],
           ),
         ),
@@ -25532,6 +25453,7 @@ class _ShimmeringRichTextState extends State<_ShimmeringRichText>
       animation: _controller,
       child: child,
       builder: (context, child) {
+        final highlightColor = _textShimmerHighlightColor(context, widget.text);
         return ShaderMask(
           blendMode: BlendMode.srcATop,
           shaderCallback: (bounds) {
@@ -25544,6 +25466,7 @@ class _ShimmeringRichTextState extends State<_ShimmeringRichText>
             return _shimmerHighlightGradient(
               shimmerBounds,
               _controller.value,
+              highlightColor: highlightColor,
             ).createShader(shimmerBounds);
           },
           child: child,
@@ -25589,6 +25512,70 @@ LinearGradient _shimmerHighlightGradient(
     ],
     stops: <double>[0, left, innerLeft, center, innerRight, right, 1],
   );
+}
+
+Color _textShimmerHighlightColor(BuildContext context, InlineSpan text) {
+  final theme = Theme.of(context);
+  final surfaces = theme.extension<AppSurfaces>()!;
+  final textColor =
+      _firstInlineSpanTextColor(text) ??
+      DefaultTextStyle.of(context).style.color ??
+      theme.colorScheme.onSurface;
+  final textBrightness = ThemeData.estimateBrightnessForColor(textColor);
+  if (textBrightness == Brightness.dark) {
+    return _highestContrastColor(textColor, <Color>[
+      Colors.white,
+      Color.lerp(textColor, Colors.white, 0.82)!,
+      theme.colorScheme.primary,
+      surfaces.accentSoft,
+    ]);
+  }
+  return _highestContrastColor(textColor, <Color>[
+    theme.colorScheme.primary,
+    surfaces.accentSoft,
+    theme.colorScheme.secondary,
+    Color.lerp(textColor, surfaces.background, 0.58)!,
+  ]);
+}
+
+Color? _firstInlineSpanTextColor(InlineSpan span) {
+  if (span is! TextSpan) {
+    return null;
+  }
+  final color = span.style?.color;
+  if (color != null) {
+    return color;
+  }
+  final children = span.children;
+  if (children == null) {
+    return null;
+  }
+  for (final child in children) {
+    final childColor = _firstInlineSpanTextColor(child);
+    if (childColor != null) {
+      return childColor;
+    }
+  }
+  return null;
+}
+
+Color _highestContrastColor(Color base, Iterable<Color> candidates) {
+  var selected = candidates.first;
+  var selectedContrast = _contrastRatio(base, selected);
+  for (final candidate in candidates.skip(1)) {
+    final contrast = _contrastRatio(base, candidate);
+    if (contrast > selectedContrast) {
+      selected = candidate;
+      selectedContrast = contrast;
+    }
+  }
+  return selected;
+}
+
+double _contrastRatio(Color a, Color b) {
+  final lighter = math.max(a.computeLuminance(), b.computeLuminance());
+  final darker = math.min(a.computeLuminance(), b.computeLuminance());
+  return (lighter + 0.05) / (darker + 0.05);
 }
 
 double _shimmerHighlightWidth(double width) {

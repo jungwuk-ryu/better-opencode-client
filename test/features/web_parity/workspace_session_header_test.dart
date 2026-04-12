@@ -95,59 +95,65 @@ void main() {
     },
   );
 
-  testWidgets(
-    'session header shows the title, busy state, and context usage ring',
-    (tester) async {
-      tester.view.physicalSize = const Size(1480, 960);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
+  testWidgets('session header shimmers the busy title without a busy badge', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1480, 960);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
 
-      final profile = ServerProfile(
-        id: 'server',
-        label: 'Mock',
-        baseUrl: 'http://localhost:3000',
-      );
-      final appController = _StaticAppController(
-        profile: profile,
-        workspaceControllerFactory:
-            ({required profile, required directory, initialSessionId}) {
-              return _HeaderWorkspaceController(
-                profile: profile,
-                directory: directory,
-                initialSessionId: initialSessionId,
-              );
-            },
-      );
-      addTearDown(appController.dispose);
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _HeaderWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
 
-      await tester.pumpWidget(
-        _WorkspaceRouteHarness(
-          controller: appController,
-          initialRoute: buildWorkspaceRoute(
-            '/workspace/demo',
-            sessionId: 'ses_1',
-          ),
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
         ),
-      );
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 80));
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 80));
 
-      expect(
-        find.byKey(const ValueKey<String>('session-header-title-ses_1')),
-        findsOneWidget,
-      );
-      expect(find.text('Busy'), findsOneWidget);
-      expect(
-        find.byKey(const ValueKey<String>('session-header-context-ring-ses_1')),
-        findsOneWidget,
-      );
-      expect(
-        find.byTooltip('5% of context window used (51,945 / 1,050,000 tokens)'),
-        findsOneWidget,
-      );
-    },
-  );
+    expect(
+      find.byKey(const ValueKey<String>('session-header-title-ses_1')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('session-header-title-ses_1')),
+        matching: find.byType(ShaderMask),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Busy'), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('session-header-context-ring-ses_1')),
+      findsOneWidget,
+    );
+    expect(
+      find.byTooltip('5% of context window used (51,945 / 1,050,000 tokens)'),
+      findsOneWidget,
+    );
+  });
 
   testWidgets('session header context ring updates smoothly with new usage', (
     tester,
