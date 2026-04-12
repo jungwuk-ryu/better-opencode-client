@@ -107,6 +107,59 @@ void main() {
     );
   });
 
+  testWidgets('desktop sidebar omits window control dots', (tester) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _SidebarWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    const trafficLightColors = <Color>[
+      Color(0xFFFF5F57),
+      Color(0xFFFEBB2E),
+      Color(0xFF28C840),
+    ];
+    final trafficLightDots = find.byWidgetPredicate((widget) {
+      if (widget is! Container) {
+        return false;
+      }
+      final decoration = widget.decoration;
+      return decoration is BoxDecoration &&
+          decoration.shape == BoxShape.circle &&
+          trafficLightColors.any((color) => color == decoration.color);
+    });
+    expect(trafficLightDots, findsNothing);
+  });
+
   testWidgets('sidebar empty state uses thread terminology', (tester) async {
     tester.view.physicalSize = const Size(1600, 1000);
     tester.view.devicePixelRatio = 1;

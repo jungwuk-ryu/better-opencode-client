@@ -13233,10 +13233,6 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              if (!compactLayout) ...<Widget>[
-                const _WorkspaceDesktopTrafficLights(),
-                SizedBox(height: sectionGap),
-              ],
               _WorkspaceSidebarNavButton(
                 key: const ValueKey<String>(
                   'workspace-sidebar-add-project-button',
@@ -13263,31 +13259,6 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _WorkspaceDesktopTrafficLights extends StatelessWidget {
-  const _WorkspaceDesktopTrafficLights();
-
-  @override
-  Widget build(BuildContext context) {
-    const colors = <Color>[
-      Color(0xFFFF5F57),
-      Color(0xFFFEBB2E),
-      Color(0xFF28C840),
-    ];
-    return Row(
-      children: <Widget>[
-        for (final color in colors) ...<Widget>[
-          Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          ),
-          if (color != colors.last) const SizedBox(width: 6),
-        ],
-      ],
     );
   }
 }
