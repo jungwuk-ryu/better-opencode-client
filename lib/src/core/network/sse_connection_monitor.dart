@@ -26,7 +26,7 @@ class SseConnectionMonitor {
     if (_isReconnecting) {
       return SseConnectionHealth.reconnecting;
     }
-    final reference = _lastHeartbeatAt ?? _lastFrameAt;
+    final reference = _latestActivityAt;
     if (reference == null) {
       return SseConnectionHealth.stale;
     }
@@ -34,5 +34,17 @@ class SseConnectionMonitor {
       return SseConnectionHealth.stale;
     }
     return SseConnectionHealth.connected;
+  }
+
+  DateTime? get _latestActivityAt {
+    final heartbeat = _lastHeartbeatAt;
+    final frame = _lastFrameAt;
+    if (heartbeat == null) {
+      return frame;
+    }
+    if (frame == null) {
+      return heartbeat;
+    }
+    return frame.isAfter(heartbeat) ? frame : heartbeat;
   }
 }

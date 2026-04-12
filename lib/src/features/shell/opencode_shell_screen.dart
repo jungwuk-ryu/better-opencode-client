@@ -447,7 +447,7 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
   }
 
   SseConnectionMonitor _createSseConnectionMonitor() {
-    return SseConnectionMonitor(heartbeatTimeout: const Duration(seconds: 8));
+    return SseConnectionMonitor(heartbeatTimeout: const Duration(seconds: 30));
   }
 
   bool _isActiveBundleLoad(int requestToken, String scopeKey) {
@@ -2154,7 +2154,8 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
         }
         final now = DateTime.now();
         _sseConnectionMonitor.recordFrame(now);
-        if (event.type == 'server.connected') {
+        if (event.type == 'server.connected' ||
+            event.type == 'server.heartbeat') {
           _sseConnectionMonitor.recordHeartbeat(now);
         }
         var nextStatuses = _statuses;
@@ -2278,6 +2279,14 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
     );
     if (!_isActiveEventStreamConnection(connectionToken, scopeKey)) {
       return;
+    }
+    final now = DateTime.now();
+    _sseConnectionMonitor.recordFrame(now);
+    final nextHealth = _sseConnectionMonitor.healthAt(now);
+    if (_eventStreamHealth != nextHealth) {
+      setState(() {
+        _eventStreamHealth = nextHealth;
+      });
     }
     _eventHealthTimer = Timer.periodic(const Duration(seconds: 2), (_) {
       if (!_isActiveEventStreamConnection(connectionToken, scopeKey)) {

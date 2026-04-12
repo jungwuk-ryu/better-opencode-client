@@ -746,6 +746,70 @@ void main() {
     expect(soundService.playedKeys.single, contains('permission:per_1'));
   });
 
+  testWidgets('idle event streams do not trigger periodic session reloads', (
+    tester,
+  ) async {
+    final eventStreamService = _ControlledEventStreamService();
+    final chatService = _ControlledChatService(
+      bundlesByScopeKey: <String, ChatSessionBundle>{
+        _scopeKeyFor(profile, project): ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _testSession(
+              'demo-session',
+              'Demo session',
+              directory: project.directory,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{
+            'demo-session': SessionStatusSummary(type: 'idle'),
+          },
+          messages: <ChatMessage>[
+            _testMessage('demo-session', text: 'Demo message'),
+          ],
+          selectedSessionId: 'demo-session',
+        ),
+      },
+    );
+
+    await pumpShellWithCapabilities(
+      tester,
+      size: const Size(1440, 1600),
+      capabilitiesToUse: eventCapabilities,
+      chatService: chatService,
+      todoService: _RecordingTodoService(),
+      fileBrowserService: _ControlledFileBrowserService.empty(),
+      requestService: _ControlledRequestService.empty(),
+      configService: _ControlledConfigService.empty(),
+      integrationStatusService: _ControlledIntegrationStatusService.empty(),
+      terminalService: _ControlledTerminalService(),
+      eventStreamService: eventStreamService,
+    );
+
+    expect(
+      eventStreamService.connectedScopeKeys,
+      contains(_scopeKeyFor(profile, project)),
+    );
+    expect(
+      chatService.fetchBundleCountByScopeKey[_scopeKeyFor(profile, project)],
+      1,
+    );
+    expect(find.text('Demo message'), findsAtLeastNWidgets(1));
+
+    await tester.pump(const Duration(seconds: 12));
+    await tester.pump();
+
+    expect(eventStreamService.disconnectCount, 0);
+    expect(
+      chatService.fetchBundleCountByScopeKey[_scopeKeyFor(profile, project)],
+      1,
+    );
+    expect(find.text('Demo message'), findsAtLeastNWidgets(1));
+    expect(
+      find.byKey(const ValueKey<String>('chat-loading-demo-session')),
+      findsNothing,
+    );
+  });
+
   testWidgets('mobile shell opens a drawer with project and session picks', (
     tester,
   ) async {
@@ -1404,8 +1468,8 @@ void main() {
       secondEventStreamService.connectedScopeKeys,
       contains(_scopeKeyFor(profile, project)),
     );
-    expect(find.text('Connected'), findsNothing);
-    expect(find.text('Stale'), findsAtLeastNWidgets(1));
+    expect(find.text('Connected'), findsAtLeastNWidgets(1));
+    expect(find.text('Stale'), findsNothing);
 
     firstEventStreamService.emitToScope(
       profile,
