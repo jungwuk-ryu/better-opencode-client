@@ -19221,6 +19221,9 @@ class _TimelineJumpToLatestButton extends StatelessWidget {
     final theme = Theme.of(context);
     final surfaces = theme.extension<AppSurfaces>()!;
     final density = _workspaceDensity(context);
+    final borderRadius = BorderRadius.circular(
+      compact ? AppSpacing.pillRadius : 16,
+    );
     final content = compact
         ? Icon(
             Icons.arrow_downward_rounded,
@@ -19246,41 +19249,65 @@ class _TimelineJumpToLatestButton extends StatelessWidget {
             ],
           );
 
-    return Material(
-      color: Colors.transparent,
-      child: Ink(
-        decoration: BoxDecoration(
-          color: theme.colorScheme.primary,
-          borderRadius: BorderRadius.circular(
-            compact ? AppSpacing.pillRadius : 16,
+    return DecoratedBox(
+      key: const ValueKey<String>('timeline-jump-to-latest-shadow'),
+      decoration: BoxDecoration(
+        borderRadius: borderRadius,
+        boxShadow: _timelineJumpToLatestShadows(theme),
+      ),
+      child: Material(
+        color: theme.colorScheme.primary,
+        borderRadius: borderRadius,
+        clipBehavior: Clip.antiAlias,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: borderRadius,
+            border: Border.all(color: surfaces.panel.withValues(alpha: 0.18)),
           ),
-          boxShadow: <BoxShadow>[
-            BoxShadow(
-              color: theme.colorScheme.shadow.withValues(alpha: 0.18),
-              blurRadius: 18,
-              offset: const Offset(0, 8),
-            ),
-          ],
-          border: Border.all(color: surfaces.panel.withValues(alpha: 0.18)),
-        ),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(
-            compact ? AppSpacing.pillRadius : 16,
-          ),
-          onTap: onPressed,
-          child: Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: density.inset(
-                compact ? AppSpacing.sm : AppSpacing.md,
+          child: InkWell(
+            borderRadius: borderRadius,
+            onTap: onPressed,
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: density.inset(
+                  compact ? AppSpacing.sm : AppSpacing.md,
+                ),
+                vertical: density.inset(AppSpacing.sm),
               ),
-              vertical: density.inset(AppSpacing.sm),
+              child: content,
             ),
-            child: content,
           ),
         ),
       ),
     );
   }
+}
+
+List<BoxShadow> _timelineJumpToLatestShadows(ThemeData theme) {
+  if (theme.brightness == Brightness.light) {
+    return <BoxShadow>[
+      BoxShadow(
+        color: theme.colorScheme.primary.withValues(alpha: 0.14),
+        blurRadius: 14,
+        spreadRadius: -10,
+        offset: const Offset(0, 7),
+      ),
+      BoxShadow(
+        color: Colors.black.withValues(alpha: 0.07),
+        blurRadius: 14,
+        spreadRadius: -12,
+        offset: const Offset(0, 6),
+      ),
+    ];
+  }
+
+  return <BoxShadow>[
+    BoxShadow(
+      color: theme.colorScheme.shadow.withValues(alpha: 0.18),
+      blurRadius: 18,
+      offset: const Offset(0, 8),
+    ),
+  ];
 }
 
 class _TimelineLoadOlderIndicator extends StatelessWidget {

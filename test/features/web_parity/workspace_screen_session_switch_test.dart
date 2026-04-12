@@ -1078,6 +1078,7 @@ void main() {
           controller: appController,
           navigatorKey: navigatorKey,
           initialRoute: '/',
+          theme: AppTheme.light(),
         ),
       );
       navigatorKey.currentState!.pushNamed(
@@ -1115,6 +1116,14 @@ void main() {
         find.byKey(const ValueKey<String>('timeline-jump-to-latest-button')),
         findsOneWidget,
       );
+      final shadowBox = tester.widget<DecoratedBox>(
+        find.byKey(const ValueKey<String>('timeline-jump-to-latest-shadow')),
+      );
+      final shadowDecoration = shadowBox.decoration as BoxDecoration;
+      final shadows = shadowDecoration.boxShadow;
+      expect(shadows, hasLength(2));
+      expect(shadows!.first.spreadRadius, lessThan(0));
+      expect(shadows.first.blurRadius, lessThanOrEqualTo(14));
 
       await tester.tap(
         find.byKey(const ValueKey<String>('timeline-jump-to-latest-button')),
@@ -4089,6 +4098,7 @@ class _WorkspaceRouteHarness extends StatelessWidget {
     this.pendingRequestNotificationService,
     this.pendingRequestSoundService,
     this.platform,
+    this.theme,
   });
 
   final WebParityAppController controller;
@@ -4101,6 +4111,7 @@ class _WorkspaceRouteHarness extends StatelessWidget {
   final PendingRequestNotificationService? pendingRequestNotificationService;
   final PendingRequestSoundService? pendingRequestSoundService;
   final TargetPlatform? platform;
+  final ThemeData? theme;
 
   @override
   Widget build(BuildContext context) {
@@ -4112,7 +4123,7 @@ class _WorkspaceRouteHarness extends StatelessWidget {
           return MaterialApp(
             navigatorKey: navigatorKey,
             navigatorObservers: navigatorObservers,
-            theme: controller.themeData.copyWith(platform: platform),
+            theme: (theme ?? controller.themeData).copyWith(platform: platform),
             supportedLocales: AppLocalizations.supportedLocales,
             localizationsDelegates: AppLocalizations.localizationsDelegates,
             initialRoute: initialRoute,
