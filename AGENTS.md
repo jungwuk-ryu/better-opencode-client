@@ -4,6 +4,12 @@
 
 These instructions apply to Codex-driven changes in this repository.
 
+## README Localization
+
+- When editing `README.md`, update every localized root README in the same logical change.
+- Keep the language shortcut row in `README.md` and all `README.*.md` files synchronized.
+- If README sections are added, removed, renamed, or materially rewritten, apply the same content change across all localized README files.
+
 ## Commit Rules
 
 - Use Conventional Commits for every commit.
