@@ -16301,6 +16301,12 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
     }
 
     final paneRadius = compact ? 16.0 : 18.0;
+    void focusPane() {
+      if (!selected) {
+        unawaited(handleFocus());
+      }
+    }
+
     return Semantics(
       selected: selected,
       label: title,
@@ -16308,435 +16314,446 @@ class _WorkspaceSessionPaneCard extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           key: ValueKey<String>('workspace-session-pane-${pane.id}'),
-          onTap: selected ? null : () => unawaited(handleFocus()),
+          onTap: selected ? null : focusPane,
           borderRadius: BorderRadius.circular(paneRadius),
-          child: AnimatedContainer(
-            key: ValueKey<String>(
-              'workspace-session-pane-container-${pane.id}',
-            ),
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOutCubic,
-            decoration: BoxDecoration(
-              color: visuallySelected
-                  ? surfaces.panelRaised.withValues(alpha: 0.98)
-                  : surfaces.panel.withValues(alpha: 0.96),
-              borderRadius: BorderRadius.circular(paneRadius),
-              border: Border.all(
-                color: visuallySelected
-                    ? theme.colorScheme.primary.withValues(alpha: 0.58)
-                    : surfaces.lineSoft.withValues(alpha: 0.95),
-                width: visuallySelected ? 1.4 : 1,
+          child: Listener(
+            behavior: HitTestBehavior.translucent,
+            onPointerDown: selected ? null : (_) => focusPane(),
+            child: AnimatedContainer(
+              key: ValueKey<String>(
+                'workspace-session-pane-container-${pane.id}',
               ),
-              boxShadow: <BoxShadow>[
-                BoxShadow(
-                  color:
-                      (visuallySelected
-                              ? theme.colorScheme.primary
-                              : Colors.black)
-                          .withValues(alpha: visuallySelected ? 0.12 : 0.06),
-                  blurRadius: visuallySelected ? 18 : 10,
-                  offset: const Offset(0, 6),
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOutCubic,
+              decoration: BoxDecoration(
+                color: visuallySelected
+                    ? surfaces.panelRaised.withValues(alpha: 0.98)
+                    : surfaces.panel.withValues(alpha: 0.96),
+                borderRadius: BorderRadius.circular(paneRadius),
+                border: Border.all(
+                  color: visuallySelected
+                      ? theme.colorScheme.primary.withValues(alpha: 0.58)
+                      : surfaces.lineSoft.withValues(alpha: 0.95),
+                  width: visuallySelected ? 1.4 : 1,
                 ),
-              ],
-            ),
-            child: Column(
-              children: <Widget>[
-                Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    density.inset(compact ? AppSpacing.sm : AppSpacing.md),
-                    density.inset(compact ? AppSpacing.sm : AppSpacing.md),
-                    density.inset(compact ? AppSpacing.sm : AppSpacing.md),
-                    density.inset(compact ? AppSpacing.xs : AppSpacing.sm),
+                boxShadow: <BoxShadow>[
+                  BoxShadow(
+                    color:
+                        (visuallySelected
+                                ? theme.colorScheme.primary
+                                : Colors.black)
+                            .withValues(alpha: visuallySelected ? 0.12 : 0.06),
+                    blurRadius: visuallySelected ? 18 : 10,
+                    offset: const Offset(0, 6),
                   ),
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final headerWidth = constraints.maxWidth;
-                      final hideTitle = headerWidth < 72;
-                      final showSubtitle = headerWidth >= 180;
-                      final showSelectedBadge =
-                          visuallySelected && headerWidth >= 140;
-                      final useCompactCloseButton = headerWidth < 120;
+                ],
+              ),
+              child: Column(
+                children: <Widget>[
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      density.inset(compact ? AppSpacing.sm : AppSpacing.md),
+                      density.inset(compact ? AppSpacing.sm : AppSpacing.md),
+                      density.inset(compact ? AppSpacing.sm : AppSpacing.md),
+                      density.inset(compact ? AppSpacing.xs : AppSpacing.sm),
+                    ),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final headerWidth = constraints.maxWidth;
+                        final hideTitle = headerWidth < 72;
+                        final showSubtitle = headerWidth >= 180;
+                        final showSelectedBadge =
+                            visuallySelected && headerWidth >= 140;
+                        final useCompactCloseButton = headerWidth < 120;
 
-                      Widget closeButton() {
-                        return IconButton(
-                          key: ValueKey<String>(
-                            'workspace-session-pane-close-${pane.id}',
-                          ),
-                          onPressed: () => onClosePane(pane.id),
-                          tooltip: context.wp('Close pane'),
-                          icon: Icon(
-                            Icons.close_rounded,
-                            size: useCompactCloseButton ? 14 : 18,
-                          ),
-                          splashRadius: useCompactCloseButton ? 14 : 18,
-                          visualDensity: VisualDensity.compact,
-                          padding: EdgeInsets.zero,
-                          constraints: BoxConstraints.tightFor(
-                            width: useCompactCloseButton ? 20 : 28,
-                            height: useCompactCloseButton ? 20 : 28,
-                          ),
-                        );
-                      }
+                        Widget closeButton() {
+                          return IconButton(
+                            key: ValueKey<String>(
+                              'workspace-session-pane-close-${pane.id}',
+                            ),
+                            onPressed: () => onClosePane(pane.id),
+                            tooltip: context.wp('Close pane'),
+                            icon: Icon(
+                              Icons.close_rounded,
+                              size: useCompactCloseButton ? 14 : 18,
+                            ),
+                            splashRadius: useCompactCloseButton ? 14 : 18,
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: BoxConstraints.tightFor(
+                              width: useCompactCloseButton ? 20 : 28,
+                              height: useCompactCloseButton ? 20 : 28,
+                            ),
+                          );
+                        }
 
-                      return Row(
-                        children: <Widget>[
-                          Expanded(
-                            child: hideTitle
-                                ? const SizedBox.shrink()
-                                : Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: <Widget>[
-                                      Tooltip(
-                                        message: title,
-                                        child: Text(
-                                          title,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style:
-                                              (compact || !showSubtitle
-                                                      ? theme
-                                                            .textTheme
-                                                            .titleSmall
-                                                      : theme
-                                                            .textTheme
-                                                            .titleMedium)
-                                                  ?.copyWith(
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                        ),
-                                      ),
-                                      if (showSubtitle) ...<Widget>[
-                                        SizedBox(
-                                          height: density.inset(
-                                            AppSpacing.xxs,
-                                            min: 2,
+                        return Row(
+                          children: <Widget>[
+                            Expanded(
+                              child: hideTitle
+                                  ? const SizedBox.shrink()
+                                  : Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: <Widget>[
+                                        Tooltip(
+                                          message: title,
+                                          child: Text(
+                                            title,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style:
+                                                (compact || !showSubtitle
+                                                        ? theme
+                                                              .textTheme
+                                                              .titleSmall
+                                                        : theme
+                                                              .textTheme
+                                                              .titleMedium)
+                                                    ?.copyWith(
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                    ),
                                           ),
                                         ),
-                                        Row(
-                                          children: <Widget>[
-                                            if (busy) ...<Widget>[
-                                              Container(
-                                                key: ValueKey<String>(
-                                                  'workspace-session-pane-busy-indicator-${pane.id}',
+                                        if (showSubtitle) ...<Widget>[
+                                          SizedBox(
+                                            height: density.inset(
+                                              AppSpacing.xxs,
+                                              min: 2,
+                                            ),
+                                          ),
+                                          Row(
+                                            children: <Widget>[
+                                              if (busy) ...<Widget>[
+                                                Container(
+                                                  key: ValueKey<String>(
+                                                    'workspace-session-pane-busy-indicator-${pane.id}',
+                                                  ),
+                                                  width: compact ? 7 : 8,
+                                                  height: compact ? 7 : 8,
+                                                  decoration: BoxDecoration(
+                                                    color: theme
+                                                        .colorScheme
+                                                        .primary,
+                                                    shape: BoxShape.circle,
+                                                  ),
                                                 ),
-                                                width: compact ? 7 : 8,
-                                                height: compact ? 7 : 8,
-                                                decoration: BoxDecoration(
-                                                  color:
-                                                      theme.colorScheme.primary,
-                                                  shape: BoxShape.circle,
+                                                SizedBox(
+                                                  width: density.inset(
+                                                    AppSpacing.xxs,
+                                                    min: 4,
+                                                  ),
                                                 ),
-                                              ),
-                                              SizedBox(
-                                                width: density.inset(
-                                                  AppSpacing.xxs,
-                                                  min: 4,
+                                              ],
+                                              Expanded(
+                                                child: Text(
+                                                  subtitle,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: theme
+                                                      .textTheme
+                                                      .bodySmall
+                                                      ?.copyWith(
+                                                        color: visuallySelected
+                                                            ? theme
+                                                                  .colorScheme
+                                                                  .primary
+                                                                  .withValues(
+                                                                    alpha: 0.92,
+                                                                  )
+                                                            : surfaces.muted,
+                                                      ),
                                                 ),
                                               ),
                                             ],
-                                            Expanded(
-                                              child: Text(
-                                                subtitle,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: theme.textTheme.bodySmall
-                                                    ?.copyWith(
-                                                      color: visuallySelected
-                                                          ? theme
-                                                                .colorScheme
-                                                                .primary
-                                                                .withValues(
-                                                                  alpha: 0.92,
-                                                                )
-                                                          : surfaces.muted,
-                                                    ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
+                                          ),
+                                        ],
                                       ],
-                                    ],
-                                  ),
-                          ),
-                          if (showSelectedBadge)
-                            Container(
-                              key: ValueKey<String>(
-                                'workspace-session-pane-selected-badge-${pane.id}',
-                              ),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: AppSpacing.xs,
-                                vertical: 5,
-                              ),
-                              decoration: BoxDecoration(
-                                color: theme.colorScheme.primary.withValues(
-                                  alpha: 0.16,
-                                ),
-                                borderRadius: BorderRadius.circular(
-                                  AppSpacing.pillRadius,
-                                ),
-                                border: Border.all(
-                                  color: theme.colorScheme.primary.withValues(
-                                    alpha: 0.24,
-                                  ),
-                                ),
-                              ),
-                              child: Text(
-                                'Active',
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: theme.colorScheme.primary,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                          if (canClose) ...<Widget>[
-                            SizedBox(
-                              width: hideTitle
-                                  ? 2
-                                  : density.inset(AppSpacing.xs, min: 4),
-                            ),
-                            closeButton(),
-                          ],
-                        ],
-                      );
-                    },
-                  ),
-                ),
-                Divider(height: 1, color: surfaces.lineSoft),
-                Expanded(
-                  child: Column(
-                    children: <Widget>[
-                      if (!compact && activeChildSessions.isNotEmpty)
-                        _ActiveSubSessionPanel(
-                          key: ValueKey<String>(
-                            'pane-subsessions-${pane.id}::$normalizedSessionId',
-                          ),
-                          rootSessionId: rootSession?.id,
-                          sessions: activeChildSessions,
-                          previewBySessionId: activeChildSessionPreviewById,
-                          currentSessionId: sessionId,
-                          compact: compact,
-                          collapsed: subAgentPanelCollapsedForScope(
-                            sessionUiScopeKey,
-                          ),
-                          onCollapsedChanged: (collapsed) =>
-                              onSubAgentPanelCollapsedChanged(
-                                sessionUiScopeKey,
-                                collapsed,
-                              ),
-                          onOpenSession: handleOpenSession,
-                        ),
-                      Expanded(
-                        child: Stack(
-                          children: <Widget>[
-                            Positioned.fill(
-                              child: sessionId == null && controller.loading
-                                  ? KeyedSubtree(
-                                      key: ValueKey<String>(
-                                        'workspace-session-pane-loading-${pane.id}',
-                                      ),
-                                      child: _TimelineStatusCard(
-                                        icon: const SizedBox(
-                                          width: 20,
-                                          height: 20,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                          ),
-                                        ),
-                                        title:
-                                            'Loading ${projectLabel.isEmpty ? 'project' : projectLabel}...',
-                                        message:
-                                            'Keeping the rest of the workspace visible while this project connects.',
-                                      ),
-                                    )
-                                  : sessionId == null &&
-                                        controller.error != null
-                                  ? KeyedSubtree(
-                                      key: ValueKey<String>(
-                                        'workspace-session-pane-error-${pane.id}',
-                                      ),
-                                      child: _TimelineStatusCard(
-                                        icon: Icon(
-                                          Icons.wifi_tethering_error_rounded,
-                                          color: theme.colorScheme.error,
-                                          size: 22,
-                                        ),
-                                        title: context.wp(
-                                          "Couldn't load {project}",
-                                          args: <String, Object?>{
-                                            'project': projectLabel.isEmpty
-                                                ? context.wp('this project')
-                                                : projectLabel,
-                                          },
-                                        ),
-                                        message: controller.error!,
-                                        action: OutlinedButton(
-                                          onPressed: () =>
-                                              unawaited(handleRetryWorkspace()),
-                                          child: Text(context.wp('Retry')),
-                                        ),
-                                      ),
-                                    )
-                                  : sessionId == null
-                                  ? _NewSessionView(
-                                      project: project,
-                                      messages: timelineState.messages,
-                                    )
-                                  : _MessageTimeline(
-                                      key: ValueKey<String>(
-                                        'timeline-$timelinePageStorageKey',
-                                      ),
-                                      storageScopeKey: timelineScopeKey,
-                                      pageStorageKeyValue:
-                                          timelinePageStorageKey,
-                                      currentSessionId: sessionId,
-                                      working: busy,
-                                      loading: timelineState.loading,
-                                      showingCachedMessages:
-                                          timelineState.showingCachedMessages,
-                                      historyMore: timelineState.historyMore,
-                                      historyLoading:
-                                          timelineState.historyLoading,
-                                      error: timelineState.error,
-                                      messages: timelineState.orderedMessages,
-                                      timelineContentSignature:
-                                          controller.timelineContentSignature,
-                                      compact: compact,
-                                      sessions: controller.sessions,
-                                      selectedSession: selected
-                                          ? controller.selectedSession
-                                          : session,
-                                      configSnapshot: controller.configSnapshot,
-                                      shellToolDisplayMode:
-                                          shellToolDisplayMode,
-                                      keyboardInsetBottom: compact
-                                          ? MediaQuery.viewInsetsOf(
-                                              context,
-                                            ).bottom
-                                          : 0,
-                                      timelineProgressDetailsVisible:
-                                          timelineProgressDetailsVisible,
-                                      searchQuery: searchScoped
-                                          ? chatSearchQuery
-                                          : '',
-                                      matchingMessageIds: searchScoped
-                                          ? chatSearchMatchMessageIds.toSet()
-                                          : const <String>{},
-                                      activeMatchMessageId: searchScoped
-                                          ? chatSearchActiveMessageId
-                                          : null,
-                                      searchRevision: searchScoped
-                                          ? chatSearchRevision
-                                          : 0,
-                                      focusedMessageId:
-                                          focusedTimelineMessageIdForScope(
-                                            sessionFocusScopeKey,
-                                          ),
-                                      focusedMessageRevision:
-                                          focusedTimelineMessageRevisionForScope(
-                                            sessionFocusScopeKey,
-                                          ),
-                                      onForkMessage: handleForkMessage,
-                                      onRevertMessage: handleRevertMessage,
-                                      onOpenSession: handleOpenSession,
-                                      onRetry: handleRetry,
-                                      onIgnoreOversizedSession:
-                                          handleIgnoreOversizedSession,
-                                      oversizedSessionBehavior: AppScope.of(
-                                        context,
-                                      ).oversizedSessionBehavior,
-                                      onLoadMore: handleLoadMoreHistory,
-                                      jumpToBottomEpoch: selected
-                                          ? timelineJumpEpoch
-                                          : 0,
                                     ),
                             ),
-                          ],
-                        ),
-                      ),
-                      if (compact &&
-                          sessionId != null &&
-                          (paneQuestionRequest != null ||
-                              panePermissionRequest != null ||
-                              compactTodoCount > 0 ||
-                              activeChildSessions.isNotEmpty))
-                        _CompactSessionActivityBar(
-                          todoCount: compactTodoCount,
-                          subAgentCount: activeChildSessions.length,
-                          hasQuestion: paneQuestionRequest != null,
-                          hasPermission: panePermissionRequest != null,
-                          onOpenQuestion: paneQuestionRequest == null
-                              ? null
-                              : () => unawaited(showCompactQuestionSheet()),
-                          onOpenPermission: panePermissionRequest == null
-                              ? null
-                              : () => unawaited(showCompactPermissionSheet()),
-                          onOpenTodos: compactTodoCount == 0
-                              ? null
-                              : () => unawaited(showCompactTodoSheet()),
-                          onOpenSubAgents: activeChildSessions.isEmpty
-                              ? null
-                              : () => unawaited(showCompactSubAgentSheet()),
-                        ),
-                      if (!compact &&
-                          sessionId != null &&
-                          paneQuestionRequest != null)
-                        _QuestionPromptDock(
-                          key: ValueKey<String>(
-                            'session-question-dock-${pane.id}::$normalizedSessionId-${paneQuestionRequest.id}',
-                          ),
-                          request: paneQuestionRequest,
-                          compact: compact,
-                          onReply: controller.replyToQuestion,
-                          onReject: controller.rejectQuestion,
-                        ),
-                      if (!compact &&
-                          sessionId != null &&
-                          panePermissionRequest != null)
-                        _PermissionPromptDock(
-                          key: ValueKey<String>(
-                            'session-permission-dock-${pane.id}::$normalizedSessionId-${panePermissionRequest.id}',
-                          ),
-                          request: panePermissionRequest,
-                          compact: compact,
-                          responding: controller.permissionRequestResponding(
-                            panePermissionRequest.id,
-                          ),
-                          onDecide: controller.replyToPermission,
-                        ),
-                      if (!compact && sessionId != null)
-                        _SessionTodoDock(
-                          key: ValueKey<String>(
-                            'session-todo-dock-${pane.id}::$normalizedSessionId',
-                          ),
-                          sessionId: sessionId,
-                          todos: paneTodos,
-                          live: paneTodoLive,
-                          blocked:
-                              paneQuestionRequest != null ||
-                              panePermissionRequest != null,
-                          compact: compact,
-                          collapsed: todoDockCollapsedForScope(
-                            sessionUiScopeKey,
-                          ),
-                          onCollapsedChanged: (collapsed) =>
-                              onTodoDockCollapsedChanged(
-                                sessionUiScopeKey,
-                                collapsed,
+                            if (showSelectedBadge)
+                              Container(
+                                key: ValueKey<String>(
+                                  'workspace-session-pane-selected-badge-${pane.id}',
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: AppSpacing.xs,
+                                  vertical: 5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.primary.withValues(
+                                    alpha: 0.16,
+                                  ),
+                                  borderRadius: BorderRadius.circular(
+                                    AppSpacing.pillRadius,
+                                  ),
+                                  border: Border.all(
+                                    color: theme.colorScheme.primary.withValues(
+                                      alpha: 0.24,
+                                    ),
+                                  ),
+                                ),
+                                child: Text(
+                                  'Active',
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: theme.colorScheme.primary,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
                               ),
-                          onClearStale: () =>
-                              controller.clearTodosForSession(sessionId),
-                        ),
-                      if (inlineComposerBuilder != null)
-                        inlineComposerBuilder!(
-                          paneViewModel,
-                          selected,
-                          compact,
-                        ),
-                    ],
+                            if (canClose) ...<Widget>[
+                              SizedBox(
+                                width: hideTitle
+                                    ? 2
+                                    : density.inset(AppSpacing.xs, min: 4),
+                              ),
+                              closeButton(),
+                            ],
+                          ],
+                        );
+                      },
+                    ),
                   ),
-                ),
-              ],
+                  Divider(height: 1, color: surfaces.lineSoft),
+                  Expanded(
+                    child: Column(
+                      children: <Widget>[
+                        if (!compact && activeChildSessions.isNotEmpty)
+                          _ActiveSubSessionPanel(
+                            key: ValueKey<String>(
+                              'pane-subsessions-${pane.id}::$normalizedSessionId',
+                            ),
+                            rootSessionId: rootSession?.id,
+                            sessions: activeChildSessions,
+                            previewBySessionId: activeChildSessionPreviewById,
+                            currentSessionId: sessionId,
+                            compact: compact,
+                            collapsed: subAgentPanelCollapsedForScope(
+                              sessionUiScopeKey,
+                            ),
+                            onCollapsedChanged: (collapsed) =>
+                                onSubAgentPanelCollapsedChanged(
+                                  sessionUiScopeKey,
+                                  collapsed,
+                                ),
+                            onOpenSession: handleOpenSession,
+                          ),
+                        Expanded(
+                          child: Stack(
+                            children: <Widget>[
+                              Positioned.fill(
+                                child: sessionId == null && controller.loading
+                                    ? KeyedSubtree(
+                                        key: ValueKey<String>(
+                                          'workspace-session-pane-loading-${pane.id}',
+                                        ),
+                                        child: _TimelineStatusCard(
+                                          icon: const SizedBox(
+                                            width: 20,
+                                            height: 20,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          ),
+                                          title:
+                                              'Loading ${projectLabel.isEmpty ? 'project' : projectLabel}...',
+                                          message:
+                                              'Keeping the rest of the workspace visible while this project connects.',
+                                        ),
+                                      )
+                                    : sessionId == null &&
+                                          controller.error != null
+                                    ? KeyedSubtree(
+                                        key: ValueKey<String>(
+                                          'workspace-session-pane-error-${pane.id}',
+                                        ),
+                                        child: _TimelineStatusCard(
+                                          icon: Icon(
+                                            Icons.wifi_tethering_error_rounded,
+                                            color: theme.colorScheme.error,
+                                            size: 22,
+                                          ),
+                                          title: context.wp(
+                                            "Couldn't load {project}",
+                                            args: <String, Object?>{
+                                              'project': projectLabel.isEmpty
+                                                  ? context.wp('this project')
+                                                  : projectLabel,
+                                            },
+                                          ),
+                                          message: controller.error!,
+                                          action: OutlinedButton(
+                                            onPressed: () => unawaited(
+                                              handleRetryWorkspace(),
+                                            ),
+                                            child: Text(context.wp('Retry')),
+                                          ),
+                                        ),
+                                      )
+                                    : sessionId == null
+                                    ? _NewSessionView(
+                                        project: project,
+                                        messages: timelineState.messages,
+                                      )
+                                    : _MessageTimeline(
+                                        key: ValueKey<String>(
+                                          'timeline-$timelinePageStorageKey',
+                                        ),
+                                        storageScopeKey: timelineScopeKey,
+                                        pageStorageKeyValue:
+                                            timelinePageStorageKey,
+                                        currentSessionId: sessionId,
+                                        working: busy,
+                                        loading: timelineState.loading,
+                                        showingCachedMessages:
+                                            timelineState.showingCachedMessages,
+                                        historyMore: timelineState.historyMore,
+                                        historyLoading:
+                                            timelineState.historyLoading,
+                                        error: timelineState.error,
+                                        messages: timelineState.orderedMessages,
+                                        timelineContentSignature:
+                                            controller.timelineContentSignature,
+                                        compact: compact,
+                                        sessions: controller.sessions,
+                                        selectedSession: selected
+                                            ? controller.selectedSession
+                                            : session,
+                                        configSnapshot:
+                                            controller.configSnapshot,
+                                        shellToolDisplayMode:
+                                            shellToolDisplayMode,
+                                        keyboardInsetBottom: compact
+                                            ? MediaQuery.viewInsetsOf(
+                                                context,
+                                              ).bottom
+                                            : 0,
+                                        timelineProgressDetailsVisible:
+                                            timelineProgressDetailsVisible,
+                                        searchQuery: searchScoped
+                                            ? chatSearchQuery
+                                            : '',
+                                        matchingMessageIds: searchScoped
+                                            ? chatSearchMatchMessageIds.toSet()
+                                            : const <String>{},
+                                        activeMatchMessageId: searchScoped
+                                            ? chatSearchActiveMessageId
+                                            : null,
+                                        searchRevision: searchScoped
+                                            ? chatSearchRevision
+                                            : 0,
+                                        focusedMessageId:
+                                            focusedTimelineMessageIdForScope(
+                                              sessionFocusScopeKey,
+                                            ),
+                                        focusedMessageRevision:
+                                            focusedTimelineMessageRevisionForScope(
+                                              sessionFocusScopeKey,
+                                            ),
+                                        onForkMessage: handleForkMessage,
+                                        onRevertMessage: handleRevertMessage,
+                                        onOpenSession: handleOpenSession,
+                                        onRetry: handleRetry,
+                                        onIgnoreOversizedSession:
+                                            handleIgnoreOversizedSession,
+                                        oversizedSessionBehavior: AppScope.of(
+                                          context,
+                                        ).oversizedSessionBehavior,
+                                        onLoadMore: handleLoadMoreHistory,
+                                        jumpToBottomEpoch: selected
+                                            ? timelineJumpEpoch
+                                            : 0,
+                                      ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (compact &&
+                            sessionId != null &&
+                            (paneQuestionRequest != null ||
+                                panePermissionRequest != null ||
+                                compactTodoCount > 0 ||
+                                activeChildSessions.isNotEmpty))
+                          _CompactSessionActivityBar(
+                            todoCount: compactTodoCount,
+                            subAgentCount: activeChildSessions.length,
+                            hasQuestion: paneQuestionRequest != null,
+                            hasPermission: panePermissionRequest != null,
+                            onOpenQuestion: paneQuestionRequest == null
+                                ? null
+                                : () => unawaited(showCompactQuestionSheet()),
+                            onOpenPermission: panePermissionRequest == null
+                                ? null
+                                : () => unawaited(showCompactPermissionSheet()),
+                            onOpenTodos: compactTodoCount == 0
+                                ? null
+                                : () => unawaited(showCompactTodoSheet()),
+                            onOpenSubAgents: activeChildSessions.isEmpty
+                                ? null
+                                : () => unawaited(showCompactSubAgentSheet()),
+                          ),
+                        if (!compact &&
+                            sessionId != null &&
+                            paneQuestionRequest != null)
+                          _QuestionPromptDock(
+                            key: ValueKey<String>(
+                              'session-question-dock-${pane.id}::$normalizedSessionId-${paneQuestionRequest.id}',
+                            ),
+                            request: paneQuestionRequest,
+                            compact: compact,
+                            onReply: controller.replyToQuestion,
+                            onReject: controller.rejectQuestion,
+                          ),
+                        if (!compact &&
+                            sessionId != null &&
+                            panePermissionRequest != null)
+                          _PermissionPromptDock(
+                            key: ValueKey<String>(
+                              'session-permission-dock-${pane.id}::$normalizedSessionId-${panePermissionRequest.id}',
+                            ),
+                            request: panePermissionRequest,
+                            compact: compact,
+                            responding: controller.permissionRequestResponding(
+                              panePermissionRequest.id,
+                            ),
+                            onDecide: controller.replyToPermission,
+                          ),
+                        if (!compact && sessionId != null)
+                          _SessionTodoDock(
+                            key: ValueKey<String>(
+                              'session-todo-dock-${pane.id}::$normalizedSessionId',
+                            ),
+                            sessionId: sessionId,
+                            todos: paneTodos,
+                            live: paneTodoLive,
+                            blocked:
+                                paneQuestionRequest != null ||
+                                panePermissionRequest != null,
+                            compact: compact,
+                            collapsed: todoDockCollapsedForScope(
+                              sessionUiScopeKey,
+                            ),
+                            onCollapsedChanged: (collapsed) =>
+                                onTodoDockCollapsedChanged(
+                                  sessionUiScopeKey,
+                                  collapsed,
+                                ),
+                            onClearStale: () =>
+                                controller.clearTodosForSession(sessionId),
+                          ),
+                        if (inlineComposerBuilder != null)
+                          inlineComposerBuilder!(
+                            paneViewModel,
+                            selected,
+                            compact,
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -18126,6 +18143,24 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     }
   }
 
+  void _markManualScrollInteraction() {
+    _manualScrollInProgress = true;
+  }
+
+  void _clearManualScrollInteractionIfIdle() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_manualScrollInProgress) {
+        return;
+      }
+      if (_scrollController.hasClients &&
+          _scrollController.position.isScrollingNotifier.value) {
+        return;
+      }
+      _manualScrollInProgress = false;
+      _flushDeferredAutoScroll();
+    });
+  }
+
   void _deferAutoScrollToBottom({bool anchored = true}) {
     _deferredAutoScrollToBottom = true;
     _deferredAutoScrollAnchoredToBottom =
@@ -18662,7 +18697,11 @@ class _MessageTimelineState extends State<_MessageTimeline> {
           child: Stack(
             children: <Widget>[
               Listener(
-                onPointerSignal: (_) => _manualScrollInProgress = true,
+                onPointerDown: (_) => _markManualScrollInteraction(),
+                onPointerMove: (_) => _markManualScrollInteraction(),
+                onPointerSignal: (_) => _markManualScrollInteraction(),
+                onPointerUp: (_) => _clearManualScrollInteractionIfIdle(),
+                onPointerCancel: (_) => _clearManualScrollInteractionIfIdle(),
                 child: NotificationListener<ScrollNotification>(
                   onNotification: _handleScrollNotification,
                   child: Scrollbar(

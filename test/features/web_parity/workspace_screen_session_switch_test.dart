@@ -3343,15 +3343,24 @@ void main() {
 
       final controller = createdControllers.single;
       final listFinder = _messageTimelineListFinder();
-      final gesture = await tester.startGesture(tester.getCenter(listFinder));
-      await gesture.moveBy(const Offset(0, 100));
+      final scrollController = tester.widget<ListView>(listFinder).controller!;
+      scrollController.jumpTo(
+        (scrollController.position.maxScrollExtent - 100).clamp(
+          0.0,
+          scrollController.position.maxScrollExtent,
+        ),
+      );
+      await tester.pump();
+      final listRect = tester.getRect(listFinder);
+      final gesture = await tester.startGesture(
+        listRect.centerRight - const Offset(24, 0),
+      );
+      await gesture.moveBy(const Offset(0, 20));
       await tester.pump();
 
-      final scrolledPosition = tester
-          .widget<ListView>(listFinder)
-          .controller!
-          .position;
+      final scrolledPosition = scrollController.position;
       final scrolledPixels = scrolledPosition.pixels;
+      final previousMaxScrollExtent = scrolledPosition.maxScrollExtent;
       expect(scrolledPosition.maxScrollExtent - scrolledPixels, greaterThan(0));
 
       controller.extendLastAssistantMessage(
@@ -3361,11 +3370,11 @@ void main() {
       await tester.pump(const Duration(milliseconds: 250));
       await tester.pumpAndSettle();
 
-      final updatedPosition = tester
-          .widget<ListView>(listFinder)
-          .controller!
-          .position;
-      expect(updatedPosition.maxScrollExtent, greaterThan(scrolledPixels));
+      final updatedPosition = scrollController.position;
+      expect(
+        updatedPosition.maxScrollExtent,
+        greaterThan(previousMaxScrollExtent),
+      );
       expect(updatedPosition.pixels, closeTo(scrolledPixels, 24));
       expect(
         updatedPosition.maxScrollExtent - updatedPosition.pixels,
