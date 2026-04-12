@@ -1115,6 +1115,7 @@ class _PtyTerminalViewState extends State<_PtyTerminalView> {
                           scrollController: _scrollController,
                           autoResize: true,
                           autofocus: true,
+                          deleteDetection: _showsSpecialKeyPalette,
                           focusNode: _terminalFocusNode,
                           backgroundOpacity: 1,
                           theme: _buildTheme(context),
@@ -1146,7 +1147,7 @@ class _PtyTerminalViewState extends State<_PtyTerminalView> {
                           opacity: animation,
                           child: SizeTransition(
                             sizeFactor: animation,
-                            axisAlignment: 1,
+                            alignment: AlignmentDirectional.bottomStart,
                             child: child,
                           ),
                         );
