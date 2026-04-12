@@ -74,8 +74,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Current project'));
-    await tester.pumpAndSettle();
+    expect(find.text('Current project'), findsNothing);
 
     await tester.tap(find.text('Open project'));
     await tester.pump();
