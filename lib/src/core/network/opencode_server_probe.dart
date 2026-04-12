@@ -137,6 +137,18 @@ class OpenCodeServerProbe {
     }
 
     final docBody = _asMap(docResult.body);
+    if (_looksUnlikeOpenCodeServer(
+      healthResult: healthResult,
+      docResult: docResult,
+      docBody: docBody,
+    )) {
+      return _buildReport(
+        profile: profile,
+        checkedAt: checkedAt,
+        endpoints: endpoints,
+      );
+    }
+
     final discoveredPaths = _extractPaths(docBody);
     final experimentalPaths = discoveredPaths
         .where(
@@ -296,6 +308,14 @@ class OpenCodeServerProbe {
     if (hasAuthFailure) {
       return ConnectionProbeClassification.authFailure;
     }
+    if (docResult != null &&
+        _looksUnlikeOpenCodeServer(
+          healthResult: healthResult,
+          docResult: docResult,
+          docBody: docBody,
+        )) {
+      return ConnectionProbeClassification.connectivityFailure;
+    }
     if (docResult == null || docResult.status == ProbeStatus.failure) {
       return ConnectionProbeClassification.specFetchFailure;
     }
@@ -309,6 +329,35 @@ class OpenCodeServerProbe {
       return ConnectionProbeClassification.unsupportedCapabilities;
     }
     return ConnectionProbeClassification.ready;
+  }
+
+  bool _looksUnlikeOpenCodeServer({
+    required ProbeEndpointResult healthResult,
+    required ProbeEndpointResult docResult,
+    required Map<String, Object?> docBody,
+  }) {
+    if (_hasUsableOpenCodeDoc(docResult, docBody)) {
+      return false;
+    }
+    return !_hasUsableOpenCodeHealth(healthResult);
+  }
+
+  bool _hasUsableOpenCodeDoc(
+    ProbeEndpointResult docResult,
+    Map<String, Object?> docBody,
+  ) {
+    return docResult.status == ProbeStatus.success &&
+        _extractPaths(docBody).isNotEmpty;
+  }
+
+  bool _hasUsableOpenCodeHealth(ProbeEndpointResult healthResult) {
+    if (healthResult.status != ProbeStatus.success) {
+      return false;
+    }
+    final body = _asMap(healthResult.body);
+    return body.containsKey('version') ||
+        body.containsKey('healthy') ||
+        body.containsKey('name');
   }
 
   bool _hasAuthFailure(Map<String, ProbeEndpointResult> endpoints) {
@@ -463,7 +512,7 @@ class OpenCodeServerProbe {
       ConnectionProbeClassification.unsupportedCapabilities =>
         'The server spec is readable, but required endpoints are missing: ${missingCapabilities.join(', ')}.',
       ConnectionProbeClassification.connectivityFailure =>
-        'The server could not be reached reliably enough to complete probing.',
+        'The address does not look like an OpenCode server or could not be reached reliably enough to complete probing.',
     };
   }
 

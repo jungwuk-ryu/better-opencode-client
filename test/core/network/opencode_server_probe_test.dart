@@ -255,4 +255,70 @@ void main() {
       expect(requestedPaths, <String>['/global/health', '/doc']);
     },
   );
+
+  test(
+    'probe treats hosts without opencode health or docs as offline',
+    () async {
+      final requestedPaths = <String>[];
+
+      server.listen((request) async {
+        requestedPaths.add(request.uri.path);
+        request.response.statusCode = 404;
+        request.response.headers.contentType = ContentType.html;
+        request.response.write('<html><body>Not Found</body></html>');
+        await request.response.close();
+      });
+
+      final probe = OpenCodeServerProbe();
+      final report = await probe.probe(
+        ServerProfile(
+          id: 'server',
+          label: 'Example',
+          baseUrl: baseUri.toString(),
+        ),
+      );
+      probe.dispose();
+
+      expect(
+        report.classification,
+        ConnectionProbeClassification.connectivityFailure,
+      );
+      expect(requestedPaths, <String>['/global/health', '/doc']);
+      expect(report.summary, contains('does not look like an OpenCode server'));
+    },
+  );
+
+  test('probe treats non-json health and missing docs as offline', () async {
+    final requestedPaths = <String>[];
+
+    server.listen((request) async {
+      requestedPaths.add(request.uri.path);
+      if (request.uri.path == '/global/health') {
+        request.response.statusCode = 200;
+        request.response.headers.contentType = ContentType.html;
+        request.response.write('<html><body>OK</body></html>');
+      } else {
+        request.response.statusCode = 404;
+        request.response.headers.contentType = ContentType.html;
+        request.response.write('<html><body>Not Found</body></html>');
+      }
+      await request.response.close();
+    });
+
+    final probe = OpenCodeServerProbe();
+    final report = await probe.probe(
+      ServerProfile(
+        id: 'server',
+        label: 'Example',
+        baseUrl: baseUri.toString(),
+      ),
+    );
+    probe.dispose();
+
+    expect(
+      report.classification,
+      ConnectionProbeClassification.connectivityFailure,
+    );
+    expect(requestedPaths, <String>['/global/health', '/doc']);
+  });
 }
