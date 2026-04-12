@@ -257,7 +257,8 @@ class WebParityWorkspaceScreen extends StatefulWidget {
       _WebParityWorkspaceScreenState();
 }
 
-class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
+class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen>
+    with WidgetsBindingObserver {
   static const int _maxDesktopSessionPanes = 8;
   static const String _composerDraftKeyPrefix = 'workspace.composerDraft';
   static const String _composerHistoryKeyPrefix = 'workspace.composerHistory';
@@ -375,6 +376,7 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _promptController.addListener(_handlePromptControllerChanged);
     _activeDirectory = widget.directory;
     _activeRouteSessionId = widget.sessionId;
@@ -1590,7 +1592,22 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) {
+      return;
+    }
+    final controllers = <WorkspaceController>{
+      ..._observedPaneControllers,
+      ?_controller,
+    };
+    for (final controller in controllers) {
+      unawaited(controller.resyncLiveState());
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _persistActiveComposerScope();
     _composerDraftPersistTimer?.cancel();
     if (_pendingComposerDraftByStorageKey.isNotEmpty) {

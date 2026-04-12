@@ -1353,6 +1353,17 @@ class WorkspaceController extends ChangeNotifier {
     _notify();
   }
 
+  Future<void> resyncLiveState() async {
+    if (_disposed || _recoveringEventStream) {
+      return;
+    }
+    final project = _project;
+    if (project == null) {
+      return;
+    }
+    await _startEventStreamRecovery(_eventStreamScopeKey(project));
+  }
+
   Future<void> load() async {
     _loading = true;
     _error = null;
@@ -5172,13 +5183,22 @@ class WorkspaceController extends ChangeNotifier {
         _recoveringEventStream) {
       return;
     }
+    unawaited(_startEventStreamRecovery(scopeKey));
+  }
+
+  Future<void> _startEventStreamRecovery(String scopeKey) async {
+    if (_disposed || _recoveringEventStream) {
+      return;
+    }
+    final project = _project;
+    if (project == null || _eventStreamScopeKey(project) != scopeKey) {
+      return;
+    }
     final recoveryToken = ++_eventStreamRecoveryToken;
     _recoveringEventStream = true;
     _eventStreamRecoveryError = null;
     _notify();
-    unawaited(
-      _recoverEventStream(recoveryToken: recoveryToken, scopeKey: scopeKey),
-    );
+    await _recoverEventStream(recoveryToken: recoveryToken, scopeKey: scopeKey);
   }
 
   Future<void> _recoverEventStream({
@@ -5287,6 +5307,10 @@ class WorkspaceController extends ChangeNotifier {
       return;
     }
     final type = event.type;
+    if (type == 'stream.resync_required' || type == 'server.connected') {
+      unawaited(resyncLiveState());
+      return;
+    }
     if (type == 'session.created' || type == 'session.updated') {
       _sessions = applySessionUpsertEvent(_sessions, event.properties);
     } else if (type == 'session.deleted') {

@@ -167,6 +167,59 @@ void main() {
     expect(tester.testTextInput.hasAnyClients, isFalse);
   });
 
+  testWidgets('resuming the app asks the workspace controller to resync', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(430, 932);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final createdControllers = <_RecordingWorkspaceController>[];
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            final controller = _RecordingWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+            createdControllers.add(controller);
+            return controller;
+          },
+    );
+    addTearDown(appController.dispose);
+    final navigatorKey = GlobalKey<NavigatorState>();
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        navigatorKey: navigatorKey,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final controller = createdControllers.single;
+    expect(controller.resyncLiveStateCalls, 0);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pump();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+
+    expect(controller.resyncLiveStateCalls, greaterThanOrEqualTo(1));
+  });
+
   testWidgets(
     'desktop layout does not show selected pane chrome when only one pane exists',
     (tester) async {
@@ -3949,6 +4002,7 @@ class _RecordingWorkspaceController extends WorkspaceController {
 
   int loadCount = 0;
   int createEmptySessionCalls = 0;
+  int resyncLiveStateCalls = 0;
   final List<String?> selectSessionCalls = <String?>[];
   final List<String> permissionActionUpdates = <String>[];
 
@@ -4061,6 +4115,12 @@ class _RecordingWorkspaceController extends WorkspaceController {
     selectSessionCalls.add(sessionId);
     _selectedSessionId = sessionId;
     _messages = _messageListFor(sessionId);
+    notifyListeners();
+  }
+
+  @override
+  Future<void> resyncLiveState() async {
+    resyncLiveStateCalls += 1;
     notifyListeners();
   }
 

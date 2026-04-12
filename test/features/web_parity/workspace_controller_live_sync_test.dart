@@ -262,6 +262,124 @@ void main() {
   );
 
   test(
+    'controller reloads sessions, messages, and pending requests after a stream resync request',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final requestService = _FakeRequestService();
+      final rootSession = _session(
+        id: 'ses_root',
+        title: 'Root session',
+        createdAt: 1710000001000,
+        updatedAt: 1710000005000,
+      );
+      final childSession = _session(
+        id: 'ses_child',
+        title: 'Running child session',
+        createdAt: 1710000002000,
+        updatedAt: 1710000009000,
+        parentId: 'ses_root',
+      );
+      final messagesBySessionId = <String, List<ChatMessage>>{
+        'ses_root': const <ChatMessage>[],
+      };
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[rootSession],
+          statuses: const <String, SessionStatusSummary>{
+            'ses_root': SessionStatusSummary(type: 'idle'),
+          },
+          messages: const <ChatMessage>[],
+          selectedSessionId: 'ses_root',
+        ),
+        fetchMessagesPageHandler:
+            ({
+              required profile,
+              required project,
+              required sessionId,
+              required limit,
+              before,
+            }) async => ChatMessagePage(
+              messages: messagesBySessionId[sessionId] ?? const <ChatMessage>[],
+            ),
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+        requestService: requestService,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+
+      expect(controller.messages, isEmpty);
+      expect(controller.activeChildSessions, isEmpty);
+      expect(controller.pendingRequests.questions, isEmpty);
+
+      messagesBySessionId['ses_root'] = <ChatMessage>[
+        _message(
+          id: 'msg_resynced',
+          sessionId: 'ses_root',
+          text: 'Fresh content after resync',
+          createdAt: 1710000010000,
+        ),
+      ];
+      chatService.bundle = ChatSessionBundle(
+        sessions: <SessionSummary>[childSession, rootSession],
+        statuses: const <String, SessionStatusSummary>{
+          'ses_root': SessionStatusSummary(type: 'idle'),
+          'ses_child': SessionStatusSummary(type: 'busy'),
+        },
+        messages: const <ChatMessage>[],
+        selectedSessionId: 'ses_root',
+      );
+      requestService.pendingBundle = const PendingRequestBundle(
+        questions: <QuestionRequestSummary>[
+          QuestionRequestSummary(
+            id: 'q_child',
+            sessionId: 'ses_child',
+            questions: <QuestionPromptSummary>[
+              QuestionPromptSummary(
+                question: 'Can I proceed?',
+                header: 'Approval',
+                options: <QuestionOptionSummary>[],
+                multiple: false,
+              ),
+            ],
+          ),
+        ],
+        permissions: <PermissionRequestSummary>[],
+      );
+
+      eventStreamService.emitToScope(
+        profile,
+        project,
+        const EventEnvelope(
+          type: 'stream.resync_required',
+          properties: <String, Object?>{},
+        ),
+      );
+      await _waitFor(
+        () =>
+            !controller.recoveringEventStream &&
+            eventStreamService.connectCallCount >= 2,
+      );
+
+      expect(controller.eventStreamRecoveryError, isNull);
+      expect(
+        controller.messages.single.parts.single.text,
+        'Fresh content after resync',
+      );
+      expect(
+        controller.activeChildSessions.map((session) => session.id),
+        <String>['ses_child'],
+      );
+      expect(controller.currentQuestionRequest?.id, 'q_child');
+    },
+  );
+
+  test(
     'controller tracks unseen sidebar notifications for background sessions',
     () async {
       final eventStreamService = _ControlledEventStreamService();
@@ -4115,7 +4233,7 @@ class _FakeChatService extends ChatService {
     this.sendMessageAsyncHandler,
   });
 
-  final ChatSessionBundle bundle;
+  ChatSessionBundle bundle;
   int createSessionCalls = 0;
   final Future<List<ChatMessage>> Function({
     required ServerProfile profile,
