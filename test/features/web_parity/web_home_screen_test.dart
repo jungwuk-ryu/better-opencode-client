@@ -328,9 +328,91 @@ void main() {
         findsOneWidget,
       );
 
+      final connectButton = find.byKey(
+        const ValueKey<String>('home-server-resume-button-alpha'),
+      );
+      final detailsButton = find.byKey(
+        const ValueKey<String>('home-server-details-button-alpha'),
+      );
+      final moreButton = find.byKey(
+        const ValueKey<String>('home-server-more-button-alpha'),
+      );
+
+      expect(connectButton, findsOneWidget);
+      expect(detailsButton, findsOneWidget);
+      expect(moreButton, findsOneWidget);
       expect(find.widgetWithText(FilledButton, 'Connect'), findsOneWidget);
+
+      final connectRect = tester.getRect(connectButton);
+      final detailsRect = tester.getRect(detailsButton);
+      final moreRect = tester.getRect(moreButton);
+
+      expect(detailsRect.top, moreOrLessEquals(connectRect.top));
+      expect(moreRect.top, moreOrLessEquals(connectRect.top));
+      expect(detailsRect.height, moreOrLessEquals(connectRect.height));
+      expect(moreRect.height, moreOrLessEquals(connectRect.height));
     },
   );
+
+  testWidgets('very compact home stacks actions without misaligning the menu', (
+    tester,
+  ) async {
+    await applyResponsiveTestViewport(tester, const Size(319, 568));
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'alpha',
+      label: 'Alpha',
+      baseUrl: 'https://alpha.example.com',
+    );
+    final controller = _MutableHomeAppController(
+      profiles: <ServerProfile>[profile],
+      selected: profile,
+      reports: <String, ServerProbeReport>{
+        profile.storageKey: _probeReport(profile, version: '1.2.3'),
+      },
+    );
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      AppScope(
+        controller: controller,
+        child: MaterialApp(
+          theme: AppTheme.dark(),
+          home: WebParityHomeScreen(
+            flavor: AppFlavor.debug,
+            localeController: LocaleController(),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final connectButton = find.byKey(
+      const ValueKey<String>('home-server-resume-button-alpha'),
+    );
+    final detailsButton = find.byKey(
+      const ValueKey<String>('home-server-details-button-alpha'),
+    );
+    final moreButton = find.byKey(
+      const ValueKey<String>('home-server-more-button-alpha'),
+    );
+
+    expect(connectButton, findsOneWidget);
+    expect(detailsButton, findsOneWidget);
+    expect(moreButton, findsOneWidget);
+
+    final connectRect = tester.getRect(connectButton);
+    final detailsRect = tester.getRect(detailsButton);
+    final moreRect = tester.getRect(moreButton);
+
+    expect(detailsRect.top, greaterThan(connectRect.top));
+    expect(moreRect.top, moreOrLessEquals(detailsRect.top));
+    expect(moreRect.height, moreOrLessEquals(detailsRect.height));
+    expect(connectRect.width, greaterThan(detailsRect.width));
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('home localizes server actions for japanese and chinese', (
     tester,

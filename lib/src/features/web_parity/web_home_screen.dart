@@ -1690,6 +1690,9 @@ class _HomeServerActionBar extends StatelessWidget {
     required this.onDelete,
   });
 
+  static const double _compactActionButtonHeight = 48;
+  static const double _twoRowActionBreakpoint = 320;
+
   final ServerProfile? profile;
   final ServerProbeReport? report;
   final bool isRefreshing;
@@ -1757,6 +1760,11 @@ class _HomeServerActionBar extends StatelessWidget {
               label: Text(context.wp('Refresh')),
             ),
             OutlinedButton.icon(
+              key: profile == null
+                  ? null
+                  : ValueKey<String>(
+                      'home-server-details-button-${profile.id}',
+                    ),
               onPressed: onDetails,
               icon: const Icon(Icons.info_outline_rounded),
               label: Text(context.wp('Details')),
@@ -1779,51 +1787,83 @@ class _HomeServerActionBar extends StatelessWidget {
             alignment: WrapAlignment.end,
             children: actionButtons,
           );
-          final compactActions = Wrap(
-            spacing: AppSpacing.sm,
-            runSpacing: AppSpacing.sm,
-            children: <Widget>[
-              actionButtons[0],
-              actionButtons[2],
-              PopupMenuButton<String>(
-                enabled: profile != null,
-                tooltip: context.wp('More'),
-                onSelected: (value) {
-                  switch (value) {
-                    case 'refresh':
-                      if (!isRefreshing) {
-                        onRefresh?.call();
-                      }
-                      break;
-                    case 'edit':
-                      onEdit?.call();
-                      break;
-                    case 'delete':
-                      onDelete?.call();
-                      break;
+          final moreAction = PopupMenuButton<String>(
+            enabled: profile != null,
+            tooltip: context.wp('More'),
+            onSelected: (value) {
+              switch (value) {
+                case 'refresh':
+                  if (!isRefreshing) {
+                    onRefresh?.call();
                   }
-                },
-                itemBuilder: (context) => <PopupMenuEntry<String>>[
-                  PopupMenuItem<String>(
-                    value: 'refresh',
-                    enabled: onRefresh != null && !isRefreshing,
-                    child: Text(context.wp('Refresh')),
-                  ),
-                  PopupMenuItem<String>(
-                    value: 'edit',
-                    enabled: onEdit != null,
-                    child: Text(context.wp('Edit')),
-                  ),
-                  PopupMenuItem<String>(
-                    value: 'delete',
-                    enabled: onDelete != null,
-                    child: Text(context.wp('Delete')),
-                  ),
-                ],
-                child: _HomeMoreActionButton(enabled: profile != null),
+                  break;
+                case 'edit':
+                  onEdit?.call();
+                  break;
+                case 'delete':
+                  onDelete?.call();
+                  break;
+              }
+            },
+            itemBuilder: (context) => <PopupMenuEntry<String>>[
+              PopupMenuItem<String>(
+                value: 'refresh',
+                enabled: onRefresh != null && !isRefreshing,
+                child: Text(context.wp('Refresh')),
+              ),
+              PopupMenuItem<String>(
+                value: 'edit',
+                enabled: onEdit != null,
+                child: Text(context.wp('Edit')),
+              ),
+              PopupMenuItem<String>(
+                value: 'delete',
+                enabled: onDelete != null,
+                child: Text(context.wp('Delete')),
               ),
             ],
+            child: _HomeMoreActionButton(
+              key: profile == null
+                  ? null
+                  : ValueKey<String>('home-server-more-button-${profile.id}'),
+              enabled: profile != null,
+            ),
           );
+          final compactActions = constraints.maxWidth < _twoRowActionBreakpoint
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    SizedBox(
+                      height: _compactActionButtonHeight,
+                      child: actionButtons[0],
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    SizedBox(
+                      height: _compactActionButtonHeight,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: <Widget>[
+                          Expanded(child: actionButtons[2]),
+                          const SizedBox(width: AppSpacing.sm),
+                          Expanded(child: moreAction),
+                        ],
+                      ),
+                    ),
+                  ],
+                )
+              : SizedBox(
+                  height: _compactActionButtonHeight,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Expanded(flex: 13, child: actionButtons[0]),
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(flex: 12, child: actionButtons[2]),
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(flex: 13, child: moreAction),
+                    ],
+                  ),
+                );
           if (compact) {
             return compactActions;
           }
@@ -1841,7 +1881,7 @@ class _HomeServerActionBar extends StatelessWidget {
 }
 
 class _HomeMoreActionButton extends StatelessWidget {
-  const _HomeMoreActionButton({required this.enabled});
+  const _HomeMoreActionButton({super.key, required this.enabled});
 
   final bool enabled;
 
@@ -1851,8 +1891,10 @@ class _HomeMoreActionButton extends StatelessWidget {
     final surfaces = Theme.of(context).extension<AppSurfaces>()!;
     final foreground = enabled ? colorScheme.primary : surfaces.muted;
     return Container(
-      height: 40,
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+      width: double.infinity,
+      height: double.infinity,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: surfaces.lineSoft),
@@ -1860,9 +1902,10 @@ class _HomeMoreActionButton extends StatelessWidget {
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: <Widget>[
-          Icon(Icons.more_horiz_rounded, color: foreground),
-          const SizedBox(width: AppSpacing.xs),
+          Icon(Icons.more_horiz_rounded, color: foreground, size: 20),
+          const SizedBox(width: AppSpacing.xxs),
           Text(
             context.wp('More'),
             style: Theme.of(
