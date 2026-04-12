@@ -1220,6 +1220,130 @@ void main() {
     expect(find.textContaining('line 4'), findsNothing);
   });
 
+  testWidgets('shell reads upstream live metadata output while running', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    late _MutableShellWorkspaceController controllerInstance;
+    final appController = _StaticAppController(
+      profile: profile,
+      initialShellToolDisplayMode: ShellToolDisplayMode.autoCollapse,
+      initialTimelineProgressDetailsVisible: false,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            controllerInstance = _MutableShellWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+              initialStatus: 'running',
+              initialOutput: '',
+            );
+            return controllerInstance;
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.text('Waiting for shell output…'), findsOneWidget);
+    expect(find.textContaining('live line 1'), findsNothing);
+
+    controllerInstance.updateShell(
+      status: 'running',
+      output: '',
+      metadataOutput: 'live line 1\nlive line 2',
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.text('Waiting for shell output…'), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('timeline-shell-expanded-part_tool')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('live line 2'), findsOneWidget);
+  });
+
+  testWidgets('shell supports stdout fallback and completed output priority', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    late _MutableShellWorkspaceController controllerInstance;
+    final appController = _StaticAppController(
+      profile: profile,
+      initialShellToolDisplayMode: ShellToolDisplayMode.alwaysExpanded,
+      initialTimelineProgressDetailsVisible: false,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            controllerInstance = _MutableShellWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+              initialStatus: 'running',
+              initialOutput: '',
+              initialMetadataStdout: 'stdout live 1',
+            );
+            return controllerInstance;
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.textContaining('stdout live 1'), findsOneWidget);
+
+    controllerInstance.updateShell(
+      status: 'completed',
+      output: 'final output line',
+      metadataOutput: 'stale preview line',
+      metadataStdout: 'stale stdout line',
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.textContaining('final output line'), findsOneWidget);
+    expect(find.textContaining('stale preview line'), findsNothing);
+    expect(find.textContaining('stale stdout line'), findsNothing);
+  });
+
   testWidgets('collapsed mobile shell summary limits commands to two lines', (
     tester,
   ) async {
@@ -1513,12 +1637,16 @@ class _MutableShellWorkspaceController extends WorkspaceController {
     String initialStatus = 'running',
     String initialCommand = 'git diff --staged && git diff',
     String initialOutput = 'line 1\nline 2',
+    String? initialMetadataOutput,
+    String? initialMetadataStdout,
   }) : _command = initialCommand,
        _messages = <ChatMessage>[
          _buildShellMessage(
            status: initialStatus,
            command: initialCommand,
            output: initialOutput,
+           metadataOutput: initialMetadataOutput,
+           metadataStdout: initialMetadataStdout,
          ),
        ];
 
@@ -1548,7 +1676,29 @@ class _MutableShellWorkspaceController extends WorkspaceController {
     String status = 'running',
     String command = 'git diff --staged && git diff',
     String output = 'line 1\nline 2',
+    String? metadataOutput,
+    String? metadataStdout,
   }) {
+    final metadata = <String, Object?>{};
+    if (metadataOutput != null) {
+      metadata['output'] = metadataOutput;
+    }
+    if (metadataStdout != null) {
+      metadata['stdout'] = metadataStdout;
+    }
+    if (metadata.isNotEmpty) {
+      metadata['description'] = 'Run repository checks';
+    }
+    final state = <String, Object?>{
+      'status': status,
+      'title': 'Shell output',
+      'input': <String, Object?>{
+        'description': 'Run repository checks',
+        'command': command,
+      },
+      if (output.isNotEmpty) 'output': output,
+      if (metadata.isNotEmpty) 'metadata': metadata,
+    };
     return ChatMessage(
       info: ChatMessageInfo(
         id: 'msg_shell',
@@ -1561,17 +1711,7 @@ class _MutableShellWorkspaceController extends WorkspaceController {
           id: 'part_tool',
           type: 'tool',
           tool: 'bash',
-          metadata: <String, Object?>{
-            'state': <String, Object?>{
-              'status': status,
-              'title': 'Shell output',
-              'input': <String, Object?>{
-                'description': 'Run repository checks',
-                'command': command,
-              },
-              'output': output,
-            },
-          },
+          metadata: <String, Object?>{'state': state},
         ),
       ],
     );
@@ -1610,9 +1750,20 @@ class _MutableShellWorkspaceController extends WorkspaceController {
     updateShell(status: 'completed', output: output);
   }
 
-  void updateShell({required String status, required String output}) {
+  void updateShell({
+    required String status,
+    required String output,
+    String? metadataOutput,
+    String? metadataStdout,
+  }) {
     _messages = <ChatMessage>[
-      _buildShellMessage(status: status, command: _command, output: output),
+      _buildShellMessage(
+        status: status,
+        command: _command,
+        output: output,
+        metadataOutput: metadataOutput,
+        metadataStdout: metadataStdout,
+      ),
     ];
     notifyListeners();
   }

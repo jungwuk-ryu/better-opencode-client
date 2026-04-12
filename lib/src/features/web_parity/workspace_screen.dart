@@ -28111,11 +28111,21 @@ String _shellToolCommand(ChatPart part) {
 }
 
 String _shellToolOutput(ChatPart part) {
-  return _stringifyShellOutput(
-    _nestedValue(part.metadata, const <String>['state', 'output']) ??
-        _nestedValue(part.metadata, const <String>['output']) ??
-        part.text,
-  );
+  for (final value in <Object?>[
+    _nestedValue(part.metadata, const <String>['state', 'output']),
+    _nestedValue(part.metadata, const <String>['state', 'metadata', 'output']),
+    _nestedValue(part.metadata, const <String>['metadata', 'output']),
+    _nestedValue(part.metadata, const <String>['output']),
+    _nestedValue(part.metadata, const <String>['state', 'metadata', 'stdout']),
+    _nestedValue(part.metadata, const <String>['metadata', 'stdout']),
+    part.text,
+  ]) {
+    final output = _stringifyShellOutput(value);
+    if (output.trim().isNotEmpty) {
+      return output;
+    }
+  }
+  return '';
 }
 
 String _stringifyShellOutput(Object? value) {
