@@ -549,7 +549,7 @@ void main() {
     expect(
       find.byKey(
         const ValueKey<String>(
-          'workspace-project-notification-badge-/workspace/demo',
+          'workspace-project-notification-badge-/workspace/lab',
         ),
       ),
       findsOneWidget,
@@ -1620,19 +1620,19 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 220));
 
-    final demoTile = find.byKey(
-      const ValueKey<String>('workspace-project-/workspace/demo'),
+    final labTile = find.byKey(
+      const ValueKey<String>('workspace-project-/workspace/lab'),
     );
     Finder demoImage() =>
-        find.descendant(of: demoTile, matching: find.byType(Image));
+        find.descendant(of: labTile, matching: find.byType(Image));
 
     expect(demoImage(), findsNothing);
 
-    final demoProject = controllerInstance.availableProjects.firstWhere(
-      (project) => project.directory == '/workspace/demo',
+    final labProject = controllerInstance.availableProjects.firstWhere(
+      (project) => project.directory == '/workspace/lab',
     );
     controllerInstance.applyProjectTargetUpdate(
-      demoProject.copyWith(
+      labProject.copyWith(
         icon: const ProjectIconInfo(
           url: demoIconDataUrl,
           override: demoIconDataUrl,
@@ -1647,7 +1647,7 @@ void main() {
     final initialProvider = tester.widget<Image>(demoImage()).image;
 
     controllerInstance.applyProjectTargetUpdate(
-      demoProject.copyWith(
+      labProject.copyWith(
         branch: 'release',
         icon: const ProjectIconInfo(
           url: demoIconDataUrl,
@@ -1662,7 +1662,7 @@ void main() {
     expect(tester.widget<Image>(demoImage()).image, same(initialProvider));
 
     controllerInstance.applyProjectTargetUpdate(
-      demoProject.copyWith(icon: const ProjectIconInfo(color: 'mint')),
+      labProject.copyWith(icon: const ProjectIconInfo(color: 'mint')),
     );
     await tester.pump();
 
@@ -1707,7 +1707,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 220));
 
-    expect(find.byTooltip('Demo'), findsOneWidget);
+    expect(find.byTooltip('Demo'), findsNothing);
     expect(find.byTooltip('Lab'), findsOneWidget);
   });
 
@@ -1743,7 +1743,7 @@ void main() {
       _WorkspaceRouteHarness(
         controller: appController,
         initialRoute: buildWorkspaceRoute(
-          '/workspace/demo',
+          '/workspace/other',
           sessionId: 'ses_1',
         ),
       ),
@@ -1830,17 +1830,17 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 240));
 
-    final demoTile = find.byKey(
-      const ValueKey<String>('workspace-project-/workspace/demo'),
-    );
     final addProjectButton = find.byKey(
       const ValueKey<String>('workspace-sidebar-add-project-button'),
     );
+    final settingsButton = find.byKey(
+      const ValueKey<String>('workspace-sidebar-settings-button'),
+    );
 
-    expect(demoTile, findsOneWidget);
     expect(addProjectButton, findsOneWidget);
-    expect(tester.getTopLeft(demoTile).dy, greaterThanOrEqualTo(36));
-    expect(tester.getBottomRight(addProjectButton).dy, lessThanOrEqualTo(824));
+    expect(settingsButton, findsOneWidget);
+    expect(tester.getTopLeft(addProjectButton).dy, greaterThanOrEqualTo(36));
+    expect(tester.getBottomRight(settingsButton).dy, lessThanOrEqualTo(824));
   });
 
   testWidgets('compact drawer uses most of the viewport width', (tester) async {
@@ -1976,7 +1976,7 @@ void main() {
         _WorkspaceRouteHarness(
           controller: appController,
           initialRoute: buildWorkspaceRoute(
-            '/workspace/demo',
+            '/workspace/other',
             sessionId: 'ses_1',
           ),
         ),
@@ -2026,7 +2026,7 @@ void main() {
         _WorkspaceRouteHarness(
           controller: appController,
           initialRoute: buildWorkspaceRoute(
-            '/workspace/demo',
+            '/workspace/other',
             sessionId: 'ses_1',
           ),
         ),
@@ -2547,6 +2547,22 @@ class _SidebarNotificationWorkspaceController
     super.initialSessionId,
   });
 
+  static const ProjectTarget _notifiedProject = ProjectTarget(
+    id: 'project-lab',
+    directory: '/workspace/lab',
+    label: 'Lab',
+    name: 'Lab',
+    source: 'server',
+    vcs: 'git',
+    branch: 'develop',
+  );
+
+  @override
+  List<ProjectTarget> get availableProjects => <ProjectTarget>[
+    _SidebarWorkspaceController._projectTarget,
+    _notifiedProject,
+  ];
+
   @override
   WorkspaceSidebarNotificationState sessionNotificationForSession(
     String? sessionId,
@@ -2562,7 +2578,7 @@ class _SidebarNotificationWorkspaceController
     String? directory,
   ) {
     return switch (directory) {
-      '/workspace/demo' => const WorkspaceSidebarNotificationState(
+      '/workspace/lab' => const WorkspaceSidebarNotificationState(
         unseenCount: 2,
         hasError: true,
       ),
@@ -2600,7 +2616,14 @@ class _EditableSidebarWorkspaceController extends _SidebarWorkspaceController {
   ];
 
   @override
-  ProjectTarget? get project => _projects.first;
+  ProjectTarget? get project {
+    for (final project in _projects) {
+      if (project.directory == directory) {
+        return project;
+      }
+    }
+    return null;
+  }
 
   @override
   List<ProjectTarget> get availableProjects => _projects;

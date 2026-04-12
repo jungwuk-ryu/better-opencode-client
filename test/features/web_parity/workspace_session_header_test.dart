@@ -252,7 +252,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 220));
 
-    expect(find.text('Context Limit'), findsOneWidget);
+    expect(find.text('Context overview'), findsOneWidget);
     expect(
       find.byKey(const ValueKey<String>('workspace-side-tab-context-button')),
       findsOneWidget,
@@ -303,7 +303,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 220));
 
-    expect(find.text('Context Limit'), findsOneWidget);
+    expect(find.text('Context overview'), findsOneWidget);
   });
 
   testWidgets(
