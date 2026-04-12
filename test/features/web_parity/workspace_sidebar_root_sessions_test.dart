@@ -72,7 +72,8 @@ void main() {
 
     expect(find.text('Demo'), findsAtLeastNWidgets(1));
     expect(find.text('/workspace/demo'), findsAtLeastNWidgets(1));
-    expect(find.text('New session'), findsOneWidget);
+    expect(find.text('New thread'), findsOneWidget);
+    expect(find.text('New session'), findsNothing);
     expect(
       find.byKey(
         const ValueKey<String>('workspace-sidebar-project-menu-button'),
@@ -104,6 +105,45 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('sidebar empty state uses thread terminology', (tester) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            return _EmptySidebarWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute('/workspace/demo'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(find.text('New thread'), findsOneWidget);
+    expect(find.text('Start a new thread to begin.'), findsOneWidget);
+    expect(find.text('New session'), findsNothing);
+    expect(find.text('Start a new session to begin.'), findsNothing);
   });
 
   testWidgets('sidebar shows a hover preview for recent session prompts', (
@@ -2194,6 +2234,27 @@ class _SidebarWorkspaceController extends WorkspaceController {
   Future<void> load() async {
     _loading = false;
     _selectedSessionId = initialSessionId ?? 'ses_1';
+    notifyListeners();
+  }
+}
+
+class _EmptySidebarWorkspaceController extends _SidebarWorkspaceController {
+  _EmptySidebarWorkspaceController({
+    required super.profile,
+    required super.directory,
+    super.initialSessionId,
+  });
+
+  @override
+  List<SessionSummary> get sessions => const <SessionSummary>[];
+
+  @override
+  SessionSummary? get selectedSession => null;
+
+  @override
+  Future<void> load() async {
+    _loading = false;
+    _selectedSessionId = null;
     notifyListeners();
   }
 }

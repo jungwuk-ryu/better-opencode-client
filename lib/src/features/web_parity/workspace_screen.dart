@@ -13140,7 +13140,7 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
           key: const ValueKey<String>('workspace-sidebar-new-session-button'),
           onPressed: widget.loadingProjectContents ? null : widget.onNewSession,
           icon: const Icon(Icons.edit_note_rounded, size: 18),
-          label: Text(context.wp('New session')),
+          label: Text(context.wp('New thread')),
           style: FilledButton.styleFrom(
             alignment: Alignment.centerLeft,
             padding: EdgeInsets.symmetric(
@@ -13160,7 +13160,7 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
             : sessionEntries.isEmpty
             ? Center(
                 child: Text(
-                  context.wp('Start a new session to begin.'),
+                  context.wp('Start a new thread to begin.'),
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: surfaces.muted,
                   ),
@@ -13227,14 +13227,6 @@ class _WorkspaceSidebarState extends State<_WorkspaceSidebar> {
                 const _WorkspaceDesktopTrafficLights(),
                 SizedBox(height: sectionGap),
               ],
-              _WorkspaceSidebarNavButton(
-                icon: Icons.add_comment_rounded,
-                label: context.wp('New thread'),
-                onTap: widget.loadingProjectContents
-                    ? null
-                    : widget.onNewSession,
-              ),
-              SizedBox(height: microGap),
               _WorkspaceSidebarNavButton(
                 key: const ValueKey<String>(
                   'workspace-sidebar-add-project-button',
