@@ -18033,6 +18033,9 @@ class _MessageTimelineState extends State<_MessageTimeline> {
   int _visibleStartIndex = 0;
   bool _loadingOlder = false;
   bool _loadOlderCheckScheduled = false;
+  bool _focusedMessageHistoryLoadScheduled = false;
+  bool _focusedMessageNavigationInProgress = false;
+  String? _pendingFocusedMessageHistoryId;
   late final ScrollController _scrollController = ScrollController(
     keepScrollOffset: false,
   );
@@ -18086,6 +18089,16 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     }
     _lastJumpToBottomEpoch = widget.jumpToBottomEpoch;
     _scrollController.addListener(_handleScroll);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      final focusedMessageId = _normalizedFocusedMessageId;
+      if (focusedMessageId == null) {
+        return;
+      }
+      _revealOrLoadFocusedMessage(focusedMessageId);
+    });
   }
 
   @override
@@ -18099,12 +18112,22 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     final becameNonEmpty =
         oldWidget.messages.isEmpty && widget.messages.isNotEmpty;
     final messagesShrank = widget.messages.length < oldWidget.messages.length;
+    final messagesGrew = widget.messages.length > oldWidget.messages.length;
     final searchChanged =
         oldWidget.activeMatchMessageId != widget.activeMatchMessageId ||
         oldWidget.searchRevision != widget.searchRevision;
     final focusedMessageChanged =
         oldWidget.focusedMessageId != widget.focusedMessageId ||
         oldWidget.focusedMessageRevision != widget.focusedMessageRevision;
+    if (focusedMessageChanged || sessionChanged) {
+      _pendingFocusedMessageHistoryId = null;
+      _focusedMessageNavigationInProgress = false;
+    }
+    final focusedMessageId = _normalizedFocusedMessageId;
+    final pendingFocusedMessageGrew =
+        messagesGrew &&
+        focusedMessageId != null &&
+        _pendingFocusedMessageHistoryId == focusedMessageId;
     final messageIds = widget.messages
         .map((message) => message.info.id)
         .toSet();
@@ -18157,8 +18180,14 @@ class _MessageTimelineState extends State<_MessageTimeline> {
           (focusedMessageChanged ||
               sessionChanged ||
               becameNonEmpty ||
-              messagesShrank)) {
-        _revealSearchMatch(widget.focusedMessageId!);
+              messagesShrank ||
+              pendingFocusedMessageGrew)) {
+        final focusHandled =
+            focusedMessageId != null &&
+            _revealOrLoadFocusedMessage(focusedMessageId);
+        if (!focusHandled) {
+          _syncTimelinePosition(forceBottom: jumpToBottomRequested);
+        }
       } else {
         _syncTimelinePosition(forceBottom: jumpToBottomRequested);
       }
@@ -18192,6 +18221,129 @@ class _MessageTimelineState extends State<_MessageTimeline> {
       messageId,
       () => GlobalKey(debugLabel: 'timeline-message-$messageId'),
     );
+  }
+
+  String? get _normalizedFocusedMessageId {
+    final messageId = widget.focusedMessageId?.trim();
+    if (messageId == null || messageId.isEmpty) {
+      return null;
+    }
+    return messageId;
+  }
+
+  bool _containsMessage(String messageId) {
+    return widget.messages.any((message) => message.info.id == messageId);
+  }
+
+  bool _revealOrLoadFocusedMessage(String messageId) {
+    if (_containsMessage(messageId)) {
+      _focusedMessageNavigationInProgress = true;
+      if (_pendingFocusedMessageHistoryId == messageId) {
+        _pendingFocusedMessageHistoryId = null;
+      }
+      _revealSearchMatch(messageId);
+      return true;
+    }
+    if (!_hasMoreHistory && !widget.historyLoading && !_loadingOlder) {
+      if (_pendingFocusedMessageHistoryId == messageId) {
+        _pendingFocusedMessageHistoryId = null;
+      }
+      _focusedMessageNavigationInProgress = false;
+      return false;
+    }
+    _focusedMessageNavigationInProgress = true;
+    _pendingFocusedMessageHistoryId = messageId;
+    _scheduleFocusedMessageHistoryLoad(messageId);
+    return true;
+  }
+
+  void _scheduleFocusedMessageHistoryLoad(String messageId) {
+    if (_focusedMessageHistoryLoadScheduled || !_hasMoreHistory) {
+      return;
+    }
+    _focusedMessageHistoryLoadScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _focusedMessageHistoryLoadScheduled = false;
+      if (!mounted || _normalizedFocusedMessageId != messageId) {
+        return;
+      }
+      if (_containsMessage(messageId)) {
+        _revealSearchMatch(messageId);
+        return;
+      }
+      if (!_hasMoreHistory) {
+        if (_pendingFocusedMessageHistoryId == messageId) {
+          _pendingFocusedMessageHistoryId = null;
+        }
+        _focusedMessageNavigationInProgress = false;
+        return;
+      }
+      if (widget.historyLoading || _loadingOlder) {
+        _scheduleFocusedMessageHistoryLoad(messageId);
+        return;
+      }
+      final previousVisibleStartIndex = _visibleStartIndex;
+      final previousMessageCount = widget.messages.length;
+      final previousHistoryMore = widget.historyMore;
+      unawaited(
+        _loadOlderMessages()
+            .whenComplete(() {
+              if (!mounted || _normalizedFocusedMessageId != messageId) {
+                return;
+              }
+              if (_containsMessage(messageId)) {
+                _revealSearchMatch(messageId);
+                return;
+              }
+              final madeProgress =
+                  _visibleStartIndex < previousVisibleStartIndex ||
+                  widget.messages.length > previousMessageCount ||
+                  widget.historyMore != previousHistoryMore;
+              if (madeProgress && _hasMoreHistory) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted || _normalizedFocusedMessageId != messageId) {
+                    return;
+                  }
+                  _scheduleFocusedMessageHistoryLoad(messageId);
+                });
+              } else {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted || _normalizedFocusedMessageId != messageId) {
+                    return;
+                  }
+                  if (_containsMessage(messageId)) {
+                    _revealSearchMatch(messageId);
+                    return;
+                  }
+                  final madeDeferredProgress =
+                      _visibleStartIndex < previousVisibleStartIndex ||
+                      widget.messages.length > previousMessageCount ||
+                      widget.historyMore != previousHistoryMore;
+                  if (madeDeferredProgress && _hasMoreHistory) {
+                    _scheduleFocusedMessageHistoryLoad(messageId);
+                    return;
+                  }
+                  _clearFocusedMessageHistoryRequest(messageId);
+                });
+              }
+            })
+            .catchError((Object error, StackTrace stackTrace) {
+              if (!mounted || _normalizedFocusedMessageId != messageId) {
+                return;
+              }
+              _clearFocusedMessageHistoryRequest(messageId);
+            }),
+      );
+    });
+  }
+
+  void _clearFocusedMessageHistoryRequest(String messageId) {
+    if (_pendingFocusedMessageHistoryId == messageId) {
+      _pendingFocusedMessageHistoryId = null;
+    }
+    if (_normalizedFocusedMessageId == messageId) {
+      _focusedMessageNavigationInProgress = false;
+    }
   }
 
   void _beginOlderHistoryPreservation() {
@@ -18273,15 +18425,26 @@ class _MessageTimelineState extends State<_MessageTimeline> {
       }
       final targetContext = _messageItemKeys[messageId]?.currentContext;
       if (targetContext == null) {
+        _completeFocusedMessageNavigation(messageId);
         return;
       }
-      Scrollable.ensureVisible(
-        targetContext,
-        alignment: 0.18,
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOutCubic,
+      unawaited(
+        Scrollable.ensureVisible(
+          targetContext,
+          alignment: 0.18,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+        ).whenComplete(() => _completeFocusedMessageNavigation(messageId)),
       );
     });
+  }
+
+  void _completeFocusedMessageNavigation(String messageId) {
+    if (!_focusedMessageNavigationInProgress ||
+        _normalizedFocusedMessageId != messageId) {
+      return;
+    }
+    _focusedMessageNavigationInProgress = false;
   }
 
   Future<void> _handleScroll() async {
@@ -18493,9 +18656,6 @@ class _MessageTimelineState extends State<_MessageTimeline> {
         !mounted) {
       return;
     }
-    if (!_scrollController.hasClients) {
-      return;
-    }
     if (_hiddenMessageCount == 0) {
       _beginOlderHistoryPreservation();
       try {
@@ -18504,6 +18664,9 @@ class _MessageTimelineState extends State<_MessageTimeline> {
         _clearOlderHistoryPreservation();
         rethrow;
       }
+      return;
+    }
+    if (!_scrollController.hasClients) {
       return;
     }
     final nextStart = math.max(0, _visibleStartIndex - _windowGrowthSize);
@@ -18868,6 +19031,9 @@ class _MessageTimelineState extends State<_MessageTimeline> {
           activeMatchMessageId != null &&
           activeMatchMessageId.isNotEmpty) {
         _revealSearchMatch(activeMatchMessageId);
+        return;
+      }
+      if (_focusedMessageNavigationInProgress) {
         return;
       }
       _syncTimelinePosition();

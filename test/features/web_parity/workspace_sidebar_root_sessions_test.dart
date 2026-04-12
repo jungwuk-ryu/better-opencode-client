@@ -185,6 +185,155 @@ void main() {
     expect(find.text('Another root session'), findsAtLeastNWidgets(1));
   });
 
+  testWidgets('sidebar hover preview loads older history before focusing', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    late _SidebarHoverPreviewWorkspaceController controllerInstance;
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            controllerInstance = _SidebarHoverPreviewWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+            );
+            return controllerInstance;
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+        platform: TargetPlatform.macOS,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    final targetRow = find.byKey(
+      const ValueKey<String>('workspace-session-entry-ses_2-0'),
+    );
+    expect(targetRow, findsOneWidget);
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer();
+    await mouse.moveTo(tester.getCenter(targetRow));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+    await tester.pump();
+
+    final promptButton = find.byKey(
+      const ValueKey<String>(
+        'sidebar-session-hover-message-ses_2-msg_hover_older',
+      ),
+    );
+    expect(promptButton, findsOneWidget);
+
+    await mouse.moveTo(tester.getCenter(promptButton));
+    await tester.pump(const Duration(milliseconds: 80));
+    await tester.tap(promptButton);
+
+    for (var index = 0; index < 8; index += 1) {
+      await tester.pump(const Duration(milliseconds: 120));
+    }
+
+    expect(controllerInstance.selectSessionCalls, contains('ses_2'));
+    expect(controllerInstance.historyLoadCalls, 1);
+    expect(find.textContaining('Loaded older hover prompt'), findsOneWidget);
+  });
+
+  testWidgets('sidebar hover preview tolerates older history load failure', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'Mock',
+      baseUrl: 'http://localhost:3000',
+    );
+    late _SidebarHoverPreviewWorkspaceController controllerInstance;
+    final appController = _StaticAppController(
+      profile: profile,
+      workspaceControllerFactory:
+          ({required profile, required directory, initialSessionId}) {
+            controllerInstance = _SidebarHoverPreviewWorkspaceController(
+              profile: profile,
+              directory: directory,
+              initialSessionId: initialSessionId,
+              failHistoryLoad: true,
+            );
+            return controllerInstance;
+          },
+    );
+    addTearDown(appController.dispose);
+
+    await tester.pumpWidget(
+      _WorkspaceRouteHarness(
+        controller: appController,
+        initialRoute: buildWorkspaceRoute(
+          '/workspace/demo',
+          sessionId: 'ses_1',
+        ),
+        platform: TargetPlatform.macOS,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    final targetRow = find.byKey(
+      const ValueKey<String>('workspace-session-entry-ses_2-0'),
+    );
+    expect(targetRow, findsOneWidget);
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer();
+    await mouse.moveTo(tester.getCenter(targetRow));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+    await tester.pump();
+
+    final promptButton = find.byKey(
+      const ValueKey<String>(
+        'sidebar-session-hover-message-ses_2-msg_hover_older',
+      ),
+    );
+    expect(promptButton, findsOneWidget);
+
+    await mouse.moveTo(tester.getCenter(promptButton));
+    await tester.pump(const Duration(milliseconds: 80));
+    await tester.tap(promptButton);
+
+    for (var index = 0; index < 8; index += 1) {
+      await tester.pump(const Duration(milliseconds: 120));
+    }
+
+    expect(controllerInstance.selectSessionCalls, contains('ses_2'));
+    expect(controllerInstance.historyLoadCalls, 1);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('sidebar hover preview does not displace or block threads', (
     tester,
   ) async {
@@ -2048,12 +2197,41 @@ class _SidebarHoverPreviewWorkspaceController
     required super.profile,
     required super.directory,
     super.initialSessionId,
+    this.failHistoryLoad = false,
   });
 
+  final bool failHistoryLoad;
   int hoverPrefetchCalls = 0;
+  int historyLoadCalls = 0;
   final List<String> selectSessionCalls = <String>[];
   Map<String, WorkspaceSessionHoverPreviewState> _previewBySessionId =
       const <String, WorkspaceSessionHoverPreviewState>{};
+  final Map<String, bool> _historyMoreBySessionId = <String, bool>{
+    'ses_2': true,
+  };
+  late final Map<String, List<ChatMessage>> _messagesBySessionId =
+      <String, List<ChatMessage>>{
+        'ses_1': <ChatMessage>[
+          _sidebarTestMessage(
+            id: 'msg_ses_1',
+            sessionId: 'ses_1',
+            text: 'Root session current prompt',
+          ),
+        ],
+        'ses_2': <ChatMessage>[
+          for (var index = 0; index < 79; index += 1)
+            _sidebarTestMessage(
+              id: 'msg_hover_loaded_$index',
+              sessionId: 'ses_2',
+              text: 'Already loaded hover prompt $index',
+            ),
+          _sidebarTestMessage(
+            id: 'msg_hover_newer',
+            sessionId: 'ses_2',
+            text: 'Fix the flaky iOS snapshot test',
+          ),
+        ],
+      };
 
   @override
   bool get loading => _loading;
@@ -2071,6 +2249,11 @@ class _SidebarHoverPreviewWorkspaceController
   }
 
   @override
+  List<ChatMessage> get messages {
+    return _messagesBySessionId[_selectedSessionId] ?? const <ChatMessage>[];
+  }
+
+  @override
   Future<void> load() async {
     _loading = false;
     _selectedSessionId = initialSessionId ?? 'ses_1';
@@ -2085,6 +2268,47 @@ class _SidebarHoverPreviewWorkspaceController
     }
     selectSessionCalls.add(normalized);
     _selectedSessionId = normalized;
+    notifyListeners();
+  }
+
+  @override
+  WorkspaceSessionTimelineState timelineStateForSession(String? sessionId) {
+    final normalized = sessionId?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return const WorkspaceSessionTimelineState.empty();
+    }
+    final messages = _messagesBySessionId[normalized] ?? const <ChatMessage>[];
+    return WorkspaceSessionTimelineState(
+      sessionId: normalized,
+      messages: messages,
+      orderedMessages: messages,
+      loading: false,
+      showingCachedMessages: false,
+      historyMore: _historyMoreBySessionId[normalized] ?? false,
+      historyLoading: false,
+    );
+  }
+
+  @override
+  Future<void> loadMoreTimelineSessionHistory(String? sessionId) async {
+    final normalized = sessionId?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return;
+    }
+    historyLoadCalls += 1;
+    if (failHistoryLoad) {
+      notifyListeners();
+      throw StateError('Failed to load older hover prompt.');
+    }
+    _historyMoreBySessionId[normalized] = false;
+    _messagesBySessionId[normalized] = <ChatMessage>[
+      _sidebarTestMessage(
+        id: 'msg_hover_older',
+        sessionId: normalized,
+        text: 'Loaded older hover prompt',
+      ),
+      ...?_messagesBySessionId[normalized],
+    ];
     notifyListeners();
   }
 
@@ -2124,6 +2348,17 @@ class _SidebarHoverPreviewWorkspaceController
     };
     notifyListeners();
   }
+}
+
+ChatMessage _sidebarTestMessage({
+  required String id,
+  required String sessionId,
+  required String text,
+}) {
+  return ChatMessage(
+    info: ChatMessageInfo(id: id, role: 'user', sessionId: sessionId),
+    parts: <ChatPart>[ChatPart(id: 'part_$id', type: 'text', text: text)],
+  );
 }
 
 class _SidebarNotificationWorkspaceController
