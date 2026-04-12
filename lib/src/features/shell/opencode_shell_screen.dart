@@ -384,7 +384,14 @@ class _OpenCodeShellScreenState extends State<OpenCodeShellScreen> {
       if (!retiredEventStream) {
         _retireEventStream(disconnect: true);
       }
-      shouldRefreshShellState = true;
+      if (mounted) {
+        setState(() {
+          _clearScopeDependentState(clearSessions: true);
+          _loading = true;
+          _error = null;
+        });
+      }
+      shouldRefreshShellState = false;
     } else {
       if (reloadServicesChanged) {
         _retireLoadOperations();

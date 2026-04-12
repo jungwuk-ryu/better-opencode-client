@@ -2505,7 +2505,7 @@ void main() {
     expect(find.text('Demo message'), findsAtLeastNWidgets(1));
     expect(find.text('Demo todo'), findsAtLeastNWidgets(1));
     expect(find.text('lib/demo.dart'), findsAtLeastNWidgets(1));
-    expect(find.text('demo.permission'), findsNothing);
+    expect(find.text('demo.permission'), findsOneWidget);
 
     await tester.pumpWidget(
       _buildShell(
@@ -2529,6 +2529,7 @@ void main() {
     expect(find.text('Demo todo'), findsNothing);
     expect(find.text('lib/demo.dart'), findsNothing);
     expect(find.text('demo.permission'), findsNothing);
+    expect(find.text('other.permission'), findsNothing);
 
     otherBundleGate.complete();
     await _pumpShellFrames(tester);
@@ -2540,6 +2541,7 @@ void main() {
     expect(find.text('Other todo'), findsAtLeastNWidgets(1));
     expect(find.text('lib/other.dart'), findsAtLeastNWidgets(1));
     expect(find.text('demo.permission'), findsNothing);
+    expect(find.text('other.permission'), findsOneWidget);
     expect(find.text('Demo message'), findsNothing);
   });
 
