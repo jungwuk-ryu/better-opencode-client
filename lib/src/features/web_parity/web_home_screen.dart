@@ -2072,6 +2072,7 @@ class _HomeServerDetailPanel extends StatelessWidget {
                   const SizedBox(height: AppSpacing.md),
                   _HomeServerDetailActions(
                     profileId: profile!.id,
+                    fullWidth: true,
                     paneCount: summary?.paneCount ?? 0,
                     onResumeWorkspace: onResumeWorkspace,
                     onEditServer: onEditServer,
@@ -2272,80 +2273,110 @@ class _HomeServerDetailActions extends StatelessWidget {
     required this.onResumeWorkspace,
     required this.onEditServer,
     required this.onCopyConnectLink,
+    this.fullWidth = false,
   });
+
+  static const double _buttonHeight = 48;
+  static const double _stackSecondaryBreakpoint = 360;
 
   final String profileId;
   final int paneCount;
   final VoidCallback? onResumeWorkspace;
   final VoidCallback? onEditServer;
   final VoidCallback? onCopyConnectLink;
+  final bool fullWidth;
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final compact = constraints.maxWidth < 320;
         final resumeLabel = paneCount > 1
             ? context.wp(
                 'Resume {count} Panes',
                 args: <String, Object?>{'count': paneCount},
               )
             : context.wp('Resume Workspace');
-        if (compact) {
+
+        if (fullWidth) {
+          final stackSecondary =
+              constraints.maxWidth < _stackSecondaryBreakpoint;
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              FilledButton.icon(
-                key: ValueKey<String>('home-server-resume-button-$profileId'),
-                onPressed: onResumeWorkspace,
-                icon: const Icon(Icons.play_arrow_rounded),
-                label: Text(resumeLabel),
+              SizedBox(
+                height: _buttonHeight,
+                child: _resumeButton(context, resumeLabel),
               ),
               const SizedBox(height: AppSpacing.sm),
-              OutlinedButton.icon(
-                onPressed: onEditServer,
-                icon: const Icon(Icons.edit_outlined),
-                label: Text(context.wp('Edit Server')),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              OutlinedButton.icon(
-                onPressed: onCopyConnectLink,
-                icon: const Icon(Icons.link_rounded),
-                label: Text(context.wp('Copy Link')),
-              ),
+              if (stackSecondary) ...<Widget>[
+                SizedBox(height: _buttonHeight, child: _editButton(context)),
+                const SizedBox(height: AppSpacing.sm),
+                SizedBox(height: _buttonHeight, child: _copyButton(context)),
+              ] else
+                SizedBox(
+                  height: _buttonHeight,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Expanded(child: _editButton(context)),
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(child: _copyButton(context)),
+                    ],
+                  ),
+                ),
             ],
           );
         }
+
         return Column(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: <Widget>[
-            FilledButton.icon(
-              key: ValueKey<String>('home-server-resume-button-$profileId'),
-              onPressed: onResumeWorkspace,
-              icon: const Icon(Icons.play_arrow_rounded),
-              label: Text(resumeLabel),
-            ),
+            _resumeButton(context, resumeLabel),
             const SizedBox(height: AppSpacing.sm),
             Wrap(
               spacing: AppSpacing.sm,
               runSpacing: AppSpacing.sm,
               alignment: WrapAlignment.end,
-              children: <Widget>[
-                OutlinedButton.icon(
-                  onPressed: onEditServer,
-                  icon: const Icon(Icons.edit_outlined),
-                  label: Text(context.wp('Edit Server')),
-                ),
-                OutlinedButton.icon(
-                  onPressed: onCopyConnectLink,
-                  icon: const Icon(Icons.link_rounded),
-                  label: Text(context.wp('Copy Link')),
-                ),
-              ],
+              children: <Widget>[_editButton(context), _copyButton(context)],
             ),
           ],
         );
       },
+    );
+  }
+
+  Widget _resumeButton(BuildContext context, String label) {
+    return FilledButton.icon(
+      key: ValueKey<String>('home-server-detail-resume-button-$profileId'),
+      onPressed: onResumeWorkspace,
+      icon: const Icon(Icons.play_arrow_rounded),
+      label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+    );
+  }
+
+  Widget _editButton(BuildContext context) {
+    return OutlinedButton.icon(
+      key: ValueKey<String>('home-server-detail-edit-button-$profileId'),
+      onPressed: onEditServer,
+      icon: const Icon(Icons.edit_outlined),
+      label: Text(
+        context.wp('Edit Server'),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+
+  Widget _copyButton(BuildContext context) {
+    return OutlinedButton.icon(
+      key: ValueKey<String>('home-server-detail-copy-link-button-$profileId'),
+      onPressed: onCopyConnectLink,
+      icon: const Icon(Icons.link_rounded),
+      label: Text(
+        context.wp('Copy Link'),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
     );
   }
 }

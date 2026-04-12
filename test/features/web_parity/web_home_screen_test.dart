@@ -752,6 +752,159 @@ void main() {
   );
 
   testWidgets(
+    'compact home detail gives server actions a stable full-width row',
+    (tester) async {
+      _setCompactSurface(tester);
+      final profile = ServerProfile(
+        id: 'alpha',
+        label: 'Alpha',
+        baseUrl: 'https://alpha.example.com',
+      );
+      final controller = _MutableHomeAppController(
+        profiles: <ServerProfile>[profile],
+        selected: profile,
+        reports: <String, ServerProbeReport>{
+          profile.storageKey: _probeReport(profile, version: '1.2.3'),
+        },
+        workspacePaneLayouts: <String, WorkspacePaneLayoutSnapshot>{
+          profile.storageKey: const WorkspacePaneLayoutSnapshot(
+            activePaneId: 'pane_main',
+            panes: <WorkspacePaneLayoutPane>[
+              WorkspacePaneLayoutPane(
+                id: 'pane_main',
+                directory: '/workspace/demo',
+              ),
+            ],
+          ),
+        },
+      );
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(
+        AppScope(
+          controller: controller,
+          child: MaterialApp(
+            theme: AppTheme.dark(),
+            home: WebParityHomeScreen(
+              flavor: AppFlavor.debug,
+              localeController: LocaleController(),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('home-server-details-button-alpha')),
+      );
+      await tester.pumpAndSettle();
+
+      final resumeButton = find.byKey(
+        const ValueKey<String>('home-server-detail-resume-button-alpha'),
+      );
+      final editButton = find.byKey(
+        const ValueKey<String>('home-server-detail-edit-button-alpha'),
+      );
+      final copyButton = find.byKey(
+        const ValueKey<String>('home-server-detail-copy-link-button-alpha'),
+      );
+
+      expect(resumeButton, findsOneWidget);
+      expect(editButton, findsOneWidget);
+      expect(copyButton, findsOneWidget);
+
+      final resumeRect = tester.getRect(resumeButton);
+      final editRect = tester.getRect(editButton);
+      final copyRect = tester.getRect(copyButton);
+
+      expect(resumeRect.width, greaterThan(300));
+      expect(editRect.top, greaterThan(resumeRect.bottom));
+      expect(copyRect.top, moreOrLessEquals(editRect.top));
+      expect(editRect.left, moreOrLessEquals(resumeRect.left));
+      expect(copyRect.right, moreOrLessEquals(resumeRect.right));
+      expect(copyRect.left, greaterThan(editRect.right));
+      expect(editRect.width, moreOrLessEquals(copyRect.width));
+      expect(resumeRect.width, greaterThan(editRect.width));
+    },
+  );
+
+  testWidgets('wide home detail keeps server actions aligned', (tester) async {
+    _setLargeSurface(tester);
+    final profile = ServerProfile(
+      id: 'alpha',
+      label: 'Alpha',
+      baseUrl: 'https://alpha.example.com',
+    );
+    final controller = _MutableHomeAppController(
+      profiles: <ServerProfile>[profile],
+      selected: profile,
+      reports: <String, ServerProbeReport>{
+        profile.storageKey: _probeReport(profile, version: '1.2.3'),
+      },
+      workspacePaneLayouts: <String, WorkspacePaneLayoutSnapshot>{
+        profile.storageKey: const WorkspacePaneLayoutSnapshot(
+          activePaneId: 'pane_main',
+          panes: <WorkspacePaneLayoutPane>[
+            WorkspacePaneLayoutPane(
+              id: 'pane_main',
+              directory: '/workspace/demo',
+            ),
+          ],
+        ),
+      },
+    );
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      AppScope(
+        controller: controller,
+        child: MaterialApp(
+          theme: AppTheme.dark(),
+          home: WebParityHomeScreen(
+            flavor: AppFlavor.debug,
+            localeController: LocaleController(),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('home-server-details-button-alpha')),
+    );
+    await tester.pumpAndSettle();
+
+    final resumeButton = find.byKey(
+      const ValueKey<String>('home-server-detail-resume-button-alpha'),
+    );
+    final editButton = find.byKey(
+      const ValueKey<String>('home-server-detail-edit-button-alpha'),
+    );
+    final copyButton = find.byKey(
+      const ValueKey<String>('home-server-detail-copy-link-button-alpha'),
+    );
+
+    expect(resumeButton, findsOneWidget);
+    expect(editButton, findsOneWidget);
+    expect(copyButton, findsOneWidget);
+
+    final resumeRect = tester.getRect(resumeButton);
+    final editRect = tester.getRect(editButton);
+    final copyRect = tester.getRect(copyButton);
+
+    expect(editRect.top, greaterThan(resumeRect.bottom));
+    expect(copyRect.top, moreOrLessEquals(editRect.top));
+    expect(copyRect.left, greaterThan(editRect.right));
+    if (resumeRect.width > 320) {
+      expect(editRect.left, moreOrLessEquals(resumeRect.left));
+      expect(copyRect.right, moreOrLessEquals(resumeRect.right));
+      expect(editRect.width, moreOrLessEquals(copyRect.width));
+    } else {
+      expect(resumeRect.right, moreOrLessEquals(copyRect.right));
+    }
+  });
+
+  testWidgets(
     'resume workspace restores the active pane for the selected server',
     (tester) async {
       _setLargeSurface(tester);
