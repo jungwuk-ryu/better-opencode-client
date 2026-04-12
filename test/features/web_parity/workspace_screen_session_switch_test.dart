@@ -2982,7 +2982,7 @@ void main() {
   });
 
   testWidgets(
-    'completed todo dock stays hidden after unchanged workspace updates',
+    'completed todo dock never appears when loading an idle session',
     (tester) async {
       tester.view.physicalSize = const Size(1600, 1000);
       tester.view.devicePixelRatio = 1;
@@ -3024,7 +3024,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
-      expect(find.text('completed todo alpha'), findsOneWidget);
+      expect(find.text('completed todo alpha'), findsNothing);
 
       await tester.pump(const Duration(milliseconds: 500));
       expect(find.text('completed todo alpha'), findsNothing);

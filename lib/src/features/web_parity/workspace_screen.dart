@@ -22533,10 +22533,10 @@ _TodoDockState _todoDockState({
   if (count == 0) {
     return _TodoDockState.hide;
   }
+  if (!live) {
+    return _TodoDockState.clear;
+  }
   if (!done) {
-    if (!live) {
-      return _TodoDockState.clear;
-    }
     return _TodoDockState.open;
   }
   return _TodoDockState.close;
