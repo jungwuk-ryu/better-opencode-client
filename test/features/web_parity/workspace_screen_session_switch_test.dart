@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -614,7 +615,7 @@ void main() {
       );
 
       await _sendShortcut(tester, <LogicalKeyboardKey>[
-        LogicalKeyboardKey.controlLeft,
+        _platformModKey(),
         LogicalKeyboardKey.keyB,
       ]);
       await tester.pump();
@@ -622,7 +623,7 @@ void main() {
       expect(tester.getSize(sidebarReveal).width, closeTo(0, 0.1));
 
       await _sendShortcut(tester, <LogicalKeyboardKey>[
-        LogicalKeyboardKey.controlLeft,
+        _platformModKey(),
         LogicalKeyboardKey.shiftLeft,
         LogicalKeyboardKey.keyR,
       ]);
@@ -631,7 +632,7 @@ void main() {
       expect(tester.getSize(sidePanelReveal).width, closeTo(0, 0.1));
 
       await _sendShortcut(tester, <LogicalKeyboardKey>[
-        LogicalKeyboardKey.controlLeft,
+        _platformModKey(),
         LogicalKeyboardKey.backslash,
       ]);
       await tester.pump();
@@ -648,6 +649,150 @@ void main() {
       expect(editable.focusNode.hasFocus, isTrue);
     },
   );
+
+  testWidgets('mac command shortcuts work while the composer is focused', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    try {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              return _RecordingWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+            },
+      );
+      addTearDown(appController.dispose);
+
+      final navigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          navigatorKey: navigatorKey,
+          initialRoute: '/',
+          platform: TargetPlatform.macOS,
+        ),
+      );
+      navigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+      );
+      await tester.pumpAndSettle();
+
+      final composerFinder = find.byKey(
+        const ValueKey<String>('composer-text-field'),
+      );
+      await tester.tap(composerFinder);
+      await tester.pump();
+      expect(
+        tester
+            .widget<EditableText>(find.byType(EditableText))
+            .focusNode
+            .hasFocus,
+        isTrue,
+      );
+
+      await _sendShortcut(tester, <LogicalKeyboardKey>[
+        LogicalKeyboardKey.metaLeft,
+        LogicalKeyboardKey.keyK,
+      ]);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 220));
+
+      expect(
+        find.byKey(const ValueKey<String>('workspace-command-palette-sheet')),
+        findsOneWidget,
+      );
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('windows ctrl shortcuts keep working from composer focus', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    try {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final profile = ServerProfile(
+        id: 'server',
+        label: 'Mock',
+        baseUrl: 'http://localhost:3000',
+      );
+      final appController = _StaticAppController(
+        profile: profile,
+        workspaceControllerFactory:
+            ({required profile, required directory, initialSessionId}) {
+              return _RecordingWorkspaceController(
+                profile: profile,
+                directory: directory,
+                initialSessionId: initialSessionId,
+              );
+            },
+      );
+      addTearDown(appController.dispose);
+
+      final navigatorKey = GlobalKey<NavigatorState>();
+
+      await tester.pumpWidget(
+        _WorkspaceRouteHarness(
+          controller: appController,
+          navigatorKey: navigatorKey,
+          initialRoute: '/',
+          platform: TargetPlatform.windows,
+        ),
+      );
+      navigatorKey.currentState!.pushNamed(
+        buildWorkspaceRoute('/workspace/demo', sessionId: 'ses_1'),
+      );
+      await tester.pumpAndSettle();
+
+      final composerFinder = find.byKey(
+        const ValueKey<String>('composer-text-field'),
+      );
+      await tester.tap(composerFinder);
+      await tester.pump();
+      expect(
+        tester
+            .widget<EditableText>(find.byType(EditableText))
+            .focusNode
+            .hasFocus,
+        isTrue,
+      );
+
+      await _sendShortcut(tester, <LogicalKeyboardKey>[
+        LogicalKeyboardKey.controlLeft,
+        LogicalKeyboardKey.keyK,
+      ]);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 220));
+
+      expect(
+        find.byKey(const ValueKey<String>('workspace-command-palette-sheet')),
+        findsOneWidget,
+      );
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
 
   testWidgets(
     'desktop composer submits on enter and keeps shift enter for new lines',
@@ -1171,7 +1316,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await _sendShortcut(tester, <LogicalKeyboardKey>[
-      LogicalKeyboardKey.controlLeft,
+      _platformModKey(),
       LogicalKeyboardKey.comma,
     ]);
     await tester.pump();
@@ -1239,7 +1384,7 @@ void main() {
       await tester.pumpAndSettle();
 
       await _sendShortcut(tester, <LogicalKeyboardKey>[
-        LogicalKeyboardKey.controlLeft,
+        _platformModKey(),
         LogicalKeyboardKey.keyK,
       ]);
       await tester.pump();
@@ -1413,7 +1558,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await _sendShortcut(tester, <LogicalKeyboardKey>[
-      LogicalKeyboardKey.controlLeft,
+      _platformModKey(),
       LogicalKeyboardKey.comma,
     ]);
     await tester.pump();
@@ -1574,7 +1719,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await _sendShortcut(tester, <LogicalKeyboardKey>[
-      LogicalKeyboardKey.controlLeft,
+      _platformModKey(),
       LogicalKeyboardKey.keyO,
     ]);
     await tester.pump();
@@ -1687,7 +1832,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await _sendShortcut(tester, <LogicalKeyboardKey>[
-      LogicalKeyboardKey.controlLeft,
+      _platformModKey(),
       LogicalKeyboardKey.keyU,
     ]);
     await tester.pumpAndSettle();
@@ -1739,7 +1884,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await _sendShortcut(tester, <LogicalKeyboardKey>[
-      LogicalKeyboardKey.controlLeft,
+      _platformModKey(),
       LogicalKeyboardKey.semicolon,
     ]);
     await tester.pump();
@@ -3763,6 +3908,15 @@ Future<void> _sendShortcut(
   for (final key in keys.reversed) {
     await tester.sendKeyUpEvent(key);
   }
+}
+
+LogicalKeyboardKey _platformModKey() {
+  final isApplePlatform =
+      defaultTargetPlatform == TargetPlatform.macOS ||
+      defaultTargetPlatform == TargetPlatform.iOS;
+  return isApplePlatform
+      ? LogicalKeyboardKey.metaLeft
+      : LogicalKeyboardKey.controlLeft;
 }
 
 Finder _messageTimelineListFinder() {

@@ -377,6 +377,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    FocusManager.instance.addEarlyKeyEventHandler(
+      _handleWorkspaceShortcutEarlyKeyEvent,
+    );
     _promptController.addListener(_handlePromptControllerChanged);
     _activeDirectory = widget.directory;
     _activeRouteSessionId = widget.sessionId;
@@ -1607,6 +1610,9 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen>
 
   @override
   void dispose() {
+    FocusManager.instance.removeEarlyKeyEventHandler(
+      _handleWorkspaceShortcutEarlyKeyEvent,
+    );
     WidgetsBinding.instance.removeObserver(this);
     _persistActiveComposerScope();
     _composerDraftPersistTimer?.cancel();
@@ -3557,7 +3563,16 @@ class _WebParityWorkspaceScreenState extends State<WebParityWorkspaceScreen>
   KeyEventResult _handleWorkspaceShortcutKeyEvent(
     FocusNode node,
     KeyEvent event,
-  ) {
+  ) => _handleWorkspaceShortcutEvent(event);
+
+  KeyEventResult _handleWorkspaceShortcutEarlyKeyEvent(KeyEvent event) {
+    if (!_isAppleShortcutPlatform || !HardwareKeyboard.instance.isMetaPressed) {
+      return KeyEventResult.ignored;
+    }
+    return _handleWorkspaceShortcutEvent(event);
+  }
+
+  KeyEventResult _handleWorkspaceShortcutEvent(KeyEvent event) {
     if (!_canHandleWorkspaceShortcuts() || event is! KeyDownEvent) {
       return KeyEventResult.ignored;
     }
