@@ -40,15 +40,6 @@ OpenCode Mobile Remote is a Flutter client for staying connected to remote OpenC
 - Voice input requests microphone and speech recognition access on mobile platforms.
 - The project uses `app_links`, `speech_to_text`, and `url_launcher` to support connection import and mobile actions.
 
-## Docs
-
-- Quickstart: [docs/quickstart-first-connection.md](/Users/jungwuk/Documents/works/opencode-mobile-remote/docs/quickstart-first-connection.md)
-- Remote usage scenarios: [docs/remote-usage-scenarios.md](/Users/jungwuk/Documents/works/opencode-mobile-remote/docs/remote-usage-scenarios.md)
-- Product roadmap: [docs/product-roadmap-2026-03-31.md](/Users/jungwuk/Documents/works/opencode-mobile-remote/docs/product-roadmap-2026-03-31.md)
-- Continuity strategy: [docs/continuity-strategy-2026-03-31.md](/Users/jungwuk/Documents/works/opencode-mobile-remote/docs/continuity-strategy-2026-03-31.md)
-- Support entry points: [docs/support-entry-points-2026-03-31.md](/Users/jungwuk/Documents/works/opencode-mobile-remote/docs/support-entry-points-2026-03-31.md)
-- Demo asset pack: [docs/demo-assets-shot-list-2026-03-31.md](/Users/jungwuk/Documents/works/opencode-mobile-remote/docs/demo-assets-shot-list-2026-03-31.md)
-
 ## Validation
 
 The current delivery gate for this branch is:
@@ -63,12 +54,4 @@ flutter test test/features/chat/prompt_attachment_service_test.dart \
 ## Current Boundaries
 
 - The Git workflow intentionally stays within a safe, mobile-sized scope and still exposes terminal fallback for advanced flows.
-- Demo assets in `docs/demo-assets/` are packaged storyboard frames for public communication when live capture is not available.
 - The app remains a Flutter client and does not attempt to replace full desktop review or repository management tools.
-
-## Repository Development
-
-For architecture and repo-facing development notes:
-
-- Architecture: [docs/architecture/foundation-architecture.md](/Users/jungwuk/Documents/works/opencode-mobile-remote/docs/architecture/foundation-architecture.md)
-- Testing rules: [docs/testing-rules.md](/Users/jungwuk/Documents/works/opencode-mobile-remote/docs/testing-rules.md)
