@@ -5167,6 +5167,9 @@ class _ChatCanvasState extends State<_ChatCanvas> {
   bool _shouldStickToBottom = true;
   bool _manualScrollInProgress = false;
   bool _deferredAutoScrollToBottom = false;
+  bool _deferredAutoScrollFlushScheduled = false;
+  VoidCallback? _deferredAutoScrollIdleListener;
+  ScrollPosition? _deferredAutoScrollIdlePosition;
   double _lastKnownOffset = 0;
   int _programmaticScrollDepth = 0;
 
@@ -5216,6 +5219,7 @@ class _ChatCanvasState extends State<_ChatCanvas> {
 
   @override
   void dispose() {
+    _clearDeferredAutoScrollIdleListener();
     _scrollController
       ..removeListener(_handleScroll)
       ..dispose();
@@ -5227,7 +5231,9 @@ class _ChatCanvasState extends State<_ChatCanvas> {
     if (position == null) {
       return;
     }
-    _lastKnownOffset = position.pixels;
+    _lastKnownOffset = position.pixels
+        .clamp(position.minScrollExtent, position.maxScrollExtent)
+        .toDouble();
     _shouldStickToBottom = _isNearBottom();
   }
 
@@ -5266,12 +5272,12 @@ class _ChatCanvasState extends State<_ChatCanvas> {
     }
     if (notification is ScrollStartNotification &&
         notification.dragDetails != null) {
-      _manualScrollInProgress = true;
+      _markManualScrollInteraction();
       return false;
     }
     if (notification is ScrollUpdateNotification &&
         notification.dragDetails != null) {
-      _manualScrollInProgress = true;
+      _markManualScrollInteraction();
       return false;
     }
     if (notification is UserScrollNotification &&
@@ -5287,14 +5293,88 @@ class _ChatCanvasState extends State<_ChatCanvas> {
     return false;
   }
 
+  void _markManualScrollInteraction() {
+    _manualScrollInProgress = true;
+    _deferredAutoScrollToBottom = false;
+    _clearDeferredAutoScrollIdleListener();
+  }
+
   void _flushDeferredAutoScroll() {
     if (!_deferredAutoScrollToBottom ||
         _manualScrollInProgress ||
         !_shouldStickToBottom) {
       return;
     }
+    if (!_scrollController.hasClients) {
+      return;
+    }
+    final position = _scrollController.position;
+    if (!position.hasContentDimensions) {
+      return;
+    }
+    if (position.outOfRange) {
+      _scheduleDeferredAutoScrollFlush(waitForScrollIdle: true);
+      return;
+    }
     _deferredAutoScrollToBottom = false;
     _scheduleScrollToBottom(animated: true);
+  }
+
+  void _scheduleDeferredAutoScrollFlush({bool waitForScrollIdle = false}) {
+    if (_deferredAutoScrollFlushScheduled || !_deferredAutoScrollToBottom) {
+      return;
+    }
+    if (waitForScrollIdle && _scrollController.hasClients) {
+      final position = _scrollController.position;
+      if (position.outOfRange) {
+        _scheduleDeferredAutoScrollAfterIdle(position);
+        return;
+      }
+    }
+    _clearDeferredAutoScrollIdleListener();
+    _deferredAutoScrollFlushScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _deferredAutoScrollFlushScheduled = false;
+      if (!mounted) {
+        return;
+      }
+      _flushDeferredAutoScroll();
+    });
+  }
+
+  void _scheduleDeferredAutoScrollAfterIdle(ScrollPosition position) {
+    if (!position.isScrollingNotifier.value) {
+      return;
+    }
+    _clearDeferredAutoScrollIdleListener();
+    _deferredAutoScrollFlushScheduled = true;
+    late final VoidCallback listener;
+    listener = () {
+      if (position.isScrollingNotifier.value) {
+        return;
+      }
+      if (_deferredAutoScrollIdleListener == listener) {
+        _clearDeferredAutoScrollIdleListener();
+      }
+      if (!mounted) {
+        return;
+      }
+      _scheduleDeferredAutoScrollFlush(waitForScrollIdle: true);
+    };
+    _deferredAutoScrollIdleListener = listener;
+    _deferredAutoScrollIdlePosition = position;
+    position.isScrollingNotifier.addListener(listener);
+  }
+
+  void _clearDeferredAutoScrollIdleListener() {
+    final listener = _deferredAutoScrollIdleListener;
+    final position = _deferredAutoScrollIdlePosition;
+    if (listener != null && position != null) {
+      position.isScrollingNotifier.removeListener(listener);
+    }
+    _deferredAutoScrollIdleListener = null;
+    _deferredAutoScrollIdlePosition = null;
+    _deferredAutoScrollFlushScheduled = false;
   }
 
   void _scheduleScrollToBottom({bool animated = false}) {
@@ -5310,7 +5390,12 @@ class _ChatCanvasState extends State<_ChatCanvas> {
       if (!target.isFinite) {
         return;
       }
-      if ((position.pixels - target).abs() <= 1) {
+      if (position.pixels >= target - 1) {
+        return;
+      }
+      if (position.outOfRange) {
+        _deferredAutoScrollToBottom = true;
+        _scheduleDeferredAutoScrollFlush(waitForScrollIdle: true);
         return;
       }
       _programmaticScrollDepth += 1;
@@ -5326,6 +5411,9 @@ class _ChatCanvasState extends State<_ChatCanvas> {
       }
       final position = _activeScrollPosition();
       if (position == null) {
+        return;
+      }
+      if (position.outOfRange) {
         return;
       }
       final target = _lastKnownOffset

@@ -18056,6 +18056,8 @@ class _MessageTimelineState extends State<_MessageTimeline> {
   bool _deferredAutoScrollToBottom = false;
   bool _deferredAutoScrollAnchoredToBottom = false;
   bool _deferredAutoScrollFlushScheduled = false;
+  VoidCallback? _deferredAutoScrollIdleListener;
+  ScrollPosition? _deferredAutoScrollIdlePosition;
   int _programmaticScrollDepth = 0;
 
   List<ChatMessage> get _visibleMessages => widget.messages.sublist(
@@ -18175,6 +18177,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
 
   @override
   void dispose() {
+    _clearDeferredAutoScrollIdleListener();
     _scrollController.removeListener(_handleScroll);
     _scrollController.dispose();
     super.dispose();
@@ -18309,12 +18312,12 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     }
     if (notification is ScrollStartNotification &&
         notification.dragDetails != null) {
-      _manualScrollInProgress = true;
+      _markManualScrollInteraction();
       return false;
     }
     if (notification is ScrollUpdateNotification &&
         notification.dragDetails != null) {
-      _manualScrollInProgress = true;
+      _markManualScrollInteraction();
       return false;
     }
     if (notification is UserScrollNotification &&
@@ -18350,6 +18353,10 @@ class _MessageTimelineState extends State<_MessageTimeline> {
 
   void _markManualScrollInteraction() {
     _manualScrollInProgress = true;
+    _deferredAutoScrollToBottom = false;
+    _deferredAutoScrollAnchoredToBottom = false;
+    _clearDeferredAutoScrollIdleListener();
+    _clearBottomLock();
   }
 
   void _clearManualScrollInteractionIfIdle() {
@@ -18358,7 +18365,8 @@ class _MessageTimelineState extends State<_MessageTimeline> {
         return;
       }
       if (_scrollController.hasClients &&
-          _scrollController.position.isScrollingNotifier.value) {
+          (_scrollController.position.isScrollingNotifier.value ||
+              _scrollController.position.outOfRange)) {
         return;
       }
       _manualScrollInProgress = false;
@@ -18372,10 +18380,18 @@ class _MessageTimelineState extends State<_MessageTimeline> {
         _deferredAutoScrollAnchoredToBottom || anchored;
   }
 
-  void _scheduleDeferredAutoScrollFlush() {
+  void _scheduleDeferredAutoScrollFlush({bool waitForScrollIdle = false}) {
     if (_deferredAutoScrollFlushScheduled || !_deferredAutoScrollToBottom) {
       return;
     }
+    if (waitForScrollIdle && _scrollController.hasClients) {
+      final position = _scrollController.position;
+      if (position.outOfRange) {
+        _scheduleDeferredAutoScrollAfterIdle(position);
+        return;
+      }
+    }
+    _clearDeferredAutoScrollIdleListener();
     _deferredAutoScrollFlushScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _deferredAutoScrollFlushScheduled = false;
@@ -18384,6 +18400,41 @@ class _MessageTimelineState extends State<_MessageTimeline> {
       }
       _flushDeferredAutoScroll();
     });
+  }
+
+  void _scheduleDeferredAutoScrollAfterIdle(ScrollPosition position) {
+    if (!position.isScrollingNotifier.value) {
+      return;
+    }
+    _clearDeferredAutoScrollIdleListener();
+    _deferredAutoScrollFlushScheduled = true;
+    late final VoidCallback listener;
+    listener = () {
+      if (position.isScrollingNotifier.value) {
+        return;
+      }
+      if (_deferredAutoScrollIdleListener == listener) {
+        _clearDeferredAutoScrollIdleListener();
+      }
+      if (!mounted) {
+        return;
+      }
+      _scheduleDeferredAutoScrollFlush(waitForScrollIdle: true);
+    };
+    _deferredAutoScrollIdleListener = listener;
+    _deferredAutoScrollIdlePosition = position;
+    position.isScrollingNotifier.addListener(listener);
+  }
+
+  void _clearDeferredAutoScrollIdleListener() {
+    final listener = _deferredAutoScrollIdleListener;
+    final position = _deferredAutoScrollIdlePosition;
+    if (listener != null && position != null) {
+      position.isScrollingNotifier.removeListener(listener);
+    }
+    _deferredAutoScrollIdleListener = null;
+    _deferredAutoScrollIdlePosition = null;
+    _deferredAutoScrollFlushScheduled = false;
   }
 
   void _flushDeferredAutoScroll() {
@@ -18402,7 +18453,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     }
     if (position.outOfRange) {
       _deferAutoScrollToBottom(anchored: anchoredToBottom);
-      _scheduleDeferredAutoScrollFlush();
+      _scheduleDeferredAutoScrollFlush(waitForScrollIdle: true);
       return;
     }
     final nearBottomNow = _positionNearBottom(position);
@@ -18568,7 +18619,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
     }
     if (position.outOfRange) {
       _deferAutoScrollToBottom();
-      _scheduleDeferredAutoScrollFlush();
+      _scheduleDeferredAutoScrollFlush(waitForScrollIdle: true);
       return;
     }
     final target = position.maxScrollExtent;
@@ -18674,7 +18725,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
       }
       if (position.outOfRange) {
         _deferAutoScrollToBottom();
-        _scheduleBottomLock();
+        _scheduleDeferredAutoScrollFlush(waitForScrollIdle: true);
         return;
       }
       final target = position.maxScrollExtent;
@@ -18770,7 +18821,7 @@ class _MessageTimelineState extends State<_MessageTimeline> {
         _deferAutoScrollToBottom();
       } else if (position.outOfRange) {
         _deferAutoScrollToBottom();
-        _scheduleDeferredAutoScrollFlush();
+        _scheduleDeferredAutoScrollFlush(waitForScrollIdle: true);
       } else {
         final target = position.maxScrollExtent;
         if ((target - position.pixels).abs() <= 1) {
