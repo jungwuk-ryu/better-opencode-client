@@ -1147,7 +1147,7 @@ class _PtyTerminalViewState extends State<_PtyTerminalView> {
                           opacity: animation,
                           child: SizeTransition(
                             sizeFactor: animation,
-                            alignment: AlignmentDirectional.bottomStart,
+                            axisAlignment: 1.0,
                             child: child,
                           ),
                         );
