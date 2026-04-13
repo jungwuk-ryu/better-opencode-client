@@ -2,7 +2,7 @@
 
 ## Scope
 
-These instructions apply to Codex-driven changes in this repository.
+These instructions apply to all AI agents making changes in this repository.
 
 ## README Localization
 
