@@ -184,6 +184,127 @@ void main() {
   );
 
   test(
+    'controller restores requested session by direct lookup when it is outside the first session list',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final olderSession = _session(
+        id: 'ses_older',
+        title: 'Older remembered session',
+        createdAt: 1710000001000,
+        updatedAt: 1710000003000,
+      );
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_recent',
+              title: 'Recent session',
+              createdAt: 1710000009000,
+              updatedAt: 1710000010000,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{
+            'ses_recent': SessionStatusSummary(type: 'idle'),
+          },
+          messages: const <ChatMessage>[],
+          selectedSessionId: 'ses_recent',
+        ),
+        fetchSessionSummaryHandler:
+            ({required profile, required project, required sessionId}) async {
+              return sessionId == olderSession.id ? olderSession : null;
+            },
+        fetchMessagesHandler:
+            ({required profile, required project, required sessionId}) async {
+              return <ChatMessage>[
+                _message(
+                  id: 'msg_older',
+                  sessionId: sessionId,
+                  text: 'Older remembered context',
+                  createdAt: 1710000011000,
+                ),
+              ];
+            },
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+        initialSessionId: 'ses_older',
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+
+      expect(chatService.fetchSessionSummaryCalls, 1);
+      expect(controller.selectedSessionId, 'ses_older');
+      expect(controller.sessions.map((item) => item.id), <String>[
+        'ses_older',
+        'ses_recent',
+      ]);
+      expect(controller.messages.map((item) => item.info.id), <String>[
+        'msg_older',
+      ]);
+    },
+  );
+
+  test(
+    'controller falls back to bundle selection when direct requested session lookup fails',
+    () async {
+      final eventStreamService = _ControlledEventStreamService();
+      final chatService = _FakeChatService(
+        bundle: ChatSessionBundle(
+          sessions: <SessionSummary>[
+            _session(
+              id: 'ses_recent',
+              title: 'Recent session',
+              createdAt: 1710000009000,
+              updatedAt: 1710000010000,
+            ),
+          ],
+          statuses: const <String, SessionStatusSummary>{
+            'ses_recent': SessionStatusSummary(type: 'idle'),
+          },
+          messages: const <ChatMessage>[],
+          selectedSessionId: 'ses_recent',
+        ),
+        fetchSessionSummaryHandler:
+            ({required profile, required project, required sessionId}) async {
+              throw StateError('session no longer available');
+            },
+        fetchMessagesHandler:
+            ({required profile, required project, required sessionId}) async {
+              return <ChatMessage>[
+                _message(
+                  id: 'msg_recent',
+                  sessionId: sessionId,
+                  text: 'Recent fallback context',
+                  createdAt: 1710000011000,
+                ),
+              ];
+            },
+      );
+      final controller = _buildController(
+        profile: profile,
+        project: project,
+        eventStreamService: eventStreamService,
+        chatService: chatService,
+        initialSessionId: 'ses_missing',
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+
+      expect(chatService.fetchSessionSummaryCalls, 1);
+      expect(controller.selectedSessionId, 'ses_recent');
+      expect(controller.messages.map((item) => item.info.id), <String>[
+        'msg_recent',
+      ]);
+      expect(controller.error, isNull);
+    },
+  );
+
+  test(
     'controller recovers live sync after stream error and continues todo/permission updates',
     () async {
       final eventStreamService = _ControlledEventStreamService();
@@ -4517,6 +4638,7 @@ WorkspaceController _buildController({
   StaleCacheStore? spillStore,
   List<SessionSummary>? initialSessions,
   String? initialSelectedSessionId,
+  String? initialSessionId,
   PendingRequestBundle pendingBundle = const PendingRequestBundle(
     questions: <QuestionRequestSummary>[],
     permissions: <PermissionRequestSummary>[],
@@ -4535,6 +4657,7 @@ WorkspaceController _buildController({
   return WorkspaceController(
     profile: profile,
     directory: project.directory,
+    initialSessionId: initialSessionId,
     chatService:
         chatService ??
         _FakeChatService(
@@ -4977,6 +5100,7 @@ class _FakeChatService extends ChatService {
     required this.bundle,
     this.fetchMessagesHandler,
     this.fetchMessagesPageHandler,
+    this.fetchSessionSummaryHandler,
     this.sendMessageHandler,
     this.sendMessageAsyncHandler,
   });
@@ -4984,12 +5108,19 @@ class _FakeChatService extends ChatService {
   ChatSessionBundle bundle;
   int createSessionCalls = 0;
   int fetchBundleCalls = 0;
+  int fetchSessionSummaryCalls = 0;
   final Future<List<ChatMessage>> Function({
     required ServerProfile profile,
     required ProjectTarget project,
     required String sessionId,
   })?
   fetchMessagesHandler;
+  final Future<SessionSummary?> Function({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String sessionId,
+  })?
+  fetchSessionSummaryHandler;
   final Future<ChatMessagePage> Function({
     required ServerProfile profile,
     required ProjectTarget project,
@@ -5034,6 +5165,20 @@ class _FakeChatService extends ChatService {
   }) async {
     fetchBundleCalls += 1;
     return bundle;
+  }
+
+  @override
+  Future<SessionSummary?> fetchSessionSummary({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String sessionId,
+  }) async {
+    fetchSessionSummaryCalls += 1;
+    final handler = fetchSessionSummaryHandler;
+    if (handler != null) {
+      return handler(profile: profile, project: project, sessionId: sessionId);
+    }
+    return null;
   }
 
   @override

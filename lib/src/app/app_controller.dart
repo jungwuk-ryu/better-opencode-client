@@ -15,6 +15,7 @@ import '../features/projects/project_models.dart';
 import '../features/projects/project_store.dart';
 import '../features/web_parity/workspace_controller.dart';
 import '../features/web_parity/workspace_layout_store.dart';
+import 'app_routes.dart';
 import 'app_release_notes.dart';
 
 typedef WorkspaceControllerFactory =
@@ -134,6 +135,7 @@ class WebParityAppController extends ChangeNotifier {
            workspaceControllerFactory ?? _defaultWorkspaceControllerFactory;
 
   static const _selectedProfileKey = 'web_parity.selected_profile';
+  static const _launchLocationKey = 'web_parity.launch_location';
   static const _legacyShellToolPartsExpandedKey =
       'web_parity.shell_tool_parts_expanded';
   static const _shellToolDisplayModeKey = 'web_parity.shell_tool_display_mode';
@@ -181,6 +183,7 @@ class WebParityAppController extends ChangeNotifier {
   Map<String, WorkspacePaneLayoutSnapshot> _workspacePaneLayoutsByStorageKey =
       const <String, WorkspacePaneLayoutSnapshot>{};
   ServerProfile? _selectedProfile;
+  String _launchLocation = '/';
   ShellToolDisplayMode _shellToolDisplayMode =
       ShellToolDisplayMode.autoCollapse;
   bool _timelineProgressDetailsVisible = false;
@@ -210,6 +213,8 @@ class WebParityAppController extends ChangeNotifier {
   Map<String, WorkspacePaneLayoutSnapshot>
   get workspacePaneLayoutsByStorageKey => _workspacePaneLayoutsByStorageKey;
   ServerProfile? get selectedProfile => _selectedProfile;
+  String get launchLocation => _launchLocation;
+  String get resolvedLaunchLocation => _resolveLaunchLocation(_launchLocation);
   ShellToolDisplayMode get shellToolDisplayMode => _shellToolDisplayMode;
   bool get shellToolPartsExpanded =>
       _shellToolDisplayMode == ShellToolDisplayMode.alwaysExpanded;
@@ -266,6 +271,9 @@ class WebParityAppController extends ChangeNotifier {
     final workspacePaneLayouts = await _loadWorkspacePaneLayouts(profiles);
     final prefs = await SharedPreferences.getInstance();
     final selectedProfileId = prefs.getString(_selectedProfileKey);
+    final launchLocation = _normalizeLaunchLocation(
+      prefs.getString(_launchLocationKey),
+    );
     final shellToolDisplayMode = _loadShellToolDisplayMode(prefs);
     final timelineProgressDetailsVisible =
         prefs.getBool(_timelineProgressDetailsVisibleKey) ?? false;
@@ -297,8 +305,7 @@ class WebParityAppController extends ChangeNotifier {
     final colorSchemeMode = AppColorSchemeMode.fromStorage(
       prefs.getString(_themeSchemeKey),
     );
-    final releaseNotesEnabled =
-        prefs.getBool(_releaseNotesEnabledKey) ?? true;
+    final releaseNotesEnabled = prefs.getBool(_releaseNotesEnabledKey) ?? true;
     var seenReleaseNotesVersion = normalizeReleaseNotesVersion(
       prefs.getString(_releaseNotesSeenVersionKey),
     );
@@ -319,7 +326,8 @@ class WebParityAppController extends ChangeNotifier {
             currentReleaseNotes.currentVersion,
           );
         }
-      } else if (seenReleaseNotesVersion != currentReleaseNotes.currentVersion) {
+      } else if (seenReleaseNotesVersion !=
+          currentReleaseNotes.currentVersion) {
         pendingReleaseNotes = releaseNotesSinceVersion(seenReleaseNotesVersion);
       }
     }
@@ -340,6 +348,7 @@ class WebParityAppController extends ChangeNotifier {
     _reports = reports;
     _workspacePaneLayoutsByStorageKey = workspacePaneLayouts;
     _selectedProfile = selectedProfile;
+    _launchLocation = launchLocation;
     _shellToolDisplayMode = shellToolDisplayMode;
     _timelineProgressDetailsVisible = timelineProgressDetailsVisible;
     _sidebarChildSessionsVisible = sidebarChildSessionsVisible;
@@ -369,6 +378,19 @@ class WebParityAppController extends ChangeNotifier {
     _selectedProfile = profile;
     notifyListeners();
     await _persistSelectedProfile(profile);
+  }
+
+  Future<void> rememberLaunchLocation(String? location) async {
+    if (location == null || location.trim().isEmpty) {
+      return;
+    }
+    final normalized = _normalizeLaunchLocation(location);
+    if (_launchLocation == normalized) {
+      return;
+    }
+    _launchLocation = normalized;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_launchLocationKey, normalized);
   }
 
   ShellToolDisplayMode _loadShellToolDisplayMode(SharedPreferences prefs) {
@@ -565,7 +587,9 @@ class WebParityAppController extends ChangeNotifier {
       final currentReleaseNotes = this.currentReleaseNotes;
       if (currentReleaseNotes != null &&
           _seenReleaseNotesVersion != currentReleaseNotes.currentVersion) {
-        _pendingReleaseNotes = releaseNotesSinceVersion(_seenReleaseNotesVersion);
+        _pendingReleaseNotes = releaseNotesSinceVersion(
+          _seenReleaseNotesVersion,
+        );
       }
     }
     notifyListeners();
@@ -974,5 +998,23 @@ class WebParityAppController extends ChangeNotifier {
       return;
     }
     await prefs.setString(_selectedProfileKey, profile.id);
+  }
+
+  String _resolveLaunchLocation(String location) {
+    final route = AppRouteData.parse(location);
+    return switch (route) {
+      HomeRouteData() => '/',
+      WorkspaceRouteData(:final location) when _selectedProfile != null =>
+        location,
+      WorkspaceRouteData() => '/',
+    };
+  }
+
+  static String _normalizeLaunchLocation(String? location) {
+    final route = AppRouteData.parse(location);
+    return switch (route) {
+      HomeRouteData() => '/',
+      WorkspaceRouteData(:final location) => location,
+    };
   }
 }

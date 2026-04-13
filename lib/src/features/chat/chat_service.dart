@@ -67,6 +67,43 @@ class ChatService {
     );
   }
 
+  Future<SessionSummary?> fetchSessionSummary({
+    required ServerProfile profile,
+    required ProjectTarget project,
+    required String sessionId,
+  }) async {
+    final baseUri = profile.uriOrNull;
+    if (baseUri == null) {
+      throw const FormatException('Invalid server profile URL.');
+    }
+
+    final headers = buildRequestHeaders(profile, accept: 'application/json');
+    final response = await _sendGetRequest(
+      baseUri,
+      '/session/$sessionId',
+      headers: headers,
+      query: <String, String>{'directory': project.directory},
+    );
+    if (response.statusCode == 404) {
+      return null;
+    }
+    final uri = response.request?.url ?? baseUri;
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw StateError(
+        'Request failed for $uri with status ${response.statusCode}.',
+      );
+    }
+    final body = await http.Response.fromStream(response);
+    if (body.body.trim().isEmpty) {
+      return null;
+    }
+    final decoded = jsonDecode(body.body);
+    if (decoded is! Map) {
+      return null;
+    }
+    return _safeParseSession(decoded.cast<String, Object?>());
+  }
+
   Future<ChatMessage> sendMessage({
     required ServerProfile profile,
     required ProjectTarget project,

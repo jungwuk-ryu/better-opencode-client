@@ -1449,14 +1449,15 @@ class WorkspaceController extends ChangeNotifier {
         project: resolvedProject,
         includeSelectedSessionMessages: false,
       );
-      _sessions = bundle.sessions;
       _statuses = bundle.statuses;
-      _selectedSessionId = _resolveSessionSelection(
+      final selection = await _resolveSessionSelection(
         requestedSessionId: initialSessionId,
         bundleSelectedSessionId: bundle.selectedSessionId,
         project: resolvedProject,
         sessions: bundle.sessions,
       );
+      _sessions = selection.sessions;
+      _selectedSessionId = selection.sessionId;
       _markSessionNotificationsViewed(_selectedSessionId, notify: false);
       if (_selectedSessionId != null) {
         _restoreComposerSelectionFromPersistedState(_selectedSessionId!);
@@ -1544,14 +1545,15 @@ class WorkspaceController extends ChangeNotifier {
       project: project,
       includeSelectedSessionMessages: false,
     );
-    _sessions = bundle.sessions;
     _statuses = bundle.statuses;
-    _selectedSessionId = _resolveSessionSelection(
+    final selection = await _resolveSessionSelection(
       requestedSessionId: null,
       bundleSelectedSessionId: bundle.selectedSessionId,
       project: project,
       sessions: bundle.sessions,
     );
+    _sessions = selection.sessions;
+    _selectedSessionId = selection.sessionId;
     _markSessionNotificationsViewed(_selectedSessionId, notify: false);
     if (_selectedSessionId != null) {
       _restoreComposerSelectionFromPersistedState(_selectedSessionId!);
@@ -5505,14 +5507,15 @@ class WorkspaceController extends ChangeNotifier {
       return;
     }
 
-    _sessions = bundle.sessions;
     _statuses = bundle.statuses;
-    _selectedSessionId = _resolveSessionSelection(
+    final selection = await _resolveSessionSelection(
       requestedSessionId: selectedSessionIdHint,
       bundleSelectedSessionId: bundle.selectedSessionId,
       project: project,
       sessions: bundle.sessions,
     );
+    _sessions = selection.sessions;
+    _selectedSessionId = selection.sessionId;
     _markSessionNotificationsViewed(_selectedSessionId, notify: false);
     if (_selectedSessionId != null) {
       _restoreComposerSelectionFromPersistedState(_selectedSessionId!);
@@ -6465,12 +6468,13 @@ class WorkspaceController extends ChangeNotifier {
     return values;
   }
 
-  String? _resolveSessionSelection({
+  Future<({String? sessionId, List<SessionSummary> sessions})>
+  _resolveSessionSelection({
     required String? requestedSessionId,
     required String? bundleSelectedSessionId,
     required ProjectTarget project,
     required List<SessionSummary> sessions,
-  }) {
+  }) async {
     bool exists(String? sessionId) {
       if (sessionId == null || sessionId.isEmpty) {
         return false;
@@ -6481,12 +6485,60 @@ class WorkspaceController extends ChangeNotifier {
     }
 
     if (exists(requestedSessionId)) {
-      return requestedSessionId;
+      return (sessionId: requestedSessionId, sessions: sessions);
+    }
+    final requestedSession = await _fetchRequestedSessionIfAvailable(
+      project,
+      requestedSessionId,
+    );
+    if (requestedSession != null) {
+      return (
+        sessionId: requestedSession.id,
+        sessions: _prependSessionIfMissing(sessions, requestedSession),
+      );
     }
     if (exists(bundleSelectedSessionId)) {
-      return bundleSelectedSessionId;
+      return (sessionId: bundleSelectedSessionId, sessions: sessions);
     }
-    return _sessionIdHintForProject(project, sessions);
+    return (
+      sessionId: _sessionIdHintForProject(project, sessions),
+      sessions: sessions,
+    );
+  }
+
+  Future<SessionSummary?> _fetchRequestedSessionIfAvailable(
+    ProjectTarget project,
+    String? requestedSessionId,
+  ) async {
+    final sessionId = requestedSessionId?.trim();
+    if (sessionId == null || sessionId.isEmpty) {
+      return null;
+    }
+    try {
+      final session = await _chatService.fetchSessionSummary(
+        profile: profile,
+        project: project,
+        sessionId: sessionId,
+      );
+      if (session == null ||
+          session.archivedAt != null ||
+          session.directory != project.directory) {
+        return null;
+      }
+      return session;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  List<SessionSummary> _prependSessionIfMissing(
+    List<SessionSummary> sessions,
+    SessionSummary session,
+  ) {
+    if (sessions.any((item) => item.id == session.id)) {
+      return sessions;
+    }
+    return <SessionSummary>[session, ...sessions];
   }
 
   String? _sessionIdHintForProject(

@@ -13,11 +13,13 @@ void main() {
   Map<String, Object?>? lastPromptBody;
   Map<String, Object?>? lastCommandBody;
   Map<String, String>? lastMessagesQuery;
+  Map<String, String>? lastSessionSummaryQuery;
 
   setUp(() async {
     lastPromptBody = null;
     lastCommandBody = null;
     lastMessagesQuery = null;
+    lastSessionSummaryQuery = null;
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     baseUri = Uri.parse(
       'http://${server.address.address}:${server.port}/api?token=abc',
@@ -49,6 +51,9 @@ void main() {
         if (request.uri.queryParameters['before'] == null) {
           request.response.headers.set('x-next-cursor', 'cursor_older_page');
         }
+      }
+      if (routePath == '/session/ses_lookup' && request.method == 'GET') {
+        lastSessionSummaryQuery = request.uri.queryParameters;
       }
       final body = switch (routePath) {
         '/session' when request.method == 'POST' => {
@@ -82,6 +87,13 @@ void main() {
         ],
         '/session/status' => {
           'ses_1': {'type': 'busy'},
+        },
+        '/session/ses_lookup' => {
+          'id': 'ses_lookup',
+          'directory': '/workspace/demo',
+          'title': 'Looked up session',
+          'version': '1',
+          'time': {'created': 1710000001000, 'updated': 1710000008000},
         },
         '/session/ses_1/message' => [
           {
@@ -222,6 +234,38 @@ void main() {
       service.dispose();
     },
   );
+
+  test('fetches a direct session summary and returns null for 404', () async {
+    final service = ChatService();
+    final profile = ServerProfile(
+      id: 'server',
+      label: 'mock',
+      baseUrl: baseUri.toString(),
+    );
+    const project = ProjectTarget(directory: '/workspace/demo', label: 'Demo');
+
+    final session = await service.fetchSessionSummary(
+      profile: profile,
+      project: project,
+      sessionId: 'ses_lookup',
+    );
+
+    expect(session?.id, 'ses_lookup');
+    expect(session?.title, 'Looked up session');
+    expect(lastSessionSummaryQuery, <String, String>{
+      'token': 'abc',
+      'directory': '/workspace/demo',
+    });
+
+    final missing = await service.fetchSessionSummary(
+      profile: profile,
+      project: project,
+      sessionId: 'ses_missing',
+    );
+
+    expect(missing, isNull);
+    service.dispose();
+  });
 
   test('skips malformed messages when loading a session timeline', () async {
     final service = ChatService();

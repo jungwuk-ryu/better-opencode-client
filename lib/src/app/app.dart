@@ -41,8 +41,13 @@ class _OpenCodeRemoteAppState extends State<OpenCodeRemoteApp> {
   late final bool _ownsAppController = widget.appController == null;
   late final WebParityAppController _appController =
       widget.appController ?? WebParityAppController();
+  late final NavigatorObserver _launchLocationObserver =
+      _LaunchLocationObserver(_appController);
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   String? _scheduledReleaseNotesVersion;
+  String _initialRoute = '/';
+  String? _pendingAppLinkRoute;
+  late bool _startupComplete = !widget.autoLoadAppController;
   StreamSubscription<Uri>? _appLinksSubscription;
 
   @override
@@ -50,7 +55,9 @@ class _OpenCodeRemoteAppState extends State<OpenCodeRemoteApp> {
     super.initState();
     unawaited(_localeController.load());
     if (widget.autoLoadAppController) {
-      unawaited(_appController.load());
+      unawaited(_loadAppControllerForStartup());
+    } else {
+      _initialRoute = _appController.resolvedLaunchLocation;
     }
     _configureAppLinks();
   }
@@ -65,6 +72,18 @@ class _OpenCodeRemoteAppState extends State<OpenCodeRemoteApp> {
       _localeController.dispose();
     }
     super.dispose();
+  }
+
+  Future<void> _loadAppControllerForStartup() async {
+    await _appController.load();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _initialRoute = _appController.resolvedLaunchLocation;
+      _startupComplete = true;
+    });
+    _schedulePendingAppLinkRoute();
   }
 
   void _scheduleReleaseNotesDialog(BuildContext context) {
@@ -121,10 +140,30 @@ class _OpenCodeRemoteAppState extends State<OpenCodeRemoteApp> {
   void _handleIncomingAppLink(Uri uri) {
     final route = _routeLocationForUri(uri);
     final navigator = _navigatorKey.currentState;
-    if (!mounted || navigator == null || route == null) {
+    if (!mounted || route == null) {
+      return;
+    }
+    if (!_startupComplete || navigator == null) {
+      _pendingAppLinkRoute = route;
       return;
     }
     navigator.pushNamedAndRemoveUntil(route, (route) => false);
+  }
+
+  void _schedulePendingAppLinkRoute() {
+    final route = _pendingAppLinkRoute;
+    if (route == null) {
+      return;
+    }
+    _pendingAppLinkRoute = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final navigator = _navigatorKey.currentState;
+      if (!mounted || navigator == null) {
+        _pendingAppLinkRoute = route;
+        return;
+      }
+      navigator.pushNamedAndRemoveUntil(route, (route) => false);
+    });
   }
 
   String? _routeLocationForUri(Uri uri) {
@@ -137,6 +176,31 @@ class _OpenCodeRemoteAppState extends State<OpenCodeRemoteApp> {
     };
   }
 
+  Route<void> _buildAppRoute(RouteSettings settings) {
+    final route = AppRouteData.parse(settings.name);
+    return MaterialPageRoute<void>(
+      settings: RouteSettings(
+        name: settings.name ?? '/',
+        arguments: settings.arguments,
+      ),
+      builder: (context) {
+        return switch (route) {
+          HomeRouteData(:final connectionImport) => WebParityHomeScreen(
+            flavor: _flavor,
+            localeController: _localeController,
+            connectionImport: connectionImport,
+          ),
+          WorkspaceRouteData(:final directory, :final sessionId) =>
+            WebParityWorkspaceScreen(
+              key: ValueKey<String>('workspace-$directory'),
+              directory: directory,
+              sessionId: sessionId,
+            ),
+        };
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
@@ -145,6 +209,9 @@ class _OpenCodeRemoteAppState extends State<OpenCodeRemoteApp> {
         _appController,
       ]),
       builder: (context, child) {
+        if (!_startupComplete) {
+          return const SizedBox.shrink();
+        }
         return AppScope(
           controller: _appController,
           child: AppLocaleScope(
@@ -183,37 +250,42 @@ class _OpenCodeRemoteAppState extends State<OpenCodeRemoteApp> {
                 GlobalCupertinoLocalizations.delegate,
                 GlobalWidgetsLocalizations.delegate,
               ],
-              initialRoute: '/',
-              onGenerateRoute: (settings) {
-                final route = AppRouteData.parse(settings.name);
-                return MaterialPageRoute<void>(
-                  settings: RouteSettings(
-                    name: settings.name ?? '/',
-                    arguments: settings.arguments,
-                  ),
-                  builder: (context) {
-                    return switch (route) {
-                      HomeRouteData(:final connectionImport) =>
-                        WebParityHomeScreen(
-                          flavor: _flavor,
-                          localeController: _localeController,
-                          connectionImport: connectionImport,
-                        ),
-                      WorkspaceRouteData(:final directory, :final sessionId) =>
-                        WebParityWorkspaceScreen(
-                          key: ValueKey<String>('workspace-$directory'),
-                          directory: directory,
-                          sessionId: sessionId,
-                        ),
-                    };
-                  },
-                );
-              },
+              navigatorObservers: <NavigatorObserver>[_launchLocationObserver],
+              initialRoute: _initialRoute,
+              onGenerateInitialRoutes: (initialRoute) => <Route<dynamic>>[
+                _buildAppRoute(RouteSettings(name: initialRoute)),
+              ],
+              onGenerateRoute: _buildAppRoute,
             ),
           ),
         );
       },
     );
+  }
+}
+
+class _LaunchLocationObserver extends NavigatorObserver {
+  _LaunchLocationObserver(this.controller);
+
+  final WebParityAppController controller;
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _remember(route);
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _remember(previousRoute);
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    _remember(newRoute);
+  }
+
+  void _remember(Route<dynamic>? route) {
+    unawaited(controller.rememberLaunchLocation(route?.settings.name));
   }
 }
 
