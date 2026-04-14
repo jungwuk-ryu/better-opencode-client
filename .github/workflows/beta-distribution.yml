@@ -185,13 +185,36 @@ jobs:
           echo "path=$ipa_path" >> "$GITHUB_OUTPUT"
 
       - name: Upload IPA to App Store Connect
-        uses: Apple-Actions/upload-testflight-build@1fb41afa66075b5d62c79cb623c6c4999334e185
-        with:
-          app-path: ${{ steps.ipa.outputs.path }}
-          app-type: ios
-          issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          api-key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          api-private-key: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        env:
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          IPA_PATH: ${{ steps.ipa.outputs.path }}
+        run: |
+          api_key_id="$(printf '%s' "$APP_STORE_CONNECT_KEY_ID" | tr -d '[:space:]')"
+          api_issuer_id="$(printf '%s' "$APP_STORE_CONNECT_ISSUER_ID" | tr -d '[:space:]')"
+          private_keys_dir="$RUNNER_TEMP/private_keys"
+          key_path="$private_keys_dir/AuthKey_$api_key_id.p8"
+
+          if [ -z "$api_key_id" ] || [ -z "$api_issuer_id" ]; then
+            echo "App Store Connect API key ID or issuer ID is blank after trimming whitespace."
+            exit 1
+          fi
+
+          umask 077
+          mkdir -p "$private_keys_dir"
+          trap 'rm -f "$key_path"' EXIT
+          if [[ "$APP_STORE_CONNECT_PRIVATE_KEY" == *"\\n"* ]]; then
+            printf '%b' "$APP_STORE_CONNECT_PRIVATE_KEY" > "$key_path"
+          else
+            printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY" > "$key_path"
+          fi
+          chmod 600 "$key_path"
+
+          API_PRIVATE_KEYS_DIR="$private_keys_dir" xcrun altool \
+            --upload-package "$IPA_PATH" \
+            --api-key "$api_key_id" \
+            --api-issuer "$api_issuer_id"
 
   macos:
     name: macOS GitHub Release asset
