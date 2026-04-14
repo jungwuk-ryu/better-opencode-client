@@ -127,9 +127,7 @@ jobs:
       - name: Build signed iOS IPA
         env:
           FLUTTER_XCODE_CODE_SIGN_IDENTITY: Apple Distribution
-          FLUTTER_XCODE_CODE_SIGN_STYLE: Manual
           FLUTTER_XCODE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
-          FLUTTER_XCODE_PROVISIONING_PROFILE_SPECIFIER: ${{ steps.provisioning-profile.outputs.profile_name }}
         run: |
           flutter build ipa \
             --release \
