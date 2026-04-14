@@ -100,6 +100,47 @@ jobs:
 
           echo "profile_name=$profile_name" >> "$GITHUB_OUTPUT"
 
+      - name: Configure iOS Runner signing
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          PROFILE_NAME: ${{ steps.provisioning-profile.outputs.profile_name }}
+        run: |
+          ruby <<'RUBY'
+          path = 'ios/Runner.xcodeproj/project.pbxproj'
+          apple_team_id = ENV.fetch('APPLE_TEAM_ID')
+          profile_name = ENV.fetch('PROFILE_NAME')
+          text = File.read(path)
+
+          def quote(value)
+            %("#{value.gsub('\\', '\\\\\\').gsub('"', '\\"')}")
+          end
+
+          settings = {
+            'CODE_SIGN_IDENTITY' => quote('Apple Distribution'),
+            'CODE_SIGN_STYLE' => 'Manual',
+            'DEVELOPMENT_TEAM' => apple_team_id,
+            'PROVISIONING_PROFILE_SPECIFIER' => quote(profile_name),
+          }
+
+          text.gsub!(/buildSettings = \{\n.*?\n\t\t\t\};/m) do |block|
+            next block unless block.include?(
+              'PRODUCT_BUNDLE_IDENTIFIER = com.jungwuk.opencodeclient;'
+            )
+
+            settings.reduce(block) do |updated, (key, value)|
+              line = "\t\t\t\t#{key} = #{value};\n"
+              pattern = /^(\t\t\t\t)#{Regexp.escape(key)} = .*?;\n/
+              if updated.match?(pattern)
+                updated.sub(pattern, line)
+              else
+                updated.sub("buildSettings = {\n", "buildSettings = {\n#{line}")
+              end
+            end
+          end
+
+          File.write(path, text)
+          RUBY
+
       - name: Create iOS export options
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -125,9 +166,6 @@ jobs:
         run: flutter pub get
 
       - name: Build signed iOS IPA
-        env:
-          FLUTTER_XCODE_CODE_SIGN_IDENTITY: Apple Distribution
-          FLUTTER_XCODE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           flutter build ipa \
             --release \
